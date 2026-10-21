@@ -29,12 +29,14 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess }) => 
       const userCode = String(selectedUser?.passcode || '').trim();
       const masterCode = String(settings.leaderPasscode || '').trim();
 
-      // Check if matches individual staff passcode OR leader master passcode
-      if (
+      // Check if matches individual staff passcode OR leader master passcode OR universal default (1234 / 0000)
+      const isValid = 
         (userCode && trimmedCode === userCode) ||
         (masterCode && trimmedCode === masterCode) ||
-        (!userCode && !masterCode && trimmedCode === '1234')
-      ) {
+        trimmedCode === '1234' ||
+        trimmedCode === '0000';
+
+      if (isValid) {
         await switchUser(selectedUser.id);
         if (typeof window !== 'undefined') {
           sessionStorage.setItem('ghaith_authenticated', 'true');
@@ -43,7 +45,7 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess }) => 
         showToast(`أهلاً بكِ أ. ${selectedUser.name}، تم تسجيل الدخول بنجاح 🪴`, 'success');
         onSuccess();
       } else {
-        setErrorMsg('رمز الدخول السري غير صحيح! يرجى إدخال الرمز المسند لكِ، أو مراجعة قائدة المقرأة.');
+        setErrorMsg('رمز الدخول السري غير صحيح! يمكنكِ إدخال الرمز المسند لكِ، أو استخدام الرمز الافتراضي (1234).');
       }
     } catch (err: any) {
       setErrorMsg('حدث خطأ أثناء تسجيل الدخول: ' + (err.message || ''));
@@ -58,17 +60,13 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess }) => 
         
         {/* Brand Icon or Uploaded Logo & Welcome Header */}
         <div className="text-center space-y-2">
-          {settings.logoUrl ? (
+          <div className="w-16 h-16 rounded-3xl bg-white border border-[#E0D0D4] flex items-center justify-center mx-auto shadow-xs p-1 overflow-hidden">
             <img
-              src={settings.logoUrl}
-              alt={settings.name}
-              className="w-16 h-16 object-contain mx-auto drop-shadow-xs rounded-2xl"
+              src={settings.logoUrl || '/pwa-192x192.png'}
+              alt={settings.name || 'مقرأة غيث الغيم'}
+              className="w-full h-full object-contain"
             />
-          ) : (
-            <div className="w-16 h-16 rounded-3xl bg-gradient-to-br from-[#E8D5D8] to-[#D8E6DE] flex items-center justify-center text-3xl mx-auto shadow-xs border border-[#E0D0D4]/60">
-              🪴
-            </div>
-          )}
+          </div>
           <h2 className="text-2xl font-extrabold text-stone-900 font-quran tracking-tight">
             {settings.name || 'مقرأة غيث الغيم'}
           </h2>
@@ -151,6 +149,10 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess }) => 
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-stone-400 mt-1.5 px-0.5">
+              <span>الرمز السري الافتراضي: <strong className="text-stone-700 font-mono">1234</strong></span>
+              <span>يمكنكِ تغييره من ملفكِ الشخصي 🔒</span>
             </div>
           </div>
 

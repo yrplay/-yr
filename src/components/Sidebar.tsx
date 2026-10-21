@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import {
   LayoutDashboard, Layers, Users, Calendar, CheckSquare,
   BookOpenCheck, Sparkles, Trophy, FileText, Sliders,
-  UserCheck, BarChart3, UserCog, Settings, X, Heart
+  UserCheck, BarChart3, UserCog, Settings, X, Heart, Lock
 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 
@@ -28,9 +28,10 @@ interface SidebarProps {
   onSelectView: (view: ViewType) => void;
   isOpen: boolean;
   onClose: () => void;
+  onLockSession?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isOpen, onClose }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isOpen, onClose, onLockSession }) => {
   const { circles, students, settings } = useApp();
   const primaryColor = settings?.primaryColor || '#8E5364';
 
@@ -69,9 +70,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
       >
         {/* Mobile Header in Drawer */}
         <div className="flex items-center justify-between p-4 border-b border-[#EBE3DC] lg:hidden">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">🪴</span>
-            <span className="font-bold text-stone-800 font-quran text-lg">مقرأة غيث الغيم</span>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-white border border-[#E0D0D4] flex items-center justify-center shadow-xs p-0.5 overflow-hidden">
+              <img
+                src={settings?.logoUrl || '/pwa-192x192.png'}
+                alt={settings?.name || 'مقرأة غيث الغيم'}
+                className="w-full h-full object-contain"
+              />
+            </div>
+            <span className="font-bold text-stone-800 font-quran text-base">{settings?.name || 'مقرأة غيث الغيم'}</span>
           </div>
           <button
             onClick={onClose}
@@ -135,6 +142,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
 
         {/* Dedicated PWA Install Banner */}
         <PWAInstallButton variant="sidebar" />
+
+        {/* Lock Session / Logout Action */}
+        {onLockSession && (
+          <div className="px-3 py-1">
+            <button
+              onClick={() => {
+                if (onClose) onClose();
+                onLockSession();
+              }}
+              className="w-full py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100/80 text-rose-700 text-xs font-bold transition flex items-center justify-between cursor-pointer border border-rose-200/60 shadow-2xs active:scale-98"
+            >
+              <div className="flex items-center gap-2">
+                <Lock className="w-3.5 h-3.5 text-rose-600" />
+                <span>قفل المنصة وتسجيل الخروج</span>
+              </div>
+              <span className="text-[10px] bg-white text-rose-700 px-1.5 py-0.5 rounded-md border border-rose-200 font-normal">
+                خروج آمن
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* Footer Brand note & Developer Signature */}
         <div className="p-4 border-t border-[#EBE3DC] bg-[#F7F3EE] space-y-2">

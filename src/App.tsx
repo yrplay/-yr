@@ -142,8 +142,9 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // Security Gate: Protect app access if security is enabled
-  if (settings?.securityEnabled && !isAuthenticated) {
+  // Security Gate: Protect app access if security is active (defaults to true) and session is locked
+  const securityActive = settings?.securityEnabled ?? true;
+  if (securityActive && !isAuthenticated) {
     return <StaffLoginGate onSuccess={() => setIsAuthenticated(true)} />;
   }
 
@@ -167,6 +168,7 @@ const AppContent: React.FC = () => {
           onSelectView={setCurrentView}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
+          onLockSession={handleLockSession}
         />
 
         {/* View Content Area */}

@@ -183,7 +183,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     academicYear: "١٤٤٦ - ١٤٤٧ هـ",
     currentHijriMonth: "ربيع الآخر - جمادى الأولى",
     supportEmail: "info@ghaym.org",
-    supportPhone: "0500000001"
+    supportPhone: "0500000001",
+    securityEnabled: true,
+    leaderPasscode: "1234"
   });
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);

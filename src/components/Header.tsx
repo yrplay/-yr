@@ -131,8 +131,12 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, onOpenQuickModa
                   />
                 </div>
               ) : (
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-[#E8D5D8] via-[#F4ECEE] to-[#D8E6DE] flex items-center justify-center shadow-xs border border-[#E0D0D4]/50">
-                  <Cloud className="w-6 h-6 text-[#7D5363]" />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-white flex items-center justify-center shadow-xs border border-[#E0D0D4]/60 p-1 overflow-hidden">
+                  <img
+                    src="/pwa-192x192.png"
+                    alt={settings.name || 'مقرأة غيث الغيم'}
+                    className="w-full h-full object-contain"
+                  />
                 </div>
               )}
               <div>

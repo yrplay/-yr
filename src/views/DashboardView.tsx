@@ -130,8 +130,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <Users className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-stone-900 mb-1">
-            {totalStudents}
+          <div className="text-xl sm:text-2xl font-bold text-stone-900 mb-1 flex items-baseline">
+            <span>{totalStudents}</span>
             <span className="text-xs font-normal text-stone-400 mr-1.5">طالبة</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-stone-500">
@@ -151,8 +151,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <Layers className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-stone-900 mb-1">
-            {activeCircles.length}
+          <div className="text-xl sm:text-2xl font-bold text-stone-900 mb-1 flex items-baseline">
+            <span>{activeCircles.length}</span>
             <span className="text-xs font-normal text-stone-400 mr-1.5">حلقات راسخات</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-stone-500">
@@ -172,8 +172,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-stone-900 mb-1">
-            {avgPercentage}%
+          <div className="text-xl sm:text-2xl font-bold text-stone-900 mb-1 flex items-baseline">
+            <span>{avgPercentage}%</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-[#2D5A43] font-medium">
             <span>نظام النسب المئوية الموزونة</span>
@@ -192,8 +192,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <Clock className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-stone-900 mb-1">
-            {todayAttendance.length > 0 ? `${presentToday} / ${todayAttendance.length}` : 'سجل اليوم'}
+          <div className="text-xl sm:text-2xl font-bold text-stone-900 mb-1 flex items-baseline">
+            <span>{todayAttendance.length > 0 ? `${presentToday} / ${todayAttendance.length}` : 'سجل اليوم'}</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-stone-500">
             <span>{earlyPrepToday} بطاقة تحضير مبكر ⭐</span>
