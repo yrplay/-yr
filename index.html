@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (function() {
+        // 1. Intercept console.error to filter Vite HMR WebSocket connection messages
+        var originalConsoleError = console.error;
+        console.error = function() {
+          for (var i = 0; i < arguments.length; i++) {
+            var arg = arguments[i];
+            var str = (arg && (arg.message || arg.stack)) || String(arg);
+            if (str.indexOf('WebSocket') !== -1 || str.indexOf('[vite]') !== -1) {
+              return;
+            }
+          }
+          return originalConsoleError.apply(console, arguments);
+        };
+
+        // 2. Intercept WebSocket if protocol is vite-hmr to prevent failed connection in sandbox
+        var OriginalWebSocket = window.WebSocket;
+        if (OriginalWebSocket) {
+          window.WebSocket = function(url, protocols) {
+            if (protocols === 'vite-hmr' || (typeof url === 'string' && url.indexOf('vite-hmr') !== -1)) {
+              var dummy = {
+                addEventListener: function() {},
+                removeEventListener: function() {},
+                send: function() {},
+                close: function() {},
+                readyState: 1 // OPEN
+              };
+              return dummy;
+            }
+            return new OriginalWebSocket(url, protocols);
+          };
+          window.WebSocket.prototype = OriginalWebSocket.prototype;
+        }
+
+        // 3. Catch unhandled errors
+        window.addEventListener('error', function(e) {
+          if (e && e.message && (e.message.indexOf('WebSocket') !== -1 || e.message.indexOf('vite') !== -1)) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+          }
+        }, true);
+      })();
+    </script>
+    <title>غيث الغيم | منصة الإدارة والمقرأة القرآنية</title>
+    <meta name="description" content="المنصة الإدارية المتكاملة لمقرأة غيث الغيم لإدارة الحلقات والمسارات والخطط الشهرية والحفظ والمراجعة وأتقني والتحديات والدرجات بقيادة ريفة المنصوري" />
+    <meta name="author" content="ياسر التاج · yr_alhosine" />
+    <meta property="og:title" content="غيث الغيم | منصة الإدارة والمقرأة القرآنية" />
+    <meta property="og:description" content="المنصة الإدارية المتكاملة لمقرأة غيث الغيم لإدارة الحلقات والمسارات والخطط الشهرية والحفظ والمراجعة وأتقني والتحديات والدرجات بقيادة ريفة المنصوري" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- PWA & Mobile Web App Meta -->
+    <meta name="theme-color" content="#8E5364" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="غيث الغيم" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+
+    <!-- Google Fonts for Secondary/Backup: Tajawal & Amiri -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@dawod/thmanyah-font-web/index.css" />
+  </head>
+  <body class="bg-[#F9F7F5] text-stone-800 antialiased selection:bg-[#E8D5D8] selection:text-[#5B3946]">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

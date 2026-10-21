@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FAF5F2" />
+      <stop offset="50%" stop-color="#F2E6DF" />
+      <stop offset="100%" stop-color="#E8D5D8" />
+    </linearGradient>
+    <linearGradient id="primaryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A56376" />
+      <stop offset="100%" stop-color="#723A4A" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D4AF37" />
+      <stop offset="50%" stop-color="#F3E5AB" />
+      <stop offset="100%" stop-color="#AA7C11" />
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3D7A5B" />
+      <stop offset="100%" stop-color="#234835" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#5A2333" flood-opacity="0.25" />
+    </filter>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" />
+
+  <!-- Outer Islamic Ornamental Circle -->
+  <circle cx="256" cy="256" r="216" fill="none" stroke="url(#goldGrad)" stroke-width="4" stroke-dasharray="8 6" opacity="0.8" />
+  <circle cx="256" cy="256" r="202" fill="none" stroke="#8E5364" stroke-width="2" opacity="0.4" />
+
+  <!-- Central Rounded Badge -->
+  <circle cx="256" cy="256" r="176" fill="url(#primaryGrad)" filter="url(#shadow)" />
+  <circle cx="256" cy="256" r="166" fill="none" stroke="url(#goldGrad)" stroke-width="2.5" opacity="0.9" />
+
+  <!-- Decorative Islamic 8-Point Star in Background -->
+  <g opacity="0.15" fill="#FFFFFF" transform="translate(256, 256) scale(1.4) translate(-256, -256)">
+    <rect x="206" y="206" width="100" height="100" rx="12" />
+    <rect x="206" y="206" width="100" height="100" rx="12" transform="rotate(45 256 256)" />
+  </g>
+
+  <!-- Quranic Rain Cloud (غيث) -->
+  <g transform="translate(256, 175) scale(0.95) translate(-256, -175)">
+    <path d="M190 195 A 38 38 0 0 1 230 145 A 50 50 0 0 1 305 150 A 42 42 0 0 1 332 205 L 180 205 A 25 25 0 0 1 190 195 Z" fill="#FFFFFF" opacity="0.95" />
+    <!-- Golden Rain Drops -->
+    <path d="M215 220 C215 225, 212 230, 208 230 C204 230, 201 225, 208 215 C215 225, 215 225, 215 220 Z" fill="url(#goldGrad)" />
+    <path d="M256 225 C256 232, 252 238, 247 238 C242 238, 239 232, 247 220 C256 232, 256 232, 256 225 Z" fill="url(#goldGrad)" />
+    <path d="M295 220 C295 225, 292 230, 288 230 C284 230, 281 225, 288 215 C295 225, 295 225, 295 220 Z" fill="url(#goldGrad)" />
+  </g>
+
+  <!-- Open Mushaf / Holy Quran Pages -->
+  <g transform="translate(0, 10)">
+    <!-- Right Leaf -->
+    <path d="M256 280 C290 262, 330 262, 365 272 L365 328 C330 318, 290 318, 256 336 Z" fill="#FFFBF5" stroke="url(#goldGrad)" stroke-width="2" />
+    <!-- Left Leaf -->
+    <path d="M256 280 C222 262, 182 262, 147 272 L147 328 C182 318, 222 318, 256 336 Z" fill="#FFFBF5" stroke="url(#goldGrad)" stroke-width="2" />
+    <!-- Spine Center -->
+    <line x1="256" y1="278" x2="256" y2="338" stroke="url(#goldGrad)" stroke-width="3" />
+    <!-- Page Lines on Right -->
+    <line x1="278" y1="282" x2="345" y2="288" stroke="#8E5364" stroke-width="2" stroke-linecap="round" opacity="0.6" />
+    <line x1="278" y1="296" x2="345" y2="302" stroke="#8E5364" stroke-width="2" stroke-linecap="round" opacity="0.6" />
+    <line x1="278" y1="310" x2="335" y2="316" stroke="#8E5364" stroke-width="2" stroke-linecap="round" opacity="0.6" />
+    <!-- Page Lines on Left -->
+    <line x1="234" y1="282" x2="167" y2="288" stroke="#8E5364" stroke-width="2" stroke-linecap="round" opacity="0.6" />
+    <line x1="234" y1="296" x2="167" y2="302" stroke="#8E5364" stroke-width="2" stroke-linecap="round" opacity="0.6" />
+    <line x1="234" y1="310" x2="177" y2="316" stroke="#8E5364" stroke-width="2" stroke-linecap="round" opacity="0.6" />
+  </g>
+
+  <!-- Wooden Rihal Stand Under Mushaf -->
+  <path d="M220 340 L195 385 M292 340 L317 385 M256 336 L256 358" stroke="url(#goldGrad)" stroke-width="5" stroke-linecap="round" />
+
+  <!-- Growing Green Plant Sprout (النماء والرسوخ) -->
+  <g transform="translate(256, 256) scale(0.8) translate(-256, -256)">
+    <path d="M256 270 Q256 220 285 200 Q265 240 256 270 Z" fill="url(#greenGrad)" />
+    <path d="M256 270 Q256 225 230 205 Q248 242 256 270 Z" fill="url(#greenGrad)" />
+  </g>
+
+  <!-- Arc Text or Title Embellishment -->
+  <circle cx="256" cy="398" r="4" fill="url(#goldGrad)" />
+  <circle cx="240" cy="398" r="2.5" fill="url(#goldGrad)" opacity="0.7" />
+  <circle cx="272" cy="398" r="2.5" fill="url(#goldGrad)" opacity="0.7" />
+</svg>

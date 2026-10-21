@@ -1,0 +1,186 @@
+@import "tailwindcss";
+
+/* =========================================================================
+   Local Thmanyah Sans Font Family Definition (All 5 Weights)
+   ========================================================================= */
+@font-face {
+  font-family: 'Thmanyah Sans';
+  src: url('/fonts/thmanyah/thmanyah-sans-Light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Thmanyah Sans';
+  src: url('/fonts/thmanyah/thmanyah-sans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Thmanyah Sans';
+  src: url('/fonts/thmanyah/thmanyah-sans-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Thmanyah Sans';
+  src: url('/fonts/thmanyah/thmanyah-sans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Thmanyah Sans';
+  src: url('/fonts/thmanyah/thmanyah-sans-Black.woff2') format('woff2');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* =========================================================================
+   Dynamic Visual Identity & Theme Variables
+   ========================================================================= */
+:root {
+  --theme-primary: #8E5364;
+  --theme-primary-hover: #744251;
+  --theme-secondary: #2D5A43;
+  --theme-secondary-hover: #234835;
+  --btn-radius: 1rem;
+  --font-active: 'Thmanyah Sans', 'Tajawal', sans-serif;
+}
+
+@layer base {
+  html, body, button, input, select, textarea {
+    font-family: var(--font-active, 'Thmanyah Sans', 'Tajawal', sans-serif);
+  }
+}
+
+/* Dedicated Font Helper Classes */
+.font-thmanyah {
+  font-family: 'Thmanyah Sans', 'Tajawal', sans-serif !important;
+}
+
+.font-tajawal {
+  font-family: 'Tajawal', sans-serif !important;
+}
+
+.font-amiri {
+  font-family: 'Amiri', serif !important;
+}
+
+.font-quran {
+  font-family: var(--font-quran, 'Amiri', serif);
+}
+
+/* =========================================================================
+   Universal Theme Override Classes (Ensures Custom Colors Apply Everywhere)
+   ========================================================================= */
+.bg-\[\#8E5364\],
+.bg-theme-primary {
+  background-color: var(--theme-primary, #8E5364) !important;
+}
+
+.hover\:bg-\[\#744251\]:hover,
+.hover\:bg-theme-primary-hover:hover {
+  background-color: var(--theme-primary-hover, #744251) !important;
+}
+
+.text-\[\#8E5364\],
+.text-theme-primary {
+  color: var(--theme-primary, #8E5364) !important;
+}
+
+.border-\[\#8E5364\],
+.border-theme-primary {
+  border-color: var(--theme-primary, #8E5364) !important;
+}
+
+.focus\:ring-\[\#8E5364\]:focus {
+  --tw-ring-color: var(--theme-primary, #8E5364) !important;
+}
+
+.bg-\[\#2D5A43\],
+.bg-theme-secondary {
+  background-color: var(--theme-secondary, #2D5A43) !important;
+}
+
+.hover\:bg-\[\#234835\]:hover,
+.hover\:bg-theme-secondary-hover:hover {
+  background-color: var(--theme-secondary-hover, #234835) !important;
+}
+
+.text-\[\#2D5A43\],
+.text-theme-secondary {
+  color: var(--theme-secondary, #2D5A43) !important;
+}
+
+.border-\[\#2D5A43\],
+.border-theme-secondary {
+  border-color: var(--theme-secondary, #2D5A43) !important;
+}
+
+/* Soft Brand Tints */
+.bg-\[\#FAF0F3\],
+.bg-\[\#F4ECEE\],
+.bg-\[\#FAF2F4\],
+.bg-\[\#F6EEF1\] {
+  background-color: color-mix(in srgb, var(--theme-primary, #8E5364) 9%, white) !important;
+}
+
+.border-\[\#E8D5D8\],
+.border-\[\#E2CBD2\],
+.border-\[\#E4D1D6\],
+.border-\[\#E0D0D4\] {
+  border-color: color-mix(in srgb, var(--theme-primary, #8E5364) 22%, white) !important;
+}
+
+.bg-\[\#EBF3EE\],
+.bg-\[\#DCEADA\] {
+  background-color: color-mix(in srgb, var(--theme-secondary, #2D5A43) 10%, white) !important;
+}
+
+/* Button Radius Overrides */
+.theme-radius,
+button.rounded-xl,
+button.rounded-2xl {
+  border-radius: var(--btn-radius, 1rem) !important;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1ede8;
+}
+::-webkit-scrollbar-thumb {
+  background: #d4c7bd;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b5a498;
+}
+
+@media print {
+  aside, nav, .no-print, button, .action-bar {
+    display: none !important;
+  }
+  body, main {
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .page-break {
+    page-break-before: always;
+  }
+}
