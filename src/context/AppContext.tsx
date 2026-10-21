@@ -5,6 +5,7 @@ import {
   Challenge, StudentChallengeSubmission, MonthlyExam, StudentExamResult,
   TrackGradingConfig, InstitutionSettings, AuditLog
 } from '../types';
+import initialData from '../data/initialData';
 
 export interface StudentScoreSummary {
   studentId: string;
@@ -206,36 +207,103 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }, 4000);
   };
 
+  const STORAGE_KEY = 'ghaith_alghaym_db_v1';
+
+  // Apply state from any source (server, localStorage, or initialData)
+  const applyState = (data: any) => {
+    if (!data) return;
+    if (data.currentUser !== undefined) setCurrentUser(data.currentUser);
+    if (Array.isArray(data.users)) setUsers(data.users);
+    if (Array.isArray(data.tracks)) setTracks(data.tracks);
+    if (Array.isArray(data.circles)) setCircles(data.circles);
+    if (Array.isArray(data.students)) setStudents(data.students);
+    if (Array.isArray(data.monthlyPlans)) setMonthlyPlans(data.monthlyPlans);
+    if (Array.isArray(data.studentPlans)) setStudentPlans(data.studentPlans);
+    if (Array.isArray(data.dailyRecords)) setDailyRecords(data.dailyRecords);
+    if (Array.isArray(data.attendanceRecords)) setAttendanceRecords(data.attendanceRecords);
+    if (Array.isArray(data.atqiniAssignments)) setAtqiniAssignments(data.atqiniAssignments);
+    if (Array.isArray(data.studentAtqiniSubmissions)) setStudentAtqiniSubmissions(data.studentAtqiniSubmissions);
+    if (Array.isArray(data.challenges)) setChallenges(data.challenges);
+    if (Array.isArray(data.studentChallengeSubmissions)) setStudentChallengeSubmissions(data.studentChallengeSubmissions);
+    if (Array.isArray(data.monthlyExams)) setMonthlyExams(data.monthlyExams);
+    if (Array.isArray(data.studentExamResults)) setStudentExamResults(data.studentExamResults);
+    if (Array.isArray(data.gradingConfigs)) setGradingConfigs(data.gradingConfigs);
+    if (data.settings) setSettings(data.settings);
+    if (Array.isArray(data.auditLogs)) setAuditLogs(data.auditLogs);
+    setLastSynced(new Date());
+  };
+
+  // Helper to persist current state to LocalStorage
+  const persistState = (overrides?: any) => {
+    try {
+      if (typeof window !== 'undefined') {
+        const payload = {
+          currentUser,
+          users,
+          tracks,
+          circles,
+          students,
+          monthlyPlans,
+          studentPlans,
+          dailyRecords,
+          attendanceRecords,
+          atqiniAssignments,
+          studentAtqiniSubmissions,
+          challenges,
+          studentChallengeSubmissions,
+          monthlyExams,
+          studentExamResults,
+          gradingConfigs,
+          settings,
+          auditLogs,
+          ...overrides
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      }
+    } catch (e) {
+      console.warn('LocalStorage save failed:', e);
+    }
+  };
+
   const refreshData = async (silent: boolean = false) => {
     try {
       const res = await fetch('/api/state');
-      if (!res.ok) throw new Error('فشل جلب بيانات المنصة');
-      const data = await res.json();
-      setCurrentUser(data.currentUser || null);
-      setUsers(data.users || []);
-      setTracks(data.tracks || []);
-      setCircles(data.circles || []);
-      setStudents(data.students || []);
-      setMonthlyPlans(data.monthlyPlans || []);
-      setStudentPlans(data.studentPlans || []);
-      setDailyRecords(data.dailyRecords || []);
-      setAttendanceRecords(data.attendanceRecords || []);
-      setAtqiniAssignments(data.atqiniAssignments || []);
-      setStudentAtqiniSubmissions(data.studentAtqiniSubmissions || []);
-      setChallenges(data.challenges || []);
-      setStudentChallengeSubmissions(data.studentChallengeSubmissions || []);
-      setMonthlyExams(data.monthlyExams || []);
-      setStudentExamResults(data.studentExamResults || []);
-      setGradingConfigs(data.gradingConfigs || []);
-      if (data.settings) setSettings(data.settings);
-      setAuditLogs(data.auditLogs || []);
-      setError(null);
-      setLastSynced(new Date());
-    } catch (err: any) {
-      if (!silent) {
-        console.error(err);
-        setError(err.message || 'حدث خطأ في الاتصال بالخادم');
+      if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          applyState(data);
+          try {
+            if (typeof window !== 'undefined') {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            }
+          } catch {}
+          setError(null);
+          return;
+        }
       }
+      throw new Error('Server returned non-JSON or status ' + res.status);
+    } catch (err: any) {
+      // Backend unavailable or static deployment (e.g. Vercel)
+      if (typeof window !== 'undefined') {
+        const cached = localStorage.getItem(STORAGE_KEY);
+        if (cached) {
+          try {
+            const data = JSON.parse(cached);
+            applyState(data);
+            setError(null);
+            return;
+          } catch {}
+        }
+      }
+      // First visit on static host: initialize from bundled initialData
+      applyState(initialData);
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(initialData));
+        }
+      } catch {}
+      setError(null);
     } finally {
       setLoading(false);
     }
@@ -243,15 +311,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const syncNow = async () => {
     await refreshData(false);
-    showToast('تمت مزامنة كافة البيانات والسجلات مع الخادم الآن بنجاح ✅', 'success');
+    showToast('تمت مزامنة كافة البيانات والسجلات بنجاح ✅', 'success');
   };
 
   useEffect(() => {
     refreshData(false);
-    // Real-time multi-user synchronization: poll every 5 seconds
+    // Real-time multi-user synchronization: poll every 8 seconds
     const interval = setInterval(() => {
       refreshData(true);
-    }, 5000);
+    }, 8000);
     return () => clearInterval(interval);
   }, []);
 
@@ -264,16 +332,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const switchUser = async (userId: string) => {
     try {
-      const res = await fetch('/api/auth/switch-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId })
-      });
-      if (!res.ok) throw new Error('فشل تبديل المستخدم');
-      const data = await res.json();
-      setCurrentUser(data.user);
-      showToast(`مرحباً بك: ${data.user.name} (${data.user.title})`, 'info');
-      await refreshData();
+      const targetUser = users.find(u => u.id === userId);
+      if (targetUser) {
+        setCurrentUser(targetUser);
+        persistState({ currentUser: targetUser });
+        showToast(`مرحباً بك: ${targetUser.name} (${targetUser.title})`, 'info');
+      }
+      try {
+        await fetch('/api/auth/switch-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId })
+        });
+      } catch {}
       return true;
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -598,20 +669,44 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateSettings = async (newSettings: Partial<InstitutionSettings>) => {
-    await fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newSettings)
-    });
+    const next = { ...settings, ...newSettings };
+    setSettings(next);
+    persistState({ settings: next });
     showToast('تم حفظ الإعدادات العامة للمقرأة والهوية البصرية');
-    await refreshData();
+
+    try {
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSettings)
+      });
+    } catch {}
   };
 
   const downloadBackup = async () => {
     try {
-      const res = await fetch('/api/backup/download');
-      if (!res.ok) throw new Error('فشل جلب ملف النسخة');
-      const blob = await res.blob();
+      const currentData = {
+        currentUser,
+        users,
+        tracks,
+        circles,
+        students,
+        monthlyPlans,
+        studentPlans,
+        dailyRecords,
+        attendanceRecords,
+        atqiniAssignments,
+        studentAtqiniSubmissions,
+        challenges,
+        studentChallengeSubmissions,
+        monthlyExams,
+        studentExamResults,
+        gradingConfigs,
+        settings,
+        auditLogs
+      };
+      const jsonStr = JSON.stringify(currentData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -628,14 +723,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const restoreBackup = async (backupData: any) => {
     try {
-      const res = await fetch('/api/backup/restore', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ backupData })
-      });
-      if (!res.ok) throw new Error('فشلت استعادة البيانات');
+      if (!backupData || !backupData.tracks || !backupData.students) {
+        throw new Error('صيغة النسخة الاحتياطية غير صالحة');
+      }
+      applyState(backupData);
+      persistState(backupData);
       showToast('تمت استعادة قاعدة البيانات بالكامل بنجاح');
-      await refreshData();
+
+      try {
+        await fetch('/api/backup/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ backupData })
+        });
+      } catch {}
+
       return true;
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -644,46 +746,82 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const resetSampleData = async () => {
-    await fetch('/api/backup/reset-sample', { method: 'POST' });
+    applyState(initialData);
+    persistState(initialData);
     showToast('تمت إعادة ضبط البيانات النموذجية بنجاح');
-    await refreshData();
+
+    try {
+      await fetch('/api/backup/reset-sample', { method: 'POST' });
+    } catch {}
   };
 
   const createUser = async (user: Partial<User>) => {
-    const res = await fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(user)
-    });
-    const created = await res.json();
-    showToast(`تمت إضافة ${created.name} إلى الكادر بنجاح`);
-    await refreshData();
-    return created;
+    const newUser: User = {
+      id: user.id || 'u-' + Date.now(),
+      name: user.name || 'معلمة جديدة',
+      role: user.role || 'teacher',
+      title: user.title || 'معلمة حلقة',
+      email: user.email || '',
+      phone: user.phone || '',
+      circleIds: user.circleIds || [],
+      passcode: user.passcode || '1234',
+      avatarIcon: user.avatarIcon || 'mushaf',
+      avatarColor: user.avatarColor || '#8E5364',
+      ...user
+    } as User;
+
+    const next = [...users, newUser];
+    setUsers(next);
+    persistState({ users: next });
+    showToast(`تمت إضافة ${newUser.name} إلى الكادر بنجاح`);
+
+    try {
+      await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser)
+      });
+    } catch {}
+
+    return newUser;
   };
 
   const updateUser = async (id: string, user: Partial<User>) => {
-    await fetch(`/api/users/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(user)
-    });
+    const next = users.map(u => u.id === id ? { ...u, ...user } : u);
+    setUsers(next);
+    if (currentUser?.id === id) {
+      setCurrentUser({ ...currentUser, ...user });
+    }
+    persistState({ users: next });
     showToast('تم تحديث بيانات المعلمة / المشرفة والصلاحيات');
-    await refreshData();
+
+    try {
+      await fetch(`/api/users/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(user)
+      });
+    } catch {}
   };
 
   const changeUserPasscode = async (userId: string, newPasscode: string): Promise<boolean> => {
     try {
-      const res = await fetch('/api/auth/change-passcode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, newPasscode })
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'فشل تغيير الرمز');
+      const next = users.map(u => u.id === userId ? { ...u, passcode: newPasscode } : u);
+      setUsers(next);
+      if (currentUser?.id === userId) {
+        setCurrentUser({ ...currentUser, passcode: newPasscode });
       }
+      persistState({ users: next });
       showToast('تم تغيير رمز الدخول السري بنجاح 🔒');
-      await refreshData();
+
+      try {
+        await fetch('/api/auth/change-passcode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, newPasscode })
+        });
+      } catch {}
+
       return true;
     } catch (err: any) {
       showToast(err.message, 'error');
