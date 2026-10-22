@@ -17,7 +17,7 @@ export const Footer: React.FC = () => {
             <span>{settings?.name || 'مقرأة غيث الغيم'}</span>
           </div>
           <span>•</span>
-          <span className="text-stone-400">مسار مشكاة الغيم القرآني</span>
+          <span className="text-stone-400">{settings?.subtitle || 'المنصة القرآنية الإدارية النموذجية'}</span>
           <span className="hidden sm:inline">•</span>
           <span className="text-[11px] text-stone-400 hidden sm:inline">
             تحت إشراف: {settings?.leaderName || 'ريفة المنصوري'}

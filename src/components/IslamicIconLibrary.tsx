@@ -238,22 +238,62 @@ export const IslamicIconPicker: React.FC<IslamicIconPickerProps> = ({
         </div>
       </div>
 
-      {/* Color Palette Row */}
-      <div>
-        <label className="block text-[11px] font-bold text-stone-600 mb-1.5">
-          اختاري لون الأيقونة المفضل:
-        </label>
-        <div className="flex flex-wrap gap-2">
+      {/* Color Palette Row & Manual Color Picker */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="block text-[11px] font-bold text-stone-600">
+            اختاري لون الأيقونة (لوحة ألوان حرة أو باليتات معتمدة):
+          </label>
+          <div className="flex items-center gap-1.5 text-xs text-stone-500">
+            <span>اللون المختار:</span>
+            <span
+              className="w-4 h-4 rounded-full border border-stone-300 shadow-2xs inline-block"
+              style={{ backgroundColor: activeColor }}
+            />
+            <span className="font-mono text-[11px] font-bold text-stone-700">{activeColor}</span>
+          </div>
+        </div>
+
+        {/* Manual color picker and HEX input */}
+        <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-2xl bg-stone-50 border border-stone-200">
+          <label className="flex items-center gap-2 px-3 py-1.5 bg-white border border-stone-300 rounded-xl cursor-pointer hover:border-stone-400 shadow-2xs transition text-xs font-bold text-stone-700">
+            <input
+              type="color"
+              value={activeColor.startsWith('#') && activeColor.length === 7 ? activeColor : '#8E5364'}
+              onChange={e => handlePickColor(e.target.value)}
+              className="w-6 h-6 rounded-md border-0 p-0 cursor-pointer"
+            />
+            <span>🎨 لوحة الألوان اليدوية (اختيار حر)</span>
+          </label>
+
+          <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-stone-200 text-xs">
+            <span className="text-stone-400 font-mono text-[11px]">HEX:</span>
+            <input
+              type="text"
+              value={activeColor}
+              onChange={e => handlePickColor(e.target.value)}
+              placeholder="#8E5364"
+              className="w-20 font-mono text-xs font-bold text-stone-800 outline-none uppercase"
+              maxLength={7}
+            />
+          </div>
+
+          <div className="text-[11px] text-stone-400 mr-auto">
+            أو اختاري سريعاً من الباليتات المقترحة:
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-1.5">
           {ISLAMIC_COLOR_PALETTES.map(c => (
             <button
               key={c.hex}
               type="button"
               onClick={() => handlePickColor(c.hex)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition ${
-                activeColor === c.hex ? 'border-stone-800 shadow-xs ring-1 ring-stone-800' : 'border-stone-200 bg-white hover:bg-stone-50'
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-xl text-[11px] font-bold border transition ${
+                activeColor.toLowerCase() === c.hex.toLowerCase() ? 'border-stone-800 bg-stone-100 shadow-xs ring-1 ring-stone-800' : 'border-stone-200 bg-white hover:bg-stone-50'
               }`}
             >
-              <span className="w-3.5 h-3.5 rounded-full inline-block shadow-2xs" style={{ backgroundColor: c.hex }} />
+              <span className="w-3 h-3 rounded-full inline-block shadow-2xs" style={{ backgroundColor: c.hex }} />
               <span>{c.name}</span>
             </button>
           ))}

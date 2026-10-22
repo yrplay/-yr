@@ -1505,6 +1505,17 @@ async function startServer() {
     res.json(db.monthlyExams[idx]);
   });
 
+  api.delete('/exams/:id', (req, res) => {
+    const db = readDatabase();
+    const idx = db.monthlyExams.findIndex((e: any) => e.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'الاختبار غير موجود' });
+    const deleted = db.monthlyExams.splice(idx, 1)[0];
+    db.studentExamResults = db.studentExamResults.filter((r: any) => r.examId !== req.params.id);
+    addAudit(db, db.currentUser.name, db.currentUser.role, 'delete', 'exam', `حذف الاختبار الشهري: ${deleted.title}`, req.params.id);
+    writeDatabase(db);
+    res.json({ success: true });
+  });
+
   api.post('/exam-results', (req, res) => {
     const db = readDatabase();
     const existing = db.studentExamResults.findIndex(

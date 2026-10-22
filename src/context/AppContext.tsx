@@ -82,6 +82,8 @@ interface AppContextType {
   switchUser: (userId: string) => Promise<boolean>;
   
   // Tracks & Circles
+  selectedTrackId: string | null;
+  setSelectedTrackId: (id: string | null) => void;
   createTrack: (track: Partial<Track>) => Promise<Track>;
   updateTrack: (id: string, track: Partial<Track>) => Promise<void>;
   archiveTrack: (id: string) => Promise<void>;
@@ -123,6 +125,7 @@ interface AppContextType {
   // Exams
   createMonthlyExam: (exam: Partial<MonthlyExam>) => Promise<MonthlyExam>;
   updateMonthlyExam: (id: string, exam: Partial<MonthlyExam>) => Promise<void>;
+  deleteMonthlyExam: (id: string) => Promise<void>;
   saveExamResult: (result: Partial<StudentExamResult>) => Promise<void>;
   
   // Grading & Settings
@@ -187,6 +190,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     securityEnabled: true,
     leaderPasscode: "1234"
   });
+  const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -274,7 +278,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
           const data = await res.json();
-          applyState(data);
+          if (silent) {
+            // When silent background polling runs, do not wipe in-progress user settings
+            const { settings: incomingSettings, ...restData } = data;
+            applyState(restData);
+          } else {
+            applyState(data);
+          }
           try {
             if (typeof window !== 'undefined') {
               localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -629,35 +639,111 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const createMonthlyExam = async (exam: Partial<MonthlyExam>) => {
-    const res = await fetch('/api/exams', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(exam)
-    });
-    const created = await res.json();
-    showToast(`تم جدول الاختبار الشهري: ${created.title}`);
-    await refreshData();
-    return created;
+    const newExam: MonthlyExam = {
+      id: exam.id || `ex-${Date.now()}`,
+      trackId: exam.trackId || (tracks[0]?.id ?? 't-1'),
+      circleId: exam.circleId,
+      monthlyPlanId: exam.monthlyPlanId || 'mp-1',
+      title: exam.title || 'اختبار شهري تمكيني',
+      examDateHijri: exam.examDateHijri || '٢٥ جمادى الأولى',
+      examDateGregorian: exam.examDateGregorian || new Date().toISOString().split('T')[0],
+      requiredPortion: exam.requiredPortion || '',
+      maxScore: exam.maxScore || 100,
+      notes: exam.notes || '',
+      createdAt: new Date().toISOString(),
+      ...exam
+    };
+
+    const next = [...monthlyExams, newExam];
+    setMonthlyExams(next);
+    persistState({ monthlyExams: next });
+    showToast(`تمت جدولة الاختبار الشهري: ${newExam.title}`);
+
+    try {
+      await fetch('/api/exams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newExam)
+      });
+    } catch {}
+
+    return newExam;
   };
 
   const updateMonthlyExam = async (id: string, exam: Partial<MonthlyExam>) => {
-    await fetch(`/api/exams/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(exam)
-    });
+    const next = monthlyExams.map(e => e.id === id ? { ...e, ...exam } : e);
+    setMonthlyExams(next);
+    persistState({ monthlyExams: next });
     showToast('تم تعديل بيانات الاختبار الشهري');
-    await refreshData();
+
+    try {
+      await fetch(`/api/exams/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(exam)
+      });
+    } catch {}
+  };
+
+  const deleteMonthlyExam = async (id: string) => {
+    const nextExams = monthlyExams.filter(e => e.id !== id);
+    const nextResults = studentExamResults.filter(r => r.examId !== id);
+    setMonthlyExams(nextExams);
+    setStudentExamResults(nextResults);
+    persistState({ monthlyExams: nextExams, studentExamResults: nextResults });
+    showToast('تم حذف الاختبار الشهري بنجاح 🗑️');
+
+    try {
+      await fetch(`/api/exams/${id}`, { method: 'DELETE' });
+    } catch {}
   };
 
   const saveExamResult = async (result: Partial<StudentExamResult>) => {
-    await fetch('/api/exam-results', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(result)
-    });
-    showToast('تم رصد درجة الاختبار الشهري بنجاح');
-    await refreshData();
+    const existingIdx = studentExamResults.findIndex(
+      r => r.examId === result.examId && r.studentId === result.studentId
+    );
+    let next: StudentExamResult[];
+    if (existingIdx >= 0) {
+      next = [...studentExamResults];
+      next[existingIdx] = {
+        ...next[existingIdx],
+        ...result,
+        score: result.score ?? next[existingIdx].score,
+        memorizationMistakes: result.memorizationMistakes ?? next[existingIdx].memorizationMistakes,
+        tajweedErrors: result.tajweedErrors ?? next[existingIdx].tajweedErrors,
+        warningsCount: result.warningsCount ?? next[existingIdx].warningsCount,
+        notes: result.notes ?? next[existingIdx].notes,
+        examinerName: currentUser?.name || result.examinerName || next[existingIdx].examinerName,
+        evaluatedAt: new Date().toISOString()
+      };
+    } else {
+      const newResult: StudentExamResult = {
+        id: result.id || `er-${Date.now()}`,
+        examId: result.examId || '',
+        studentId: result.studentId || '',
+        score: result.score ?? 0,
+        memorizationMistakes: result.memorizationMistakes ?? 0,
+        tajweedErrors: result.tajweedErrors ?? 0,
+        warningsCount: result.warningsCount ?? 0,
+        notes: result.notes || '',
+        examinerName: currentUser?.name || result.examinerName || 'لجنة الاختبارات',
+        evaluatedAt: new Date().toISOString(),
+        customPortion: result.customPortion || '',
+        ...result
+      };
+      next = [...studentExamResults, newResult];
+    }
+    setStudentExamResults(next);
+    persistState({ studentExamResults: next });
+    showToast('تم رصد درجة ومقرر الاختبار الشهري بنجاح');
+
+    try {
+      await fetch('/api/exam-results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(result)
+      });
+    } catch {}
   };
 
   const updateGradingConfig = async (trackId: string, config: Partial<TrackGradingConfig>) => {
@@ -1103,8 +1189,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateChallenge,
         deleteChallenge,
         saveChallengeSubmission,
+        selectedTrackId,
+        setSelectedTrackId,
         createMonthlyExam,
         updateMonthlyExam,
+        deleteMonthlyExam,
         saveExamResult,
         updateGradingConfig,
         updateSettings,

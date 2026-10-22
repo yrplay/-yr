@@ -12,12 +12,20 @@ interface HeaderProps {
   onOpenQuickModal: (type: string) => void;
   onNavigateToStudent: (studentId: string) => void;
   onLockSession?: () => void;
+  onNavigateToSettings?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, onOpenQuickModal, onNavigateToStudent, onLockSession }) => {
+export const Header: React.FC<HeaderProps> = ({
+  onToggleSidebar,
+  onOpenQuickModal,
+  onNavigateToStudent,
+  onLockSession,
+  onNavigateToSettings
+}) => {
   const {
     currentUser, users, switchUser, settings, students, circles,
-    lastSynced, syncNow, triggerQuickModal, changeUserPasscode, updateUser
+    lastSynced, syncNow, triggerQuickModal, changeUserPasscode, updateUser,
+    tracks, selectedTrackId
   } = useApp();
 
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -121,9 +129,13 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, onOpenQuickModa
               <Menu className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-3">
+            <div
+              onClick={onNavigateToSettings}
+              className="flex items-center gap-3 cursor-pointer group select-none"
+              title="انقري هنا لفتح إعدادات المقرأة وتخصيص الهوية والشعار"
+            >
               {settings.logoUrl ? (
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-white flex items-center justify-center shadow-xs border border-[#E0D0D4]/60 p-1 overflow-hidden">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-white flex items-center justify-center shadow-xs border border-[#E0D0D4]/60 p-1 overflow-hidden group-hover:border-[#8E5364] group-hover:shadow-sm transition">
                   <img
                     src={settings.logoUrl}
                     alt={settings.name}
@@ -131,7 +143,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, onOpenQuickModa
                   />
                 </div>
               ) : (
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-white flex items-center justify-center shadow-xs border border-[#E0D0D4]/60 p-1 overflow-hidden">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-white flex items-center justify-center shadow-xs border border-[#E0D0D4]/60 p-1 overflow-hidden group-hover:border-[#8E5364] group-hover:shadow-sm transition">
                   <img
                     src="/pwa-192x192.png"
                     alt={settings.name || 'مقرأة غيث الغيم'}
@@ -141,15 +153,14 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, onOpenQuickModa
               )}
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-bold text-stone-900 tracking-tight flex items-center gap-1.5 font-quran">
+                  <h1 className="text-xl sm:text-2xl font-bold text-stone-900 tracking-tight flex items-center gap-1.5 font-quran group-hover:text-[#8E5364] transition">
                     {settings.name || 'غيث الغيم'}
-                    <span className="text-base font-normal text-stone-600">🪴</span>
                   </h1>
                   <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-[#EBF3EE] text-[#2D5A43] border border-[#CDE0D4]">
-                    {settings.activeTrackName || 'مشكاة الغيم للحفظ'}
+                    {tracks.find(t => t.id === selectedTrackId)?.name || settings.activeTrackName || 'المسارات القرآنية'}
                   </span>
                 </div>
-                <p className="text-xs text-stone-500 hidden sm:block">
+                <p className="text-xs text-stone-500 hidden sm:block group-hover:text-stone-700 transition">
                   إشراف قائدة المقرأة: <strong className="text-stone-700 font-semibold">{settings.leaderName || 'ريفة المنصوري'}</strong>
                 </p>
               </div>

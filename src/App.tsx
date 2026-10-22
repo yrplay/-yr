@@ -116,9 +116,9 @@ const AppContent: React.FC = () => {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#F9F7F5] text-stone-700">
         <div className="w-16 h-16 rounded-3xl bg-gradient-to-br from-[#E8D5D8] to-[#D8E6DE] flex items-center justify-center text-3xl shadow-sm animate-pulse mb-4">
-          🪴
+          📖
         </div>
-        <h2 className="text-xl font-bold font-quran text-stone-900 mb-1">مقرأة غيث الغيم</h2>
+        <h2 className="text-xl font-bold font-quran text-stone-900 mb-1">{settings?.name || 'مقرأة غيث الغيم'}</h2>
         <p className="text-xs text-stone-500">جاري الاتصال بقاعدة البيانات وتحميل الحلقات والمسارات...</p>
       </div>
     );
@@ -157,6 +157,7 @@ const AppContent: React.FC = () => {
         onOpenQuickModal={handleOpenQuickModal}
         onNavigateToStudent={handleSelectStudentForPortfolio}
         onLockSession={handleLockSession}
+        onNavigateToSettings={() => setCurrentView('settings')}
       />
 
       {/* Main Layout Container */}

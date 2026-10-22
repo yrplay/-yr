@@ -19,6 +19,8 @@ export const SettingsView: React.FC = () => {
     name: settings.name || 'مقرأة غيث الغيم',
     leaderName: settings.leaderName || 'ريفة المنصوري',
     subtitle: settings.subtitle || 'منصة الإدارة والتمكين القرآني المتكاملة',
+    welcomeTitle: settings.welcomeTitle || 'مرحباً بكِ في منصة غيث الغيم الإدارية',
+    welcomeSubtext: settings.welcomeSubtext || 'لوحة قيادة المقرأة، متابعة الحلقات، التحضير والإنجاز، ورصد التحديات والاختبارات المعتمدة',
     motto: settings.motto || 'نحو جيل حافظ متقن لكتاب الله يرتل الآيات رسوخاً وفهماً',
     academicYear: settings.academicYear || '1446هـ',
     currentHijriMonth: settings.currentHijriMonth || 'ربيع الآخر - جمادى الأولى',
@@ -44,34 +46,6 @@ export const SettingsView: React.FC = () => {
   const [copiedLink, setCopiedLink] = useState(false);
   const [showLeaderPasscode, setShowLeaderPasscode] = useState(false);
 
-  // Sync form when settings change from backend
-  useEffect(() => {
-    if (settings) {
-      setForm({
-        name: settings.name || 'مقرأة غيث الغيم',
-        leaderName: settings.leaderName || 'ريفة المنصوري',
-        subtitle: settings.subtitle || 'منصة الإدارة والتمكين القرآني المتكاملة',
-        motto: settings.motto || 'نحو جيل حافظ متقن لكتاب الله يرتل الآيات رسوخاً وفهماً',
-        academicYear: settings.academicYear || '1446هـ',
-        currentHijriMonth: settings.currentHijriMonth || 'ربيع الآخر - جمادى الأولى',
-        supportEmail: settings.supportEmail || 'info@ghaym.org',
-        supportPhone: settings.supportPhone || '0500000001',
-        primaryColor: settings.primaryColor || '#8E5364',
-        secondaryColor: settings.secondaryColor || '#2D5A43',
-        buttonRadius: settings.buttonRadius || 'rounded-2xl',
-        activeTrackName: settings.activeTrackName || 'مشكاة الغيم للحفظ',
-        logoUrl: settings.logoUrl || '',
-        fontFamily: settings.fontFamily || 'thmanyah-sans',
-        sealText: settings.sealText || 'ختم الاعتماد الرسمي',
-        sealSubtitle: settings.sealSubtitle || 'معتمد للعام ١٤٤٦هـ',
-        sealImageUrl: settings.sealImageUrl || '',
-        leaderSignatureUrl: settings.leaderSignatureUrl || '',
-        securityEnabled: settings.securityEnabled ?? true,
-        leaderPasscode: settings.leaderPasscode || '1234'
-      });
-    }
-  }, [settings]);
-
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -83,7 +57,8 @@ export const SettingsView: React.FC = () => {
     reader.onload = ev => {
       const dataUrl = ev.target?.result as string;
       setForm(prev => ({ ...prev, logoUrl: dataUrl }));
-      showToast('تم رفع شعار المقرأة بنجاح 🖼️');
+      updateSettings({ logoUrl: dataUrl });
+      showToast('تم حفظ شعار المقرأة بنجاح 🖼️');
     };
     reader.readAsDataURL(file);
   };
@@ -99,7 +74,8 @@ export const SettingsView: React.FC = () => {
     reader.onload = ev => {
       const dataUrl = ev.target?.result as string;
       setForm(prev => ({ ...prev, sealImageUrl: dataUrl }));
-      showToast('تم رفع صورة الختم المخصص بنجاح 💮');
+      updateSettings({ sealImageUrl: dataUrl });
+      showToast('تم حفظ صورة الختم المخصص بنجاح 💮');
     };
     reader.readAsDataURL(file);
   };
@@ -115,7 +91,8 @@ export const SettingsView: React.FC = () => {
     reader.onload = ev => {
       const dataUrl = ev.target?.result as string;
       setForm(prev => ({ ...prev, leaderSignatureUrl: dataUrl }));
-      showToast('تم رفع توقيع قائدة المقرأة بنجاح ✍️');
+      updateSettings({ leaderSignatureUrl: dataUrl });
+      showToast('تم حفظ توقيع قائدة المقرأة بنجاح ✍️');
     };
     reader.readAsDataURL(file);
   };
@@ -123,6 +100,7 @@ export const SettingsView: React.FC = () => {
   const applyLiveIdentity = (updated: Partial<typeof form>) => {
     const next = { ...form, ...updated };
     setForm(next);
+    updateSettings(updated);
 
     if (typeof document !== 'undefined') {
       if (next.primaryColor) {
@@ -332,6 +310,28 @@ export const SettingsView: React.FC = () => {
                 type="text"
                 value={form.academicYear}
                 onChange={e => setForm({ ...form, academicYear: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-2 focus:ring-[#8E5364]"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-stone-700 mb-1">عنوان الترحيب في لوحة التحكم (الرئيسي):</label>
+              <input
+                type="text"
+                value={form.welcomeTitle}
+                onChange={e => setForm({ ...form, welcomeTitle: e.target.value })}
+                placeholder="مرحباً بكِ في منصة غيث الغيم الإدارية"
+                className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-2 focus:ring-[#8E5364]"
+              />
+            </div>
+
+            <div className="sm:col-span-3">
+              <label className="block text-xs font-bold text-stone-700 mb-1">النص التعريفي الترحيبي في لوحة التحكم (الفرعي):</label>
+              <input
+                type="text"
+                value={form.welcomeSubtext}
+                onChange={e => setForm({ ...form, welcomeSubtext: e.target.value })}
+                placeholder="لوحة قيادة المقرأة، متابعة الحلقات، التحضير والإنجاز، ورصد التحديات والاختبارات المعتمدة"
                 className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-2 focus:ring-[#8E5364]"
               />
             </div>

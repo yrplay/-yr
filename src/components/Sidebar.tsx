@@ -168,10 +168,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
         <div className="p-4 border-t border-[#EBE3DC] bg-[#F7F3EE] space-y-2">
           <div className="flex items-center gap-2 text-xs text-stone-600 font-medium">
             <Heart className="w-3.5 h-3.5 text-[#9E5B6D] fill-[#9E5B6D]" />
-            <span>مقرأة غيث الغيم • مسار مشكاة الغيم</span>
+            <span>{settings?.name || 'مقرأة غيث الغيم'}</span>
           </div>
           <div className="text-[11px] text-stone-400">
-            الحلقات: راسخات (١، ٢، ٣) 🪴🤎
+            {settings?.motto || 'المقرأة القرآنية النموذجية'}
           </div>
           <div className="pt-2 border-t border-stone-200/70 text-[11px] text-stone-500 flex items-center justify-between">
             <span>تطوير وبناء:</span>

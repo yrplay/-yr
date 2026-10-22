@@ -1,5 +1,53 @@
 export type UserRole = 'leader' | 'supervisor' | 'teacher';
 
+export interface UserPermissions {
+  canRecordAttendance: boolean;      // رصد الحضور والغياب اليومي
+  canRecordRecitation: boolean;      // تسجيل التسميع وشروط الحفظ
+  canGradeAtqini: boolean;           // تصحيح واجبات أتقني
+  canManageChallenges: boolean;      // إدارة التحديات والمراجعة الثنائية
+  canGradeExams: boolean;            // رصد درجات ومقررات الاختبارات
+  canEditStudents: boolean;          // إضافة وتعديل ملفات الطالبات
+  canViewReports: boolean;           // استعراض وتصدير التقارير
+  canManagePlans: boolean;           // إدارة الخطط الشهرية
+  canManageSettings: boolean;        // الوصول للإعدادات العامة
+}
+
+export const defaultPermissionsByRole: Record<UserRole, UserPermissions> = {
+  leader: {
+    canRecordAttendance: true,
+    canRecordRecitation: true,
+    canGradeAtqini: true,
+    canManageChallenges: true,
+    canGradeExams: true,
+    canEditStudents: true,
+    canViewReports: true,
+    canManagePlans: true,
+    canManageSettings: true,
+  },
+  supervisor: {
+    canRecordAttendance: true,
+    canRecordRecitation: true,
+    canGradeAtqini: true,
+    canManageChallenges: true,
+    canGradeExams: true,
+    canEditStudents: true,
+    canViewReports: true,
+    canManagePlans: true,
+    canManageSettings: false,
+  },
+  teacher: {
+    canRecordAttendance: true,
+    canRecordRecitation: true,
+    canGradeAtqini: true,
+    canManageChallenges: true,
+    canGradeExams: true,
+    canEditStudents: false,
+    canViewReports: false,
+    canManagePlans: false,
+    canManageSettings: false,
+  },
+};
+
 export interface User {
   id: string;
   name: string;
@@ -13,6 +61,7 @@ export interface User {
   signatureUrl?: string; // توقيع المعلمة أو المشرفة المعتمد
   circleIds: string[]; // circles supervised or taught
   passcode?: string;   // رمز الدخول السري
+  permissions?: Partial<UserPermissions>; // الصلاحيات المخصصة يدوياً
 }
 
 export interface Track {
@@ -286,6 +335,7 @@ export interface StudentExamResult {
   id: string;
   examId: string;
   studentId: string;
+  customPortion?: string; // مقرر الاختبار الخاص بالطالبة (إذا كان مخصصاً لها)
   score: number;
   memorizationMistakes: number;
   tajweedErrors: number;
@@ -350,6 +400,8 @@ export interface InstitutionSettings {
   supportEmail: string;
   supportPhone: string;
   notificationBanner?: string;
+  welcomeTitle?: string; // عنوان الترحيب في لوحة التحكم
+  welcomeSubtext?: string; // النص الترحيبي والوصف في لوحة التحكم
   
   // Customization & Visual Identity
   primaryColor?: string;

@@ -4,14 +4,160 @@ import {
   UserCog, Plus, Edit, Shield, CheckCircle2, UserCheck,
   Mail, Phone, Layers, Award, X, Eye, EyeOff, Upload, Trash2, Sparkles, FileSignature
 } from 'lucide-react';
-import { User, UserRole } from '../types';
+import { User, UserRole, UserPermissions, defaultPermissionsByRole } from '../types';
 import { getIslamicIcon, IslamicIconPicker } from '../components/IslamicIconLibrary';
+
+const PERMISSION_ITEMS: {
+  key: keyof UserPermissions;
+  title: string;
+  description: string;
+  category: string;
+  icon: string;
+}[] = [
+  {
+    key: 'canRecordAttendance',
+    title: 'رصد الحضور والغياب اليومي',
+    description: 'تسجيل الحضور والغياب والتأخر والاستئذان لطالبات الحلقات.',
+    category: 'العمليات اليومية',
+    icon: '📋'
+  },
+  {
+    key: 'canRecordRecitation',
+    title: 'تسجيل التسميع وشروط الحفظ المتقن',
+    description: 'رصد أوجه التسميع، احتساب خصومات الأخطاء، واعتماد درجة الإتقان.',
+    category: 'العمليات اليومية',
+    icon: '📖'
+  },
+  {
+    key: 'canGradeAtqini',
+    title: 'تصحيح ورصد واجبات «أتقني»',
+    description: 'مراجعة وتقييم إرساليات الواجبات الإثرائية ورصد الدرجات المستحقة.',
+    category: 'التقييم والأنشطة',
+    icon: '✍️'
+  },
+  {
+    key: 'canManageChallenges',
+    title: 'إطلاق وتقييم التحديات والمراجعة الثنائية',
+    description: 'تفعيل التحديات التنافسية وإسناد الرفيقة ومتابعة إنجاز الورد.',
+    category: 'التقييم والأنشطة',
+    icon: '🏆'
+  },
+  {
+    key: 'canGradeExams',
+    title: 'رصد واعتماد درجات الاختبارات الشهرية',
+    description: 'تقييم الطالبات في لجان الاختبارات الشهرية وتخصيص المقررات الفردية.',
+    category: 'التقييم والأنشطة',
+    icon: '📊'
+  },
+  {
+    key: 'canEditStudents',
+    title: 'إضافة وتعديل بيانات وملفات الطالبات',
+    description: 'تعديل السجلات، النقل بين الحلقات والمسارات، وتحديث بيانات التواصل.',
+    category: 'إدارة الطالبات',
+    icon: '👩‍🎓'
+  },
+  {
+    key: 'canViewReports',
+    title: 'استعراض وتصدير التقارير والإحصائيات',
+    description: 'الوصول لكشوفات التحصيل والإنجاز التراكمية وتصدير ملفات PDF وExcel.',
+    category: 'التقارير والمتابعة',
+    icon: '📈'
+  },
+  {
+    key: 'canManagePlans',
+    title: 'إدارة وتعديل الخطط والمناهج القرآنية',
+    description: 'تعديل مسارات الحفظ وتخصيص مقررات الأرباع وتوزيع المنهج الزمني.',
+    category: 'الشؤون الأكاديمية',
+    icon: '📅'
+  },
+  {
+    key: 'canManageSettings',
+    title: 'الوصول لإعدادات وهوية المقرأة العامة',
+    description: 'تغيير الشعار والهوية البصرية والألوان وإدارة نصوص المنظومة.',
+    category: 'الإدارة العليا',
+    icon: '⚙️'
+  }
+];
 
 export const StaffView: React.FC = () => {
   const { users, circles, currentUser, createUser, updateUser, showToast } = useApp();
 
   const [staffModalOpen, setStaffModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<User | null>(null);
+
+  // Manual permissions modal state
+  const [permissionsModalUser, setPermissionsModalUser] = useState<User | null>(null);
+  const [userPermissionsState, setUserPermissionsState] = useState<UserPermissions>({
+    canRecordAttendance: true,
+    canRecordRecitation: true,
+    canGradeAtqini: true,
+    canManageChallenges: true,
+    canGradeExams: true,
+    canEditStudents: false,
+    canViewReports: false,
+    canManagePlans: false,
+    canManageSettings: false,
+  });
+
+  const getUserEffectivePermissions = (user: User): UserPermissions => {
+    const defaultForRole = defaultPermissionsByRole[user.role] || defaultPermissionsByRole.teacher;
+    return {
+      ...defaultForRole,
+      ...(user.permissions || {})
+    };
+  };
+
+  const handleOpenPermissionsModal = (user: User) => {
+    setPermissionsModalUser(user);
+    setUserPermissionsState(getUserEffectivePermissions(user));
+  };
+
+  const handleToggleSinglePermission = (key: keyof UserPermissions) => {
+    setUserPermissionsState(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleGrantAllPermissions = () => {
+    setUserPermissionsState({
+      canRecordAttendance: true,
+      canRecordRecitation: true,
+      canGradeAtqini: true,
+      canManageChallenges: true,
+      canGradeExams: true,
+      canEditStudents: true,
+      canViewReports: true,
+      canManagePlans: true,
+      canManageSettings: true,
+    });
+  };
+
+  const handleRevokeAllPermissions = () => {
+    setUserPermissionsState({
+      canRecordAttendance: false,
+      canRecordRecitation: false,
+      canGradeAtqini: false,
+      canManageChallenges: false,
+      canGradeExams: false,
+      canEditStudents: false,
+      canViewReports: false,
+      canManagePlans: false,
+      canManageSettings: false,
+    });
+  };
+
+  const handleResetToRoleDefault = () => {
+    if (!permissionsModalUser) return;
+    const defaultForRole = defaultPermissionsByRole[permissionsModalUser.role] || defaultPermissionsByRole.teacher;
+    setUserPermissionsState(defaultForRole);
+  };
+
+  const handleSavePermissions = async () => {
+    if (!permissionsModalUser) return;
+    await updateUser(permissionsModalUser.id, {
+      permissions: userPermissionsState
+    });
+    showToast(`تم حفظ وتحديث صلاحيات ${permissionsModalUser.name} بنجاح 🛡️`);
+    setPermissionsModalUser(null);
+  };
 
   // Masked PIN state for cards
   const [revealedPins, setRevealedPins] = useState<Record<string, boolean>>({});
@@ -279,14 +425,35 @@ export const StaffView: React.FC = () => {
                 </div>
               </div>
 
+              {/* Permissions summary badge */}
+              <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs">
+                <span className="text-stone-500 flex items-center gap-1 text-[11px]">
+                  <Shield className="w-3.5 h-3.5 text-[#8E5364]" />
+                  <span>الصلاحيات المخصصة:</span>
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FAF0F3] text-[#8E5364] border border-[#F3DFE5]">
+                  {Object.values(getUserEffectivePermissions(user)).filter(Boolean).length} من ٩ صلاحيات مفعلة
+                </span>
+              </div>
+
               {currentUser?.role === 'leader' && (
-                <div className="pt-1 flex justify-end">
+                <div className="pt-2 border-t border-stone-100 flex items-center gap-2">
                   <button
+                    type="button"
+                    onClick={() => handleOpenPermissionsModal(user)}
+                    className="flex-1 py-2 px-3 bg-[#8E5364]/10 hover:bg-[#8E5364] text-[#8E5364] hover:text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border border-[#8E5364]/20 cursor-pointer shadow-2xs group"
+                    title="تحديد وتعديل الصلاحيات يدوياً لهذه المعلمة أو المشرفة"
+                  >
+                    <Shield className="w-3.5 h-3.5 text-[#8E5364] group-hover:text-white transition" />
+                    <span>تحديد الصلاحيات يدوياً</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleOpenStaffModal(user)}
-                    className="p-1.5 text-stone-600 hover:text-stone-900 text-xs flex items-center gap-1 hover:bg-stone-50 rounded-lg transition cursor-pointer"
+                    className="p-2 text-stone-600 hover:text-stone-900 text-xs flex items-center gap-1 hover:bg-stone-100 rounded-xl transition border border-stone-200 cursor-pointer shadow-2xs"
+                    title="تعديل البيانات والرمز والأيقونة والتوقيع"
                   >
                     <Edit className="w-3.5 h-3.5" />
-                    <span>تعديل الصلاحيات والأيقونة والتوقيع</span>
                   </button>
                 </div>
               )}
@@ -546,6 +713,141 @@ export const StaffView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Permissions Configuration Modal */}
+      {permissionsModalUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-stone-200 space-y-5 max-h-[92vh] overflow-y-auto">
+            
+            {/* Modal Header */}
+            <div className="flex items-start justify-between border-b border-stone-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-[#8E5364]/10 text-[#8E5364] flex items-center justify-center text-2xl border border-[#8E5364]/20 shadow-2xs">
+                  🛡️
+                </div>
+                <div>
+                  <h3 className="font-bold text-stone-900 text-base font-quran flex items-center gap-2">
+                    <span>نافذة تحديد الصلاحيات يدوياً</span>
+                    <span className="text-[11px] font-sans px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                      تحكم يدوي مباشر
+                    </span>
+                  </h3>
+                  <p className="text-xs text-stone-500 mt-0.5">
+                    تخصيص الصلاحيات لـ: <strong className="text-stone-800">{permissionsModalUser.name}</strong> • الصفة: <span className="font-bold text-[#8E5364]">{roleLabels[permissionsModalUser.role]?.label || permissionsModalUser.title}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPermissionsModalUser(null)}
+                className="w-8 h-8 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-700 flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Action Presets Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-[#FAF6F2] rounded-2xl border border-[#EFE8E2]">
+              <div className="text-xs text-stone-600 font-medium">
+                الصلاحيات المفعلة حالياً: <strong className="text-[#8E5364] text-sm">{Object.values(userPermissionsState).filter(Boolean).length}</strong> من <strong className="text-stone-800">9</strong>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleGrantAllPermissions}
+                  className="px-2.5 py-1 bg-white hover:bg-stone-50 border border-stone-200 text-emerald-700 rounded-lg text-[11px] font-bold transition shadow-2xs cursor-pointer active:scale-95"
+                >
+                  ✓ تفعيل الكل
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRevokeAllPermissions}
+                  className="px-2.5 py-1 bg-white hover:bg-stone-50 border border-stone-200 text-rose-700 rounded-lg text-[11px] font-bold transition shadow-2xs cursor-pointer active:scale-95"
+                >
+                  ✕ تعطيل الكل
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetToRoleDefault}
+                  className="px-2.5 py-1 bg-white hover:bg-stone-50 border border-stone-200 text-stone-700 rounded-lg text-[11px] font-bold transition shadow-2xs cursor-pointer active:scale-95"
+                >
+                  ↺ استعادة الافتراضي
+                </button>
+              </div>
+            </div>
+
+            {/* Permissions Switch List */}
+            <div className="space-y-2.5">
+              {PERMISSION_ITEMS.map(item => {
+                const isEnabled = !!userPermissionsState[item.key];
+                return (
+                  <div
+                    key={item.key}
+                    onClick={() => handleToggleSinglePermission(item.key)}
+                    className={`p-3.5 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 ${
+                      isEnabled
+                        ? 'bg-white border-[#8E5364]/40 shadow-xs'
+                        : 'bg-stone-50/70 border-stone-200 opacity-75 hover:opacity-100 hover:bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg transition ${
+                        isEnabled ? 'bg-[#8E5364]/10 text-[#8E5364]' : 'bg-stone-200/70 text-stone-400'
+                      }`}>
+                        {item.icon}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className={`text-xs font-bold transition ${isEnabled ? 'text-stone-900' : 'text-stone-600'}`}>
+                            {item.title}
+                          </h4>
+                          <span className="text-[10px] text-stone-400 font-normal">
+                            ({item.category})
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-stone-500 mt-0.5 leading-snug">
+                          {item.description}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Toggle switch visual */}
+                    <div className="shrink-0 mr-2">
+                      <div
+                        className={`w-11 h-6 flex items-center rounded-full p-1 transition duration-200 ease-in-out ${
+                          isEnabled ? 'bg-[#8E5364] justify-end' : 'bg-stone-300 justify-start'
+                        }`}
+                      >
+                        <div className="bg-white w-4 h-4 rounded-full shadow-md transform transition" />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setPermissionsModalUser(null)}
+                className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100 font-medium transition cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleSavePermissions}
+                className="px-6 py-2.5 bg-[#8E5364] text-white text-xs font-bold rounded-xl hover:bg-[#744251] shadow-xs active:scale-95 transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Shield className="w-4 h-4" />
+                <span>حفظ واعتماد الصلاحيات المخصصة</span>
+              </button>
+            </div>
+
           </div>
         </div>
       )}
