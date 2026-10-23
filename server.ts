@@ -913,12 +913,31 @@ function getInitialDatabase() {
   };
 }
 
+// Helper to safely get user info
+function getCurrentUserInfo(db: any) {
+  return {
+    name: db?.currentUser?.name || db?.users?.[0]?.name || 'ريفة المنصوري',
+    role: db?.currentUser?.role || db?.users?.[0]?.role || 'leader'
+  };
+}
+
 // Read database from disk or init
 function readDatabase() {
   try {
     if (fs.existsSync(DB_FILE)) {
       const data = fs.readFileSync(DB_FILE, 'utf-8');
       const parsed = JSON.parse(data);
+      if (!parsed.currentUser && parsed.users && parsed.users.length > 0) {
+        parsed.currentUser = parsed.users[0];
+      }
+      if (!parsed.currentUser) {
+        parsed.currentUser = {
+          id: "u-1",
+          name: "ريفة المنصوري",
+          role: "leader",
+          title: "قائدة مقرأة غيث الغيم"
+        };
+      }
       if (parsed.settings) {
         if (!parsed.settings.primaryColor) parsed.settings.primaryColor = "#8E5364";
         if (!parsed.settings.secondaryColor) parsed.settings.secondaryColor = "#2D5A43";
@@ -953,29 +972,47 @@ function writeDatabase(data: any) {
   }
 }
 
-// Log audit action
-function addAudit(db: any, userName: string, userRole: any, actionType: any, entity: string, details: string, entityId?: string) {
-  const newLog = {
-    id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-    timestamp: new Date().toISOString(),
-    userName,
-    userRole,
-    actionType,
-    entity,
-    entityId,
-    details
-  };
-  if (!db.auditLogs) db.auditLogs = [];
-  db.auditLogs.unshift(newLog);
-  // Keep last 500 logs
-  if (db.auditLogs.length > 500) {
-    db.auditLogs = db.auditLogs.slice(0, 500);
+// Log audit action with bulletproof fallbacks
+function addAudit(db: any, userName: any, userRole: any, actionType: any, entity: string, details: string, entityId?: string) {
+  try {
+    const fallbackUser = getCurrentUserInfo(db);
+    const finalName = (typeof userName === 'string' && userName.trim()) ? userName : fallbackUser.name;
+    const finalRole = userRole || fallbackUser.role;
+    const newLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      userName: finalName,
+      userRole: finalRole,
+      actionType,
+      entity,
+      entityId,
+      details
+    };
+    if (!db.auditLogs) db.auditLogs = [];
+    db.auditLogs.unshift(newLog);
+    // Keep last 500 logs
+    if (db.auditLogs.length > 500) {
+      db.auditLogs = db.auditLogs.slice(0, 500);
+    }
+  } catch (err) {
+    console.warn('addAudit error suppressed:', err);
   }
 }
 
 async function startServer() {
   const app = express();
-  app.use(express.json({ limit: '15mb' }));
+  app.use(express.json({ limit: '25mb' }));
+
+  // CORS Middleware for seamless operation in preview iframe and deployment
+  app.use((_req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    if (_req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
 
   // API Router
   const api = express.Router();
@@ -1050,7 +1087,7 @@ async function startServer() {
         trackId: newTrack.id
       });
     }
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'create', 'track', `إضافة مسار جديد: ${newTrack.name}`, newTrack.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'track', `إضافة مسار جديد: ${newTrack.name}`, newTrack.id);
     writeDatabase(db);
     res.status(201).json(newTrack);
   });
@@ -1060,7 +1097,7 @@ async function startServer() {
     const index = db.tracks.findIndex((t: any) => t.id === req.params.id);
     if (index === -1) return res.status(404).json({ error: 'المسار غير موجود' });
     db.tracks[index] = { ...db.tracks[index], ...req.body, updatedAt: new Date().toISOString() };
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'track', `تعديل المسار: ${db.tracks[index].name}`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'track', `تعديل المسار: ${db.tracks[index].name}`, req.params.id);
     writeDatabase(db);
     res.json(db.tracks[index]);
   });
@@ -1071,7 +1108,7 @@ async function startServer() {
     if (!track) return res.status(404).json({ error: 'المسار غير موجود' });
     // Soft delete / archive
     track.isArchived = true;
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'archive', 'track', `أرشفة المسار: ${track.name}`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'archive', 'track', `أرشفة المسار: ${track.name}`, req.params.id);
     writeDatabase(db);
     res.json({ success: true, track });
   });
@@ -1086,7 +1123,7 @@ async function startServer() {
       ...req.body
     };
     db.circles.push(newCircle);
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'create', 'circle', `إضافة حلقة جديدة: ${newCircle.name}`, newCircle.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'circle', `إضافة حلقة جديدة: ${newCircle.name}`, newCircle.id);
     writeDatabase(db);
     res.status(201).json(newCircle);
   });
@@ -1096,7 +1133,7 @@ async function startServer() {
     const index = db.circles.findIndex((c: any) => c.id === req.params.id);
     if (index === -1) return res.status(404).json({ error: 'الحلقة غير موجودة' });
     db.circles[index] = { ...db.circles[index], ...req.body };
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'circle', `تعديل الحلقة: ${db.circles[index].name}`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'circle', `تعديل الحلقة: ${db.circles[index].name}`, req.params.id);
     writeDatabase(db);
     res.json(db.circles[index]);
   });
@@ -1106,7 +1143,7 @@ async function startServer() {
     const circle = db.circles.find((c: any) => c.id === req.params.id);
     if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
     circle.isArchived = true;
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'archive', 'circle', `أرشفة الحلقة: ${circle.name}`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'archive', 'circle', `أرشفة الحلقة: ${circle.name}`, req.params.id);
     writeDatabase(db);
     res.json({ success: true, circle });
   });
@@ -1122,7 +1159,7 @@ async function startServer() {
       ...req.body
     };
     db.students.push(newStudent);
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'create', 'student', `إضافة طالبة: ${newStudent.name} (كود: ${newStudent.code})`, newStudent.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'student', `إضافة طالبة: ${newStudent.name} (كود: ${newStudent.code})`, newStudent.id);
     writeDatabase(db);
     res.status(201).json(newStudent);
   });
@@ -1132,7 +1169,7 @@ async function startServer() {
     const index = db.students.findIndex((s: any) => s.id === req.params.id);
     if (index === -1) return res.status(404).json({ error: 'الطالبة غير موجودة' });
     db.students[index] = { ...db.students[index], ...req.body };
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'student', `تعديل بيانات الطالبة: ${db.students[index].name}`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'student', `تعديل بيانات الطالبة: ${db.students[index].name}`, req.params.id);
     writeDatabase(db);
     res.json(db.students[index]);
   });
@@ -1142,7 +1179,7 @@ async function startServer() {
     const student = db.students.find((s: any) => s.id === req.params.id);
     if (!student) return res.status(404).json({ error: 'الطالبة غير موجودة' });
     student.status = 'archived';
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'archive', 'student', `أرشفة الطالبة: ${student.name}`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'archive', 'student', `أرشفة الطالبة: ${student.name}`, req.params.id);
     writeDatabase(db);
     res.json({ success: true, student });
   });
@@ -1166,7 +1203,7 @@ async function startServer() {
           oldPartner.partnerStudentName = undefined;
         }
       }
-      addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'student', `إلغاء ثنائي الطالبة: ${s1.name}`, studentId1);
+      addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'student', `إلغاء ثنائي الطالبة: ${s1.name}`, studentId1);
       writeDatabase(db);
       return res.json({ success: true, unpair: true, student: s1 });
     }
@@ -1196,7 +1233,7 @@ async function startServer() {
     s2.partnerStudentId = s1.id;
     s2.partnerStudentName = s1.name;
 
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'student', `تحديد وتحديث الثنائي القرآني: ${s1.name} و ${s2.name}`, studentId1);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'student', `تحديد وتحديث الثنائي القرآني: ${s1.name} و ${s2.name}`, studentId1);
     writeDatabase(db);
     res.json({ success: true, s1, s2 });
   });
@@ -1211,7 +1248,7 @@ async function startServer() {
       ...req.body
     };
     db.monthlyPlans.push(newPlan);
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'create', 'monthlyPlan', `إنشاء خطة شهرية: ${newPlan.title}`, newPlan.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'monthlyPlan', `إنشاء خطة شهرية: ${newPlan.title}`, newPlan.id);
     writeDatabase(db);
     res.status(201).json(newPlan);
   });
@@ -1221,7 +1258,7 @@ async function startServer() {
     const index = db.monthlyPlans.findIndex((p: any) => p.id === req.params.id);
     if (index === -1) return res.status(404).json({ error: 'الخطة غير موجودة' });
     db.monthlyPlans[index] = { ...db.monthlyPlans[index], ...req.body };
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'monthlyPlan', `تعديل الخطة: ${db.monthlyPlans[index].title}`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'monthlyPlan', `تعديل الخطة: ${db.monthlyPlans[index].title}`, req.params.id);
     writeDatabase(db);
     res.json(db.monthlyPlans[index]);
   });
@@ -1238,7 +1275,7 @@ async function startServer() {
       status: 'active'
     };
     db.monthlyPlans.push(newPlan);
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'create', 'monthlyPlan', `نسخ خطة شهرية سابقة إلى: ${newPlan.title}`, newPlan.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'monthlyPlan', `نسخ خطة شهرية سابقة إلى: ${newPlan.title}`, newPlan.id);
     writeDatabase(db);
     res.status(201).json(newPlan);
   });
@@ -1252,7 +1289,7 @@ async function startServer() {
       ...req.body
     };
     db.studentPlans.push(newPlan);
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'create', 'studentPlan', `تخصيص خطة شهرية لطالبة`, newPlan.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'studentPlan', `تخصيص خطة شهرية لطالبة`, newPlan.id);
     writeDatabase(db);
     res.status(201).json(newPlan);
   });
@@ -1262,7 +1299,7 @@ async function startServer() {
     const index = db.studentPlans.findIndex((p: any) => p.id === req.params.id);
     if (index === -1) return res.status(404).json({ error: 'خطة الطالبة غير موجودة' });
     db.studentPlans[index] = { ...db.studentPlans[index], ...req.body };
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'studentPlan', `تحديث خطة الطالبة`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'studentPlan', `تحديث خطة الطالبة`, req.params.id);
     writeDatabase(db);
     res.json(db.studentPlans[index]);
   });
@@ -1272,12 +1309,12 @@ async function startServer() {
     const db = readDatabase();
     const newRecord = {
       id: `dr-${Date.now()}`,
-      recordedBy: db.currentUser.name,
+      recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
       recordedAt: new Date().toISOString(),
       ...req.body
     };
     db.dailyRecords.push(newRecord);
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'grade', 'dailyRecord', `تسجيل إنجاز يومي لطالبة بتاريخ ${newRecord.date}`, newRecord.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'grade', 'dailyRecord', `تسجيل إنجاز يومي لطالبة بتاريخ ${newRecord.date}`, newRecord.id);
     writeDatabase(db);
     res.status(201).json(newRecord);
   });
@@ -1289,10 +1326,10 @@ async function startServer() {
     db.dailyRecords[index] = {
       ...db.dailyRecords[index],
       ...req.body,
-      recordedBy: db.currentUser.name,
+      recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
       recordedAt: new Date().toISOString()
     };
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'dailyRecord', `تعديل السجل اليومي`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'dailyRecord', `تعديل السجل اليومي`, req.params.id);
     writeDatabase(db);
     res.json(db.dailyRecords[index]);
   });
@@ -1309,20 +1346,20 @@ async function startServer() {
       db.attendanceRecords[existingIndex] = {
         ...db.attendanceRecords[existingIndex],
         ...req.body,
-        recordedBy: db.currentUser.name,
+        recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
         recordedAt: new Date().toISOString()
       };
       record = db.attendanceRecords[existingIndex];
     } else {
       record = {
         id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-        recordedBy: db.currentUser.name,
+        recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
         recordedAt: new Date().toISOString(),
         ...req.body
       };
       db.attendanceRecords.push(record);
     }
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'attendance', `تسجيل حضور/تحضير لطالبة بتاريخ ${record.date}`, record.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'attendance', `تسجيل حضور/تحضير لطالبة بتاريخ ${record.date}`, record.id);
     writeDatabase(db);
     res.json(record);
   });
@@ -1338,19 +1375,19 @@ async function startServer() {
         db.attendanceRecords[idx] = {
           ...db.attendanceRecords[idx],
           ...rec,
-          recordedBy: db.currentUser.name,
+          recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
           recordedAt: new Date().toISOString()
         };
       } else {
         db.attendanceRecords.push({
           id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          recordedBy: db.currentUser.name,
+          recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
           recordedAt: new Date().toISOString(),
           ...rec
         });
       }
     });
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'attendance', `تسجيل حضور جماعي لـ ${records.length} طالبة`);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'attendance', `تسجيل حضور جماعي لـ ${records.length} طالبة`);
     writeDatabase(db);
     res.json({ success: true, count: records.length });
   });
@@ -1363,7 +1400,7 @@ async function startServer() {
       ...req.body
     };
     db.atqiniAssignments.push(assignment);
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'create', 'atqini', `إضافة واجب تجويد جديد: ${assignment.title}`, assignment.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'atqini', `إضافة واجب تجويد جديد: ${assignment.title}`, assignment.id);
     writeDatabase(db);
     res.status(201).json(assignment);
   });
@@ -1373,7 +1410,7 @@ async function startServer() {
     const idx = db.atqiniAssignments.findIndex((a: any) => a.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'الواجب غير موجود' });
     db.atqiniAssignments[idx] = { ...db.atqiniAssignments[idx], ...req.body };
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'atqini', `تعديل واجب التجويد: ${db.atqiniAssignments[idx].title}`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'atqini', `تعديل واجب التجويد: ${db.atqiniAssignments[idx].title}`, req.params.id);
     writeDatabase(db);
     res.json(db.atqiniAssignments[idx]);
   });
@@ -1385,7 +1422,7 @@ async function startServer() {
     const deleted = db.atqiniAssignments.splice(idx, 1)[0];
     // Cascade remove submissions for this assignment
     db.studentAtqiniSubmissions = db.studentAtqiniSubmissions.filter((s: any) => s.assignmentId !== req.params.id);
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'delete', 'atqini', `حذف واجب التجويد: ${deleted.title} وكافة تقييماته`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'delete', 'atqini', `حذف واجب التجويد: ${deleted.title} وكافة تقييماته`, req.params.id);
     writeDatabase(db);
     res.json({ success: true, deletedId: req.params.id });
   });
@@ -1401,18 +1438,18 @@ async function startServer() {
       db.studentAtqiniSubmissions[existing] = {
         ...db.studentAtqiniSubmissions[existing],
         ...req.body,
-        evaluatedBy: db.currentUser.name
+        evaluatedBy: (db.currentUser?.name || 'ريفة المنصوري')
       };
       submission = db.studentAtqiniSubmissions[existing];
     } else {
       submission = {
         id: `atqs-${Date.now()}`,
-        evaluatedBy: db.currentUser.name,
+        evaluatedBy: (db.currentUser?.name || 'ريفة المنصوري'),
         ...req.body
       };
       db.studentAtqiniSubmissions.push(submission);
     }
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'grade', 'atqiniSubmission', `تصحيح واجب تجويد لطالبة بدرجة ${submission.score}`, submission.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'grade', 'atqiniSubmission', `تصحيح واجب تجويد لطالبة بدرجة ${submission.score}`, submission.id);
     writeDatabase(db);
     res.json(submission);
   });
@@ -1427,7 +1464,7 @@ async function startServer() {
       ...req.body
     };
     db.challenges.push(challenge);
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'create', 'challenge', `إضافة تحدٍ قرآني جديد: ${challenge.title}`, challenge.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'challenge', `إضافة تحدٍ قرآني جديد: ${challenge.title}`, challenge.id);
     writeDatabase(db);
     res.status(201).json(challenge);
   });
@@ -1437,7 +1474,7 @@ async function startServer() {
     const idx = db.challenges.findIndex((c: any) => c.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'التحدي غير موجود' });
     db.challenges[idx] = { ...db.challenges[idx], ...req.body };
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'challenge', `تعديل التحدي القرآني: ${db.challenges[idx].title}`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'challenge', `تعديل التحدي القرآني: ${db.challenges[idx].title}`, req.params.id);
     writeDatabase(db);
     res.json(db.challenges[idx]);
   });
@@ -1447,7 +1484,7 @@ async function startServer() {
     const idx = db.challenges.findIndex((c: any) => c.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'التحدي غير موجود' });
     const deleted = db.challenges.splice(idx, 1)[0];
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'delete', 'challenge', `حذف التحدي: ${deleted.title}`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'delete', 'challenge', `حذف التحدي: ${deleted.title}`, req.params.id);
     writeDatabase(db);
     res.json({ success: true });
   });
@@ -1463,20 +1500,20 @@ async function startServer() {
       db.studentChallengeSubmissions[existing] = {
         ...db.studentChallengeSubmissions[existing],
         ...req.body,
-        evaluatedBy: db.currentUser.name,
+        evaluatedBy: (db.currentUser?.name || 'ريفة المنصوري'),
         evaluatedAt: new Date().toISOString()
       };
       submission = db.studentChallengeSubmissions[existing];
     } else {
       submission = {
         id: `cs-${Date.now()}`,
-        evaluatedBy: db.currentUser.name,
+        evaluatedBy: (db.currentUser?.name || 'ريفة المنصوري'),
         evaluatedAt: new Date().toISOString(),
         ...req.body
       };
       db.studentChallengeSubmissions.push(submission);
     }
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'grade', 'challengeSubmission', `تقييم تحدي قرآني ومراجعة ثنائية للطالبة`, submission.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'grade', 'challengeSubmission', `تقييم تحدي قرآني ومراجعة ثنائية للطالبة`, submission.id);
     writeDatabase(db);
     res.json(submission);
   });
@@ -1490,7 +1527,7 @@ async function startServer() {
       ...req.body
     };
     db.monthlyExams.push(exam);
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'create', 'exam', `إضافة اختبار شهري: ${exam.title}`, exam.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'exam', `إضافة اختبار شهري: ${exam.title}`, exam.id);
     writeDatabase(db);
     res.status(201).json(exam);
   });
@@ -1500,7 +1537,7 @@ async function startServer() {
     const idx = db.monthlyExams.findIndex((e: any) => e.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'الاختبار غير موجود' });
     db.monthlyExams[idx] = { ...db.monthlyExams[idx], ...req.body };
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'exam', `تعديل الاختبار: ${db.monthlyExams[idx].title}`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'exam', `تعديل الاختبار: ${db.monthlyExams[idx].title}`, req.params.id);
     writeDatabase(db);
     res.json(db.monthlyExams[idx]);
   });
@@ -1511,7 +1548,7 @@ async function startServer() {
     if (idx === -1) return res.status(404).json({ error: 'الاختبار غير موجود' });
     const deleted = db.monthlyExams.splice(idx, 1)[0];
     db.studentExamResults = db.studentExamResults.filter((r: any) => r.examId !== req.params.id);
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'delete', 'exam', `حذف الاختبار الشهري: ${deleted.title}`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'delete', 'exam', `حذف الاختبار الشهري: ${deleted.title}`, req.params.id);
     writeDatabase(db);
     res.json({ success: true });
   });
@@ -1526,20 +1563,20 @@ async function startServer() {
       db.studentExamResults[existing] = {
         ...db.studentExamResults[existing],
         ...req.body,
-        examinerName: db.currentUser.name,
+        examinerName: (db.currentUser?.name || 'ريفة المنصوري'),
         evaluatedAt: new Date().toISOString()
       };
       result = db.studentExamResults[existing];
     } else {
       result = {
         id: `er-${Date.now()}`,
-        examinerName: db.currentUser.name,
+        examinerName: (db.currentUser?.name || 'ريفة المنصوري'),
         evaluatedAt: new Date().toISOString(),
         ...req.body
       };
       db.studentExamResults.push(result);
     }
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'grade', 'examResult', `رصد درجة اختبار شهري للطالبة: ${result.score}`, result.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'grade', 'examResult', `رصد درجة اختبار شهري للطالبة: ${result.score}`, result.id);
     writeDatabase(db);
     res.json(result);
   });
@@ -1557,7 +1594,7 @@ async function startServer() {
         ...req.body
       });
     }
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'gradingConfig', `تعديل نظام الدرجات والنسب المئوية للمسار`, req.params.trackId);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'gradingConfig', `تعديل نظام الدرجات والنسب المئوية للمسار`, req.params.trackId);
     writeDatabase(db);
     res.json(db.gradingConfigs[idx >= 0 ? idx : db.gradingConfigs.length - 1]);
   });
@@ -1574,7 +1611,7 @@ async function startServer() {
       if (leaderUser) {
         leaderUser.passcode = cleanPass;
       }
-      if (db.currentUser && db.currentUser.role === 'leader') {
+      if (db.currentUser && (db.currentUser?.role || 'leader') === 'leader') {
         db.currentUser.passcode = cleanPass;
       }
     }
@@ -1597,7 +1634,7 @@ async function startServer() {
         console.error('PWA icon sync error', err);
       }
     }
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'settings', `تحديث الإعدادات العامة للمقرأة والهوية والشعار`);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'settings', `تحديث الإعدادات العامة للمقرأة والهوية والشعار`);
     writeDatabase(db);
     res.json(db.settings);
   });
@@ -1612,7 +1649,7 @@ async function startServer() {
       ...req.body
     };
     db.users.push(newUser);
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'create', 'user', `إضافة مستخدم جديد: ${newUser.name} (${newUser.title})`, newUser.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'user', `إضافة مستخدم جديد: ${newUser.name} (${newUser.title})`, newUser.id);
     writeDatabase(db);
     res.status(201).json(newUser);
   });
@@ -1633,7 +1670,7 @@ async function startServer() {
     if (db.currentUser.id === req.params.id) {
       db.currentUser = { ...db.currentUser, ...cleanBody };
     }
-    addAudit(db, db.currentUser.name, db.currentUser.role, 'update', 'user', `تعديل بيانات وصلاحيات المستخدم: ${db.users[idx].name}`, req.params.id);
+    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'user', `تعديل بيانات وصلاحيات المستخدم: ${db.users[idx].name}`, req.params.id);
     writeDatabase(db);
     res.json(db.users[idx]);
   });
@@ -1667,23 +1704,35 @@ async function startServer() {
 
   const httpServer = http.createServer(app);
 
-  // Vite middleware in dev or static files in prod
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        hmr: false
-      },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(__dirname, 'dist');
+  const distPath = path.join(__dirname, 'dist');
+  const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
+
+  if (process.env.NODE_ENV === 'production' || (hasDist && process.env.NODE_ENV !== 'development')) {
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
+  } else {
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          hmr: false
+        },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } catch (err) {
+      if (hasDist) {
+        app.use(express.static(distPath));
+        app.get('*', (_req, res) => {
+          res.sendFile(path.join(distPath, 'index.html'));
+        });
+      } else {
+        console.error('Vite dev middleware failed and no dist found:', err);
+      }
+    }
   }
 
   httpServer.listen(PORT, '0.0.0.0', () => {

@@ -36,7 +36,8 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   // Specific student records
   const studentAtqini = studentAtqiniSubmissions.filter(a => a.studentId === student?.id);
   const studentChallenges = studentChallengeSubmissions.filter(c => c.studentId === student?.id);
-  const studentExam = studentExamResults.find(e => e.studentId === student?.id);
+  const studentExams = studentExamResults.filter(e => e.studentId === student?.id);
+  const studentExam = studentExams[studentExams.length - 1];
 
   const teacher = users.find(u => u.id === circle?.teacherId);
   const leader = users.find(u => u.role === 'leader');
@@ -600,7 +601,14 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-200 pb-2">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-[#2D5A43]" />
-              <span className="font-bold text-stone-900">نتيجة الاختبار الشهري التمكيني:</span>
+              <div>
+                <span className="font-bold text-stone-900">نتيجة الاختبار الشهري التمكيني:</span>
+                {studentExam?.customPortion && (
+                  <span className="text-[11px] text-stone-500 mr-2 block sm:inline">
+                    (المقرر المرصود: {studentExam.customPortion})
+                  </span>
+                )}
+              </div>
             </div>
             <div className="text-sm font-extrabold text-[#2D5A43]">
               {studentExam ? `${studentExam.score} من ١٠٠ درجة` : 'بانتظار الرصد في الموعد المحدد'}

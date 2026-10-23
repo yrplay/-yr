@@ -218,10 +218,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Apply state from any source (server, localStorage, or initialData)
   const applyState = (data: any) => {
     if (!data) return;
-    if (data.currentUser !== undefined) setCurrentUser(data.currentUser);
+    // Initialize currentUser on first boot if not already set locally
+    if (data.currentUser !== undefined) {
+      setCurrentUser(prev => prev || data.currentUser);
+    }
+    const userList: User[] = Array.isArray(data.users) ? data.users : users;
     if (Array.isArray(data.users)) setUsers(data.users);
     if (Array.isArray(data.tracks)) setTracks(data.tracks);
-    if (Array.isArray(data.circles)) setCircles(data.circles);
+    if (Array.isArray(data.circles)) {
+      // Normalize circles teacherName to always reflect current teacher's name
+      const normalizedCircles = data.circles.map((c: any) => {
+        const t = userList.find(u => u.id === c.teacherId);
+        const s = userList.find(u => u.id === c.supervisorId);
+        return {
+          ...c,
+          teacherName: t ? t.name : (c.teacherName || 'غير محدد'),
+          supervisorName: s ? s.name : (c.supervisorName || 'غير محدد')
+        };
+      });
+      setCircles(normalizedCircles);
+    }
     if (Array.isArray(data.students)) setStudents(data.students);
     if (Array.isArray(data.monthlyPlans)) setMonthlyPlans(data.monthlyPlans);
     if (Array.isArray(data.studentPlans)) setStudentPlans(data.studentPlans);
@@ -234,7 +250,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (Array.isArray(data.monthlyExams)) setMonthlyExams(data.monthlyExams);
     if (Array.isArray(data.studentExamResults)) setStudentExamResults(data.studentExamResults);
     if (Array.isArray(data.gradingConfigs)) setGradingConfigs(data.gradingConfigs);
-    if (data.settings) setSettings(data.settings);
+    if (data.settings) {
+      setSettings(prev => ({ ...prev, ...data.settings }));
+    }
     if (Array.isArray(data.auditLogs)) setAuditLogs(data.auditLogs);
     setLastSynced(new Date());
   };
@@ -271,20 +289,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const refreshData = async (silent: boolean = false) => {
+  const refreshData = async (_silent: boolean = false) => {
     try {
       const res = await fetch('/api/state');
       if (res.ok) {
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
           const data = await res.json();
-          if (silent) {
-            // When silent background polling runs, do not wipe in-progress user settings
-            const { settings: incomingSettings, ...restData } = data;
-            applyState(restData);
-          } else {
-            applyState(data);
-          }
+          applyState(data);
           try {
             if (typeof window !== 'undefined') {
               localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -365,277 +377,671 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const createTrack = async (track: Partial<Track>) => {
-    const res = await fetch('/api/tracks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(track)
-    });
-    const created = await res.json();
-    showToast(`تمت إضافة المسار "${created.name}" بنجاح`);
-    await refreshData();
-    return created;
+    const newTrack: Track = {
+      id: track.id || `t-${Date.now()}`,
+      name: track.name || 'مسار جديد',
+      code: track.code || `TRK-${Date.now().toString().slice(-4)}`,
+      description: track.description || '',
+      logoUrl: track.logoUrl,
+      icon: track.icon || '🪴',
+      isArchived: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ...track
+    };
+    const next = [...tracks, newTrack];
+    setTracks(next);
+    persistState({ tracks: next });
+    showToast(`تمت إضافة المسار "${newTrack.name}" بنجاح`);
+    try {
+      await fetch('/api/tracks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newTrack)
+      });
+    } catch {}
+    return newTrack;
   };
 
   const updateTrack = async (id: string, track: Partial<Track>) => {
-    await fetch(`/api/tracks/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(track)
-    });
+    const next = tracks.map(t => t.id === id ? { ...t, ...track, updatedAt: new Date().toISOString() } : t);
+    setTracks(next);
+    persistState({ tracks: next });
     showToast('تم تحديث المسار بنجاح');
-    await refreshData();
+    try {
+      await fetch(`/api/tracks/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(track)
+      });
+    } catch {}
   };
 
   const archiveTrack = async (id: string) => {
-    await fetch(`/api/tracks/${id}`, { method: 'DELETE' });
+    const next = tracks.map(t => t.id === id ? { ...t, isArchived: true } : t);
+    setTracks(next);
+    persistState({ tracks: next });
     showToast('تمت أرشفة المسار بنجاح');
-    await refreshData();
+    try {
+      await fetch(`/api/tracks/${id}`, { method: 'DELETE' });
+    } catch {}
   };
 
   const restoreTrack = async (id: string) => {
-    await fetch(`/api/tracks/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isArchived: false })
-    });
+    const next = tracks.map(t => t.id === id ? { ...t, isArchived: false } : t);
+    setTracks(next);
+    persistState({ tracks: next });
     showToast('تمت استعادة المسار بنجاح');
-    await refreshData();
+    try {
+      await fetch(`/api/tracks/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isArchived: false })
+      });
+    } catch {}
   };
 
   const createCircle = async (circle: Partial<Circle>) => {
-    const res = await fetch('/api/circles', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(circle)
-    });
-    const created = await res.json();
-    showToast(`تمت إضافة الحلقة "${created.name}" بنجاح`);
-    await refreshData();
-    return created;
+    const teacherObj = users.find(u => u.id === circle.teacherId);
+    const supervisorObj = users.find(u => u.id === circle.supervisorId);
+    const newCircle: Circle = {
+      id: circle.id || `c-${Date.now()}`,
+      trackId: circle.trackId || (tracks[0]?.id ?? 't-1'),
+      name: circle.name || 'حلقة جديدة',
+      icon: circle.icon || '🪴',
+      teacherId: circle.teacherId || '',
+      teacherName: teacherObj ? teacherObj.name : (circle.teacherName || 'غير محدد'),
+      supervisorId: circle.supervisorId || '',
+      supervisorName: supervisorObj ? supervisorObj.name : (circle.supervisorName || 'غير محدد'),
+      maxStudents: circle.maxStudents || 15,
+      scheduleDays: circle.scheduleDays || ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء'],
+      startTime: circle.startTime || '16:00',
+      endTime: circle.endTime || '18:00',
+      earlyPrepCutoffTime: circle.earlyPrepCutoffTime || '15:45',
+      isArchived: false,
+      createdAt: new Date().toISOString(),
+      ...circle
+    };
+    const next = [...circles, newCircle];
+    setCircles(next);
+    persistState({ circles: next });
+    showToast(`تمت إضافة الحلقة "${newCircle.name}" بنجاح`);
+    try {
+      await fetch('/api/circles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCircle)
+      });
+    } catch {}
+    return newCircle;
   };
 
   const updateCircle = async (id: string, circle: Partial<Circle>) => {
-    await fetch(`/api/circles/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(circle)
+    const teacherObj = users.find(u => u.id === circle.teacherId);
+    const supervisorObj = users.find(u => u.id === circle.supervisorId);
+    const next = circles.map(c => {
+      if (c.id !== id) return c;
+      const updatedTeacher = teacherObj ? teacherObj.name : (circle.teacherName || c.teacherName);
+      const updatedSupervisor = supervisorObj ? supervisorObj.name : (circle.supervisorName || c.supervisorName);
+      return {
+        ...c,
+        ...circle,
+        teacherName: updatedTeacher,
+        supervisorName: updatedSupervisor
+      };
     });
+    setCircles(next);
+    persistState({ circles: next });
     showToast('تم تحديث بيانات الحلقة بنجاح');
-    await refreshData();
+    try {
+      await fetch(`/api/circles/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(circle)
+      });
+    } catch {}
   };
 
   const archiveCircle = async (id: string) => {
-    await fetch(`/api/circles/${id}`, { method: 'DELETE' });
+    const next = circles.map(c => c.id === id ? { ...c, isArchived: true } : c);
+    setCircles(next);
+    persistState({ circles: next });
     showToast('تمت أرشفة الحلقة وحفظ سجلاتها بأمان');
-    await refreshData();
+    try {
+      await fetch(`/api/circles/${id}`, { method: 'DELETE' });
+    } catch {}
   };
 
   const restoreCircle = async (id: string) => {
-    await fetch(`/api/circles/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isArchived: false })
-    });
+    const next = circles.map(c => c.id === id ? { ...c, isArchived: false } : c);
+    setCircles(next);
+    persistState({ circles: next });
     showToast('تمت استعادة الحلقة بنجاح');
-    await refreshData();
+    try {
+      await fetch(`/api/circles/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isArchived: false })
+      });
+    } catch {}
   };
 
   const createStudent = async (student: Partial<Student>) => {
-    const res = await fetch('/api/students', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(student)
-    });
-    const created = await res.json();
-    showToast(`تم تسجيل الطالبة "${created.name}" بنجاح`);
-    await refreshData();
-    return created;
+    const circle = circles.find(c => c.id === student.circleId);
+    const newStudent: Student = {
+      id: student.id || `s-${Date.now()}`,
+      code: student.code || `GH-${Math.floor(100 + Math.random() * 900)}`,
+      name: student.name || 'طالبة جديدة',
+      phone: student.phone || '',
+      email: student.email || '',
+      joinDate: student.joinDate || new Date().toISOString().split('T')[0],
+      status: student.status || 'active',
+      trackId: student.trackId || circle?.trackId || (tracks[0]?.id ?? 't-1'),
+      circleId: student.circleId || circles[0]?.id || '',
+      partnerStudentId: student.partnerStudentId,
+      partnerStudentName: student.partnerStudentName,
+      notes: student.notes || '',
+      createdAt: new Date().toISOString(),
+      ...student
+    };
+    const next = [...students, newStudent];
+    setStudents(next);
+    persistState({ students: next });
+    showToast(`تم تسجيل الطالبة "${newStudent.name}" بنجاح`);
+    try {
+      await fetch('/api/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newStudent)
+      });
+    } catch {}
+    return newStudent;
   };
 
   const updateStudent = async (id: string, student: Partial<Student>) => {
-    await fetch(`/api/students/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(student)
-    });
+    const next = students.map(s => s.id === id ? { ...s, ...student } : s);
+    setStudents(next);
+    persistState({ students: next });
     showToast('تم تحديث ملف الطالبة بنجاح');
-    await refreshData();
+    try {
+      await fetch(`/api/students/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(student)
+      });
+    } catch {}
   };
 
   const archiveStudent = async (id: string) => {
-    await fetch(`/api/students/${id}`, { method: 'DELETE' });
+    const next = students.map(s => s.id === id ? { ...s, status: 'archived' as const } : s);
+    setStudents(next);
+    persistState({ students: next });
     showToast('تمت أرشفة سجل الطالبة بنجاح');
-    await refreshData();
+    try {
+      await fetch(`/api/students/${id}`, { method: 'DELETE' });
+    } catch {}
   };
 
   const assignPartner = async (studentId: string, partnerId: string | null) => {
+    const s1 = students.find(s => s.id === studentId);
+    const s2 = partnerId ? students.find(s => s.id === partnerId) : null;
+    const next = students.map(s => {
+      if (s.id === studentId) {
+        return { ...s, partnerStudentId: partnerId || undefined, partnerStudentName: s2 ? s2.name : undefined };
+      }
+      if (partnerId && s.id === partnerId) {
+        return { ...s, partnerStudentId: studentId, partnerStudentName: s1 ? s1.name : undefined };
+      }
+      return s;
+    });
+    setStudents(next);
+    persistState({ students: next });
+
+    if (!partnerId) {
+      showToast('تم إلغاء اقتران الثنائي بنجاح 🔄');
+    } else {
+      showToast(`تم تعيين الثنائي بنجاح: ${s1?.name || ''} ↔ ${s2?.name || ''} 🪴`);
+    }
+
     try {
-      const res = await fetch('/api/students/pair', {
+      await fetch('/api/students/pair', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentId1: studentId, studentId2: partnerId || null })
       });
-      if (res.ok) {
-        if (!partnerId) {
-          showToast('تم إلغاء اقتران الثنائي بنجاح 🔄');
-        } else {
-          const s1 = students.find(s => s.id === studentId);
-          const s2 = students.find(s => s.id === partnerId);
-          showToast(`تم تعيين الثنائي بنجاح: ${s1?.name || ''} ↔ ${s2?.name || ''} 🪴`);
-        }
-        await refreshData();
-      }
-    } catch (err: any) {
-      showToast('تعذر تعيين الثنائي: ' + err.message, 'error');
-    }
+    } catch {}
   };
 
   const createMonthlyPlan = async (plan: Partial<MonthlyPlan>) => {
-    const res = await fetch('/api/monthly-plans', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(plan)
-    });
-    const created = await res.json();
-    showToast(`تم إنشاء الخطة الشهرية: ${created.title}`);
-    await refreshData();
-    return created;
+    const newPlan: MonthlyPlan = {
+      id: plan.id || `mp-${Date.now()}`,
+      title: plan.title || 'خطة شهرية جديدة',
+      trackId: plan.trackId || (tracks[0]?.id ?? 't-1'),
+      hijriMonth: plan.hijriMonth || 'جمادى الأولى',
+      hijriYear: plan.hijriYear || '1446',
+      startDateHijri: plan.startDateHijri || '١ جمادى الأولى',
+      endDateHijri: plan.endDateHijri || '٣٠ جمادى الأولى',
+      examDateHijri: plan.examDateHijri || '٢٥ جمادى الأولى',
+      scheduleDays: plan.scheduleDays || ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء'],
+      thursdayFocus: plan.thursdayFocus || 'مخصص للتحديات والمراجعة الثنائية',
+      status: plan.status || 'active',
+      createdAt: new Date().toISOString(),
+      ...plan
+    };
+    const next = [...monthlyPlans, newPlan];
+    setMonthlyPlans(next);
+    persistState({ monthlyPlans: next });
+    showToast(`تم إنشاء الخطة الشهرية: ${newPlan.title}`);
+    try {
+      await fetch('/api/monthly-plans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPlan)
+      });
+    } catch {}
+    return newPlan;
   };
 
   const updateMonthlyPlan = async (id: string, plan: Partial<MonthlyPlan>) => {
-    await fetch(`/api/monthly-plans/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(plan)
-    });
+    const next = monthlyPlans.map(p => p.id === id ? { ...p, ...plan } : p);
+    setMonthlyPlans(next);
+    persistState({ monthlyPlans: next });
     showToast('تم تعديل الخطة الشهرية');
-    await refreshData();
+    try {
+      await fetch(`/api/monthly-plans/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(plan)
+      });
+    } catch {}
   };
 
   const duplicateMonthlyPlan = async (id: string) => {
-    await fetch(`/api/monthly-plans/${id}/duplicate`, { method: 'POST' });
+    const orig = monthlyPlans.find(p => p.id === id);
+    if (!orig) return;
+    const duplicated: MonthlyPlan = {
+      ...orig,
+      id: `mp-${Date.now()}`,
+      title: `نسخة من: ${orig.title}`,
+      createdAt: new Date().toISOString()
+    };
+    const next = [...monthlyPlans, duplicated];
+    setMonthlyPlans(next);
+    persistState({ monthlyPlans: next });
     showToast('تم نسخ الخطة الشهرية مع الحفاظ على سجلات الشهور الماضية');
-    await refreshData();
+    try {
+      await fetch(`/api/monthly-plans/${id}/duplicate`, { method: 'POST' });
+    } catch {}
   };
 
   const saveStudentPlan = async (plan: Partial<StudentMonthlyPlan>) => {
-    const method = plan.id ? 'PUT' : 'POST';
-    const url = plan.id ? `/api/student-plans/${plan.id}` : '/api/student-plans';
-    await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(plan)
-    });
+    const cleanId = plan.id || `sp-${Date.now()}`;
+    const newPlan: StudentMonthlyPlan = {
+      id: cleanId,
+      studentId: plan.studentId || '',
+      monthlyPlanId: plan.monthlyPlanId || monthlyPlans[0]?.id || 'mp-1',
+      status: plan.status || 'active',
+      newMemorization: plan.newMemorization || {
+        fromSurah: 2,
+        fromAyah: 1,
+        toSurah: 2,
+        toAyah: 50,
+        targetPages: 8,
+        actualPages: 0,
+        targetDailyAmount: 'نصف وجه يومياً'
+      },
+      revision: plan.revision || {
+        fromSurah: 2,
+        fromAyah: 1,
+        toSurah: 2,
+        toAyah: 25,
+        targetPages: 4,
+        actualPages: 0,
+        revisionType: 'تمكين',
+        status: 'in_progress'
+      },
+      ...plan
+    };
+    const existingIdx = studentPlans.findIndex(p => p.id === cleanId || (p.studentId === newPlan.studentId && p.monthlyPlanId === newPlan.monthlyPlanId));
+    let next: StudentMonthlyPlan[];
+    if (existingIdx >= 0) {
+      next = [...studentPlans];
+      next[existingIdx] = { ...next[existingIdx], ...newPlan };
+    } else {
+      next = [...studentPlans, newPlan];
+    }
+    setStudentPlans(next);
+    persistState({ studentPlans: next });
     showToast('تم حفظ خطة الطالبة وتحديث المقرر');
-    await refreshData();
+    try {
+      await fetch(plan.id ? `/api/student-plans/${plan.id}` : '/api/student-plans', {
+        method: plan.id ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPlan)
+      });
+    } catch {}
   };
 
   const saveDailyRecord = async (record: Partial<DailyRecord>) => {
-    const method = record.id ? 'PUT' : 'POST';
-    const url = record.id ? `/api/daily-records/${record.id}` : '/api/daily-records';
-    await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(record)
-    });
-    showToast('تم رصد التسميع وتحديث درجات الطالبة');
-    await refreshData();
+    const cleanId = record.id || `dr-${Date.now()}`;
+    const newRecord: DailyRecord = {
+      id: cleanId,
+      studentId: record.studentId || '',
+      circleId: record.circleId || '',
+      date: record.date || new Date().toISOString().split('T')[0],
+      dayName: record.dayName || 'الأحد',
+      requiredPortionText: record.requiredPortionText || '',
+      newMemorizationCompleted: !!record.newMemorizationCompleted,
+      newMemorizationPages: record.newMemorizationPages || 0,
+      revisionCompleted: !!record.revisionCompleted,
+      revisionPages: record.revisionPages || 0,
+      memorizationMistakes: record.memorizationMistakes || 0,
+      hintsCount: record.hintsCount || 0,
+      tajweedErrorsCount: record.tajweedErrorsCount || 0,
+      recitationScore: record.recitationScore ?? 10,
+      conditions: record.conditions || {
+        listenedToReader: false,
+        recitedLooking: false,
+        masteryRepetition: false,
+        minorRevision: false,
+        tamkeenRevision: false,
+        achievedDistinction: false
+      },
+      status: record.status || 'completed',
+      notes: record.notes || '',
+      recordedBy: currentUser?.name || 'معلمة الحلقة',
+      recordedAt: new Date().toISOString(),
+      ...record
+    };
+
+    const existingIdx = dailyRecords.findIndex(
+      d => d.id === newRecord.id || (d.studentId === newRecord.studentId && d.date === newRecord.date)
+    );
+    let next: DailyRecord[];
+    if (existingIdx >= 0) {
+      next = [...dailyRecords];
+      next[existingIdx] = { ...next[existingIdx], ...newRecord };
+    } else {
+      next = [...dailyRecords, newRecord];
+    }
+    setDailyRecords(next);
+    persistState({ dailyRecords: next });
+    showToast('تم رصد التسميع وتحديث درجات الطالبة 📖');
+
+    try {
+      await fetch(record.id ? `/api/daily-records/${record.id}` : '/api/daily-records', {
+        method: record.id ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRecord)
+      });
+    } catch {}
   };
 
   const saveAttendance = async (record: Partial<AttendanceRecord>) => {
-    await fetch('/api/attendance', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(record)
-    });
-    showToast('تم تسجيل الحضور بنجاح');
-    await refreshData();
+    const cleanId = record.id || `att-${record.studentId}-${record.date}`;
+    const newRecord: AttendanceRecord = {
+      id: cleanId,
+      studentId: record.studentId || '',
+      circleId: record.circleId || '',
+      date: record.date || new Date().toISOString().split('T')[0],
+      status: record.status || 'present',
+      earlyPrepCardSent: !!record.earlyPrepCardSent,
+      reason: record.reason,
+      recordedBy: currentUser?.name || 'معلمة الحلقة',
+      recordedAt: new Date().toISOString(),
+      ...record
+    };
+
+    const existingIdx = attendanceRecords.findIndex(
+      a => (a.id && a.id === cleanId) || (a.studentId === newRecord.studentId && a.date === newRecord.date)
+    );
+    let next: AttendanceRecord[];
+    if (existingIdx >= 0) {
+      next = [...attendanceRecords];
+      next[existingIdx] = { ...next[existingIdx], ...newRecord };
+    } else {
+      next = [...attendanceRecords, newRecord];
+    }
+    setAttendanceRecords(next);
+    persistState({ attendanceRecords: next });
+    showToast('تم تسجيل الحضور والتحضير بنجاح ✅');
+
+    try {
+      await fetch('/api/attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRecord)
+      });
+    } catch {}
   };
 
   const saveBulkAttendance = async (records: Partial<AttendanceRecord>[]) => {
-    await fetch('/api/attendance/bulk', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ records })
+    let next = [...attendanceRecords];
+    records.forEach(rec => {
+      const cleanId = rec.id || `att-${rec.studentId}-${rec.date}`;
+      const newRecord: AttendanceRecord = {
+        id: cleanId,
+        studentId: rec.studentId || '',
+        circleId: rec.circleId || '',
+        date: rec.date || new Date().toISOString().split('T')[0],
+        status: rec.status || 'present',
+        earlyPrepCardSent: !!rec.earlyPrepCardSent,
+        reason: rec.reason,
+        recordedBy: currentUser?.name || 'معلمة الحلقة',
+        recordedAt: new Date().toISOString(),
+        ...rec
+      };
+      const idx = next.findIndex(
+        a => (a.id && a.id === cleanId) || (a.studentId === newRecord.studentId && a.date === newRecord.date)
+      );
+      if (idx >= 0) {
+        next[idx] = { ...next[idx], ...newRecord };
+      } else {
+        next.push(newRecord);
+      }
     });
-    showToast(`تم رصد الحضور لـ ${records.length} طالبة`);
-    await refreshData();
+    setAttendanceRecords(next);
+    persistState({ attendanceRecords: next });
+    showToast(`تم رصد الحضور لـ ${records.length} طالبة بنجاح ✅`);
+
+    try {
+      await fetch('/api/attendance/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ records })
+      });
+    } catch {}
   };
 
   const createAtqiniAssignment = async (assignment: Partial<AtqiniAssignment>) => {
-    const res = await fetch('/api/atqini', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(assignment)
-    });
-    const created = await res.json();
-    showToast(`تم نشر واجب التجويد: ${created.title}`);
-    await refreshData();
-    return created;
+    const newAss: AtqiniAssignment = {
+      id: assignment.id || `atq-${Date.now()}`,
+      trackId: assignment.trackId || (tracks[0]?.id ?? 't-1'),
+      title: assignment.title || 'واجب تجويد جديد',
+      tajweedRule: assignment.tajweedRule || '',
+      description: assignment.description || '',
+      sheikhVideoUrl: assignment.sheikhVideoUrl,
+      publishedDate: assignment.publishedDate || new Date().toISOString().split('T')[0],
+      dueDate: assignment.dueDate || '',
+      requiredInstructions: assignment.requiredInstructions || '',
+      examplesRequirement: assignment.examplesRequirement || '',
+      recitationRuleApplication: assignment.recitationRuleApplication || '',
+      maxScore: assignment.maxScore || 10,
+      ...assignment
+    };
+    const next = [...atqiniAssignments, newAss];
+    setAtqiniAssignments(next);
+    persistState({ atqiniAssignments: next });
+    showToast(`تم نشر واجب التجويد: ${newAss.title}`);
+    try {
+      await fetch('/api/atqini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newAss)
+      });
+    } catch {}
+    return newAss;
   };
 
   const updateAtqiniAssignment = async (id: string, assignment: Partial<AtqiniAssignment>) => {
-    await fetch(`/api/atqini/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(assignment)
-    });
+    const next = atqiniAssignments.map(a => a.id === id ? { ...a, ...assignment } : a);
+    setAtqiniAssignments(next);
+    persistState({ atqiniAssignments: next });
     showToast('تم تعديل واجب التجويد');
-    await refreshData();
+    try {
+      await fetch(`/api/atqini/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(assignment)
+      });
+    } catch {}
   };
 
   const deleteAtqiniAssignment = async (id: string) => {
-    await fetch(`/api/atqini/${id}`, { method: 'DELETE' });
+    const next = atqiniAssignments.filter(a => a.id !== id);
+    setAtqiniAssignments(next);
+    persistState({ atqiniAssignments: next });
     showToast('تم حذف واجب التجويد');
-    await refreshData();
+    try {
+      await fetch(`/api/atqini/${id}`, { method: 'DELETE' });
+    } catch {}
   };
 
   const saveAtqiniSubmission = async (sub: Partial<StudentAtqiniSubmission>) => {
-    await fetch('/api/atqini-submissions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(sub)
-    });
+    const cleanId = sub.id || `atqs-${Date.now()}`;
+    const newSub: StudentAtqiniSubmission = {
+      id: cleanId,
+      assignmentId: sub.assignmentId || '',
+      studentId: sub.studentId || '',
+      status: sub.status || 'completed',
+      isCompletedCorrectly: !!sub.isCompletedCorrectly,
+      extractedExamplesDone: !!sub.extractedExamplesDone,
+      appliedDuringRecitation: !!sub.appliedDuringRecitation,
+      rating: sub.rating || 'ممتاز',
+      score: sub.score ?? 10,
+      teacherNotes: sub.teacherNotes || '',
+      submittedAt: new Date().toISOString(),
+      evaluatedBy: currentUser?.name || 'معلمة الحلقة',
+      ...sub
+    };
+    const existingIdx = studentAtqiniSubmissions.findIndex(
+      s => s.id === cleanId || (s.assignmentId === newSub.assignmentId && s.studentId === newSub.studentId)
+    );
+    let next: StudentAtqiniSubmission[];
+    if (existingIdx >= 0) {
+      next = [...studentAtqiniSubmissions];
+      next[existingIdx] = { ...next[existingIdx], ...newSub };
+    } else {
+      next = [...studentAtqiniSubmissions, newSub];
+    }
+    setStudentAtqiniSubmissions(next);
+    persistState({ studentAtqiniSubmissions: next });
     showToast('تم رصد تقييم واجب «أتقني» للتجويد');
-    await refreshData();
+    try {
+      await fetch('/api/atqini-submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSub)
+      });
+    } catch {}
   };
 
   const createChallenge = async (challenge: Partial<Challenge>) => {
-    const res = await fetch('/api/challenges', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(challenge)
-    });
-    const created = await res.json();
-    showToast(`تم إطلاق التحدي القرآني: ${created.title}`);
-    await refreshData();
-    return created;
+    const newCh: Challenge = {
+      id: challenge.id || `ch-${Date.now()}`,
+      trackId: challenge.trackId || (tracks[0]?.id ?? 't-1'),
+      circleId: challenge.circleId,
+      title: challenge.title || 'تحدٍ قرآني جديد',
+      type: challenge.type || 'thursday_challenge',
+      description: challenge.description || '',
+      startDate: challenge.startDate || new Date().toISOString().split('T')[0],
+      endDate: challenge.endDate || new Date().toISOString().split('T')[0],
+      requiredSurahs: challenge.requiredSurahs || '',
+      repetitionRequirements: challenge.repetitionRequirements || '',
+      completionConditions: challenge.completionConditions || '',
+      dueDateDescription: challenge.dueDateDescription || '',
+      maxTotalPoints: challenge.maxTotalPoints || 10,
+      earlyPrepPoints: challenge.earlyPrepPoints || 2,
+      includesPeerReview: challenge.includesPeerReview ?? true,
+      tasks: challenge.tasks || [],
+      status: challenge.status || 'active',
+      createdAt: new Date().toISOString(),
+      ...challenge
+    };
+    const next = [...challenges, newCh];
+    setChallenges(next);
+    persistState({ challenges: next });
+    showToast(`تم إطلاق التحدي القرآني: ${newCh.title}`);
+    try {
+      await fetch('/api/challenges', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCh)
+      });
+    } catch {}
+    return newCh;
   };
 
   const updateChallenge = async (id: string, challenge: Partial<Challenge>) => {
-    await fetch(`/api/challenges/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(challenge)
-    });
+    const next = challenges.map(c => c.id === id ? { ...c, ...challenge } : c);
+    setChallenges(next);
+    persistState({ challenges: next });
     showToast('تم تحديث التحدي القرآني');
-    await refreshData();
+    try {
+      await fetch(`/api/challenges/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(challenge)
+      });
+    } catch {}
   };
 
   const deleteChallenge = async (id: string) => {
-    await fetch(`/api/challenges/${id}`, { method: 'DELETE' });
+    const next = challenges.filter(c => c.id !== id);
+    setChallenges(next);
+    persistState({ challenges: next });
     showToast('تم حذف التحدي');
-    await refreshData();
+    try {
+      await fetch(`/api/challenges/${id}`, { method: 'DELETE' });
+    } catch {}
   };
 
   const saveChallengeSubmission = async (sub: Partial<StudentChallengeSubmission>) => {
-    await fetch('/api/challenge-submissions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(sub)
-    });
+    const cleanId = sub.id || `cs-${Date.now()}`;
+    const newSub: StudentChallengeSubmission = {
+      id: cleanId,
+      challengeId: sub.challengeId || '',
+      studentId: sub.studentId || '',
+      partnerStudentId: sub.partnerStudentId,
+      partnerStudentName: sub.partnerStudentName,
+      tasksCompleted: sub.tasksCompleted || [],
+      earlyPrepPointsEarned: sub.earlyPrepPointsEarned || 0,
+      totalPointsEarned: sub.totalPointsEarned || 0,
+      teacherNotes: sub.teacherNotes || '',
+      evaluatedBy: currentUser?.name || 'معلمة الحلقة',
+      evaluatedAt: new Date().toISOString(),
+      ...sub
+    };
+    const existingIdx = studentChallengeSubmissions.findIndex(
+      s => s.id === cleanId || (s.challengeId === newSub.challengeId && s.studentId === newSub.studentId)
+    );
+    let next: StudentChallengeSubmission[];
+    if (existingIdx >= 0) {
+      next = [...studentChallengeSubmissions];
+      next[existingIdx] = { ...next[existingIdx], ...newSub };
+    } else {
+      next = [...studentChallengeSubmissions, newSub];
+    }
+    setStudentChallengeSubmissions(next);
+    persistState({ studentChallengeSubmissions: next });
     showToast('تم رصد نتيجة التحدي والمراجعة الثنائية');
-    await refreshData();
+    try {
+      await fetch('/api/challenge-submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSub)
+      });
+    } catch {}
   };
 
   const createMonthlyExam = async (exam: Partial<MonthlyExam>) => {
@@ -747,13 +1153,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateGradingConfig = async (trackId: string, config: Partial<TrackGradingConfig>) => {
-    await fetch(`/api/grading-config/${trackId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config)
-    });
-    showToast('تم تحديث أوزان ومعايير نظام الدرجات');
-    await refreshData();
+    const next = gradingConfigs.map(g => g.trackId === trackId ? { ...g, ...config } : g);
+    setGradingConfigs(next);
+    persistState({ gradingConfigs: next });
+    showToast('تم تحديث أوزان ومعايير نظام الدرجات بنجاح ⚖️');
+
+    try {
+      await fetch(`/api/grading-config/${trackId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+      });
+    } catch {}
   };
 
   const updateSettings = async (newSettings: Partial<InstitutionSettings>) => {
@@ -875,13 +1286,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateUser = async (id: string, user: Partial<User>) => {
-    const next = users.map(u => u.id === id ? { ...u, ...user } : u);
-    setUsers(next);
+    const nextUsers = users.map(u => u.id === id ? { ...u, ...user } : u);
+    setUsers(nextUsers);
     if (currentUser?.id === id) {
       setCurrentUser({ ...currentUser, ...user });
     }
-    persistState({ users: next });
-    showToast('تم تحديث بيانات المعلمة / المشرفة والصلاحيات');
+
+    // Keep circle teacher and supervisor names in sync if name was updated
+    let nextCircles = circles;
+    if (user.name) {
+      nextCircles = circles.map(c => {
+        let changed = false;
+        let tName = c.teacherName;
+        let sName = c.supervisorName;
+        if (c.teacherId === id) {
+          tName = user.name!;
+          changed = true;
+        }
+        if (c.supervisorId === id) {
+          sName = user.name!;
+          changed = true;
+        }
+        return changed ? { ...c, teacherName: tName, supervisorName: sName } : c;
+      });
+      setCircles(nextCircles);
+    }
+
+    persistState({ users: nextUsers, circles: nextCircles });
+    showToast('تم تحديث بيانات المعلمة / المشرفة والصلاحيات بنجاح');
 
     try {
       await fetch(`/api/users/${id}`, {
@@ -1010,17 +1442,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
     const challengesScore = sChallenges.length > 0 ? Math.min(challengesMax, challengeEarned / sChallenges.length) : challengesMax;
 
-    // Monthly Exam score
-    const sExam = studentExamResults.find(e => e.studentId === studentId);
+    // Monthly Exam score - pick the latest recorded exam for this student
+    const studentExams = studentExamResults.filter(e => e.studentId === studentId);
+    const sExam = studentExams[studentExams.length - 1];
     const examItem = gradingConfig?.items.find(i => i.category === 'exam');
     const examMax = examItem?.maxScore || 15;
-    const examScore = sExam ? ((sExam.score || 0) / 100) * examMax : examMax * 0.95;
+    const hasExam = !!sExam && typeof sExam.score === 'number';
+    const examScore = hasExam ? Math.round(((sExam.score || 0) / 100) * examMax * 10) / 10 : 0;
 
     // Total earned points & weighted percentage
     const method = gradingConfig?.calculationMethod || 'weighted_percentage';
     let finalPercentage = 0;
-    let totalEarnedPoints = attendanceScore + memorizationScore + conditionsFulfilledScore + atqiniScore + challengesScore + examScore;
-    let totalPossiblePoints = attendanceMax + memorizationMax + conditionsMax + atqiniMax + challengesMax + examMax;
+    let totalEarnedPoints = attendanceScore + memorizationScore + conditionsFulfilledScore + atqiniScore + challengesScore + (hasExam ? examScore : 0);
+    let totalPossiblePoints = attendanceMax + memorizationMax + conditionsMax + atqiniMax + challengesMax + (hasExam ? examMax : 0);
 
     if (method === 'weighted_percentage') {
       // Sum weights of components
@@ -1028,14 +1462,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       let totalWeights = 0;
       (gradingConfig?.items || []).forEach(item => {
         if (!item.includesInFinalGrade) return;
+        // If an exam has not yet been recorded for this student, do not penalize their current ongoing performance
+        if (item.category === 'exam' && !hasExam) {
+          return;
+        }
         totalWeights += item.weightPercentage;
         let scoreRatio = 1;
-        if (item.category === 'attendance') scoreRatio = attendanceScore / attendanceMax;
-        else if (item.category === 'memorization') scoreRatio = memorizationScore / memorizationMax;
-        else if (item.category === 'conditions') scoreRatio = conditionsFulfilledScore / conditionsMax;
-        else if (item.category === 'atqini') scoreRatio = atqiniScore / atqiniMax;
-        else if (item.category === 'thursday_challenge') scoreRatio = challengesScore / challengesMax;
-        else if (item.category === 'exam') scoreRatio = examScore / examMax;
+        if (item.category === 'attendance') scoreRatio = attendanceMax > 0 ? attendanceScore / attendanceMax : 1;
+        else if (item.category === 'memorization') scoreRatio = memorizationMax > 0 ? memorizationScore / memorizationMax : 1;
+        else if (item.category === 'conditions') scoreRatio = conditionsMax > 0 ? conditionsFulfilledScore / conditionsMax : 1;
+        else if (item.category === 'atqini') scoreRatio = atqiniMax > 0 ? atqiniScore / atqiniMax : 1;
+        else if (item.category === 'thursday_challenge') scoreRatio = challengesMax > 0 ? challengesScore / challengesMax : 1;
+        else if (item.category === 'exam') scoreRatio = examMax > 0 ? examScore / examMax : 1;
         earnedWeighted += scoreRatio * item.weightPercentage;
       });
       finalPercentage = totalWeights > 0 ? Math.min(100, Math.max(0, (earnedWeighted / totalWeights) * 100)) : 100;
