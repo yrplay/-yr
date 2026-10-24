@@ -168,19 +168,71 @@ button.rounded-2xl {
   background: #b5a498;
 }
 
+/* =========================================================
+   قواعد الطباعة الرسمية للتقارير والشهادات - مقرأة غيث الغيم
+   ========================================================= */
 @media print {
-  aside, nav, .no-print, button, .action-bar {
+  /* 1. إخفاء العناصر غير المطلوبة في الطباعة */
+  header,
+  aside,
+  nav,
+  button,
+  .no-print,
+  .action-bar,
+  [aria-label="تنبيه تحديث التطبيق"],
+  footer {
     display: none !important;
   }
-  body, main {
-    background: white !important;
-    color: black !important;
-    padding: 0 !important;
-  }
+
+  /* 2. إظهار العناصر المخصصة للطباعة فقط وتفعيل فواصل الصفحات */
   .print-only {
     display: block !important;
   }
   .page-break {
     page-break-before: always;
+  }
+
+  /* 3. ضبط الصفحة وهوامش الطباعة */
+  @page {
+    size: A4 portrait;
+    margin: 12mm 15mm 12mm 15mm;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #1c1917 !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* 4. تمديد مساحة التقرير وإلغاء قيود العرض */
+  main,
+  .max-w-7xl,
+  .w-full {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* 5. منع انقسام الجداول والبطاقات والشهادات في منتصف الورقة */
+  table,
+  tr,
+  .print-avoid-break,
+  .rounded-2xl,
+  .rounded-3xl {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* 6. ضمان وضوح وثبات الختم الرسمي وهوية المقرأة */
+  .official-seal,
+  svg {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }
