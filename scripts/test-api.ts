@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createServer } from 'node:http';
+import { createServer, type Server } from 'node:http';
 
 const tempDir = mkdtempSync(path.join(tmpdir(), 'ghaith-api-test-'));
 const databasePath = path.join(tempDir, 'database.json');
@@ -14,7 +14,7 @@ process.env.GHAYM_INITIAL_LEADER_PASSCODE = 'Leader-Bootstrap-9876';
 process.env.VERCEL = '1';
 process.env.NODE_ENV = 'production';
 
-let server;
+let server: Server | undefined;
 try {
   const { default: app } = await import('../server.ts');
   server = createServer(app);
@@ -25,7 +25,7 @@ try {
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   const baseUrl = 'http://127.0.0.1:' + address.port;
-  const request = (route, init = {}, cookie) => {
+  const request = (route: string, init: RequestInit = {}, cookie?: string): Promise<Response> => {
     const headers = new Headers(init.headers || {});
     if (cookie) headers.set('Cookie', cookie);
     return fetch(baseUrl + route, { ...init, headers });
@@ -37,7 +37,7 @@ try {
   const directoryResponse = await request('/api/auth/users');
   assert.equal(directoryResponse.status, 200);
   const directory = await directoryResponse.json();
-  assert.ok(directory.some(user => user.id === 'u-1'));
+  assert.ok(directory.some((user: any) => user.id === 'u-1'));
   assert.ok(!JSON.stringify(directory).includes('phone'), 'public login directory must not include contact fields');
   assert.ok(!JSON.stringify(directory).includes('email'), 'public login directory must not include email addresses');
 
@@ -97,8 +97,8 @@ try {
   const teacherStateResponse = await request('/api/state', {}, teacherCookie);
   assert.equal(teacherStateResponse.status, 200);
   const teacherState = await teacherStateResponse.json();
-  assert.ok(teacherState.circles.every(circle => circle.id === 'c-1'), 'teacher state must be circle-scoped');
-  assert.ok(teacherState.students.every(student => student.circleId === 'c-1'), 'teacher state must not expose other circles’ students');
+  assert.ok(teacherState.circles.every((circle: any) => circle.id === 'c-1'), 'teacher state must be circle-scoped');
+  assert.ok(teacherState.students.every((student: any) => student.circleId === 'c-1'), 'teacher state must not expose other circles’ students');
 
   const deniedSettings = await request('/api/settings', {
     method: 'PUT',
@@ -121,8 +121,8 @@ try {
   assert.equal(afterLogout.status, 401, 'state must remain protected after logout');
 
   const storedDb = JSON.parse(readFileSync(databasePath, 'utf8'));
-  assert.ok(storedDb.users.find(user => user.id === 'u-1').passcode.startsWith('scrypt$'), 'first login must migrate the leader PIN to a salted hash');
-  assert.ok(storedDb.users.find(user => user.id === createdUser.id).passcode.startsWith('scrypt$'), 'new PINs must be stored as salted hashes');
+  assert.ok(storedDb.users.find((user: any) => user.id === 'u-1').passcode.startsWith('scrypt$'), 'first login must migrate the leader PIN to a salted hash');
+  assert.ok(storedDb.users.find((user: any) => user.id === createdUser.id).passcode.startsWith('scrypt$'), 'new PINs must be stored as salted hashes');
 
   console.log('API integration checks passed: auth, redaction, scoped access, logout, and PIN hashing.');
 } finally {
