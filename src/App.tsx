@@ -27,9 +27,15 @@ const AppContent: React.FC = () => {
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
+    if (typeof window === 'undefined') return false;
     return sessionStorage.getItem('ghaith_authenticated') === 'true';
   });
+
+  React.useEffect(() => {
+    const handleSessionExpired = () => setIsAuthenticated(false);
+    window.addEventListener('ghaith:session-expired', handleSessionExpired);
+    return () => window.removeEventListener('ghaith:session-expired', handleSessionExpired);
+  }, []);
 
   // Apply visual identity, font family & custom theme dynamically
   React.useEffect(() => {
