@@ -996,7 +996,7 @@ function addAudit(db: any, userName: any, userRole: any, actionType: any, entity
   }
 }
 
-async function startServer() {
+async function createApp() {
   const app = express();
   app.use(express.json({ limit: '5mb' }));
   const allowedOrigins = new Set((process.env.ALLOWED_ORIGINS || '').split(',').map(v => v.trim()).filter(Boolean));
@@ -1877,8 +1877,6 @@ async function startServer() {
 
   app.use('/api', api);
 
-  const httpServer = http.createServer(app);
-
   const distPath = path.join(__dirname, 'dist');
   const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
 
@@ -1910,12 +1908,19 @@ async function startServer() {
     }
   }
 
-  httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`🌸 Ghaith Al-Ghaym Platform running on port ${PORT}`);
+  app.use('/api', (_req, res, next) => {
+    if (!_req.path || _req.path === '/') return res.status(404).json({ error: 'API route not found' });
+    next();
   });
+  return app;
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
+const app = await createApp();
+export default app;
+
+if (process.env.VERCEL !== '1') {
+  const httpServer = http.createServer(app);
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    console.log('🌸 Ghaith Al-Ghaym Platform running on port ' + PORT);
+  });
+}
