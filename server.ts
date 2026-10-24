@@ -1891,12 +1891,15 @@ async function createApp() {
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found' }));
 
   const distPath = path.join(__dirname, 'dist');
+  const appIndexPath = process.env.VERCEL === '1'
+    ? path.join(__dirname, 'public', 'index.html')
+    : path.join(distPath, 'index.html');
   const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
 
   if (process.env.NODE_ENV === 'production' || (hasDist && process.env.NODE_ENV !== 'development')) {
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      res.sendFile(appIndexPath);
     });
   } else {
     try {
@@ -1913,7 +1916,7 @@ async function createApp() {
       if (hasDist) {
         app.use(express.static(distPath));
         app.get('*', (_req, res) => {
-          res.sendFile(path.join(distPath, 'index.html'));
+          res.sendFile(appIndexPath);
         });
       } else {
         console.error('Vite dev middleware failed and no dist found:', err);
