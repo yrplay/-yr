@@ -188,7 +188,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     supportEmail: "info@ghaym.org",
     supportPhone: "0500000001",
     securityEnabled: true,
-    leaderPasscode: "1234"
+    leaderPasscode: ""
   });
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -362,13 +362,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         persistState({ currentUser: targetUser });
         showToast(`مرحباً بك: ${targetUser.name} (${targetUser.title})`, 'info');
       }
-      try {
-        await fetch('/api/auth/switch-user', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId })
-        });
-      } catch {}
+      // The server identity is established by /api/auth/login. Local view switching
+      // must not silently change the authenticated server identity.
       return true;
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -1263,7 +1258,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       email: user.email || '',
       phone: user.phone || '',
       circleIds: user.circleIds || [],
-      passcode: user.passcode || '1234',
+      passcode: user.passcode || '',
       avatarIcon: user.avatarIcon || 'mushaf',
       avatarColor: user.avatarColor || '#8E5364',
       ...user
