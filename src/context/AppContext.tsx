@@ -292,7 +292,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       const res = await fetch('/api/state');
       if (res.status === 401) {
-        // Never hydrate private student data from a bundled seed or stale browser cache.
+        // Clear stale private data before any further request; never show it as an offline fallback.
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEY);
+          sessionStorage.removeItem('ghaith_authenticated');
+          sessionStorage.removeItem('ghaith_user_id');
+          sessionStorage.removeItem('ghaith_session_unlocked');
+          sessionStorage.removeItem('ghaith_logged_user_id');
+          window.dispatchEvent(new Event('ghaith:session-expired'));
+        }
         // Ask the server for the minimal public directory required to render the login gate.
         const directoryResponse = await fetch('/api/auth/users', { credentials: 'same-origin' });
         if (!directoryResponse.ok) throw new Error('تعذر تحميل قائمة حسابات الدخول');
@@ -314,14 +322,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setStudentExamResults([]);
         setGradingConfigs([]);
         setAuditLogs([]);
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem(STORAGE_KEY);
-          sessionStorage.removeItem('ghaith_authenticated');
-          sessionStorage.removeItem('ghaith_user_id');
-          sessionStorage.removeItem('ghaith_session_unlocked');
-          sessionStorage.removeItem('ghaith_logged_user_id');
-          window.dispatchEvent(new Event('ghaith:session-expired'));
-        }
         setError(null);
         return false;
       }
