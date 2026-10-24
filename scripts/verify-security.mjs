@@ -17,6 +17,7 @@ assert.ok(server.includes("api.get('/auth/users'"), 'login must use the minimal 
 assert.ok(server.includes("app.use('/api', (_req, res) => res.status(404)"), 'unknown API routes must return JSON 404');
 assert.ok(!server.includes("Access-Control-Allow-Origin', '*'"), 'wildcard CORS must not be enabled');
 assert.ok(!server.includes('u.passcode = "1234"'), 'user PIN fallback must not be restored');
+assert.ok(!server.includes('leaderPasscode: "1234"'), 'leader seed must not contain a default PIN');
 assert.ok(!server.includes("passcode: req.body.passcode ? String(req.body.passcode).trim() : '1234'"), 'new users must not receive a default PIN');
 
 assert.ok(!context.includes("import initialData from '../data/initialData'"), 'private seed database must not be imported into the client context');
