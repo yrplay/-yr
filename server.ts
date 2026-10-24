@@ -1132,7 +1132,8 @@ async function startServer() {
     db.currentUser = user;
     addAudit(db, user.name, user.role, 'login', 'auth', `تسجيل الدخول / تبديل المستخدم إلى: ${user.name} (${user.title})`);
     writeDatabase(db);
-    res.json({ user, success: true });
+    const { passcode: _passcode, ...safeUser } = user;
+    res.json({ user: safeUser, success: true });
   });
 
   // Change user passcode
@@ -1732,7 +1733,9 @@ async function startServer() {
     }
     addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'settings', `تحديث الإعدادات العامة للمقرأة والهوية والشعار`);
     writeDatabase(db);
-    res.json(db.settings);
+    const { leaderPasscode: _leaderPasscode, ...safeSettings } = db.settings;
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(safeSettings);
   });
 
   // Manage users / permissions
@@ -1747,7 +1750,8 @@ async function startServer() {
     db.users.push(newUser);
     addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'user', `إضافة مستخدم جديد: ${newUser.name} (${newUser.title})`, newUser.id);
     writeDatabase(db);
-    res.status(201).json(newUser);
+    const { passcode: _passcode, ...safeNewUser } = newUser;
+    res.status(201).json(safeNewUser);
   });
 
   api.put('/users/:id', (req, res) => {
@@ -1768,7 +1772,8 @@ async function startServer() {
     }
     addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'user', `تعديل بيانات وصلاحيات المستخدم: ${db.users[idx].name}`, req.params.id);
     writeDatabase(db);
-    res.json(db.users[idx]);
+    const { passcode: _passcode, ...safeUpdatedUser } = db.users[idx];
+    res.json(safeUpdatedUser);
   });
 
   // Backup & Restore
