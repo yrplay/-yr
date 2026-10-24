@@ -292,6 +292,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const refreshData = async (_silent: boolean = false) => {
     try {
       const res = await fetch('/api/state');
+      if (res.status === 401) {
+        // An unauthenticated visit is expected: hydrate only the bundled staff list
+        // so the login gate can render, and never treat cached private data as synced.
+        applyState(initialData);
+        setError(null);
+        if (typeof window !== 'undefined') {
+          sessionStorage.removeItem('ghaith_authenticated');
+          sessionStorage.removeItem('ghaith_user_id');
+          sessionStorage.removeItem('ghaith_session_unlocked');
+          sessionStorage.removeItem('ghaith_logged_user_id');
+          window.dispatchEvent(new Event('ghaith:session-expired'));
+        }
+        return false;
+      }
       if (res.ok) {
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
