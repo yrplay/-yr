@@ -1040,7 +1040,12 @@ async function createApp() {
     return expected.length > 0 && expected.length === actual.length && timingSafeEqual(expected, actual);
   }
   function createSession(user: any) {
-    const payload = Buffer.from(JSON.stringify({ userId: user.id, role: user.role, exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({
+      userId: user.id,
+      role: user.role,
+      sessionVersion: Number(user.sessionVersion || 0),
+      exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS
+    })).toString('base64url');
     return payload + '.' + createHmac('sha256', sessionSecret()).update(payload).digest('base64url');
   }
   function getSession(req: express.Request): any {
@@ -1116,7 +1121,20 @@ async function createApp() {
     res.setHeader('Cache-Control', 'no-store');
     return res.json({ success: true, user: publicUser(user) });
   });
-  api.post('/auth/logout', (_req, res) => {
+  api.post('/auth/logout', (req, res) => {
+    const session = getSession(req);
+    if (session) {
+      const db = readDatabase();
+      const user = db.users.find((u: any) => u.id === session.userId);
+      if (user) {
+        user.sessionVersion = Number(user.sessionVersion || 0) + 1;
+        if (db.currentUser?.id === user.id) db.currentUser.sessionVersion = user.sessionVersion;
+        if (!writeDatabase(db)) {
+          clearSessionCookie(res);
+          return res.status(500).json({ error: 'تعذر إنهاء الجلسة على الخادم؛ تم مسح ملف تعريف الارتباط محليًا' });
+        }
+      }
+    }
     clearSessionCookie(res);
     res.setHeader('Cache-Control', 'no-store');
     return res.json({ success: true });
@@ -1127,7 +1145,9 @@ async function createApp() {
     if (!session) return res.status(401).json({ error: 'يلزم تسجيل الدخول للوصول إلى هذه البيانات' });
     const db = readDatabase();
     const user = db.users.find((u: any) => u.id === session.userId);
-    if (!user || user.role !== session.role) return res.status(401).json({ error: 'الجلسة غير صالحة؛ يرجى تسجيل الدخول مجددًا' });
+    if (!user || user.role !== session.role || Number(user.sessionVersion || 0) !== Number(session.sessionVersion || 0)) {
+      return res.status(401).json({ error: 'الجلسة غير صالحة؛ يرجى تسجيل الدخول مجددًا' });
+    }
     (req as any).authUser = { id: user.id, role: user.role, name: user.name, circleIds: user.circleIds || [] };
     const route = req.path;
     const leaderPrefixes = ['/users', '/settings', '/backup', '/grading-config', '/tracks', '/circles', '/students', '/monthly-plans', '/atqini', '/challenges', '/exams'];
@@ -1225,6 +1245,7 @@ async function createApp() {
       return res.status(404).json({ error: 'المستخدم غير موجود' });
     }
     user.passcode = hashPasscode(cleanNew);
+    user.sessionVersion = Number(user.sessionVersion || 0) + 1;
     if (user.role === 'leader') db.settings.leaderPasscode = '';
     if (db.currentUser && db.currentUser.id === userId) db.currentUser.passcode = user.passcode;
     addAudit(db, user.name, user.role, 'update', 'user', `تحديث الرمز السري بنجاح للمستخدم: ${user.name}`, user.id);
@@ -1814,7 +1835,8 @@ async function createApp() {
       ...req.body,
       id: `u-${Date.now()}`,
       circleIds: Array.isArray(req.body.circleIds) ? req.body.circleIds : [],
-      passcode: req.body.passcode ? hashPasscode(String(req.body.passcode).trim()) : ''
+      passcode: req.body.passcode ? hashPasscode(String(req.body.passcode).trim()) : '',
+      sessionVersion: 0
     };
     delete (newUser as any).leaderPasscode;
     db.users.push(newUser);
@@ -1828,7 +1850,12 @@ async function createApp() {
     const idx = db.users.findIndex((u: any) => u.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'المستخدم غير موجود' });
     const cleanBody = { ...req.body };
-    if (cleanBody.passcode) cleanBody.passcode = hashPasscode(String(cleanBody.passcode).trim());
+    if (cleanBody.passcode) {
+      cleanBody.passcode = hashPasscode(String(cleanBody.passcode).trim());
+      cleanBody.sessionVersion = Number(db.users[idx].sessionVersion || 0) + 1;
+    } else {
+      delete cleanBody.sessionVersion;
+    }
     db.users[idx] = { ...db.users[idx], ...cleanBody };
     // If leader user passcode is changed, sync with settings.leaderPasscode
     if (db.users[idx].role === 'leader' && cleanBody.passcode) db.settings.leaderPasscode = '';
@@ -1864,7 +1891,7 @@ async function createApp() {
     const restored = { ...backupData };
     restored.users = backupData.users.map((user: any) => {
       const existing = currentDb.users.find((current: any) => current.id === user.id);
-      return { ...user, passcode: existing?.passcode || '' };
+      return { ...user, passcode: existing?.passcode || '', sessionVersion: Number(existing?.sessionVersion || 0) + 1 };
     });
     restored.settings = { ...backupData.settings, leaderPasscode: '' };
     restored.currentUser = restored.users.find((user: any) => user.id === backupData.currentUser?.id) || restored.users.find((user: any) => user.role === 'leader') || null;
@@ -1878,7 +1905,8 @@ async function createApp() {
     const freshDb = getInitialDatabase();
     freshDb.users = freshDb.users.map((user: any) => ({
       ...user,
-      passcode: currentDb.users.find((current: any) => current.id === user.id)?.passcode || ''
+      passcode: currentDb.users.find((current: any) => current.id === user.id)?.passcode || '',
+      sessionVersion: Number(currentDb.users.find((current: any) => current.id === user.id)?.sessionVersion || 0) + 1
     }));
     freshDb.settings.leaderPasscode = '';
     freshDb.currentUser = freshDb.users.find((user: any) => user.role === 'leader') || freshDb.currentUser;
