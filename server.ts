@@ -1876,6 +1876,7 @@ async function createApp() {
   });
 
   app.use('/api', api);
+  app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found' }));
 
   const distPath = path.join(__dirname, 'dist');
   const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
@@ -1908,10 +1909,6 @@ async function createApp() {
     }
   }
 
-  app.use('/api', (_req, res, next) => {
-    if (!_req.path || _req.path === '/') return res.status(404).json({ error: 'API route not found' });
-    next();
-  });
   return app;
 }
 
