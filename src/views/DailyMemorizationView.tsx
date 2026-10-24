@@ -10,7 +10,7 @@ import { DailyRecord, Student } from '../types';
 export const DailyMemorizationView: React.FC = () => {
   const {
     students, circles, dailyRecords, saveDailyRecord,
-    gradingConfigs, allStudentScores, currentUser, assignPartner, showToast
+    gradingConfigs, allStudentScores, currentUser, assignPartner, showToast, settings
   } = useApp();
 
   const [selectedCircleId, setSelectedCircleId] = useState<string>(circles[0]?.id || 'c-1');
@@ -585,10 +585,14 @@ export const DailyMemorizationView: React.FC = () => {
                   رصد التسميع اليومي ومطابقة الشروط
                 </h3>
                 <p className="text-xs text-stone-500">
-                  للطالبة: <strong>{selectedStudentForEval.name}</strong> • حلقة: <strong>{activeCircle.name}</strong>
+                  للطالبة: <strong>{selectedStudentForEval.name}</strong> • حلقة: <strong>{activeCircle?.name || 'غير محدد'}</strong>
                 </p>
               </div>
-              <button onClick={() => setEvalModalOpen(false)} className="text-stone-400 hover:text-stone-600 cursor-pointer">
+              <button
+                type="button"
+                onClick={() => setEvalModalOpen(false)}
+                className="text-stone-400 hover:text-stone-600 cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -813,13 +817,14 @@ export const DailyMemorizationView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setEvalModalOpen(false)}
-                  className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100 cursor-pointer"
+                  className="px-4 py-2.5 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 transition active:scale-95 cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#8E5364] text-white text-xs font-bold rounded-xl hover:bg-[#744251] shadow-xs cursor-pointer active:scale-95 transition"
+                  style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
+                  className="px-6 py-2.5 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 active:scale-95 cursor-pointer touch-manipulation"
                 >
                   اعتماد ورصد التسميع
                 </button>

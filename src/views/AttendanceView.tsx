@@ -24,7 +24,7 @@ export const AttendanceView: React.FC = () => {
     const existing = attendanceRecords.find(a => a.studentId === studentId && a.date === selectedDate);
     return existing || {
       studentId,
-      circleId: activeCircle.id,
+      circleId: activeCircle?.id || '',
       date: selectedDate,
       status: 'unrecorded',
       earlyPrepCardSent: false
@@ -36,7 +36,7 @@ export const AttendanceView: React.FC = () => {
     await saveAttendance({
       ...rec,
       studentId,
-      circleId: activeCircle.id,
+      circleId: activeCircle?.id || rec.circleId || '',
       date: selectedDate,
       status,
       reason: status === 'absent_excused' ? (reasonInputs[studentId] || rec.reason || '') : undefined
@@ -48,7 +48,7 @@ export const AttendanceView: React.FC = () => {
     await saveAttendance({
       ...rec,
       studentId,
-      circleId: activeCircle.id,
+      circleId: activeCircle?.id || rec.circleId || '',
       date: selectedDate,
       earlyPrepCardSent: !rec.earlyPrepCardSent
     });
@@ -60,7 +60,7 @@ export const AttendanceView: React.FC = () => {
       return {
         ...rec,
         studentId: st.id,
-        circleId: activeCircle.id,
+        circleId: activeCircle?.id || st.circleId || '',
         date: selectedDate,
         status: 'present' as const
       };
@@ -74,7 +74,7 @@ export const AttendanceView: React.FC = () => {
       return {
         ...rec,
         studentId: st.id,
-        circleId: activeCircle.id,
+        circleId: activeCircle?.id || st.circleId || '',
         date: selectedDate,
         earlyPrepCardSent: true
       };
@@ -184,8 +184,110 @@ export const AttendanceView: React.FC = () => {
         </div>
       </div>
 
-      {/* Attendance Table */}
-      <div className="bg-white rounded-3xl border border-[#E8DFD8] shadow-2xs overflow-hidden">
+      {/* Attendance Content: Mobile Cards View (sm/md screens) & Desktop Table View (lg screens) */}
+      
+      {/* Mobile Card Layout for Phones & Tablets */}
+      <div className="block lg:hidden space-y-3">
+        {circleStudents.map((student, idx) => {
+          const rec = getRecord(student.id);
+          const score = allStudentScores[student.id];
+
+          return (
+            <div
+              key={student.id}
+              className="bg-white rounded-2xl border border-[#E8DFD8] p-4 shadow-2xs space-y-3"
+            >
+              {/* Header: Student Name, Code & Early Prep Button */}
+              <div className="flex items-start justify-between gap-2 border-b border-stone-100 pb-2.5">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-stone-100 text-stone-500 text-[10px] flex items-center justify-center font-bold">
+                      {idx + 1}
+                    </span>
+                    <h3 className="font-bold text-stone-900 text-sm">{student.name}</h3>
+                  </div>
+                  <div className="text-[11px] text-stone-400 font-mono mt-0.5 mr-7">
+                    كود: {student.code} • حضور: <strong className="text-[#2D5A43]">{score?.attendanceRate || 0}%</strong>
+                  </div>
+                </div>
+
+                {/* Mobile Early Prep Button */}
+                <button
+                  type="button"
+                  onClick={() => handleToggleEarlyPrep(student.id)}
+                  className={`px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer touch-manipulation ${
+                    rec.earlyPrepCardSent
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
+                      : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
+                  }`}
+                >
+                  <Star className={`w-4 h-4 ${rec.earlyPrepCardSent ? 'text-amber-600 fill-amber-500' : ''}`} />
+                  <span>{rec.earlyPrepCardSent ? 'مبكر ⭐' : 'تحضير مبكر؟'}</span>
+                </button>
+              </div>
+
+              {/* Status Action Buttons (Touch-friendly 44px min height) */}
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleUpdateStatus(student.id, 'present')}
+                  className={`py-2.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 active:scale-95 cursor-pointer touch-manipulation border ${
+                    rec.status === 'present'
+                      ? 'bg-[#2D5A43] text-white border-[#2D5A43] shadow-xs'
+                      : 'bg-[#FAF6F2] hover:bg-[#EFEAE5] text-stone-700 border-stone-200'
+                  }`}
+                >
+                  <span>✅</span>
+                  <span>حاضرة</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleUpdateStatus(student.id, 'absent_excused')}
+                  className={`py-2.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 active:scale-95 cursor-pointer touch-manipulation border ${
+                    rec.status === 'absent_excused'
+                      ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                      : 'bg-[#FAF6F2] hover:bg-[#EFEAE5] text-stone-700 border-stone-200'
+                  }`}
+                >
+                  <span>⭕️</span>
+                  <span>بعذر</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleUpdateStatus(student.id, 'absent_unexcused')}
+                  className={`py-2.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 active:scale-95 cursor-pointer touch-manipulation border ${
+                    rec.status === 'absent_unexcused'
+                      ? 'bg-rose-700 text-white border-rose-700 shadow-xs'
+                      : 'bg-[#FAF6F2] hover:bg-[#EFEAE5] text-stone-700 border-stone-200'
+                  }`}
+                >
+                  <span>❌</span>
+                  <span>بدون عذر</span>
+                </button>
+              </div>
+
+              {/* Excused Reason Input on Mobile */}
+              {rec.status === 'absent_excused' && (
+                <div className="pt-1">
+                  <input
+                    type="text"
+                    placeholder="اكتبي سبب العذر هنا..."
+                    value={reasonInputs[student.id] !== undefined ? reasonInputs[student.id] : (rec.reason || '')}
+                    onChange={e => setReasonInputs({ ...reasonInputs, [student.id]: e.target.value })}
+                    onBlur={() => handleUpdateStatus(student.id, 'absent_excused')}
+                    className="w-full px-3 py-2 text-xs border border-amber-300 rounded-xl bg-amber-50/50 focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop Table View */}
+      <div className="hidden lg:block bg-white rounded-3xl border border-[#E8DFD8] shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs">
             <thead>
@@ -216,8 +318,9 @@ export const AttendanceView: React.FC = () => {
                     {/* Early Prep Toggle */}
                     <td className="p-3.5 text-center">
                       <button
+                        type="button"
                         onClick={() => handleToggleEarlyPrep(student.id)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer touch-manipulation ${
                           rec.earlyPrepCardSent
                             ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
                             : 'bg-stone-100 hover:bg-stone-200 text-stone-400'
@@ -233,8 +336,9 @@ export const AttendanceView: React.FC = () => {
                     <td className="p-3.5 text-center">
                       <div className="inline-flex items-center gap-1.5 bg-[#FAF6F2] p-1 rounded-xl border border-[#EFE8E2]">
                         <button
+                          type="button"
                           onClick={() => handleUpdateStatus(student.id, 'present')}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 active:scale-95 cursor-pointer touch-manipulation ${
                             rec.status === 'present'
                               ? 'bg-[#2D5A43] text-white shadow-2xs'
                               : 'text-stone-600 hover:text-stone-900'
@@ -243,8 +347,9 @@ export const AttendanceView: React.FC = () => {
                           <span>✅ حضور</span>
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleUpdateStatus(student.id, 'absent_unexcused')}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 active:scale-95 cursor-pointer touch-manipulation ${
                             rec.status === 'absent_unexcused'
                               ? 'bg-rose-700 text-white shadow-2xs'
                               : 'text-stone-600 hover:text-rose-700'
@@ -253,8 +358,9 @@ export const AttendanceView: React.FC = () => {
                           <span>❌ بدون عذر</span>
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleUpdateStatus(student.id, 'absent_excused')}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 active:scale-95 cursor-pointer touch-manipulation ${
                             rec.status === 'absent_excused'
                               ? 'bg-amber-600 text-white shadow-2xs'
                               : 'text-stone-600 hover:text-amber-700'

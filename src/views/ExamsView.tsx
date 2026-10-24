@@ -405,10 +405,19 @@ export const ExamsView: React.FC = () => {
       {/* Add / Edit Exam Modal */}
       {examModalOpen && (
         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-xl border border-stone-200">
-            <h3 className="font-bold text-stone-900 text-base font-quran mb-3">
-              {editingExam ? 'تعديل بيانات الاختبار الشهري' : 'جدولة اختبار شهري تمكيني'}
-            </h3>
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-xl border border-stone-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-3 border-b border-stone-100 pb-2">
+              <h3 className="font-bold text-stone-900 text-base font-quran">
+                {editingExam ? 'تعديل بيانات الاختبار الشهري' : 'جدولة اختبار شهري تمكيني'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setExamModalOpen(false)}
+                className="text-stone-400 hover:text-stone-600 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
             <form onSubmit={handleSaveExam} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-stone-700 mb-1">عنوان الاختبار</label>
@@ -460,17 +469,18 @@ export const ExamsView: React.FC = () => {
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
                 <button
                   type="button"
                   onClick={() => setExamModalOpen(false)}
-                  className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100"
+                  className="px-4 py-2.5 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 transition active:scale-95 cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#8E5364] text-white text-xs font-bold rounded-xl hover:bg-[#744251]"
+                  style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
+                  className="px-6 py-2.5 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 active:scale-95 cursor-pointer touch-manipulation"
                 >
                   حفظ وجدولة الاختبار
                 </button>
@@ -483,10 +493,19 @@ export const ExamsView: React.FC = () => {
       {/* Record Student Exam Result Modal */}
       {evalModalOpen && evalStudent && (
         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-xl border border-stone-200">
-            <h3 className="font-bold text-stone-900 text-base font-quran mb-1">
-              رصد نتيجة الاختبار الشهري
-            </h3>
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-xl border border-stone-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-1 border-b border-stone-100 pb-2">
+              <h3 className="font-bold text-stone-900 text-base font-quran">
+                رصد نتيجة الاختبار الشهري
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEvalModalOpen(false)}
+                className="text-stone-400 hover:text-stone-600 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
             <p className="text-xs text-stone-500 mb-4">
               للطالبة: <strong>{evalStudent.name}</strong> • الاختبار: <strong>{currentExam?.title}</strong>
             </p>
@@ -578,17 +597,18 @@ export const ExamsView: React.FC = () => {
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
                 <button
                   type="button"
                   onClick={() => setEvalModalOpen(false)}
-                  className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100"
+                  className="px-4 py-2.5 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 transition active:scale-95 cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#8E5364] text-white text-xs font-bold rounded-xl hover:bg-[#744251]"
+                  style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
+                  className="px-6 py-2.5 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 active:scale-95 cursor-pointer touch-manipulation"
                 >
                   اعتماد ورصد نتيجة الاختبار
                 </button>

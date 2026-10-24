@@ -10,7 +10,7 @@ export const ChallengesView: React.FC = () => {
   const {
     challenges, studentChallengeSubmissions, students, circles, tracks,
     createChallenge, updateChallenge, deleteChallenge,
-    saveChallengeSubmission, currentUser, quickModalAction, clearQuickModal
+    saveChallengeSubmission, currentUser, quickModalAction, clearQuickModal, settings
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'thursday' | 'grand' | 'peer_review'>('thursday');
@@ -671,17 +671,18 @@ export const ChallengesView: React.FC = () => {
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
                 <button
                   type="button"
                   onClick={() => setEvalModalOpen(false)}
-                  className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100"
+                  className="px-4 py-2.5 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 transition active:scale-95 cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#8E5364] text-white text-xs font-bold rounded-xl hover:bg-[#744251]"
+                  style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
+                  className="px-6 py-2.5 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 active:scale-95 cursor-pointer touch-manipulation"
                 >
                   اعتماد ورصد نتيجة التحدي
                 </button>

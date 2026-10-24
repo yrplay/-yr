@@ -1025,6 +1025,9 @@ async function startServer() {
   // Get full state
   api.get('/state', (_req, res) => {
     const db = readDatabase();
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.json(db);
   });
 

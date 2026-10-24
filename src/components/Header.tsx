@@ -153,10 +153,20 @@ export const Header: React.FC<HeaderProps> = ({
               )}
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-bold text-stone-900 tracking-tight flex items-center gap-1.5 font-quran group-hover:text-[#8E5364] transition">
+                  <h1
+                    style={{ color: settings.primaryColor || '#8E5364' }}
+                    className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-1.5 font-quran transition"
+                  >
                     {settings.name || 'غيث الغيم'}
                   </h1>
-                  <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-[#EBF3EE] text-[#2D5A43] border border-[#CDE0D4]">
+                  <span
+                    style={{
+                      backgroundColor: `${settings.secondaryColor || '#2D5A43'}15`,
+                      color: settings.secondaryColor || '#2D5A43',
+                      borderColor: `${settings.secondaryColor || '#2D5A43'}30`
+                    }}
+                    className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border"
+                  >
                     {tracks.find(t => t.id === selectedTrackId)?.name || settings.activeTrackName || 'المسارات القرآنية'}
                   </span>
                 </div>
@@ -236,8 +246,13 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Quick Action Menu (+) */}
             <div ref={quickAddRef} className="relative">
               <button
+                type="button"
                 onClick={() => setQuickAddOpen(!quickAddOpen)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#FAF5F2] hover:bg-[#EFEAE5] text-[#8E5364] border border-[#E8DFD8] text-xs font-bold transition shadow-2xs cursor-pointer"
+                style={{
+                  color: settings.primaryColor || '#8E5364',
+                  borderColor: `${settings.primaryColor || '#8E5364'}40`
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#FAF5F2] hover:bg-[#EFEAE5] border text-xs font-bold transition shadow-2xs cursor-pointer active:scale-95"
                 title="إضافة سريعة"
               >
                 <PlusCircle className="w-4 h-4" />
@@ -245,41 +260,46 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
 
               {quickAddOpen && (
-                <div className="absolute left-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-stone-200 py-2 z-50 text-xs">
+                <div className="absolute left-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-stone-200 py-2 z-50 text-xs animate-in fade-in">
                   <div className="px-3 py-1.5 text-[11px] font-bold text-stone-400 uppercase tracking-wider border-b border-stone-100 mb-1">
                     إجراءات سريعة فورية
                   </div>
                   <button
+                    type="button"
                     onClick={() => { setQuickAddOpen(false); onOpenQuickModal('student'); }}
-                    className="w-full text-right px-3.5 py-2 hover:bg-[#F9F5F6] text-stone-700 flex items-center justify-between font-semibold cursor-pointer"
+                    className="w-full text-right px-3.5 py-2.5 hover:bg-[#F9F5F6] text-stone-700 flex items-center justify-between font-semibold cursor-pointer active:scale-95 transition"
                   >
                     <span>تسجيل طالبة جديدة</span>
                     <span className="text-stone-400">👩‍🎓</span>
                   </button>
                   <button
+                    type="button"
                     onClick={() => { setQuickAddOpen(false); onOpenQuickModal('circle'); }}
-                    className="w-full text-right px-3.5 py-2 hover:bg-[#F9F5F6] text-stone-700 flex items-center justify-between font-semibold cursor-pointer"
+                    className="w-full text-right px-3.5 py-2.5 hover:bg-[#F9F5F6] text-stone-700 flex items-center justify-between font-semibold cursor-pointer active:scale-95 transition"
                   >
                     <span>إنشاء حلقة جديدة</span>
                     <span className="text-stone-400">🪴</span>
                   </button>
                   <button
+                    type="button"
                     onClick={() => { setQuickAddOpen(false); onOpenQuickModal('atqini'); }}
-                    className="w-full text-right px-3.5 py-2 hover:bg-[#F9F5F6] text-stone-700 flex items-center justify-between font-semibold cursor-pointer"
+                    className="w-full text-right px-3.5 py-2.5 hover:bg-[#F9F5F6] text-stone-700 flex items-center justify-between font-semibold cursor-pointer active:scale-95 transition"
                   >
                     <span>نشر واجب «أتقني»</span>
                     <span className="text-stone-400">✨</span>
                   </button>
                   <button
+                    type="button"
                     onClick={() => { setQuickAddOpen(false); onOpenQuickModal('challenge'); }}
-                    className="w-full text-right px-3.5 py-2 hover:bg-[#F9F5F6] text-stone-700 flex items-center justify-between font-semibold cursor-pointer"
+                    className="w-full text-right px-3.5 py-2.5 hover:bg-[#F9F5F6] text-stone-700 flex items-center justify-between font-semibold cursor-pointer active:scale-95 transition"
                   >
                     <span>إطلاق تحدٍ قرآني</span>
                     <span className="text-stone-400">🌟</span>
                   </button>
                   <button
+                    type="button"
                     onClick={() => { setQuickAddOpen(false); onOpenQuickModal('exam'); }}
-                    className="w-full text-right px-3.5 py-2 hover:bg-[#F9F5F6] text-stone-700 flex items-center justify-between font-semibold cursor-pointer"
+                    className="w-full text-right px-3.5 py-2.5 hover:bg-[#F9F5F6] text-stone-700 flex items-center justify-between font-semibold cursor-pointer active:scale-95 transition"
                   >
                     <span>جدولة اختبار شهري</span>
                     <span className="text-stone-400">📝</span>
@@ -291,18 +311,19 @@ export const Header: React.FC<HeaderProps> = ({
             {/* User Profile & Passcode Dropdown */}
             <div ref={userDropdownRef} className="relative">
               <button
+                type="button"
                 onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-2 rounded-xl bg-[#F8F5F2] hover:bg-[#EFEAE5] border border-[#E4DBD3] transition text-right cursor-pointer"
+                className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-2 rounded-xl bg-[#F8F5F2] hover:bg-[#EFEAE5] border border-[#E4DBD3] transition text-right cursor-pointer active:scale-95"
               >
                 <div
                   className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-bold text-xs"
                   style={{
-                    backgroundColor: `${currentUser?.avatarColor || '#8E5364'}20`,
-                    color: currentUser?.avatarColor || '#8E5364'
+                    backgroundColor: `${currentUser?.avatarColor || settings.primaryColor || '#8E5364'}20`,
+                    color: currentUser?.avatarColor || settings.primaryColor || '#8E5364'
                   }}
                 >
                   {currentUser?.avatarIcon ? (
-                    currentIcon.svg({ className: 'w-4 h-4 sm:w-5 sm:h-5', color: currentUser.avatarColor || '#8E5364' })
+                    currentIcon.svg({ className: 'w-4 h-4 sm:w-5 sm:h-5', color: currentUser.avatarColor || settings.primaryColor || '#8E5364' })
                   ) : (
                     <span>{currentUser?.name ? currentUser.name.charAt(0) : 'ق'}</span>
                   )}
@@ -312,7 +333,12 @@ export const Header: React.FC<HeaderProps> = ({
                     {currentUser?.name || 'قائدة المقرأة'}
                   </div>
                   <div className="text-[10px] text-stone-500 font-medium flex items-center gap-1">
-                    <span className={`w-1.5 h-1.5 rounded-full ${currentUser?.role === 'leader' ? 'bg-[#8E5364]' : currentUser?.role === 'supervisor' ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
+                    <span
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{
+                        backgroundColor: currentUser?.role === 'leader' ? (settings.primaryColor || '#8E5364') : currentUser?.role === 'supervisor' ? '#F59E0B' : '#10B981'
+                      }}
+                    ></span>
                     {currentUser?.title || 'الإدارة'}
                   </div>
                 </div>

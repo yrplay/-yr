@@ -19,7 +19,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
   const {
     students, circles, tracks, allStudentScores,
     createStudent, updateStudent, archiveStudent, assignPartner,
-    currentUser, quickModalAction, clearQuickModal
+    currentUser, quickModalAction, clearQuickModal, settings
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -464,17 +464,18 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100 mt-2">
                 <button
                   type="button"
                   onClick={() => setStudentModalOpen(false)}
-                  className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100"
+                  className="px-4 py-2.5 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 transition active:scale-95 cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#8E5364] text-white text-xs font-bold rounded-xl hover:bg-[#744251]"
+                  style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
+                  className="px-6 py-2.5 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 active:scale-95 cursor-pointer touch-manipulation"
                 >
                   حفظ السجل
                 </button>
@@ -487,7 +488,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
       {/* Partner Assignment Modal */}
       {partnerModalOpen && selectedStudentForPartner && (
         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-xl border border-stone-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-xl border border-stone-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-2xl">🤝</span>
               <div>
@@ -523,11 +524,11 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                 </select>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
                 <button
                   type="button"
                   onClick={() => setPartnerModalOpen(false)}
-                  className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100"
+                  className="px-4 py-2.5 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 transition active:scale-95 cursor-pointer"
                 >
                   إلغاء
                 </button>
@@ -535,7 +536,8 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                   type="button"
                   onClick={handleSavePartner}
                   disabled={!targetPartnerId}
-                  className="px-5 py-2 bg-[#8E5364] disabled:opacity-50 text-white text-xs font-bold rounded-xl hover:bg-[#744251]"
+                  style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
+                  className="px-6 py-2.5 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 active:scale-95 cursor-pointer touch-manipulation"
                 >
                   تأكيد تعيين الرفيقة
                 </button>

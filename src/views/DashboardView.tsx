@@ -97,7 +97,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     <div className="space-y-6">
       
       {/* Welcome Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#8E5364] via-[#744251] to-[#55323C] p-5 sm:p-7 text-white shadow-md">
+      <div
+        style={{
+          background: `linear-gradient(135deg, ${settings.primaryColor || '#8E5364'} 0%, ${settings.secondaryColor || '#55323C'} 100%)`
+        }}
+        className="relative overflow-hidden rounded-3xl p-5 sm:p-7 text-white shadow-md transition-all duration-300"
+      >
         <div className="relative z-10 max-w-2xl">
           {/* Track Dropdown Selector in Badge Position */}
           <div className="flex flex-wrap items-center gap-2 mb-3">

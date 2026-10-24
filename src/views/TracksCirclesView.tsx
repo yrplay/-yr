@@ -22,7 +22,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     tracks, circles, students, users, allStudentScores,
     createTrack, updateTrack, archiveTrack, restoreTrack,
     createCircle, updateCircle, archiveCircle, restoreCircle,
-    currentUser, quickModalAction, clearQuickModal
+    currentUser, quickModalAction, clearQuickModal, settings
   } = useApp();
 
   const [selectedTrackId, setSelectedTrackId] = useState<string>(tracks[0]?.id || 't-1');
@@ -162,9 +162,10 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     const teacher = users.find(u => u.id === circleForm.teacherId);
     const supervisor = users.find(u => u.id === circleForm.supervisorId);
 
+    const trackFallbackId = currentTrack?.id || activeTracks[0]?.id || tracks[0]?.id || 't-1';
     const payload = {
       ...circleForm,
-      trackId: currentTrack.id,
+      trackId: trackFallbackId,
       teacherName: teacher ? teacher.name : 'غير محدد',
       supervisorName: supervisor ? supervisor.name : 'غير محدد'
     };
@@ -758,12 +759,16 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
       {/* Add / Edit Track Modal */}
       {trackModalOpen && (
         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-xl border border-stone-200">
-            <div className="flex items-center justify-between mb-3">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-xl border border-stone-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-3 border-b border-stone-100 pb-2">
               <h3 className="font-bold text-stone-900 text-base font-quran">
                 {editingTrack ? 'تعديل بيانات المسار' : 'إضافة مسار قرآني جديد'}
               </h3>
-              <button onClick={() => setTrackModalOpen(false)} className="text-stone-400 hover:text-stone-600">
+              <button
+                type="button"
+                onClick={() => setTrackModalOpen(false)}
+                className="text-stone-400 hover:text-stone-600 cursor-pointer"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -837,7 +842,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-2">
+              <div className="flex items-center justify-between pt-2 border-t border-stone-100">
                 {editingTrack && (
                   <button
                     type="button"
@@ -845,7 +850,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                       setTrackModalOpen(false);
                       confirmDeleteTrack(editingTrack);
                     }}
-                    className="flex items-center gap-1 text-rose-600 hover:text-rose-800 text-xs font-bold"
+                    className="flex items-center gap-1 text-rose-600 hover:text-rose-800 text-xs font-bold cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>حذف المسار</span>
@@ -855,13 +860,14 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setTrackModalOpen(false)}
-                    className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100"
+                    className="px-4 py-2.5 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 transition active:scale-95 cursor-pointer"
                   >
                     إلغاء
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-[#8E5364] text-white text-xs font-bold rounded-xl hover:bg-[#744251]"
+                    style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
+                    className="px-6 py-2.5 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 active:scale-95 cursor-pointer touch-manipulation"
                   >
                     حفظ المسار
                   </button>
@@ -975,7 +981,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 />
               </div>
 
-              <div className="flex items-center justify-between pt-2">
+              <div className="flex items-center justify-between pt-2 border-t border-stone-100">
                 {editingCircle && (
                   <button
                     type="button"
@@ -983,7 +989,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                       setCircleModalOpen(false);
                       confirmDeleteCircle(editingCircle);
                     }}
-                    className="flex items-center gap-1 text-rose-600 hover:text-rose-800 text-xs font-bold"
+                    className="flex items-center gap-1 text-rose-600 hover:text-rose-800 text-xs font-bold cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>أرشفة / حذف الحلقة</span>
@@ -993,13 +999,14 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setCircleModalOpen(false)}
-                    className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100"
+                    className="px-4 py-2.5 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 transition active:scale-95 cursor-pointer"
                   >
                     إلغاء
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-[#8E5364] text-white text-xs font-bold rounded-xl hover:bg-[#744251]"
+                    style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
+                    className="px-6 py-2.5 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 active:scale-95 cursor-pointer touch-manipulation"
                   >
                     حفظ بيانات الحلقة
                   </button>

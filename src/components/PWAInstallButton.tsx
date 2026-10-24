@@ -40,10 +40,14 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ variant = 'h
         <button
           type="button"
           onClick={handleInstallClick}
+          style={!isInstalled ? {
+            background: `linear-gradient(135deg, ${settings.primaryColor || '#8E5364'}, ${settings.secondaryColor || '#744251'})`,
+            borderColor: settings.primaryColor || '#744251'
+          } : undefined}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer active:scale-95 border ${
             isInstalled
               ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-              : 'bg-gradient-to-r from-[#8E5364] to-[#744251] text-white hover:brightness-105 border-[#744251]'
+              : 'text-white hover:brightness-105'
           } ${className}`}
           title="تثبيت التطبيق على جهازكِ للوصول السريع بدون متصفح"
         >
