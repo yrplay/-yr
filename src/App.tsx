@@ -115,7 +115,7 @@ const AppContent: React.FC = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#F9F7F5] text-stone-700">
-        <div className="w-16 h-16 rounded-3xl bg-gradient-to-br from-[#E8D5D8] to-[#D8E6DE] flex items-center justify-center text-3xl shadow-sm animate-pulse mb-4">
+        <div className="w-16 h-16 rounded-3xl bg-[#FAF2F4] border border-[#E8D5D8] flex items-center justify-center text-3xl shadow-sm animate-pulse mb-4">
           📖
         </div>
         <h2 className="text-xl font-bold font-quran text-stone-900 mb-1">{settings?.name || 'مقرأة غيث الغيم'}</h2>

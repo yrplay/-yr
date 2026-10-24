@@ -4,8 +4,9 @@ import { ViewType } from '../components/Sidebar';
 import {
   Users, Layers, Award, CheckCircle2, AlertTriangle, ArrowUpRight,
   TrendingUp, Calendar, Sparkles, BookOpen, Clock, HeartHandshake,
-  UserCheck, ShieldAlert, Plus, ChevronLeft, Edit3, Filter, Check
+  UserCheck, ShieldAlert, Plus, ChevronLeft, Edit3, Filter, Check, History
 } from 'lucide-react';
+import { AuditLogModal } from '../components/AuditLogModal';
 
 interface DashboardViewProps {
   onNavigate: (view: ViewType) => void;
@@ -24,6 +25,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     allStudentScores, settings, auditLogs, selectedTrackId, setSelectedTrackId,
     updateSettings
   } = useApp();
+
+  const [auditModalOpen, setAuditModalOpen] = useState(false);
 
   // Banner text inline quick edit state
   const [editBannerModalOpen, setEditBannerModalOpen] = useState(false);
@@ -99,7 +102,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* Welcome Banner */}
       <div
         style={{
-          background: `linear-gradient(135deg, ${settings.primaryColor || '#8E5364'} 0%, ${settings.secondaryColor || '#55323C'} 100%)`
+          backgroundColor: settings.primaryColor || '#8E5364'
         }}
         className="relative overflow-hidden rounded-3xl p-5 sm:p-7 text-white shadow-md transition-all duration-300"
       >
@@ -392,8 +395,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                   <div className="flex items-center gap-2">
                     <span
-                      className="text-xs font-bold px-2 py-0.5 rounded-full text-white"
-                      style={{ backgroundColor: score?.gradeColor || '#2D5A43' }}
+                      className="text-xs font-bold px-2.5 py-1 rounded-xl text-white shadow-2xs font-mono"
+                      style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
                     >
                       {score?.finalPercentage}% ({score?.gradeLabel})
                     </span>
@@ -476,12 +479,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           {/* Quick link to Audit trail */}
           <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500">
-            <span>آخر عملية: {auditLogs[0]?.details || 'تهيئة النظام'}</span>
+            <span className="truncate max-w-[240px]">آخر عملية: {auditLogs[0]?.details || 'تهيئة النظام'}</span>
             <button
-              onClick={() => onNavigate('settings')}
-              className="text-[#8E5364] font-bold hover:underline"
+              type="button"
+              onClick={() => setAuditModalOpen(true)}
+              className="text-[#8E5364] font-bold hover:underline cursor-pointer flex items-center gap-1 shrink-0"
             >
-              سجل التغييرات
+              <History className="w-3.5 h-3.5" />
+              <span>فتح سجل التعديلات</span>
             </button>
           </div>
 
@@ -557,6 +562,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Audit Log Modal */}
+      <AuditLogModal
+        isOpen={auditModalOpen}
+        onClose={() => setAuditModalOpen(false)}
+      />
 
     </div>
   );

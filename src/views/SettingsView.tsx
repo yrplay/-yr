@@ -8,12 +8,15 @@ import {
 } from 'lucide-react';
 import { OfficialSeal } from '../components/OfficialSeal';
 import { PWAInstallButton } from '../components/PWAInstallButton';
+import { AuditLogModal } from '../components/AuditLogModal';
 
 export const SettingsView: React.FC = () => {
   const {
     settings, updateSettings, downloadBackup, restoreBackup, resetSampleData,
     auditLogs, currentUser, showToast
   } = useApp();
+
+  const [auditModalOpen, setAuditModalOpen] = useState(false);
 
   const [form, setForm] = useState({
     name: settings.name || 'مقرأة غيث الغيم',
@@ -841,6 +844,48 @@ export const SettingsView: React.FC = () => {
 
       </form>
 
+      {/* 7. Audit Trail & Changes Log Section */}
+      <div className="bg-white p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
+          <div>
+            <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
+              <History className="w-4 h-4 text-[#8E5364]" />
+              <span>٧. سجل التعديلات والرقابة الإدارية (Audit Trail):</span>
+            </h3>
+            <p className="text-xs text-stone-500 mt-0.5">
+              توثيق آلي لكل عملية إضافة، تعديل، رصد درجات، أو تغيير في النظام مع هوية المنفذة والتوقيت الدقيق
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAuditModalOpen(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer self-start sm:self-auto"
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>عرض سجل التعديلات كاملاً ({auditLogs.length})</span>
+          </button>
+        </div>
+
+        {/* Recent 3 entries preview */}
+        <div className="space-y-2">
+          {auditLogs.slice(0, 3).map((log) => (
+            <div
+              key={log.id}
+              className="p-3 rounded-2xl bg-[#FCFAF8] border border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-[#8E5364] shrink-0" />
+                <span className="font-bold text-stone-900">{log.userName}:</span>
+                <span className="text-stone-700">{log.details}</span>
+              </div>
+              <div className="text-[11px] text-stone-400 font-mono shrink-0">
+                {new Date(log.timestamp).toLocaleDateString('ar-SA')} · {new Date(log.timestamp).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Backup, Restore & Reset Section */}
       <div className="bg-white p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4">
         <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
@@ -925,7 +970,7 @@ export const SettingsView: React.FC = () => {
       </div>
 
       {/* Developer Signature & Platform Credits Card */}
-      <div className="bg-gradient-to-r from-[#FAF2F4] via-[#FCFAF8] to-[#F4ECEE] p-5 rounded-3xl border border-[#E8DFD8] flex flex-col sm:flex-row items-center justify-between gap-4 shadow-2xs">
+      <div className="bg-[#FCFAF8] p-5 rounded-3xl border border-[#E8DFD8] flex flex-col sm:flex-row items-center justify-between gap-4 shadow-2xs">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-white border border-[#E0D0D4] flex items-center justify-center text-lg shadow-xs">
             ✍️
@@ -942,6 +987,12 @@ export const SettingsView: React.FC = () => {
           جميع الحقوق محفوظة لمقرأة {form.name || 'غيث الغيم'} © ١٤٤٦هـ
         </div>
       </div>
+
+      {/* Audit Log Modal */}
+      <AuditLogModal
+        isOpen={auditModalOpen}
+        onClose={() => setAuditModalOpen(false)}
+      />
 
       {/* Confirmation Reset Modal */}
       {resetConfirmOpen && (
