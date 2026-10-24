@@ -1286,8 +1286,20 @@ async function startServer() {
   // Student Plans
   api.post('/student-plans', (req, res) => {
     const db = readDatabase();
+    const existingIndex = db.studentPlans.findIndex(
+      (p: any) => (req.body.id && p.id === req.body.id) || (p.studentId === req.body.studentId && p.monthlyPlanId === req.body.monthlyPlanId)
+    );
+    if (existingIndex >= 0) {
+      db.studentPlans[existingIndex] = {
+        ...db.studentPlans[existingIndex],
+        ...req.body
+      };
+      addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'studentPlan', `تحديث خطة الطالبة`, db.studentPlans[existingIndex].id);
+      writeDatabase(db);
+      return res.json(db.studentPlans[existingIndex]);
+    }
     const newPlan = {
-      id: `sp-${Date.now()}`,
+      id: req.body.id || `sp-${Date.now()}`,
       status: 'active',
       ...req.body
     };
@@ -1299,8 +1311,20 @@ async function startServer() {
 
   api.put('/student-plans/:id', (req, res) => {
     const db = readDatabase();
-    const index = db.studentPlans.findIndex((p: any) => p.id === req.params.id);
-    if (index === -1) return res.status(404).json({ error: 'خطة الطالبة غير موجودة' });
+    let index = db.studentPlans.findIndex((p: any) => p.id === req.params.id);
+    if (index === -1 && req.body.studentId && req.body.monthlyPlanId) {
+      index = db.studentPlans.findIndex((p: any) => p.studentId === req.body.studentId && p.monthlyPlanId === req.body.monthlyPlanId);
+    }
+    if (index === -1) {
+      const newPlan = {
+        id: req.params.id,
+        status: 'active',
+        ...req.body
+      };
+      db.studentPlans.push(newPlan);
+      writeDatabase(db);
+      return res.json(newPlan);
+    }
     db.studentPlans[index] = { ...db.studentPlans[index], ...req.body };
     addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'studentPlan', `تحديث خطة الطالبة`, req.params.id);
     writeDatabase(db);
@@ -1310,8 +1334,22 @@ async function startServer() {
   // Daily records (Memorization, Revision, Conditions, Recitation grade)
   api.post('/daily-records', (req, res) => {
     const db = readDatabase();
+    const existingIndex = db.dailyRecords.findIndex(
+      (r: any) => (req.body.id && r.id === req.body.id) || (r.studentId === req.body.studentId && r.date === req.body.date)
+    );
+    if (existingIndex >= 0) {
+      db.dailyRecords[existingIndex] = {
+        ...db.dailyRecords[existingIndex],
+        ...req.body,
+        recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
+        recordedAt: new Date().toISOString()
+      };
+      addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'dailyRecord', `تحديث السجل اليومي لطالبة بتاريخ ${req.body.date}`, db.dailyRecords[existingIndex].id);
+      writeDatabase(db);
+      return res.json(db.dailyRecords[existingIndex]);
+    }
     const newRecord = {
-      id: `dr-${Date.now()}`,
+      id: req.body.id || `dr-${Date.now()}`,
       recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
       recordedAt: new Date().toISOString(),
       ...req.body
@@ -1324,8 +1362,21 @@ async function startServer() {
 
   api.put('/daily-records/:id', (req, res) => {
     const db = readDatabase();
-    const index = db.dailyRecords.findIndex((r: any) => r.id === req.params.id);
-    if (index === -1) return res.status(404).json({ error: 'السجل اليومي غير موجود' });
+    let index = db.dailyRecords.findIndex((r: any) => r.id === req.params.id);
+    if (index === -1 && req.body.studentId && req.body.date) {
+      index = db.dailyRecords.findIndex((r: any) => r.studentId === req.body.studentId && r.date === req.body.date);
+    }
+    if (index === -1) {
+      const newRec = {
+        id: req.params.id,
+        recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
+        recordedAt: new Date().toISOString(),
+        ...req.body
+      };
+      db.dailyRecords.push(newRec);
+      writeDatabase(db);
+      return res.json(newRec);
+    }
     db.dailyRecords[index] = {
       ...db.dailyRecords[index],
       ...req.body,

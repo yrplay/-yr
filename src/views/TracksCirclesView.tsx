@@ -9,6 +9,12 @@ import {
 import { Circle, Track } from '../types';
 import { CircleIconPicker } from '../components/CircleIconLibrary';
 
+const TRACK_EMOJIS = [
+  '🪴', '📖', '🌸', '🌟', '🌿', '💎', '🕊️', '📜',
+  '🏆', '✨', '🪔', '🌴', '🌙', '🕌', '💫', '🌾',
+  '🛡️', '👑', '🎯', '💡', '📿', '🕯️', '⭐️', '🌺'
+];
+
 interface TracksCirclesViewProps {
   onSelectStudent: (studentId: string) => void;
   onNavigateToSection: (section: string) => void;
@@ -292,7 +298,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 : 'bg-white text-stone-700 hover:bg-[#FAF6F2] border border-[#E8DFD8]'
             }`}
           >
-            <Layers className="w-4 h-4" />
+            <span className="text-base">{track.icon || '🪴'}</span>
             <span>{track.name}</span>
             <span className={`text-[10px] px-2 py-0.5 rounded-full ${
               selectedTrackId === track.id ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-600'
@@ -804,6 +810,55 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                   onChange={e => setTrackForm({ ...trackForm, description: e.target.value })}
                   className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-2 focus:ring-[#8E5364]"
                 />
+              </div>
+
+              {/* Track Icon & Emoji Picker */}
+              <div className="p-3.5 bg-[#FCFAF8] rounded-2xl border border-stone-200 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700">
+                      أيقونة وإيموجي المسار (اختاري بنفسك):
+                    </label>
+                    <span className="text-[11px] text-stone-500">
+                      تظهر في رأس المسار، وبطاقات الحلقات، وقوائم التبديل
+                    </span>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-white border border-[#8E5364]/30 shadow-xs flex items-center justify-center text-2xl">
+                    {trackForm.icon || '🪴'}
+                  </div>
+                </div>
+
+                {/* Emoji Grid */}
+                <div className="grid grid-cols-8 gap-1.5 p-2 bg-white rounded-xl border border-stone-200 max-h-36 overflow-y-auto">
+                  {TRACK_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => setTrackForm(prev => ({ ...prev, icon: emoji }))}
+                      className={`h-8 w-8 rounded-lg flex items-center justify-center text-lg transition cursor-pointer hover:scale-115 active:scale-90 ${
+                        trackForm.icon === emoji
+                          ? 'bg-[#8E5364] text-white ring-2 ring-[#8E5364] shadow-xs'
+                          : 'hover:bg-stone-100 text-stone-800'
+                      }`}
+                      title={emoji}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom Emoji Input */}
+                <div className="flex items-center gap-2 pt-1 text-xs text-stone-600">
+                  <span>أو اكتبي رمزاً / إيموجي مخصصاً:</span>
+                  <input
+                    type="text"
+                    maxLength={4}
+                    value={trackForm.icon}
+                    onChange={e => setTrackForm(prev => ({ ...prev, icon: e.target.value }))}
+                    placeholder="🪴"
+                    className="w-16 px-2 py-1 text-center border border-stone-200 rounded-lg text-sm bg-white font-bold"
+                  />
+                </div>
               </div>
 
               {/* Track Logo / Badge Upload from Device */}

@@ -507,20 +507,30 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">اختاري الرفيقة من الحلقة:</label>
+                <label className="block text-xs font-bold text-stone-700 mb-1">
+                  اختاري الرفيقة (من أي حلقة في غيث الغيم):
+                </label>
                 <select
                   value={targetPartnerId}
                   onChange={e => setTargetPartnerId(e.target.value)}
                   className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
                 >
-                  <option value="">-- اختاري طالبة --</option>
-                  {students
-                    .filter(s => s.id !== selectedStudentForPartner.id && s.circleId === selectedStudentForPartner.circleId)
-                    .map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.code}) {s.partnerStudentId ? `[رفيقتها حالياً: ${s.partnerStudentName}]` : '[متاحة]'}
-                      </option>
-                    ))}
+                  <option value="">-- اختاري طالبة من أي حلقة --</option>
+                  {circles.map(c => {
+                    const cStudents = students.filter(
+                      s => s.circleId === c.id && s.id !== selectedStudentForPartner.id && s.status === 'active'
+                    );
+                    if (cStudents.length === 0) return null;
+                    return (
+                      <optgroup key={c.id} label={`حلقة: ${c.name} (${c.teacherName})`}>
+                        {cStudents.map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.code}) {s.partnerStudentId ? `[مقترنة مع: ${s.partnerStudentName}]` : '[متاحة]'}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
                 </select>
               </div>
 

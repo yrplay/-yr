@@ -6,6 +6,7 @@ import {
   TrackGradingConfig, InstitutionSettings, AuditLog
 } from '../types';
 import initialData from '../data/initialData';
+import { subscribeToCloudDatabase, pushStateToCloud, CloudSyncStatus } from '../services/cloudSync';
 
 export interface StudentScoreSummary {
   studentId: string;
@@ -150,6 +151,7 @@ interface AppContextType {
 
   // Real-time synchronization
   lastSynced: Date;
+  cloudStatus: CloudSyncStatus;
   syncNow: () => Promise<void>;
   switchToLeader: () => Promise<void>;
 
@@ -196,6 +198,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [lastSynced, setLastSynced] = useState<Date>(new Date());
+  const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>('syncing');
   const [quickModalAction, setQuickModalAction] = useState<{ type: string; timestamp: number } | null>(null);
 
   const triggerQuickModal = (type: string) => {
@@ -215,7 +218,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const STORAGE_KEY = 'ghaith_alghaym_db_v1';
 
-  // Apply state from any source (server, localStorage, or initialData)
+  // Apply state from any source (cloud, server, localStorage, or initialData)
   const applyState = (data: any) => {
     if (!data) return;
     // Initialize currentUser on first boot if not already set locally
@@ -257,33 +260,37 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setLastSynced(new Date());
   };
 
-  // Helper to persist current state to LocalStorage
+  // Helper to persist current state to LocalStorage AND Firebase Firestore Cloud
   const persistState = (overrides?: any) => {
     try {
+      const payload = {
+        currentUser,
+        users,
+        tracks,
+        circles,
+        students,
+        monthlyPlans,
+        studentPlans,
+        dailyRecords,
+        attendanceRecords,
+        atqiniAssignments,
+        studentAtqiniSubmissions,
+        challenges,
+        studentChallengeSubmissions,
+        monthlyExams,
+        studentExamResults,
+        gradingConfigs,
+        settings,
+        auditLogs,
+        ...overrides
+      };
       if (typeof window !== 'undefined') {
-        const payload = {
-          currentUser,
-          users,
-          tracks,
-          circles,
-          students,
-          monthlyPlans,
-          studentPlans,
-          dailyRecords,
-          attendanceRecords,
-          atqiniAssignments,
-          studentAtqiniSubmissions,
-          challenges,
-          studentChallengeSubmissions,
-          monthlyExams,
-          studentExamResults,
-          gradingConfigs,
-          settings,
-          auditLogs,
-          ...overrides
-        };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
       }
+      // Instant cloud sync via Firebase Firestore
+      pushStateToCloud(payload)
+        .then(() => setCloudStatus('connected'))
+        .catch(() => setCloudStatus('offline'));
     } catch (e) {
       console.warn('LocalStorage save failed:', e);
     }
@@ -340,17 +347,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const syncNow = async () => {
+    setCloudStatus('syncing');
     await refreshData(false);
-    showToast('تمت مزامنة كافة البيانات والسجلات بنجاح ✅', 'success');
+    // Push current snapshot to cloud
+    persistState();
+    setCloudStatus('connected');
+    showToast('تمت المزامنة السحابية الفورية بنجاح ✅ (Firebase)', 'success');
   };
 
   useEffect(() => {
+    // 1. Initial state hydration from backend/local
     refreshData(false);
-    // Real-time multi-user synchronization: poll every 8 seconds
+
+    // 2. Real-time Firebase Firestore database subscription
+    const unsubscribeCloud = subscribeToCloudDatabase(
+      (cloudData) => {
+        if (cloudData && typeof cloudData === 'object' && (Array.isArray(cloudData.tracks) || Array.isArray(cloudData.students))) {
+          applyState(cloudData);
+          setCloudStatus('connected');
+          setLastSynced(new Date());
+        } else {
+          // Cloud document is fresh/empty; seed it with initialData
+          persistState();
+          setCloudStatus('connected');
+        }
+      },
+      (status) => {
+        setCloudStatus(status);
+      }
+    );
+
+    // 3. Fallback server polling
     const interval = setInterval(() => {
       refreshData(true);
-    }, 8000);
-    return () => clearInterval(interval);
+    }, 12000);
+
+    return () => {
+      if (unsubscribeCloud) unsubscribeCloud();
+      clearInterval(interval);
+    };
   }, []);
 
   const switchToLeader = async () => {
@@ -708,9 +743,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       },
       ...plan
     };
-    const existingIdx = studentPlans.findIndex(p => p.id === cleanId || (p.studentId === newPlan.studentId && p.monthlyPlanId === newPlan.monthlyPlanId));
+    const existingIdx = studentPlans.findIndex(p => (plan.id && p.id === plan.id) || p.id === cleanId || (p.studentId === newPlan.studentId && p.monthlyPlanId === newPlan.monthlyPlanId));
     let next: StudentMonthlyPlan[];
     if (existingIdx >= 0) {
+      newPlan.id = studentPlans[existingIdx].id;
       next = [...studentPlans];
       next[existingIdx] = { ...next[existingIdx], ...newPlan };
     } else {
@@ -720,8 +756,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     persistState({ studentPlans: next });
     showToast('تم حفظ خطة الطالبة وتحديث المقرر');
     try {
-      await fetch(plan.id ? `/api/student-plans/${plan.id}` : '/api/student-plans', {
-        method: plan.id ? 'PUT' : 'POST',
+      await fetch(newPlan.id ? `/api/student-plans/${newPlan.id}` : '/api/student-plans', {
+        method: newPlan.id ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPlan)
       });
@@ -761,10 +797,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     const existingIdx = dailyRecords.findIndex(
-      d => d.id === newRecord.id || (d.studentId === newRecord.studentId && d.date === newRecord.date)
+      d => (record.id && d.id === record.id) || d.id === newRecord.id || (d.studentId === newRecord.studentId && d.date === newRecord.date)
     );
     let next: DailyRecord[];
     if (existingIdx >= 0) {
+      newRecord.id = dailyRecords[existingIdx].id;
       next = [...dailyRecords];
       next[existingIdx] = { ...next[existingIdx], ...newRecord };
     } else {
@@ -775,8 +812,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('تم رصد التسميع وتحديث درجات الطالبة 📖');
 
     try {
-      await fetch(record.id ? `/api/daily-records/${record.id}` : '/api/daily-records', {
-        method: record.id ? 'PUT' : 'POST',
+      await fetch(newRecord.id ? `/api/daily-records/${newRecord.id}` : '/api/daily-records', {
+        method: newRecord.id ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newRecord)
       });
@@ -1652,6 +1689,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         toast,
         showToast,
         lastSynced,
+        cloudStatus,
         syncNow,
         switchToLeader,
         quickModalAction,

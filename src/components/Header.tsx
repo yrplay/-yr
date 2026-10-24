@@ -24,7 +24,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const {
     currentUser, users, switchUser, settings, students, circles,
-    lastSynced, syncNow, triggerQuickModal, changeUserPasscode, updateUser,
+    lastSynced, cloudStatus, syncNow, triggerQuickModal, changeUserPasscode, updateUser,
     tracks, selectedTrackId
   } = useApp();
 
@@ -242,6 +242,29 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Dedicated PWA Install Button */}
             <PWAInstallButton variant="header" />
+
+            {/* Cloud Sync Status Indicator & Trigger */}
+            <button
+              type="button"
+              onClick={handleManualSync}
+              disabled={isSyncing}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border text-xs font-bold transition shadow-2xs cursor-pointer active:scale-95 ${
+                cloudStatus === 'connected'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                  : cloudStatus === 'syncing' || isSyncing
+                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                  : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
+              }`}
+              title="مزامنة سحابية فورية ومباشرة بقاعدة بيانات Firebase المركزية (Firestore)"
+            >
+              <Cloud className={`w-3.5 h-3.5 ${isSyncing || cloudStatus === 'syncing' ? 'animate-pulse text-amber-600' : 'text-emerald-600'}`} />
+              <span className="hidden sm:inline">
+                {isSyncing || cloudStatus === 'syncing' ? 'جاري المزامنة...' : 'سحابي فوري'}
+              </span>
+              <span className={`w-2 h-2 rounded-full ${
+                cloudStatus === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'
+              }`} />
+            </button>
 
             {/* Quick Action Menu (+) */}
             <div ref={quickAddRef} className="relative">

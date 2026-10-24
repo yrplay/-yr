@@ -205,26 +205,47 @@ export const MonthlyPlansView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {currentUser?.role === 'leader' && (
-            <>
-              <button
-                onClick={() => duplicateMonthlyPlan(currentPlan.id)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#744251] border border-[#E2D5CC] rounded-xl text-xs font-bold transition"
-                title="نسخ الخطة السابقة وتعديلها دون فقد سجلات الماضي"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                <span>نسخ الخطة السابقة</span>
-              </button>
-              <button
-                onClick={() => handleOpenPlanModal()}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold shadow-xs transition"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>إنشاء خطة شهرية جديدة</span>
-              </button>
-            </>
-          )}
+          <button
+            type="button"
+            onClick={() => duplicateMonthlyPlan(currentPlan.id)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#744251] border border-[#E2D5CC] rounded-xl text-xs font-bold transition cursor-pointer active:scale-95"
+            title="نسخ الخطة السابقة وتعديلها دون فقد سجلات الماضي"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span>نسخ الخطة السابقة</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleOpenPlanModal()}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer active:scale-95"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>إنشاء خطة شهرية جديدة</span>
+          </button>
         </div>
+      </div>
+
+      {/* Monthly Plan Selection Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        {monthlyPlans.map(plan => (
+          <button
+            key={plan.id}
+            type="button"
+            onClick={() => setSelectedPlanId(plan.id)}
+            className={`px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition flex items-center gap-2 shrink-0 cursor-pointer active:scale-95 ${
+              selectedPlanId === plan.id
+                ? 'bg-[#8E5364] text-white shadow-xs'
+                : 'bg-white text-stone-700 hover:bg-[#FAF6F2] border border-[#E8DFD8]'
+            }`}
+          >
+            <span>📅 {plan.title}</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+              selectedPlanId === plan.id ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-600'
+            }`}>
+              {plan.hijriMonth}
+            </span>
+          </button>
+        ))}
       </div>
 
       {/* Plan Details & Calendar Rules Card */}
@@ -243,15 +264,14 @@ export const MonthlyPlansView: React.FC = () => {
               </p>
             </div>
 
-            {currentUser?.role === 'leader' && (
-              <button
-                onClick={() => handleOpenPlanModal(currentPlan)}
-                className="p-2 text-stone-500 hover:text-stone-800 rounded-xl hover:bg-stone-100 text-xs flex items-center gap-1 border border-stone-200 self-start sm:self-auto"
-              >
-                <Edit className="w-3.5 h-3.5" />
-                <span>تعديل تواريخ الخطة</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => handleOpenPlanModal(currentPlan)}
+              className="px-3.5 py-2 text-[#744251] bg-[#FAF6F2] hover:bg-[#F2ECE6] rounded-xl text-xs font-bold flex items-center gap-1.5 border border-[#E2D5CC] self-start sm:self-auto cursor-pointer active:scale-95 transition"
+            >
+              <Edit className="w-3.5 h-3.5" />
+              <span>تعديل تواريخ وتفاصيل الخطة</span>
+            </button>
           </div>
 
           {/* Schedule Rules Grid (as specified in prompt) */}

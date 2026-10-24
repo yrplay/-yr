@@ -351,13 +351,21 @@ export const DailyMemorizationView: React.FC = () => {
                             }`}
                           >
                             <option value="none">بدون رفيقة ⭕</option>
-                            {circleStudents
-                              .filter(other => other.id !== student.id)
-                              .map(other => (
-                                <option key={other.id} value={other.id}>
-                                  {other.name} {other.partnerStudentId && other.partnerStudentId !== student.id ? '(مقترنة)' : ''}
-                                </option>
-                              ))}
+                            {circles.map(c => {
+                              const cStudents = students.filter(
+                                other => other.circleId === c.id && other.id !== student.id && other.status === 'active'
+                              );
+                              if (cStudents.length === 0) return null;
+                              return (
+                                <optgroup key={c.id} label={`حلقة: ${c.name}`}>
+                                  {cStudents.map(other => (
+                                    <option key={other.id} value={other.id}>
+                                      {other.name} {other.partnerStudentId && other.partnerStudentId !== student.id ? '(مقترنة)' : ''}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              );
+                            })}
                           </select>
 
                           {partner && (
@@ -557,12 +565,20 @@ export const DailyMemorizationView: React.FC = () => {
                           defaultValue=""
                           className="w-full px-2 py-1.5 text-xs font-bold border border-stone-200 rounded-xl bg-white text-stone-800"
                         >
-                          <option value="" disabled>اختاري من طالبات الحلقة...</option>
-                          {circleStudents
-                            .filter(other => other.id !== pair.s1.id && !other.partnerStudentId)
-                            .map(other => (
-                              <option key={other.id} value={other.id}>{other.name}</option>
-                            ))}
+                          <option value="" disabled>اختاري رفيقة من أي حلقة...</option>
+                          {circles.map(c => {
+                            const cStudents = students.filter(
+                              other => other.circleId === c.id && other.id !== pair.s1.id && !other.partnerStudentId && other.status === 'active'
+                            );
+                            if (cStudents.length === 0) return null;
+                            return (
+                              <optgroup key={c.id} label={`حلقة: ${c.name}`}>
+                                {cStudents.map(other => (
+                                  <option key={other.id} value={other.id}>{other.name}</option>
+                                ))}
+                              </optgroup>
+                            );
+                          })}
                         </select>
                       </div>
                     )}
@@ -609,11 +625,19 @@ export const DailyMemorizationView: React.FC = () => {
                 className="px-2 py-1 border border-stone-200 rounded-lg text-xs font-bold bg-white text-[#8E5364]"
               >
                 <option value="none">بدون رفيقة</option>
-                {circleStudents
-                  .filter(o => o.id !== selectedStudentForEval.id)
-                  .map(o => (
-                    <option key={o.id} value={o.id}>{o.name}</option>
-                  ))}
+                {circles.map(c => {
+                  const cStudents = students.filter(
+                    o => o.circleId === c.id && o.id !== selectedStudentForEval.id && o.status === 'active'
+                  );
+                  if (cStudents.length === 0) return null;
+                  return (
+                    <optgroup key={c.id} label={`حلقة: ${c.name}`}>
+                      {cStudents.map(o => (
+                        <option key={o.id} value={o.id}>{o.name}</option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
               </select>
             </div>
 

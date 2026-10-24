@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allows full access for institution synchronization
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
