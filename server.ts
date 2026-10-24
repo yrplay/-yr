@@ -1155,6 +1155,17 @@ async function createApp() {
       const hasRef = (value: any): boolean => !!value && typeof value === 'object' && Object.entries(value).some(([key, child]) =>
         ['circleId', 'circleIds', 'studentId', 'studentIds'].includes(key) || (Array.isArray(child) ? child.some(item => hasRef(item)) : hasRef(child)));
       if (!checkRefs(req.body) || !hasRef(req.body)) return res.status(403).json({ error: 'لا تملك صلاحية الوصول إلى هذه الحلقة أو الطالبة' });
+      const recordId = route.split('/').filter(Boolean).pop();
+      if (req.method === 'PUT' && route.startsWith('/daily-records/')) {
+        const existing = db.dailyRecords.find((record: any) => record.id === recordId);
+        if (!existing || (!(existing.studentId && studentIds.has(existing.studentId)) && !(existing.circleId && circleIds.has(existing.circleId)))) {
+          return res.status(403).json({ error: 'لا تملك صلاحية تعديل هذا السجل' });
+        }
+      }
+      if (req.method === 'PUT' && route.startsWith('/student-plans/')) {
+        const existing = db.studentPlans.find((plan: any) => plan.id === recordId);
+        if (!existing || !studentIds.has(existing.studentId)) return res.status(403).json({ error: 'لا تملك صلاحية تعديل هذه الخطة' });
+      }
     }
     next();
   });
@@ -1174,7 +1185,9 @@ async function createApp() {
     res.json({
       ...db,
       currentUser: publicUser(user),
-      users: db.users.filter((u: any) => user.role === 'leader' || visibleUsers.has(u.id)).map(publicUser),
+      users: db.users.filter((u: any) => user.role === 'leader' || visibleUsers.has(u.id)).map((u: any) => user.role === 'leader' ? publicUser(u) : ({
+        id: u.id, name: u.name, role: u.role, title: u.title, avatarIcon: u.avatarIcon, avatarColor: u.avatarColor, circleIds: u.circleIds
+      })),
       circles, students,
       tracks: user.role === 'leader' ? db.tracks : db.tracks.filter((t: any) => trackIds.has(t.id)),
       monthlyPlans: user.role === 'leader' ? db.monthlyPlans : db.monthlyPlans.filter((p: any) => trackIds.has(p.trackId)),
@@ -1242,7 +1255,7 @@ async function createApp() {
         trackId: newTrack.id
       });
     }
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'track', `إضافة مسار جديد: ${newTrack.name}`, newTrack.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'create', 'track', `إضافة مسار جديد: ${newTrack.name}`, newTrack.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.status(201).json(newTrack);
   });
@@ -1252,7 +1265,7 @@ async function createApp() {
     const index = db.tracks.findIndex((t: any) => t.id === req.params.id);
     if (index === -1) return res.status(404).json({ error: 'المسار غير موجود' });
     db.tracks[index] = { ...db.tracks[index], ...req.body, updatedAt: new Date().toISOString() };
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'track', `تعديل المسار: ${db.tracks[index].name}`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'track', `تعديل المسار: ${db.tracks[index].name}`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(db.tracks[index]);
   });
@@ -1263,7 +1276,7 @@ async function createApp() {
     if (!track) return res.status(404).json({ error: 'المسار غير موجود' });
     // Soft delete / archive
     track.isArchived = true;
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'archive', 'track', `أرشفة المسار: ${track.name}`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'archive', 'track', `أرشفة المسار: ${track.name}`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json({ success: true, track });
   });
@@ -1278,7 +1291,7 @@ async function createApp() {
       ...req.body
     };
     db.circles.push(newCircle);
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'circle', `إضافة حلقة جديدة: ${newCircle.name}`, newCircle.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'create', 'circle', `إضافة حلقة جديدة: ${newCircle.name}`, newCircle.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.status(201).json(newCircle);
   });
@@ -1288,7 +1301,7 @@ async function createApp() {
     const index = db.circles.findIndex((c: any) => c.id === req.params.id);
     if (index === -1) return res.status(404).json({ error: 'الحلقة غير موجودة' });
     db.circles[index] = { ...db.circles[index], ...req.body };
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'circle', `تعديل الحلقة: ${db.circles[index].name}`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'circle', `تعديل الحلقة: ${db.circles[index].name}`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(db.circles[index]);
   });
@@ -1298,7 +1311,7 @@ async function createApp() {
     const circle = db.circles.find((c: any) => c.id === req.params.id);
     if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
     circle.isArchived = true;
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'archive', 'circle', `أرشفة الحلقة: ${circle.name}`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'archive', 'circle', `أرشفة الحلقة: ${circle.name}`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json({ success: true, circle });
   });
@@ -1314,7 +1327,7 @@ async function createApp() {
       ...req.body
     };
     db.students.push(newStudent);
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'student', `إضافة طالبة: ${newStudent.name} (كود: ${newStudent.code})`, newStudent.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'create', 'student', `إضافة طالبة: ${newStudent.name} (كود: ${newStudent.code})`, newStudent.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.status(201).json(newStudent);
   });
@@ -1324,7 +1337,7 @@ async function createApp() {
     const index = db.students.findIndex((s: any) => s.id === req.params.id);
     if (index === -1) return res.status(404).json({ error: 'الطالبة غير موجودة' });
     db.students[index] = { ...db.students[index], ...req.body };
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'student', `تعديل بيانات الطالبة: ${db.students[index].name}`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'student', `تعديل بيانات الطالبة: ${db.students[index].name}`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(db.students[index]);
   });
@@ -1334,7 +1347,7 @@ async function createApp() {
     const student = db.students.find((s: any) => s.id === req.params.id);
     if (!student) return res.status(404).json({ error: 'الطالبة غير موجودة' });
     student.status = 'archived';
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'archive', 'student', `أرشفة الطالبة: ${student.name}`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'archive', 'student', `أرشفة الطالبة: ${student.name}`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json({ success: true, student });
   });
@@ -1358,7 +1371,7 @@ async function createApp() {
           oldPartner.partnerStudentName = undefined;
         }
       }
-      addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'student', `إلغاء ثنائي الطالبة: ${s1.name}`, studentId1);
+      addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'student', `إلغاء ثنائي الطالبة: ${s1.name}`, studentId1);
       if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
       return res.json({ success: true, unpair: true, student: s1 });
     }
@@ -1388,7 +1401,7 @@ async function createApp() {
     s2.partnerStudentId = s1.id;
     s2.partnerStudentName = s1.name;
 
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'student', `تحديد وتحديث الثنائي القرآني: ${s1.name} و ${s2.name}`, studentId1);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'student', `تحديد وتحديث الثنائي القرآني: ${s1.name} و ${s2.name}`, studentId1);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json({ success: true, s1, s2 });
   });
@@ -1403,7 +1416,7 @@ async function createApp() {
       ...req.body
     };
     db.monthlyPlans.push(newPlan);
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'monthlyPlan', `إنشاء خطة شهرية: ${newPlan.title}`, newPlan.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'create', 'monthlyPlan', `إنشاء خطة شهرية: ${newPlan.title}`, newPlan.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.status(201).json(newPlan);
   });
@@ -1413,7 +1426,7 @@ async function createApp() {
     const index = db.monthlyPlans.findIndex((p: any) => p.id === req.params.id);
     if (index === -1) return res.status(404).json({ error: 'الخطة غير موجودة' });
     db.monthlyPlans[index] = { ...db.monthlyPlans[index], ...req.body };
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'monthlyPlan', `تعديل الخطة: ${db.monthlyPlans[index].title}`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'monthlyPlan', `تعديل الخطة: ${db.monthlyPlans[index].title}`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(db.monthlyPlans[index]);
   });
@@ -1430,7 +1443,7 @@ async function createApp() {
       status: 'active'
     };
     db.monthlyPlans.push(newPlan);
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'monthlyPlan', `نسخ خطة شهرية سابقة إلى: ${newPlan.title}`, newPlan.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'create', 'monthlyPlan', `نسخ خطة شهرية سابقة إلى: ${newPlan.title}`, newPlan.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.status(201).json(newPlan);
   });
@@ -1444,7 +1457,7 @@ async function createApp() {
       ...req.body
     };
     db.studentPlans.push(newPlan);
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'studentPlan', `تخصيص خطة شهرية لطالبة`, newPlan.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'create', 'studentPlan', `تخصيص خطة شهرية لطالبة`, newPlan.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.status(201).json(newPlan);
   });
@@ -1454,7 +1467,7 @@ async function createApp() {
     const index = db.studentPlans.findIndex((p: any) => p.id === req.params.id);
     if (index === -1) return res.status(404).json({ error: 'خطة الطالبة غير موجودة' });
     db.studentPlans[index] = { ...db.studentPlans[index], ...req.body };
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'studentPlan', `تحديث خطة الطالبة`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'studentPlan', `تحديث خطة الطالبة`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(db.studentPlans[index]);
   });
@@ -1464,12 +1477,12 @@ async function createApp() {
     const db = readDatabase();
     const newRecord = {
       id: `dr-${Date.now()}`,
-      recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
+      recordedBy: ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'),
       recordedAt: new Date().toISOString(),
       ...req.body
     };
     db.dailyRecords.push(newRecord);
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'grade', 'dailyRecord', `تسجيل إنجاز يومي لطالبة بتاريخ ${newRecord.date}`, newRecord.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'grade', 'dailyRecord', `تسجيل إنجاز يومي لطالبة بتاريخ ${newRecord.date}`, newRecord.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.status(201).json(newRecord);
   });
@@ -1481,10 +1494,10 @@ async function createApp() {
     db.dailyRecords[index] = {
       ...db.dailyRecords[index],
       ...req.body,
-      recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
+      recordedBy: ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'),
       recordedAt: new Date().toISOString()
     };
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'dailyRecord', `تعديل السجل اليومي`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'dailyRecord', `تعديل السجل اليومي`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(db.dailyRecords[index]);
   });
@@ -1501,20 +1514,20 @@ async function createApp() {
       db.attendanceRecords[existingIndex] = {
         ...db.attendanceRecords[existingIndex],
         ...req.body,
-        recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
+        recordedBy: ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'),
         recordedAt: new Date().toISOString()
       };
       record = db.attendanceRecords[existingIndex];
     } else {
       record = {
         id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-        recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
+        recordedBy: ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'),
         recordedAt: new Date().toISOString(),
         ...req.body
       };
       db.attendanceRecords.push(record);
     }
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'attendance', `تسجيل حضور/تحضير لطالبة بتاريخ ${record.date}`, record.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'attendance', `تسجيل حضور/تحضير لطالبة بتاريخ ${record.date}`, record.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(record);
   });
@@ -1530,19 +1543,19 @@ async function createApp() {
         db.attendanceRecords[idx] = {
           ...db.attendanceRecords[idx],
           ...rec,
-          recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
+          recordedBy: ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'),
           recordedAt: new Date().toISOString()
         };
       } else {
         db.attendanceRecords.push({
           id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          recordedBy: (db.currentUser?.name || 'ريفة المنصوري'),
+          recordedBy: ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'),
           recordedAt: new Date().toISOString(),
           ...rec
         });
       }
     });
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'attendance', `تسجيل حضور جماعي لـ ${records.length} طالبة`);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'attendance', `تسجيل حضور جماعي لـ ${records.length} طالبة`);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json({ success: true, count: records.length });
   });
@@ -1555,7 +1568,7 @@ async function createApp() {
       ...req.body
     };
     db.atqiniAssignments.push(assignment);
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'atqini', `إضافة واجب تجويد جديد: ${assignment.title}`, assignment.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'create', 'atqini', `إضافة واجب تجويد جديد: ${assignment.title}`, assignment.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.status(201).json(assignment);
   });
@@ -1565,7 +1578,7 @@ async function createApp() {
     const idx = db.atqiniAssignments.findIndex((a: any) => a.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'الواجب غير موجود' });
     db.atqiniAssignments[idx] = { ...db.atqiniAssignments[idx], ...req.body };
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'atqini', `تعديل واجب التجويد: ${db.atqiniAssignments[idx].title}`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'atqini', `تعديل واجب التجويد: ${db.atqiniAssignments[idx].title}`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(db.atqiniAssignments[idx]);
   });
@@ -1577,7 +1590,7 @@ async function createApp() {
     const deleted = db.atqiniAssignments.splice(idx, 1)[0];
     // Cascade remove submissions for this assignment
     db.studentAtqiniSubmissions = db.studentAtqiniSubmissions.filter((s: any) => s.assignmentId !== req.params.id);
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'delete', 'atqini', `حذف واجب التجويد: ${deleted.title} وكافة تقييماته`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'delete', 'atqini', `حذف واجب التجويد: ${deleted.title} وكافة تقييماته`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json({ success: true, deletedId: req.params.id });
   });
@@ -1593,18 +1606,18 @@ async function createApp() {
       db.studentAtqiniSubmissions[existing] = {
         ...db.studentAtqiniSubmissions[existing],
         ...req.body,
-        evaluatedBy: (db.currentUser?.name || 'ريفة المنصوري')
+        evaluatedBy: ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري')
       };
       submission = db.studentAtqiniSubmissions[existing];
     } else {
       submission = {
         id: `atqs-${Date.now()}`,
-        evaluatedBy: (db.currentUser?.name || 'ريفة المنصوري'),
+        evaluatedBy: ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'),
         ...req.body
       };
       db.studentAtqiniSubmissions.push(submission);
     }
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'grade', 'atqiniSubmission', `تصحيح واجب تجويد لطالبة بدرجة ${submission.score}`, submission.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'grade', 'atqiniSubmission', `تصحيح واجب تجويد لطالبة بدرجة ${submission.score}`, submission.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(submission);
   });
@@ -1619,7 +1632,7 @@ async function createApp() {
       ...req.body
     };
     db.challenges.push(challenge);
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'challenge', `إضافة تحدٍ قرآني جديد: ${challenge.title}`, challenge.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'create', 'challenge', `إضافة تحدٍ قرآني جديد: ${challenge.title}`, challenge.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.status(201).json(challenge);
   });
@@ -1629,7 +1642,7 @@ async function createApp() {
     const idx = db.challenges.findIndex((c: any) => c.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'التحدي غير موجود' });
     db.challenges[idx] = { ...db.challenges[idx], ...req.body };
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'challenge', `تعديل التحدي القرآني: ${db.challenges[idx].title}`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'challenge', `تعديل التحدي القرآني: ${db.challenges[idx].title}`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(db.challenges[idx]);
   });
@@ -1639,7 +1652,7 @@ async function createApp() {
     const idx = db.challenges.findIndex((c: any) => c.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'التحدي غير موجود' });
     const deleted = db.challenges.splice(idx, 1)[0];
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'delete', 'challenge', `حذف التحدي: ${deleted.title}`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'delete', 'challenge', `حذف التحدي: ${deleted.title}`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json({ success: true });
   });
@@ -1655,20 +1668,20 @@ async function createApp() {
       db.studentChallengeSubmissions[existing] = {
         ...db.studentChallengeSubmissions[existing],
         ...req.body,
-        evaluatedBy: (db.currentUser?.name || 'ريفة المنصوري'),
+        evaluatedBy: ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'),
         evaluatedAt: new Date().toISOString()
       };
       submission = db.studentChallengeSubmissions[existing];
     } else {
       submission = {
         id: `cs-${Date.now()}`,
-        evaluatedBy: (db.currentUser?.name || 'ريفة المنصوري'),
+        evaluatedBy: ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'),
         evaluatedAt: new Date().toISOString(),
         ...req.body
       };
       db.studentChallengeSubmissions.push(submission);
     }
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'grade', 'challengeSubmission', `تقييم تحدي قرآني ومراجعة ثنائية للطالبة`, submission.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'grade', 'challengeSubmission', `تقييم تحدي قرآني ومراجعة ثنائية للطالبة`, submission.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(submission);
   });
@@ -1682,7 +1695,7 @@ async function createApp() {
       ...req.body
     };
     db.monthlyExams.push(exam);
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'exam', `إضافة اختبار شهري: ${exam.title}`, exam.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'create', 'exam', `إضافة اختبار شهري: ${exam.title}`, exam.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.status(201).json(exam);
   });
@@ -1692,7 +1705,7 @@ async function createApp() {
     const idx = db.monthlyExams.findIndex((e: any) => e.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'الاختبار غير موجود' });
     db.monthlyExams[idx] = { ...db.monthlyExams[idx], ...req.body };
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'exam', `تعديل الاختبار: ${db.monthlyExams[idx].title}`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'exam', `تعديل الاختبار: ${db.monthlyExams[idx].title}`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(db.monthlyExams[idx]);
   });
@@ -1703,7 +1716,7 @@ async function createApp() {
     if (idx === -1) return res.status(404).json({ error: 'الاختبار غير موجود' });
     const deleted = db.monthlyExams.splice(idx, 1)[0];
     db.studentExamResults = db.studentExamResults.filter((r: any) => r.examId !== req.params.id);
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'delete', 'exam', `حذف الاختبار الشهري: ${deleted.title}`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'delete', 'exam', `حذف الاختبار الشهري: ${deleted.title}`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json({ success: true });
   });
@@ -1718,20 +1731,20 @@ async function createApp() {
       db.studentExamResults[existing] = {
         ...db.studentExamResults[existing],
         ...req.body,
-        examinerName: (db.currentUser?.name || 'ريفة المنصوري'),
+        examinerName: ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'),
         evaluatedAt: new Date().toISOString()
       };
       result = db.studentExamResults[existing];
     } else {
       result = {
         id: `er-${Date.now()}`,
-        examinerName: (db.currentUser?.name || 'ريفة المنصوري'),
+        examinerName: ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'),
         evaluatedAt: new Date().toISOString(),
         ...req.body
       };
       db.studentExamResults.push(result);
     }
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'grade', 'examResult', `رصد درجة اختبار شهري للطالبة: ${result.score}`, result.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'grade', 'examResult', `رصد درجة اختبار شهري للطالبة: ${result.score}`, result.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(result);
   });
@@ -1749,7 +1762,7 @@ async function createApp() {
         ...req.body
       });
     }
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'gradingConfig', `تعديل نظام الدرجات والنسب المئوية للمسار`, req.params.trackId);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'gradingConfig', `تعديل نظام الدرجات والنسب المئوية للمسار`, req.params.trackId);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(db.gradingConfigs[idx >= 0 ? idx : db.gradingConfigs.length - 1]);
   });
@@ -1788,7 +1801,7 @@ async function createApp() {
         console.error('PWA icon sync error', err);
       }
     }
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'settings', `تحديث الإعدادات العامة للمقرأة والهوية والشعار`);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'settings', `تحديث الإعدادات العامة للمقرأة والهوية والشعار`);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     const { leaderPasscode: _leaderPasscode, ...safeSettings } = db.settings;
     res.setHeader('Cache-Control', 'no-store');
@@ -1806,7 +1819,7 @@ async function createApp() {
     };
     delete (newUser as any).leaderPasscode;
     db.users.push(newUser);
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'user', `إضافة مستخدم جديد: ${newUser.name} (${newUser.title})`, newUser.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'create', 'user', `إضافة مستخدم جديد: ${newUser.name} (${newUser.title})`, newUser.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.status(201).json(publicUser(newUser));
   });
@@ -1823,7 +1836,7 @@ async function createApp() {
     if (db.currentUser.id === req.params.id) {
       db.currentUser = { ...db.currentUser, ...cleanBody };
     }
-    addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'update', 'user', `تعديل بيانات وصلاحيات المستخدم: ${db.users[idx].name}`, req.params.id);
+    addAudit(db, ((req as any).authUser?.name || db.currentUser?.name || 'ريفة المنصوري'), ((req as any).authUser?.role || db.currentUser?.role || 'leader'), 'update', 'user', `تعديل بيانات وصلاحيات المستخدم: ${db.users[idx].name}`, req.params.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
     res.json(publicUser(db.users[idx]));
   });
