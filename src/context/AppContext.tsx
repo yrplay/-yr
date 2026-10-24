@@ -5,7 +5,6 @@ import {
   Challenge, StudentChallengeSubmission, MonthlyExam, StudentExamResult,
   TrackGradingConfig, InstitutionSettings, AuditLog
 } from '../types';
-import initialData from '../data/initialData';
 
 export interface StudentScoreSummary {
   studentId: string;
@@ -215,12 +214,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const STORAGE_KEY = 'ghaith_alghaym_db_v1';
 
-  // Apply state from any source (server, localStorage, or initialData)
+  // Apply state received from the authenticated API or an explicitly imported backup.
   const applyState = (data: any) => {
     if (!data) return;
     // Initialize currentUser on first boot if not already set locally
     if (data.currentUser !== undefined) {
-      setCurrentUser(prev => prev || data.currentUser);
+      setCurrentUser(data.currentUser ?? null);
     }
     const userList: User[] = Array.isArray(data.users) ? data.users : users;
     if (Array.isArray(data.users)) setUsers(data.users);
@@ -293,17 +292,37 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       const res = await fetch('/api/state');
       if (res.status === 401) {
-        // An unauthenticated visit is expected: hydrate only the bundled staff list
-        // so the login gate can render, and never treat cached private data as synced.
-        applyState(initialData);
-        setError(null);
+        // Never hydrate private student data from a bundled seed or stale browser cache.
+        // Ask the server for the minimal public directory required to render the login gate.
+        const directoryResponse = await fetch('/api/auth/users', { credentials: 'same-origin' });
+        if (!directoryResponse.ok) throw new Error('تعذر تحميل قائمة حسابات الدخول');
+        const safeUsers = await directoryResponse.json();
+        setCurrentUser(null);
+        setUsers(Array.isArray(safeUsers) ? safeUsers : []);
+        setTracks([]);
+        setCircles([]);
+        setStudents([]);
+        setMonthlyPlans([]);
+        setStudentPlans([]);
+        setDailyRecords([]);
+        setAttendanceRecords([]);
+        setAtqiniAssignments([]);
+        setStudentAtqiniSubmissions([]);
+        setChallenges([]);
+        setStudentChallengeSubmissions([]);
+        setMonthlyExams([]);
+        setStudentExamResults([]);
+        setGradingConfigs([]);
+        setAuditLogs([]);
         if (typeof window !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEY);
           sessionStorage.removeItem('ghaith_authenticated');
           sessionStorage.removeItem('ghaith_user_id');
           sessionStorage.removeItem('ghaith_session_unlocked');
           sessionStorage.removeItem('ghaith_logged_user_id');
           window.dispatchEvent(new Event('ghaith:session-expired'));
         }
+        setError(null);
         return false;
       }
       if (res.ok) {
@@ -335,13 +354,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           } catch {}
         }
       }
-      // First visit without a reachable API: display seed data, but do not report success.
-      applyState(initialData);
-      try {
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(initialData));
-        }
-      } catch {}
+      // Do not bundle or expose the sample database as an offline fallback.
+      setCurrentUser(null);
+      setUsers([]);
+      setTracks([]);
+      setCircles([]);
+      setStudents([]);
+      setMonthlyPlans([]);
+      setStudentPlans([]);
+      setDailyRecords([]);
+      setAttendanceRecords([]);
+      setAtqiniAssignments([]);
+      setStudentAtqiniSubmissions([]);
+      setChallenges([]);
+      setStudentChallengeSubmissions([]);
+      setMonthlyExams([]);
+      setStudentExamResults([]);
+      setGradingConfigs([]);
+      setAuditLogs([]);
       setError(syncError);
       return false;
     } finally {
@@ -1260,13 +1290,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const resetSampleData = async () => {
-    applyState(initialData);
-    persistState(initialData);
-    showToast('تمت إعادة ضبط البيانات النموذجية بنجاح');
-
     try {
-      await fetch('/api/backup/reset-sample', { method: 'POST' });
-    } catch {}
+      const response = await fetch('/api/backup/reset-sample', { method: 'POST', credentials: 'same-origin' });
+      if (!response.ok) throw new Error('تعذرت إعادة ضبط البيانات على الخادم');
+      const synced = await refreshData();
+      if (!synced) throw new Error('تمت العملية على الخادم لكن تعذّر إعادة تحميل البيانات');
+      showToast('تمت إعادة ضبط البيانات النموذجية بنجاح');
+    } catch (err: any) {
+      showToast(err.message || 'تعذرت إعادة ضبط البيانات', 'error');
+    }
   };
 
   const createUser = async (user: Partial<User>) => {
