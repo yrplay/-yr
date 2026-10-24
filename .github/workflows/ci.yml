@@ -23,5 +23,7 @@ jobs:
         run: bun run lint
       - name: Static security and deployment guardrails
         run: node scripts/verify-security.mjs
+      - name: API integration checks
+        run: bun scripts/test-api.ts
       - name: Build frontend
         run: bun run build
