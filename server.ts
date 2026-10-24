@@ -1070,6 +1070,21 @@ async function startServer() {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
 
+  // Public login directory: expose only the minimum fields needed by the sign-in selector.
+  // Never send student records, staff contact details, or credentials before authentication.
+  api.get('/auth/users', (_req, res) => {
+    const db = readDatabase();
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(db.users.map((user: any) => ({
+      id: user.id,
+      name: user.name,
+      role: user.role,
+      title: user.title,
+      avatarIcon: user.avatarIcon,
+      avatarColor: user.avatarColor
+    })));
+  });
+
   // Login is the only public data-adjacent endpoint. Configure SESSION_SECRET and
   // GHAYM_INITIAL_LEADER_PASSCODE before deploying; no built-in PIN is accepted.
   api.post('/auth/login', (req, res) => {
