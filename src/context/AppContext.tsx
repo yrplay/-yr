@@ -78,7 +78,7 @@ interface AppContextType {
   error: string | null;
   
   // Actions
-  refreshData: () => Promise<void>;
+  refreshData: () => Promise<boolean>;
   switchUser: (userId: string) => Promise<boolean>;
   
   // Tracks & Circles
@@ -303,39 +303,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }
           } catch {}
           setError(null);
-          return;
+          return true;
         }
       }
       throw new Error('Server returned non-JSON or status ' + res.status);
     } catch (err: any) {
-      // Backend unavailable or static deployment (e.g. Vercel)
+      // Keep a local copy available, but clearly report that it is not a server sync.
+      const syncError = 'تعذر الاتصال بالخادم؛ البيانات المعروضة قد تكون نسخة محلية غير متزامنة.';
       if (typeof window !== 'undefined') {
         const cached = localStorage.getItem(STORAGE_KEY);
         if (cached) {
           try {
             const data = JSON.parse(cached);
             applyState(data);
-            setError(null);
-            return;
+            setError(syncError);
+            return false;
           } catch {}
         }
       }
-      // First visit on static host: initialize from bundled initialData
+      // First visit without a reachable API: display seed data, but do not report success.
       applyState(initialData);
       try {
         if (typeof window !== 'undefined') {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(initialData));
         }
       } catch {}
-      setError(null);
+      setError(syncError);
+      return false;
     } finally {
       setLoading(false);
     }
   };
 
   const syncNow = async () => {
-    await refreshData(false);
-    showToast('تمت مزامنة كافة البيانات والسجلات بنجاح ✅', 'success');
+    const synced = await refreshData(false);
+    if (synced) {
+      showToast('تمت مزامنة كافة البيانات والسجلات بنجاح ✅', 'success');
+    } else {
+      showToast('تعذرت المزامنة مع الخادم؛ النسخة المحلية لم تُؤكَّد على الخادم.', 'error');
+    }
   };
 
   useEffect(() => {
