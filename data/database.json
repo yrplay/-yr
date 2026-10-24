@@ -1037,7 +1037,7 @@
     "supportPhone": "0500000001",
     "notificationBanner": "مرحباً بكم في منصة غيث الغيم الإدارية المتكاملة 🪴 مرحلة انطلاق الخطة الأولى لمسار مشكاة الغيم للحفظ",
     "securityEnabled": true,
-    "leaderPasscode": "1234"
+    "leaderPasscode": ""
   },
   "auditLogs": [
     {
