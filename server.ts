@@ -3,6 +3,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -897,7 +898,7 @@ function getInitialDatabase() {
       buttonRadius: "rounded-2xl",
       activeTrackName: "مشكاة الغيم للحفظ",
       securityEnabled: true,
-      leaderPasscode: "1234"
+      leaderPasscode: ""
     },
     auditLogs: [
       {
@@ -944,12 +945,6 @@ function readDatabase() {
         if (!parsed.settings.buttonRadius) parsed.settings.buttonRadius = "rounded-2xl";
         if (!parsed.settings.activeTrackName) parsed.settings.activeTrackName = "مشكاة الغيم للحفظ";
         if (parsed.settings.securityEnabled === undefined) parsed.settings.securityEnabled = true;
-        if (!parsed.settings.leaderPasscode) parsed.settings.leaderPasscode = "1234";
-      }
-      if (parsed.users) {
-        parsed.users.forEach((u: any) => {
-          if (!u.passcode) u.passcode = "1234";
-        });
       }
       return parsed;
     }
@@ -1001,31 +996,129 @@ function addAudit(db: any, userName: any, userRole: any, actionType: any, entity
 
 async function startServer() {
   const app = express();
-  app.use(express.json({ limit: '25mb' }));
+  app.use(express.json({ limit: '5mb' }));
 
-  // CORS Middleware for seamless operation in preview iframe and deployment
-  app.use((_req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-    if (_req.method === 'OPTIONS') {
-      return res.sendStatus(200);
+  // Cross-origin access is opt-in. Same-origin frontend requests need no CORS headers.
+  const allowedOrigins = new Set((process.env.ALLOWED_ORIGINS || '').split(',').map(v => v.trim()).filter(Boolean));
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.has(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With');
     }
+    if (req.method === 'OPTIONS') return res.sendStatus(origin && !allowedOrigins.has(origin) ? 403 : 204);
     next();
   });
 
   // API Router
   const api = express.Router();
 
+  const SESSION_COOKIE = 'ghaith_session';
+  const SESSION_TTL_SECONDS = 8 * 60 * 60;
+
+  function sessionSecret() {
+    const secret = process.env.SESSION_SECRET || '';
+    if (secret.length < 32) throw new Error('SESSION_SECRET must contain at least 32 characters');
+    return secret;
+  }
+
+  function createSession(user: any) {
+    const payload = Buffer.from(JSON.stringify({
+      userId: user.id,
+      role: user.role,
+      exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS
+    })).toString('base64url');
+    const signature = createHmac('sha256', sessionSecret()).update(payload).digest('base64url');
+    return payload + '.' + signature;
+  }
+
+  function getSession(req: express.Request): { userId: string; role: string; exp: number } | null {
+    try {
+      const cookieHeader = req.headers.cookie || '';
+      const token = cookieHeader.split(';').map(v => v.trim()).find(v => v.startsWith(SESSION_COOKIE + '='))?.slice(SESSION_COOKIE.length + 1);
+      if (!token) return null;
+      const parts = token.split('.');
+      if (parts.length !== 2) return null;
+      const expected = createHmac('sha256', sessionSecret()).update(parts[0]).digest();
+      const supplied = Buffer.from(parts[1], 'base64url');
+      if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return null;
+      const session = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+      if (!session.userId || !session.role || !Number.isFinite(session.exp) || session.exp <= Math.floor(Date.now() / 1000)) return null;
+      return session;
+    } catch {
+      return null;
+    }
+  }
+
+  function setSessionCookie(res: express.Response, token: string) {
+    const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}${secure}`);
+  }
+
+  function clearSessionCookie(res: express.Response) {
+    const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secure}`);
+  }
+
+
+
   // Health check
   api.get('/health', (_req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
 
-  // Get full state
-  api.get('/state', (_req, res) => {
+  // Login is the only public data-adjacent endpoint. Configure SESSION_SECRET and
+  // GHAYM_INITIAL_LEADER_PASSCODE before deploying; no built-in PIN is accepted.
+  api.post('/auth/login', (req, res) => {
+    let secret: string;
+    try { secret = sessionSecret(); } catch { return res.status(503).json({ error: 'لم يتم إعداد أمان الجلسات على الخادم' }); }
+    const userId = typeof req.body?.userId === 'string' ? req.body.userId : '';
+    const passcode = typeof req.body?.passcode === 'string' ? req.body.passcode.trim() : '';
+    if (!userId || !passcode || passcode.length > 128) return res.status(400).json({ error: 'اسم المستخدم والرمز السري مطلوبان' });
     const db = readDatabase();
-    res.json(db);
+    const user = db.users.find((u: any) => u.id === userId);
+    if (!user) return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
+    const configuredPasscode = typeof user.passcode === 'string' ? user.passcode : '';
+    const bootstrapPasscode = user.role === 'leader' ? (process.env.GHAYM_INITIAL_LEADER_PASSCODE || '') : '';
+    const valid = (configuredPasscode.length > 0 && passcode === configuredPasscode) || (bootstrapPasscode.length > 0 && passcode === bootstrapPasscode);
+    if (!valid) return res.status(401).json({ error: 'بيانات الدخول غير صحيحة أو لم يتم إعداد رمز لهذا الحساب' });
+    setSessionCookie(res, createSession(user));
+    res.setHeader('Cache-Control', 'no-store');
+    const { passcode: _passcode, ...safeUser } = user;
+    return res.json({ success: true, user: safeUser });
+  });
+
+  api.post('/auth/logout', (_req, res) => {
+    clearSessionCookie(res);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ success: true });
+  });
+
+  // Every other API route requires a signed, expiring server-side identity.
+  api.use((req, res, next) => {
+    const session = getSession(req);
+    if (!session) return res.status(401).json({ error: 'يلزم تسجيل الدخول للوصول إلى هذه البيانات' });
+    const db = readDatabase();
+    const user = db.users.find((u: any) => u.id === session.userId);
+    if (!user || user.role !== session.role) return res.status(401).json({ error: 'الجلسة غير صالحة؛ يرجى تسجيل الدخول مجددًا' });
+    (req as any).authUser = { id: user.id, role: user.role, name: user.name };
+    const route = req.path;
+    const leaderOnly = route === '/users' || route.startsWith('/users/') || route === '/settings' || route.startsWith('/backup/') || route.startsWith('/grading-config/') || route === '/auth/switch-user';
+    if (leaderOnly && user.role !== 'leader') return res.status(403).json({ error: 'لا تملك الصلاحية لتنفيذ هذه العملية' });
+    next();
+  });
+
+  // Get sanitized state; never return PINs or the leader bootstrap credential.
+  api.get('/state', (req, res) => {
+    const db = readDatabase();
+    const authUser = (req as any).authUser;
+    const currentUser = db.users.find((u: any) => u.id === authUser.id) || null;
+    const safeUser = (u: any) => { const { passcode: _passcode, ...safe } = u; return safe; };
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ...db, currentUser: currentUser ? safeUser(currentUser) : null, users: db.users.map(safeUser), settings: { ...db.settings, leaderPasscode: undefined } });
   });
 
   // Switch current active user
@@ -1045,6 +1138,8 @@ async function startServer() {
   // Change user passcode
   api.post('/auth/change-passcode', (req, res) => {
     const { userId, newPasscode } = req.body;
+    const authUser = (req as any).authUser;
+    if (userId !== authUser.id && authUser.role !== 'leader') return res.status(403).json({ error: 'لا تملك الصلاحية لتغيير رمز هذا الحساب' });
     if (!newPasscode || !String(newPasscode).trim()) {
       return res.status(400).json({ error: 'الرمز السري الجديد مطلوب' });
     }
@@ -1063,7 +1158,8 @@ async function startServer() {
     }
     addAudit(db, user.name, user.role, 'update', 'user', `تحديث الرمز السري بنجاح للمستخدم: ${user.name}`, user.id);
     writeDatabase(db);
-    res.json({ success: true, message: 'تم تغيير الرمز السري بنجاح', passcode: cleanNew });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, message: 'تم تغيير الرمز السري بنجاح' });
   });
 
   // Tracks endpoints
@@ -1645,7 +1741,7 @@ async function startServer() {
     const newUser = {
       id: `u-${Date.now()}`,
       circleIds: [],
-      passcode: req.body.passcode ? String(req.body.passcode).trim() : '1234',
+      passcode: req.body.passcode ? String(req.body.passcode).trim() : '',
       ...req.body
     };
     db.users.push(newUser);
