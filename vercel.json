@@ -1,13 +1,6 @@
 {
-  "framework": "vite",
-  "buildCommand": "vite build",
-  "outputDirectory": "dist",
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ],
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "rm -rf public/assets public/index.html public/sw.js public/workbox-*.js public/manifest.webmanifest public/registerSW.js && bun run build && cp -R dist/. public/",
   "headers": [
     {
       "source": "/assets/(.*)",
