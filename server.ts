@@ -897,7 +897,7 @@ function getInitialDatabase() {
       buttonRadius: "rounded-2xl",
       activeTrackName: "مشكاة الغيم للحفظ",
       securityEnabled: true,
-      leaderPasscode: "1234"
+      leaderPasscode: ""
     },
     auditLogs: [
       {
