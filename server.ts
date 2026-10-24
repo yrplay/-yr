@@ -1882,7 +1882,7 @@ async function createApp() {
       passcode: currentDb.users.find((current: any) => current.id === user.id)?.passcode || ''
     }));
     freshDb.settings.leaderPasscode = '';
-    freshDb.currentUser = freshDb.users.find((user: any) => user.role === 'leader') || null;
+    freshDb.currentUser = freshDb.users.find((user: any) => user.role === 'leader') || freshDb.currentUser;
     addAudit(freshDb, (req as any).authUser.name, (req as any).authUser.role, 'backup', 'reset', 'إعادة ضبط قاعدة البيانات إلى البيانات النموذجية الأصلية');
     if (!writeDatabase(freshDb)) return res.status(500).json({ error: 'تعذرت إعادة ضبط البيانات' });
     res.json({ success: true });
