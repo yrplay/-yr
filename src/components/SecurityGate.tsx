@@ -7,7 +7,7 @@ interface SecurityGateProps {
 }
 
 export const SecurityGate: React.FC<SecurityGateProps> = ({ children }) => {
-  const { settings, users, currentUser, switchUser, showToast } = useApp();
+  const { settings, users, currentUser, switchUser, showToast, refreshData } = useApp();
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
     return sessionStorage.getItem('ghaith_session_unlocked') === 'true';
   });
@@ -43,17 +43,23 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({ children }) => {
       return;
     }
 
-    // Determine correct passcode: user-specific passcode or leader passcode
-    const expectedPasscode = selectedUser.passcode || (selectedUser.role === 'leader' ? (settings.leaderPasscode || '1234') : '1234');
-
-    if (enteredPin === expectedPasscode || enteredPin === (settings.leaderPasscode || '1234')) {
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ userId: selectedUser.id, passcode: enteredPin })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'تعذر التحقق من بيانات الدخول');
       await switchUser(selectedUser.id);
+      await refreshData();
       sessionStorage.setItem('ghaith_session_unlocked', 'true');
       sessionStorage.setItem('ghaith_logged_user_id', selectedUser.id);
       setIsUnlocked(true);
       showToast(`مرحباً بكِ أ. ${selectedUser.name} في منصة غيث الغيم 🪴`, 'success');
-    } else {
-      setPinError('رمز الدخول غير صحيح! يرجى التأكد من الرمز أو مراجعة قائدة المقرأة.');
+    } catch (error: any) {
+      setPinError(error?.message || 'تعذر تسجيل الدخول. يرجى المحاولة مجددًا.');
     }
   };
 
