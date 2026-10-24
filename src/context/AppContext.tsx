@@ -309,12 +309,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return Array.from(map.values());
   };
 
+  const mergeGradingConfigs = (localConfigs: TrackGradingConfig[] = [], incomingConfigs: TrackGradingConfig[] = []): TrackGradingConfig[] => {
+    const map = new Map<string, TrackGradingConfig>();
+    for (const inc of incomingConfigs) {
+      if (inc && inc.trackId) {
+        map.set(inc.trackId, inc);
+      }
+    }
+    for (const loc of localConfigs) {
+      if (!loc || !loc.trackId) continue;
+      const inc = map.get(loc.trackId);
+      if (!inc) {
+        map.set(loc.trackId, loc);
+      } else {
+        map.set(loc.trackId, {
+          ...inc,
+          ...loc,
+          calculationMethod: loc.calculationMethod || inc.calculationMethod,
+          recitationFormula: { ...(inc.recitationFormula || {}), ...(loc.recitationFormula || {}) },
+          attendanceRules: { ...(inc.attendanceRules || {}), ...(loc.attendanceRules || {}) },
+          items: (loc.items && loc.items.length > 0) ? loc.items : inc.items,
+          gradeScale: (loc.gradeScale && loc.gradeScale.length > 0) ? loc.gradeScale : inc.gradeScale
+        });
+      }
+    }
+    return Array.from(map.values());
+  };
+
   // Apply state from any source (cloud, server, localStorage, or initialData)
   const applyState = (data: any) => {
     if (!data || typeof data !== 'object') return;
     
-    // Safely exclude collections that need merge from immediate clobber
-    const { dailyRecords: incomingDaily, studentPlans: incomingPlans, attendanceRecords: incomingAtt, ...restData } = data;
+    // Safely exclude collections that need smart non-destructive merge
+    const {
+      dailyRecords: incomingDaily,
+      studentPlans: incomingPlans,
+      attendanceRecords: incomingAtt,
+      gradingConfigs: incomingGrading,
+      ...restData
+    } = data;
 
     // Sync masterStateRef synchronously with primitive & static fields
     masterStateRef.current = {
@@ -365,13 +398,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setAttendanceRecords(mergedAtt);
     }
 
+    // Smart merge grading configs so track weight / formula edits are preserved across cloud sync
+    if (Array.isArray(incomingGrading)) {
+      const mergedGrading = mergeGradingConfigs(masterStateRef.current.gradingConfigs, incomingGrading);
+      masterStateRef.current.gradingConfigs = mergedGrading;
+      setGradingConfigs(mergedGrading);
+    }
+
     if (Array.isArray(data.atqiniAssignments)) setAtqiniAssignments(data.atqiniAssignments);
     if (Array.isArray(data.studentAtqiniSubmissions)) setStudentAtqiniSubmissions(data.studentAtqiniSubmissions);
     if (Array.isArray(data.challenges)) setChallenges(data.challenges);
     if (Array.isArray(data.studentChallengeSubmissions)) setStudentChallengeSubmissions(data.studentChallengeSubmissions);
     if (Array.isArray(data.monthlyExams)) setMonthlyExams(data.monthlyExams);
     if (Array.isArray(data.studentExamResults)) setStudentExamResults(data.studentExamResults);
-    if (Array.isArray(data.gradingConfigs)) setGradingConfigs(data.gradingConfigs);
     if (data.settings) {
       setSettings(prev => ({ ...prev, ...data.settings }));
     }
@@ -1342,10 +1381,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateGradingConfig = async (trackId: string, config: Partial<TrackGradingConfig>) => {
-    const next = gradingConfigs.map(g => g.trackId === trackId ? { ...g, ...config } : g);
+    const current: TrackGradingConfig[] = masterStateRef.current.gradingConfigs || gradingConfigs || [];
+    const existingIdx = current.findIndex((g: TrackGradingConfig) => g.trackId === trackId);
+    let next: TrackGradingConfig[];
+    if (existingIdx >= 0) {
+      next = [...current];
+      next[existingIdx] = {
+        ...next[existingIdx],
+        ...config,
+        trackId
+      };
+    } else {
+      const template = current[0] || (initialData as any).gradingConfigs?.[0];
+      const newConfig: TrackGradingConfig = {
+        ...template,
+        id: `gc-${Date.now()}`,
+        trackId,
+        ...config
+      };
+      next = [...current, newConfig];
+    }
+    masterStateRef.current.gradingConfigs = next;
     setGradingConfigs(next);
     persistState({ gradingConfigs: next });
-    showToast('تم تحديث أوزان ومعايير نظام الدرجات بنجاح ⚖️');
+    showToast('تم حفظ وتحديث أوزان ومعايير نظام الدرجات بنجاح ⚖️');
 
     try {
       await fetch(`/api/grading-config/${trackId}`, {
