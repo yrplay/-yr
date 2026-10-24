@@ -26,6 +26,6 @@ assert.ok(context.includes("localStorage.removeItem(STORAGE_KEY)"), 'private cac
 
 assert.ok(!vercel.framework, 'Vercel must autodetect the exported Express app instead of forcing Vite static-only mode');
 assert.ok(!vercel.rewrites, 'a catch-all SPA rewrite must not swallow API requests');
-assert.ok(vercel.buildCommand.includes('cp -R dist/. public/'), 'Vite assets must be staged for Vercel static hosting');
+assert.ok(vercel.buildCommand.includes('build:vercel'), 'Vercel must use the tested static asset staging script');
 
 console.log('Static security and deployment guardrails passed.');
