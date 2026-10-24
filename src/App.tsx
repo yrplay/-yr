@@ -78,11 +78,20 @@ const AppContent: React.FC = () => {
     }
   }, [settings?.primaryColor, settings?.secondaryColor, settings?.buttonRadius, settings?.fontFamily]);
 
-  const handleLockSession = () => {
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem('ghaith_authenticated');
+  const handleLockSession = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    } catch {
+      // Clear the local UI gate even if the network is unavailable.
+    } finally {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('ghaith_authenticated');
+        sessionStorage.removeItem('ghaith_user_id');
+        sessionStorage.removeItem('ghaith_session_unlocked');
+        sessionStorage.removeItem('ghaith_logged_user_id');
+      }
+      setIsAuthenticated(false);
     }
-    setIsAuthenticated(false);
   };
 
   const handleSelectStudentForPortfolio = (studentId: string) => {
