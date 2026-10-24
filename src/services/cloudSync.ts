@@ -1,62 +1,31 @@
-import { db, doc, setDoc, onSnapshot, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID } from '../firebase';
-
-export type CloudSyncStatus = 'connected' | 'syncing' | 'offline' | 'error';
-
-// Central Firestore document reference
-const getCentralDocRef = () => doc(db, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID);
+import { getAuth } from 'firebase/auth';
+import { collection, doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 /**
- * Listen to real-time updates from Firebase Firestore
+ * دالة مزامنة آمنة تتحقق من تسجيل الدخول قبل إرسال أي بيان
  */
-export function subscribeToCloudDatabase(
-  onData: (data: any) => void,
-  onStatusChange: (status: CloudSyncStatus, errorMsg?: string) => void
-) {
-  try {
-    const docRef = getCentralDocRef();
-    onStatusChange('syncing');
+export const syncRecordSafely = async (
+  collectionName: string,
+  recordId: string,
+  data: Record<string, any>
+) => {
+  const auth = getAuth();
+  const user = auth.currentUser;
 
-    const unsubscribe = onSnapshot(
-      docRef,
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          onData(data);
-          onStatusChange('connected');
-        } else {
-          // Document does not exist yet on cloud, signal that we need initial upload
-          onStatusChange('connected');
-        }
-      },
-      (error) => {
-        console.warn('Firestore cloud sync listener error:', error);
-        onStatusChange('offline', error.message);
-      }
-    );
-
-    return unsubscribe;
-  } catch (err: any) {
-    console.warn('Failed to subscribe to Firestore:', err);
-    onStatusChange('offline', err?.message);
-    return () => {};
+  // منع أي عملية مزامنة إذا لم يكن المستخدم مسجل دخول رسمياً
+  if (!user) {
+    console.error('عملية مرفوضة: المستخدم غير مسجل');
+    throw new Error('عملية غير مصرح بها: يجب تسجيل الدخول أولاً');
   }
-}
 
-/**
- * Save updated state directly to Firebase Firestore for instant multi-device sync
- */
-export async function pushStateToCloud(payload: any): Promise<boolean> {
-  try {
-    const docRef = getCentralDocRef();
-    // Clean payload to prevent undefined fields in Firestore
-    const cleanPayload = JSON.parse(JSON.stringify({
-      ...payload,
-      _lastUpdatedCloud: new Date().toISOString()
-    }));
-    await setDoc(docRef, cleanPayload, { merge: true });
-    return true;
-  } catch (err) {
-    console.warn('Failed to push state to Firestore:', err);
-    return false;
-  }
-}
+  // إرفاق هوية المستخدم ووقت التعديل لتوثيق السجل
+  const payload = {
+    ...data,
+    updatedBy: user.uid,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const docRef = doc(collection(db, collectionName), recordId);
+  await setDoc(docRef, payload, { merge: true });
+};
