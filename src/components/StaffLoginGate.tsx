@@ -35,7 +35,8 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess }) => 
       if (!response.ok) throw new Error(result.error || 'تعذر التحقق من بيانات الدخول');
 
       await switchUser(selectedUser.id);
-      await refreshData();
+      const synced = await refreshData();
+      if (!synced) throw new Error('تم التحقق من الرمز لكن تعذّر تحميل بيانات الخادم؛ تحققي من اتصال API قبل المتابعة.');
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('ghaith_authenticated', 'true');
         sessionStorage.setItem('ghaith_user_id', selectedUser.id);
