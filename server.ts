@@ -1798,7 +1798,11 @@ async function createApp() {
       const leaderUser = db.users.find((u: any) => u.role === 'leader');
       if (leaderUser) {
         leaderUser.passcode = hashPasscode(cleanPass);
-        if (db.currentUser?.id === leaderUser.id) db.currentUser.passcode = leaderUser.passcode;
+        leaderUser.sessionVersion = Number(leaderUser.sessionVersion || 0) + 1;
+        if (db.currentUser?.id === leaderUser.id) {
+          db.currentUser.passcode = leaderUser.passcode;
+          db.currentUser.sessionVersion = leaderUser.sessionVersion;
+        }
       }
       db.settings.leaderPasscode = '';
     }
@@ -1891,7 +1895,9 @@ async function createApp() {
     const restored = { ...backupData };
     restored.users = backupData.users.map((user: any) => {
       const existing = currentDb.users.find((current: any) => current.id === user.id);
-      return { ...user, passcode: existing?.passcode || '', sessionVersion: Number(existing?.sessionVersion || 0) + 1 };
+      const actorId = (req as any).authUser.id;
+      const sessionVersion = Number(existing?.sessionVersion || 0) + (user.id === actorId ? 0 : 1);
+      return { ...user, passcode: existing?.passcode || '', sessionVersion };
     });
     restored.settings = { ...backupData.settings, leaderPasscode: '' };
     restored.currentUser = restored.users.find((user: any) => user.id === backupData.currentUser?.id) || restored.users.find((user: any) => user.role === 'leader') || null;
@@ -1906,7 +1912,7 @@ async function createApp() {
     freshDb.users = freshDb.users.map((user: any) => ({
       ...user,
       passcode: currentDb.users.find((current: any) => current.id === user.id)?.passcode || '',
-      sessionVersion: Number(currentDb.users.find((current: any) => current.id === user.id)?.sessionVersion || 0) + 1
+      sessionVersion: Number(currentDb.users.find((current: any) => current.id === user.id)?.sessionVersion || 0) + (user.id === (req as any).authUser.id ? 0 : 1)
     }));
     freshDb.settings.leaderPasscode = '';
     freshDb.currentUser = freshDb.users.find((user: any) => user.role === 'leader') || freshDb.currentUser;
