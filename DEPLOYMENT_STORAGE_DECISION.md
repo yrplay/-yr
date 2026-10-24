@@ -11,7 +11,7 @@ Target shape:
 - Credentials are stored only in environment variables, separately for Preview and Production.
 - A Preview deployment is tested before changing production configuration.
 
-Vercel's current Express guide: https://vercel.com/kb/guide/ship-an-express-app
+Vercel's current Express guide: https://vercel.com/kb/guide/ship-a-express-app-on-vercel
 Vercel backend platform overview: https://vercel.com/backends
 
 ## Managed PostgreSQL comparison
