@@ -153,7 +153,8 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 
         <button
           onClick={() => handleOpenStudentModal()}
-          className="flex items-center gap-1.5 px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs transition self-start sm:self-auto"
+          style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
+          className="flex items-center gap-1.5 px-4 py-2.5 hover:brightness-105 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs transition self-start sm:self-auto cursor-pointer active:scale-95"
         >
           <Plus className="w-4 h-4" />
           <span>تسجيل طالبة جديدة</span>
@@ -325,8 +326,8 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 
                     <td className="p-3.5">
                       <span
-                        className="px-2.5 py-1 rounded-full text-[11px] font-bold text-white inline-block shadow-2xs"
-                        style={{ backgroundColor: score?.gradeColor || '#2D5A43' }}
+                        className="px-2.5 py-1 rounded-full text-[11px] font-bold text-white inline-block shadow-2xs transition-colors"
+                        style={{ backgroundColor: settings.primaryColor || score?.gradeColor || '#8E5364' }}
                       >
                         {score?.gradeLabel}
                       </span>
@@ -351,7 +352,8 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           onClick={() => onSelectStudent(student.id)}
-                          className="px-2.5 py-1 bg-[#8E5364] hover:bg-[#744251] text-white rounded-lg text-[11px] font-bold transition shadow-2xs"
+                          style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
+                          className="px-2.5 py-1 hover:brightness-105 text-white rounded-lg text-[11px] font-bold transition shadow-2xs cursor-pointer active:scale-95"
                           title="عرض ملف الإنجاز والشهادة"
                         >
                           ملف الإنجاز

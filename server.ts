@@ -1031,6 +1031,22 @@ async function startServer() {
     res.json(db);
   });
 
+  // Save full state atomically
+  api.post('/state', (req, res) => {
+    try {
+      const incoming = req.body;
+      if (incoming && typeof incoming === 'object') {
+        const db = readDatabase();
+        const merged = { ...db, ...incoming };
+        writeDatabase(merged);
+        return res.json({ success: true, savedAt: new Date().toISOString() });
+      }
+      res.status(400).json({ error: 'بيانات غير صالحة' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Switch current active user
   api.post('/auth/switch-user', (req, res) => {
     const { userId } = req.body;

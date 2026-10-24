@@ -11,7 +11,7 @@ export const MonthlyPlansView: React.FC = () => {
   const {
     monthlyPlans, studentPlans, students, circles, tracks,
     createMonthlyPlan, updateMonthlyPlan, duplicateMonthlyPlan, saveStudentPlan,
-    currentUser, allStudentScores
+    currentUser, allStudentScores, showToast
   } = useApp();
 
   const [selectedPlanId, setSelectedPlanId] = useState<string>(monthlyPlans[0]?.id || 'mp-1');
@@ -88,12 +88,33 @@ export const MonthlyPlansView: React.FC = () => {
     }
   });
 
+  // Track student and plan changes so active edits aren't wiped out by background re-renders
+  const lastSelectedStudentIdRef = React.useRef(selectedStudentId);
+  const lastPlanIdRef = React.useRef(currentPlan?.id);
+
   // When selected student changes, populate studentPlanForm
   React.useEffect(() => {
-    if (studentPlan) {
+    const studentChanged = lastSelectedStudentIdRef.current !== selectedStudentId;
+    const planChanged = lastPlanIdRef.current !== currentPlan?.id;
+    lastSelectedStudentIdRef.current = selectedStudentId;
+    lastPlanIdRef.current = currentPlan?.id;
+
+    if (studentChanged || planChanged) {
+      setEditingStudentPlan(false);
+    } else if (editingStudentPlan) {
+      // User is actively editing this student's syllabus; do NOT overwrite!
+      return;
+    }
+
+    const currentMonthPlan = studentPlans.find(
+      sp => sp.studentId === selectedStudentId && sp.monthlyPlanId === currentPlan?.id
+    );
+    const existing = currentMonthPlan || studentPlans.find(sp => sp.studentId === selectedStudentId);
+
+    if (existing) {
       setStudentPlanForm({
-        newMemorization: { ...studentPlan.newMemorization },
-        revision: { ...studentPlan.revision }
+        newMemorization: { ...existing.newMemorization },
+        revision: { ...existing.revision }
       });
     } else {
       setStudentPlanForm({
@@ -121,7 +142,7 @@ export const MonthlyPlansView: React.FC = () => {
         }
       });
     }
-  }, [selectedStudentId, studentPlan]);
+  }, [selectedStudentId, currentPlan?.id, studentPlans, editingStudentPlan]);
 
   const handleOpenPlanModal = (plan?: MonthlyPlan) => {
     if (plan) {
@@ -167,15 +188,20 @@ export const MonthlyPlansView: React.FC = () => {
 
   const handleSaveStudentPlan = async () => {
     if (!selectedStudent || !currentPlan) return;
+    const currentMonthPlan = studentPlans.find(
+      sp => sp.studentId === selectedStudent.id && sp.monthlyPlanId === currentPlan.id
+    );
+
     await saveStudentPlan({
-      id: studentPlan?.id,
+      id: currentMonthPlan?.id,
       studentId: selectedStudent.id,
       monthlyPlanId: currentPlan.id,
-      newMemorization: studentPlanForm.newMemorization,
-      revision: studentPlanForm.revision,
+      newMemorization: { ...studentPlanForm.newMemorization },
+      revision: { ...studentPlanForm.revision },
       status: 'active'
     });
     setEditingStudentPlan(false);
+    showToast(`تم حفظ وتحديث مقرر الطالبة (${selectedStudent.name}) بنجاح ✅`, 'success');
   };
 
   // Helper calculations for Surah verses
