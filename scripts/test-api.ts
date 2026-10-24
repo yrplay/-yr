@@ -17,12 +17,13 @@ process.env.NODE_ENV = 'production';
 let server: Server | undefined;
 try {
   const { default: app } = await import('../server.ts');
-  server = createServer(app);
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
+  const activeServer = createServer(app);
+  server = activeServer;
+  await new Promise<void>((resolve, reject) => {
+    activeServer.once('error', reject);
+    activeServer.listen(0, '127.0.0.1', resolve);
   });
-  const address = server.address();
+  const address = activeServer.address();
   assert.ok(address && typeof address !== 'string');
   const baseUrl = 'http://127.0.0.1:' + address.port;
   const request = (route: string, init: RequestInit = {}, cookie?: string): Promise<Response> => {
@@ -126,9 +127,10 @@ try {
 
   console.log('API integration checks passed: auth, redaction, scoped access, logout, and PIN hashing.');
 } finally {
-  if (server?.listening) {
-    server.closeAllConnections?.();
-    await new Promise(resolve => server.close(resolve));
+  const activeServer = server;
+  if (activeServer?.listening) {
+    activeServer.closeAllConnections?.();
+    await new Promise<void>(resolve => activeServer.close(() => resolve()));
   }
   rmSync(tempDir, { recursive: true, force: true });
 }
