@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Shield, Lock, Key, ArrowLeft, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { getIslamicIcon } from './IslamicIconLibrary';
@@ -15,6 +15,10 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess }) => 
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+
+  useEffect(() => {
+    if (!selectedUserId && users.length > 0) setSelectedUserId(users[0].id);
+  }, [selectedUserId, users]);
 
   const selectedUser = users.find(u => u.id === selectedUserId) || users[0];
   const userIcon = getIslamicIcon(selectedUser?.avatarIcon);
