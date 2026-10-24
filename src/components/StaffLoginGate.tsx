@@ -8,7 +8,7 @@ interface StaffLoginGateProps {
 }
 
 export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess }) => {
-  const { users, switchUser, settings, showToast } = useApp();
+  const { users, switchUser, settings, showToast, refreshData } = useApp();
 
   const [selectedUserId, setSelectedUserId] = useState<string>(users[0]?.id || '');
   const [enteredPasscode, setEnteredPasscode] = useState('');
@@ -25,28 +25,23 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess }) => 
     setIsVerifying(true);
 
     try {
-      const trimmedCode = enteredPasscode.trim();
-      const userCode = String(selectedUser?.passcode || '').trim();
-      const masterCode = String(settings.leaderPasscode || '').trim();
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ userId: selectedUser?.id, passcode: enteredPasscode })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'تعذر التحقق من بيانات الدخول');
 
-      // Check if matches individual staff passcode OR leader master passcode OR universal default (1234 / 0000)
-      const isValid = 
-        (userCode && trimmedCode === userCode) ||
-        (masterCode && trimmedCode === masterCode) ||
-        trimmedCode === '1234' ||
-        trimmedCode === '0000';
-
-      if (isValid) {
-        await switchUser(selectedUser.id);
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem('ghaith_authenticated', 'true');
-          sessionStorage.setItem('ghaith_user_id', selectedUser.id);
-        }
-        showToast(`أهلاً بكِ أ. ${selectedUser.name}، تم تسجيل الدخول بنجاح 🪴`, 'success');
-        onSuccess();
-      } else {
-        setErrorMsg('رمز الدخول السري غير صحيح! يمكنكِ إدخال الرمز المسند لكِ، أو استخدام الرمز الافتراضي (1234).');
+      await switchUser(selectedUser.id);
+      await refreshData();
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('ghaith_authenticated', 'true');
+        sessionStorage.setItem('ghaith_user_id', selectedUser.id);
       }
+      showToast(`أهلاً بكِ أ. ${selectedUser.name}، تم تسجيل الدخول بنجاح 🪴`, 'success');
+      onSuccess();
     } catch (err: any) {
       setErrorMsg('حدث خطأ أثناء تسجيل الدخول: ' + (err.message || ''));
     } finally {
@@ -151,7 +146,7 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess }) => 
               </button>
             </div>
             <div className="flex items-center justify-between text-[11px] text-stone-400 mt-1.5 px-0.5">
-              <span>الرمز السري الافتراضي: <strong className="text-stone-700 font-mono">1234</strong></span>
+              <span>استخدمي الرمز السري المخصص لحسابكِ</span>
               <span>يمكنكِ تغييره من ملفكِ الشخصي 🔒</span>
             </div>
           </div>
