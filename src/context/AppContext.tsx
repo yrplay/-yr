@@ -1267,24 +1267,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const restoreBackup = async (backupData: any) => {
     try {
-      if (!backupData || !backupData.tracks || !backupData.students) {
+      if (!backupData || !Array.isArray(backupData.tracks) || !Array.isArray(backupData.students) || !Array.isArray(backupData.users)) {
         throw new Error('صيغة النسخة الاحتياطية غير صالحة');
       }
-      applyState(backupData);
-      persistState(backupData);
+      const response = await fetch('/api/backup/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ backupData })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'تعذرت استعادة النسخة الاحتياطية');
+      const synced = await refreshData();
+      if (!synced) throw new Error('تمت الاستعادة لكن تعذّر إعادة تحميل البيانات من الخادم');
       showToast('تمت استعادة قاعدة البيانات بالكامل بنجاح');
-
-      try {
-        await fetch('/api/backup/restore', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ backupData })
-        });
-      } catch {}
-
       return true;
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'تعذرت استعادة النسخة الاحتياطية', 'error');
       return false;
     }
   };
