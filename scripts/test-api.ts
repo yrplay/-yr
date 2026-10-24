@@ -118,8 +118,8 @@ try {
   const logout = await request('/api/auth/logout', { method: 'POST' }, teacherCookie);
   assert.equal(logout.status, 200);
   assert.ok((logout.headers.get('set-cookie') || '').includes('Max-Age=0'), 'logout must clear the browser cookie');
-  const afterLogout = await request('/api/state');
-  assert.equal(afterLogout.status, 401, 'state must remain protected after logout');
+  const afterLogout = await request('/api/state', {}, teacherCookie);
+  assert.equal(afterLogout.status, 401, 'logout must revoke previously issued session tokens');
 
   const storedDb = JSON.parse(readFileSync(databasePath, 'utf8'));
   assert.ok(storedDb.users.find((user: any) => user.id === 'u-1').passcode.startsWith('scrypt$'), 'first login must migrate the leader PIN to a salted hash');
