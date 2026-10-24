@@ -218,8 +218,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const STORAGE_KEY = 'ghaith_alghaym_db_v1';
 
-  // Master mutable reference that ALWAYS maintains the freshest state synchronously,
-  // preventing React stale closure bugs where consecutive writes overwrite each other.
   const masterStateRef = useRef<any>({
     currentUser: null,
     users: initialData.users || [],
@@ -252,7 +250,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     auditLogs: initialData.auditLogs || []
   });
 
-  // Helper functions for smart non-destructive merging during cloud/server sync
   const mergeDailyRecords = (localRecs: DailyRecord[] = [], incomingRecs: DailyRecord[] = []): DailyRecord[] => {
     const map = new Map<string, DailyRecord>();
     for (const inc of incomingRecs) {
@@ -336,11 +333,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return Array.from(map.values());
   };
 
-  // Apply state from any source (cloud, server, localStorage, or initialData)
+  // تطبيق الحالة بدون محو البيانات المحفوظة
   const applyState = (data: any) => {
     if (!data || typeof data !== 'object') return;
     
-    // Safely exclude collections that need smart non-destructive merge
     const {
       dailyRecords: incomingDaily,
       studentPlans: incomingPlans,
@@ -349,19 +345,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...restData
     } = data;
 
-    // Sync masterStateRef synchronously with primitive & static fields
     masterStateRef.current = {
       ...masterStateRef.current,
       ...restData
     };
 
-    if (data.currentUser !== undefined) {
+    // الحفاظ على المستخدم النشط من الجلسة
+    const activeUserId = typeof window !== 'undefined' ? sessionStorage.getItem('ghaith_current_user_id') : null;
+    const userList: User[] = Array.isArray(data.users) && data.users.length > 0 ? data.users : masterStateRef.current.users;
+    
+    if (activeUserId) {
+      const found = userList.find(u => u.id === activeUserId);
+      if (found) setCurrentUser(found);
+      else if (data.currentUser) setCurrentUser(data.currentUser);
+    } else if (data.currentUser !== undefined) {
       setCurrentUser(prev => prev || data.currentUser);
     }
-    const userList: User[] = Array.isArray(data.users) ? data.users : masterStateRef.current.users;
-    if (Array.isArray(data.users)) setUsers(data.users);
-    if (Array.isArray(data.tracks)) setTracks(data.tracks);
-    if (Array.isArray(data.circles)) {
+
+    if (Array.isArray(data.users) && data.users.length > 0) {
+      setUsers(data.users);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_staff_users', JSON.stringify(data.users));
+      }
+    }
+
+    if (Array.isArray(data.tracks) && data.tracks.length > 0) setTracks(data.tracks);
+    if (Array.isArray(data.circles) && data.circles.length > 0) {
       const normalizedCircles = data.circles.map((c: any) => {
         const t = userList.find(u => u.id === c.teacherId);
         const s = userList.find(u => u.id === c.supervisorId);
@@ -374,31 +383,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       masterStateRef.current.circles = normalizedCircles;
       setCircles(normalizedCircles);
     }
-    if (Array.isArray(data.students)) setStudents(data.students);
-    if (Array.isArray(data.monthlyPlans)) setMonthlyPlans(data.monthlyPlans);
+    if (Array.isArray(data.students) && data.students.length > 0) setStudents(data.students);
+    if (Array.isArray(data.monthlyPlans) && data.monthlyPlans.length > 0) setMonthlyPlans(data.monthlyPlans);
 
-    // Smart merge student plans so recent syllabus edits are never wiped
     if (Array.isArray(incomingPlans)) {
       const mergedPlans = mergeStudentPlans(masterStateRef.current.studentPlans, incomingPlans);
       masterStateRef.current.studentPlans = mergedPlans;
       setStudentPlans(mergedPlans);
     }
 
-    // Smart merge daily records so consecutive student saves (student 1, student 2) never delete each other
     if (Array.isArray(incomingDaily)) {
       const mergedDaily = mergeDailyRecords(masterStateRef.current.dailyRecords, incomingDaily);
       masterStateRef.current.dailyRecords = mergedDaily;
       setDailyRecords(mergedDaily);
     }
 
-    // Smart merge attendance records
     if (Array.isArray(incomingAtt)) {
       const mergedAtt = mergeAttendanceRecords(masterStateRef.current.attendanceRecords, incomingAtt);
       masterStateRef.current.attendanceRecords = mergedAtt;
       setAttendanceRecords(mergedAtt);
     }
 
-    // Smart merge grading configs so track weight / formula edits are preserved across cloud sync
     if (Array.isArray(incomingGrading)) {
       const mergedGrading = mergeGradingConfigs(masterStateRef.current.gradingConfigs, incomingGrading);
       masterStateRef.current.gradingConfigs = mergedGrading;
@@ -418,10 +423,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setLastSynced(new Date());
   };
 
-  // Helper to persist current state to LocalStorage, Firebase Firestore Cloud, and Backend Server
   const persistState = (overrides?: any) => {
     try {
-      // Build snapshot from masterStateRef so recent writes are never lost in stale closures
       const payload = {
         currentUser: masterStateRef.current.currentUser || currentUser,
         users: masterStateRef.current.users || users,
@@ -444,19 +447,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ...overrides
       };
 
-      // Immediately keep masterStateRef up to date synchronously
       masterStateRef.current = payload;
 
       if (typeof window !== 'undefined') {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
       }
 
-      // 1. Instant cloud sync via Firebase Firestore
       pushStateToCloud(payload)
         .then(() => setCloudStatus('connected'))
         .catch(() => setCloudStatus('offline'));
 
-      // 2. Persist full state to backend server atomically so server database is also current
       fetch('/api/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -467,32 +467,42 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const refreshData = async (_silent: boolean = false) => {
+  // توحيد مصدر البيانات: يقرأ المحفوظ أولاً ويمنع العودة لـ initialData إلا إذا كان التطبيق فارغاً تماماً
+  const refreshData = async () => {
     try {
+      if (typeof window !== 'undefined') {
+        const cached = localStorage.getItem(STORAGE_KEY);
+        if (cached) {
+          try {
+            const data = JSON.parse(cached);
+            if (data && (Array.isArray(data.students) || Array.isArray(data.tracks))) {
+              applyState(data);
+              setLoading(false);
+            }
+          } catch {}
+        }
+      }
+
       const res = await fetch(`/api/state?t=${Date.now()}`, {
         cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        }
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
       });
       if (res.ok) {
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
-          const data = await res.json();
-          applyState(data);
-          try {
+          const serverData = await res.json();
+          if (serverData && (Array.isArray(serverData.students) || Array.isArray(serverData.tracks))) {
+            applyState(serverData);
             if (typeof window !== 'undefined') {
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(serverData));
             }
-          } catch {}
-          setError(null);
-          return;
+            setError(null);
+            return;
+          }
         }
       }
-      throw new Error('Server returned non-JSON or status ' + res.status);
-    } catch (err: any) {
-      // Backend unavailable or static deployment (e.g. Vercel)
+    } catch {
+      // الاعتماد التام على الكاش المحلي والسحابة في حال غياب سيرفر الـ API
       if (typeof window !== 'undefined') {
         const cached = localStorage.getItem(STORAGE_KEY);
         if (cached) {
@@ -504,13 +514,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           } catch {}
         }
       }
-      // First visit on static host: initialize from bundled initialData
+      
+      // أول تشغيل للمشروع فقط
       applyState(initialData);
-      try {
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(initialData));
-        }
-      } catch {}
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(initialData));
+      }
       setError(null);
     } finally {
       setLoading(false);
@@ -519,18 +528,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const syncNow = async () => {
     setCloudStatus('syncing');
-    await refreshData(false);
-    // Push current snapshot to cloud
+    await refreshData();
     persistState();
     setCloudStatus('connected');
     showToast('تمت المزامنة السحابية الفورية بنجاح ✅ (Firebase)', 'success');
   };
 
   useEffect(() => {
-    // 1. Initial state hydration from backend/local
-    refreshData(false);
+    refreshData();
 
-    // 2. Real-time Firebase Firestore database subscription
     const unsubscribeCloud = subscribeToCloudDatabase(
       (cloudData) => {
         if (cloudData && typeof cloudData === 'object' && (Array.isArray(cloudData.tracks) || Array.isArray(cloudData.students))) {
@@ -538,7 +544,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setCloudStatus('connected');
           setLastSynced(new Date());
         } else {
-          // Cloud document is fresh/empty; seed it with current state
           persistState();
           setCloudStatus('connected');
         }
@@ -565,6 +570,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const targetUser = users.find(u => u.id === userId);
       if (targetUser) {
         setCurrentUser(targetUser);
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('ghaith_current_user_id', targetUser.id);
+        }
         persistState({ currentUser: targetUser });
         showToast(`مرحباً بك: ${targetUser.name} (${targetUser.title})`, 'info');
       }
@@ -912,7 +920,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...plan
     };
 
-    // Always query from masterStateRef to avoid stale React closures
     const currentPlans: StudentMonthlyPlan[] = masterStateRef.current.studentPlans || [];
     const existingIdx = currentPlans.findIndex(
       p => (plan.id && p.id === plan.id) || (p.studentId === newPlan.studentId && p.monthlyPlanId === newPlan.monthlyPlanId)
@@ -976,7 +983,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...record
     };
 
-    // Always query from masterStateRef to avoid stale React closures where student 2 overwrites student 1
     const currentRecords: DailyRecord[] = masterStateRef.current.dailyRecords || [];
     const existingIdx = currentRecords.findIndex(
       d => (record.id && d.id === record.id) || (d.studentId === newRecord.studentId && d.date === newRecord.date)
@@ -1020,16 +1026,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...record
     };
 
-    const existingIdx = attendanceRecords.findIndex(
-      a => (a.id && a.id === cleanId) || (a.studentId === newRecord.studentId && a.date === newRecord.date)
+    const currentAtt = masterStateRef.current.attendanceRecords || attendanceRecords;
+    const existingIdx = currentAtt.findIndex(
+      (a: AttendanceRecord) => (a.id && a.id === cleanId) || (a.studentId === newRecord.studentId && a.date === newRecord.date)
     );
     let next: AttendanceRecord[];
     if (existingIdx >= 0) {
-      next = [...attendanceRecords];
+      next = [...currentAtt];
       next[existingIdx] = { ...next[existingIdx], ...newRecord };
     } else {
-      next = [...attendanceRecords, newRecord];
+      next = [...currentAtt, newRecord];
     }
+    masterStateRef.current.attendanceRecords = next;
     setAttendanceRecords(next);
     persistState({ attendanceRecords: next });
     showToast('تم تسجيل الحضور والتحضير بنجاح ✅');
@@ -1044,7 +1052,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const saveBulkAttendance = async (records: Partial<AttendanceRecord>[]) => {
-    let next = [...attendanceRecords];
+    let next = [...(masterStateRef.current.attendanceRecords || attendanceRecords)];
     records.forEach(rec => {
       const cleanId = rec.id || `att-${rec.studentId}-${rec.date}`;
       const newRecord: AttendanceRecord = {
@@ -1068,6 +1076,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         next.push(newRecord);
       }
     });
+    masterStateRef.current.attendanceRecords = next;
     setAttendanceRecords(next);
     persistState({ attendanceRecords: next });
     showToast(`تم رصد الحضور لـ ${records.length} طالبة بنجاح ✅`);
@@ -1540,7 +1549,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setCurrentUser({ ...currentUser, ...user });
     }
 
-    // Keep circle teacher and supervisor names in sync if name was updated
     let nextCircles = circles;
     if (user.name) {
       nextCircles = circles.map(c => {
@@ -1597,13 +1605,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Dynamic Grade & Score computation engine
   const computeStudentScore = (studentId: string): StudentScoreSummary => {
     const student = students.find(s => s.id === studentId);
     const trackId = student?.trackId || tracks[0]?.id;
     const gradingConfig = gradingConfigs.find(g => g.trackId === trackId) || gradingConfigs[0];
     
-    // Attendance calculations
     const sAttendance = attendanceRecords.filter(a => a.studentId === studentId);
     const presentCount = sAttendance.filter(a => a.status === 'present').length;
     const absentUnexcusedCount = sAttendance.filter(a => a.status === 'absent_unexcused').length;
@@ -1612,13 +1618,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const totalRecordedDays = presentCount + absentUnexcusedCount + absentExcusedCount;
     const attendanceRate = totalRecordedDays > 0 ? (presentCount / totalRecordedDays) * 100 : 100;
     
-    // Attendance score
-    const rules = gradingConfig?.attendanceRules || { presentScore: 5, absentUnexcusedScore: 0, absentExcusedScore: 2.5, earlyPrepBonus: 1, perfectWeekBonus: 5 };
     const maxAttendanceItem = gradingConfig?.items.find(i => i.category === 'attendance');
     const attendanceMax = maxAttendanceItem?.maxScore || 10;
     const attendanceScore = totalRecordedDays > 0 ? Math.min(attendanceMax, (attendanceRate / 100) * attendanceMax) : attendanceMax;
 
-    // Daily records calculations
     const sDaily = dailyRecords.filter(d => d.studentId === studentId);
     let memorizationScoreSum = 0;
     let memorizationMistakesTotal = 0;
@@ -1637,7 +1640,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       revisionPagesDone += (dr.revisionPages || 0);
       memorizationScoreSum += (dr.recitationScore || 0);
       
-      // Conditions check
       const cond = dr.conditions;
       let cPoints = 0;
       if (cond.listenedToReader) cPoints += 2;
@@ -1656,18 +1658,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const avgRecitationOutOf10 = sDaily.length > 0 ? (memorizationScoreSum / sDaily.length) : 10;
     const memorizationScore = (avgRecitationOutOf10 / 10) * memorizationMax;
 
-    // Conditions item
     const conditionsItem = gradingConfig?.items.find(i => i.category === 'conditions');
     const conditionsMax = conditionsItem?.maxScore || 10;
     const avgConditionsOutOf10 = sDaily.length > 0 ? (conditionsSum / sDaily.length) : 10;
     const conditionsFulfilledScore = (avgConditionsOutOf10 / 10) * conditionsMax;
 
-    // Student Monthly plan targets
     const sPlan = studentPlans.find(sp => sp.studentId === studentId);
     const newMemorizationPagesTarget = sPlan?.newMemorization?.targetPages || 8;
     const revisionPagesTarget = sPlan?.revision?.targetPages || 6;
 
-    // Atqini submissions
     const sAtqini = studentAtqiniSubmissions.filter(a => a.studentId === studentId);
     const atqiniItem = gradingConfig?.items.find(i => i.category === 'atqini');
     const atqiniMax = atqiniItem?.maxScore || 10;
@@ -1676,7 +1675,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     sAtqini.forEach(a => { atqiniTotalScore += (a.score || 0); });
     const atqiniScore = sAtqini.length > 0 ? (atqiniTotalScore / (sAtqini.length * 10)) * atqiniMax : atqiniMax;
 
-    // Challenges & Peer review
     const sChallenges = studentChallengeSubmissions.filter(c => c.studentId === studentId);
     const challengeItem = gradingConfig?.items.find(i => i.category === 'thursday_challenge');
     const challengesMax = challengeItem?.maxScore || 10;
@@ -1690,7 +1688,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
     const challengesScore = sChallenges.length > 0 ? Math.min(challengesMax, challengeEarned / sChallenges.length) : challengesMax;
 
-    // Monthly Exam score - pick the latest recorded exam for this student
     const studentExams = studentExamResults.filter(e => e.studentId === studentId);
     const sExam = studentExams[studentExams.length - 1];
     const examItem = gradingConfig?.items.find(i => i.category === 'exam');
@@ -1698,22 +1695,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const hasExam = !!sExam && typeof sExam.score === 'number';
     const examScore = hasExam ? Math.round(((sExam.score || 0) / 100) * examMax * 10) / 10 : 0;
 
-    // Total earned points & weighted percentage
     const method = gradingConfig?.calculationMethod || 'weighted_percentage';
     let finalPercentage = 0;
     let totalEarnedPoints = attendanceScore + memorizationScore + conditionsFulfilledScore + atqiniScore + challengesScore + (hasExam ? examScore : 0);
     let totalPossiblePoints = attendanceMax + memorizationMax + conditionsMax + atqiniMax + challengesMax + (hasExam ? examMax : 0);
 
     if (method === 'weighted_percentage') {
-      // Sum weights of components
       let earnedWeighted = 0;
       let totalWeights = 0;
       (gradingConfig?.items || []).forEach(item => {
         if (!item.includesInFinalGrade) return;
-        // If an exam has not yet been recorded for this student, do not penalize their current ongoing performance
-        if (item.category === 'exam' && !hasExam) {
-          return;
-        }
+        if (item.category === 'exam' && !hasExam) return;
         totalWeights += item.weightPercentage;
         let scoreRatio = 1;
         if (item.category === 'attendance') scoreRatio = attendanceMax > 0 ? attendanceScore / attendanceMax : 1;
@@ -1729,7 +1721,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       finalPercentage = totalPossiblePoints > 0 ? (totalEarnedPoints / totalPossiblePoints) * 100 : 100;
     }
 
-    // Grade scale lookup
     const scale = gradingConfig?.gradeScale || [
       { minPercentage: 95, label: "ممتاز مرتفع", letter: "أ+", color: "#2D5A43" },
       { minPercentage: 90, label: "ممتاز", letter: "أ", color: "#3E6B48" },
@@ -1782,21 +1773,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       gradeLabel: matchedScale.label,
       gradeLetter: matchedScale.letter,
       gradeColor: matchedScale.color,
-      rankInCircle: 1, // Will be computed in bulk
-      rankInTrack: 1,  // Will be computed in bulk
+      rankInCircle: 1,
+      rankInTrack: 1,
       hasUnrecordedLogs,
       hasFrequentAbsence
     };
   };
 
-  // Precompute all student scores and rankings
   const allStudentScores = useMemo(() => {
     const scoresMap: Record<string, StudentScoreSummary> = {};
     students.forEach(st => {
       scoresMap[st.id] = computeStudentScore(st.id);
     });
 
-    // Compute rankings in circles
     circles.forEach(circle => {
       const circleStudents = students
         .filter(s => s.circleId === circle.id)
@@ -1806,7 +1795,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     });
 
-    // Compute rankings in tracks
     tracks.forEach(track => {
       const trackStudents = students
         .filter(s => s.trackId === track.id)
