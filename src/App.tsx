@@ -18,7 +18,8 @@ import { StaffView } from './views/StaffView';
 import { SettingsView } from './views/SettingsView';
 import { StaffLoginGate } from './components/StaffLoginGate';
 import { Footer } from './components/Footer';
-import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import { UpdateNotification } from './components/UpdateNotification';
 
 const AppContent: React.FC = () => {
   const { loading, error, toast, triggerQuickModal, settings } = useApp();
@@ -145,12 +146,14 @@ const AppContent: React.FC = () => {
   // Security Gate: Protect app access if security is active (defaults to true) and session is locked
   const securityActive = settings?.securityEnabled ?? true;
   if (securityActive && !isAuthenticated) {
-    return <StaffLoginGate onSuccess={() => setIsAuthenticated(true)} />;
+    return <StaffLoginGate onClose={() => setIsAuthenticated(true)} />;
   }
 
   return (
     <div className="min-h-screen bg-[#F9F7F5] flex flex-col antialiased selection:bg-[#E8D5D8] selection:text-[#5B3946]">
-      
+      {/* تنبيه التحديث التلقائي للـ PWA */}
+      <UpdateNotification />
+
       {/* Header */}
       <Header
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
