@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "rm -rf public/assets public/index.html public/sw.js public/workbox-*.js public/manifest.webmanifest public/registerSW.js && bun run build && cp -R dist/. public/",
+  "buildCommand": "find public/assets -maxdepth 1 -type f -delete; rm -f public/index.html public/sw.js public/workbox-*.js public/manifest.webmanifest public/registerSW.js; bun run build && cp -R dist/. public/",
   "headers": [
     {
       "source": "/assets/(.*)",
