@@ -1,198 +1,163 @@
 import React, { useState } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
-import { Shield, Lock, Key, ArrowLeft, AlertCircle, Eye, EyeOff } from 'lucide-react';
-import { getIslamicIcon } from './IslamicIconLibrary';
+import { User } from '../types';
 
 interface StaffLoginGateProps {
-  onSuccess: () => void;
+  onClose?: () => void;
 }
 
-export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess }) => {
-  const { users, switchUser, settings, showToast } = useApp();
+export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onClose }) => {
+  const { users, currentUser, switchUser, showToast } = useApp();
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [pin, setPin] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const [selectedUserId, setSelectedUserId] = useState<string>(users[0]?.id || '');
-  const [enteredPasscode, setEnteredPasscode] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isVerifying, setIsVerifying] = useState(false);
-
-  const selectedUser = users.find(u => u.id === selectedUserId) || users[0];
-  const userIcon = getIslamicIcon(selectedUser?.avatarIcon);
-
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleConfirmLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMsg(null);
-    setIsVerifying(true);
+    if (!selectedUser) {
+      setError('يرجى تحديد المعلمة أو المشرفة');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    let correctPin = '1234';
 
     try {
-      const trimmedCode = enteredPasscode.trim();
-      const userCode = String(selectedUser?.passcode || '').trim();
-      const masterCode = String(settings.leaderPasscode || '').trim();
+      // التحقق أولاً من الرمز السري في السحابة
+      const pinDocRef = doc(db, 'staff_pins', selectedUser.id);
+      const pinSnap = await getDoc(pinDocRef);
 
-      // Check if matches individual staff passcode OR leader master passcode OR universal default (1234 / 0000)
-      const isValid = 
-        (userCode && trimmedCode === userCode) ||
-        (masterCode && trimmedCode === masterCode) ||
-        trimmedCode === '1234' ||
-        trimmedCode === '0000';
-
-      if (isValid) {
-        await switchUser(selectedUser.id);
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem('ghaith_authenticated', 'true');
-          sessionStorage.setItem('ghaith_user_id', selectedUser.id);
-        }
-        showToast(`أهلاً بكِ أ. ${selectedUser.name}، تم تسجيل الدخول بنجاح 🪴`, 'success');
-        onSuccess();
+      if (pinSnap.exists() && pinSnap.data()?.pin) {
+        correctPin = pinSnap.data().pin;
+        localStorage.setItem(`ghaith_pin_${selectedUser.id}`, correctPin);
       } else {
-        setErrorMsg('رمز الدخول السري غير صحيح! يمكنكِ إدخال الرمز المسند لكِ، أو استخدام الرمز الافتراضي (1234).');
+        correctPin =
+          localStorage.getItem(`ghaith_pin_${selectedUser.id}`) ||
+          selectedUser.passcode ||
+          '1234';
       }
-    } catch (err: any) {
-      setErrorMsg('حدث خطأ أثناء تسجيل الدخول: ' + (err.message || ''));
-    } finally {
-      setIsVerifying(false);
+    } catch {
+      correctPin =
+        localStorage.getItem(`ghaith_pin_${selectedUser.id}`) ||
+        selectedUser.passcode ||
+        '1234';
+    }
+
+    if (pin.trim() === correctPin.trim()) {
+      sessionStorage.setItem('ghaith_gate_authorized', 'true');
+      sessionStorage.setItem('ghaith_current_user_id', selectedUser.id);
+      
+      await switchUser(selectedUser.id);
+      showToast(`تم تسجيل الدخول بنجاح بصلاحية: ${selectedUser.name}`, 'success');
+      
+      if (onClose) onClose();
+      window.location.reload();
+    } else {
+      setError('الرمز السري غير صحيح، لا يمكن تبديل الحساب');
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FAF5F2] via-[#F4ECE7] to-[#EAE0D7] flex flex-col items-center justify-center p-4 selection:bg-[#E8D5D8]">
-      <div className="max-w-md w-full bg-white rounded-3xl border border-[#E8DFD8] shadow-2xl p-6 sm:p-8 space-y-6 animate-in fade-in zoom-in-95 duration-200">
-        
-        {/* Brand Icon or Uploaded Logo & Welcome Header */}
-        <div className="text-center space-y-2">
-          <div className="w-16 h-16 rounded-3xl bg-white border border-[#E0D0D4] flex items-center justify-center mx-auto shadow-xs p-1 overflow-hidden">
-            <img
-              src={settings.logoUrl || '/pwa-192x192.png'}
-              alt={settings.name || 'مقرأة غيث الغيم'}
-              className="w-full h-full object-contain"
-            />
-          </div>
-          <h2 className="text-2xl font-extrabold text-stone-900 font-quran tracking-tight">
-            {settings.name || 'مقرأة غيث الغيم'}
-          </h2>
-          <p className="text-xs text-stone-500 font-medium">
-            بوابة دخول الكادر التعليمي والإشرافي المعتمد 🛡️
+    <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+        <div className="text-center mb-5">
+          <span className="text-3xl">🔒</span>
+          <h3 className="text-xl font-bold text-white mt-2">توثيق هوية المعلمة</h3>
+          <p className="text-slate-400 text-xs mt-1">
+            اختر حسابك وأدخل الرمز السري الخاص بك لمنع العمليات غير المصرح بها
           </p>
         </div>
 
-        {/* Security Notice */}
-        <div className="p-3.5 bg-[#FAF7F4] rounded-2xl border border-[#EFE8E2] text-xs text-stone-600 space-y-1">
-          <div className="flex items-center gap-1.5 font-bold text-stone-800">
-            <Lock className="w-3.5 h-3.5 text-[#8E5364]" />
-            <span>نظام أمان محكم وموثوق:</span>
+        {error && (
+          <div className="bg-red-500/20 border border-red-500 text-red-300 p-2.5 rounded-lg mb-4 text-xs text-center font-medium">
+            {error}
           </div>
-          <p className="text-[11px] leading-relaxed text-stone-500">
-            الدخول مقتصر على المعلمات والمشرفات المضافات في المقرأة. اختاري اسمكِ وأدخلي رمزكِ السري المعتمد للدخول لحلقتكِ وبياناتكِ.
-          </p>
-        </div>
+        )}
 
-        {/* Sign-in Form */}
-        <form onSubmit={handleLogin} className="space-y-4">
-          
-          {/* User selector with Islamic Icon Preview */}
-          <div>
-            <label className="block text-xs font-bold text-stone-700 mb-1.5">
-              اختاري اسمكِ وصفتكِ في المقرأة:
-            </label>
-            <div className="relative">
-              <select
-                value={selectedUserId}
-                onChange={e => {
-                  setSelectedUserId(e.target.value);
-                  setErrorMsg(null);
-                }}
-                className="w-full pl-3 pr-10 py-2.5 border border-stone-200 rounded-xl text-xs font-bold bg-white text-stone-800 focus:ring-2 focus:ring-[#8E5364] focus:border-transparent cursor-pointer"
-              >
-                {users.map(u => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} — ({u.title})
-                  </option>
-                ))}
-              </select>
-              
-              <div className="absolute right-2.5 top-2.5 pointer-events-none w-5 h-5 flex items-center justify-center">
-                {selectedUser?.avatarIcon ? (
-                  userIcon.svg({ className: 'w-4 h-4', color: selectedUser.avatarColor || '#8E5364' })
-                ) : (
-                  <span className="text-sm">👩‍🏫</span>
-                )}
-              </div>
-            </div>
-          </div>
+        <div className="space-y-2 max-h-56 overflow-y-auto mb-4 pr-1">
+          {users.map((u) => {
+            const isSelected = selectedUser?.id === u.id;
+            const isCurrent = currentUser?.id === u.id;
 
-          {/* Passcode input with Toggle */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-bold text-stone-700">
-                رمز الدخول السري (PIN):
-              </label>
-            </div>
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                required
-                maxLength={16}
-                placeholder="أدخلي رمزكِ السري..."
-                value={enteredPasscode}
-                onChange={e => {
-                  setEnteredPasscode(e.target.value);
-                  setErrorMsg(null);
-                }}
-                className="w-full pl-10 pr-9 py-2.5 border border-stone-200 rounded-xl text-sm font-mono tracking-widest text-center focus:ring-2 focus:ring-[#8E5364] focus:border-transparent font-bold"
-              />
-              <Key className="w-4 h-4 text-stone-400 absolute right-3 top-3 pointer-events-none" />
+            return (
               <button
+                key={u.id}
                 type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute left-3 top-3 text-stone-400 hover:text-stone-700 transition cursor-pointer"
-                title={showPassword ? 'إخفاء الرمز' : 'إظهار الرمز'}
+                onClick={() => {
+                  setSelectedUser(u);
+                  setError('');
+                  setPin('');
+                }}
+                className={`w-full text-right p-3 rounded-xl border transition flex items-center justify-between ${
+                  isSelected
+                    ? 'bg-emerald-600/25 border-emerald-500 text-white shadow-md'
+                    : 'bg-slate-900/60 border-slate-700 text-slate-300 hover:bg-slate-700/40'
+                }`}
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                <div>
+                  <div className="font-semibold text-sm flex items-center gap-2">
+                    {u.name}
+                    {isCurrent && (
+                      <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                        الحالي
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-400">{u.title}</div>
+                </div>
+
+                <span className="text-xs px-2.5 py-1 bg-slate-800 rounded-lg border border-slate-700 text-slate-400">
+                  {u.role === 'leader' ? 'إدارة' : u.role === 'supervisor' ? 'إشراف' : 'معلمة'}
+                </span>
               </button>
-            </div>
-            <div className="flex items-center justify-between text-[11px] text-stone-400 mt-1.5 px-0.5">
-              <span>الرمز السري الافتراضي: <strong className="text-stone-700 font-mono">1234</strong></span>
-              <span>يمكنكِ تغييره من ملفكِ الشخصي 🔒</span>
-            </div>
-          </div>
-
-          {/* Error display */}
-          {errorMsg && (
-            <div className="p-3 rounded-xl bg-rose-50 text-rose-800 text-xs flex items-center gap-2 border border-rose-200">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={isVerifying || !enteredPasscode}
-            className="w-full py-3 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition active:scale-98 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
-          >
-            {isVerifying ? (
-              <span>جاري التحقق من الهوية...</span>
-            ) : (
-              <>
-                <span>دخول إلى واجهة المقرأة</span>
-                <ArrowLeft className="w-4 h-4" />
-              </>
-            )}
-          </button>
-        </form>
-
-        {/* Footer Guidance & Developer Signature */}
-        <div className="text-center pt-3 border-t border-stone-100 space-y-2">
-          <p className="text-[11px] text-stone-400">
-            تحت إشراف قائدة المقرأة: <strong>{settings.leaderName || 'ريفة المنصوري'}</strong>
-          </p>
-          <div className="text-[10px] text-stone-400 flex items-center justify-center gap-1 font-medium">
-            <span>تطوير وإشراف تقني:</span>
-            <span className="font-bold text-[#8E5364] font-mono">بواسطة ياسر التاج · yr_alhosine</span>
-            <span>✨</span>
-          </div>
+            );
+          })}
         </div>
 
+        {selectedUser && (
+          <form onSubmit={handleConfirmLogin} className="space-y-3 pt-3 border-t border-slate-700">
+            <div>
+              <label className="block text-xs text-slate-300 mb-1">
+                الرمز السري لـ <span className="text-emerald-400 font-semibold">{selectedUser.name}</span>
+              </label>
+              <input
+                type="password"
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                placeholder="••••"
+                maxLength={6}
+                required
+                autoFocus
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-center text-lg tracking-widest focus:border-emerald-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium py-2 rounded-lg transition disabled:opacity-50"
+              >
+                {loading ? 'جاري التحقق...' : 'تأكيد الدخول'}
+              </button>
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm py-2 rounded-lg transition"
+                >
+                  إلغاء
+                </button>
+              )}
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
