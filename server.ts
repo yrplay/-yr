@@ -1206,6 +1206,7 @@ async function startServer() {
       return res.status(400).json({ error: 'الرمز السري الجديد مطلوب' });
     }
     const cleanNew = String(newPasscode).trim();
+    if (cleanNew.length < 4 || cleanNew.length > 128) return res.status(400).json({ error: 'يجب أن يتراوح الرمز السري بين 4 و128 خانة' });
     const db = readDatabase();
     const user = db.users.find((u: any) => u.id === userId);
     if (!user) {
@@ -1798,11 +1799,12 @@ async function startServer() {
   api.post('/users', (req, res) => {
     const db = readDatabase();
     const newUser = {
+      ...req.body,
       id: `u-${Date.now()}`,
-      circleIds: [],
-      passcode: req.body.passcode ? hashPasscode(String(req.body.passcode).trim()) : '',
-      ...req.body
+      circleIds: Array.isArray(req.body.circleIds) ? req.body.circleIds : [],
+      passcode: req.body.passcode ? hashPasscode(String(req.body.passcode).trim()) : ''
     };
+    delete (newUser as any).leaderPasscode;
     db.users.push(newUser);
     addAudit(db, (db.currentUser?.name || 'ريفة المنصوري'), (db.currentUser?.role || 'leader'), 'create', 'user', `إضافة مستخدم جديد: ${newUser.name} (${newUser.title})`, newUser.id);
     if (!writeDatabase(db)) return res.status(500).json({ error: 'تعذر حفظ البيانات' });
@@ -1829,26 +1831,48 @@ async function startServer() {
   // Backup & Restore
   api.get('/backup/download', (_req, res) => {
     const db = readDatabase();
+    const safeBackup = {
+      ...db,
+      currentUser: db.currentUser ? publicUser(db.currentUser) : null,
+      users: db.users.map(publicUser),
+      settings: { ...db.settings, leaderPasscode: undefined }
+    };
+    res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename=GhaithAlGhaym_backup_${Date.now()}.json`);
-    res.send(JSON.stringify(db, null, 2));
+    res.setHeader('Content-Disposition', 'attachment; filename="ghaith-alghaym-backup.json"');
+    res.send(JSON.stringify(safeBackup, null, 2));
   });
 
   api.post('/backup/restore', (req, res) => {
     const { backupData } = req.body;
-    if (!backupData || !backupData.tracks || !backupData.students) {
+    if (!backupData || !Array.isArray(backupData.tracks) || !Array.isArray(backupData.students) || !Array.isArray(backupData.users)) {
       return res.status(400).json({ error: 'صيغة النسخة الاحتياطية غير صالحة' });
     }
-    writeDatabase(backupData);
-    addAudit(backupData, backupData.currentUser?.name || 'المدير', 'leader', 'restore', 'backup', 'استعادة قاعدة البيانات بالكامل من نسخة احتياطية');
+    const currentDb = readDatabase();
+    const restored = { ...backupData };
+    restored.users = backupData.users.map((user: any) => {
+      const existing = currentDb.users.find((current: any) => current.id === user.id);
+      return { ...user, passcode: existing?.passcode || '' };
+    });
+    restored.settings = { ...backupData.settings, leaderPasscode: '' };
+    restored.currentUser = restored.users.find((user: any) => user.id === backupData.currentUser?.id) || restored.users.find((user: any) => user.role === 'leader') || null;
+    addAudit(restored, (req as any).authUser.name, (req as any).authUser.role, 'restore', 'backup', 'استعادة قاعدة البيانات من نسخة احتياطية');
+    if (!writeDatabase(restored)) return res.status(500).json({ error: 'تعذرت كتابة النسخة الاحتياطية إلى التخزين' });
     res.json({ success: true, message: 'تمت استعادة البيانات بنجاح' });
   });
 
-  api.post('/backup/reset-sample', (_req, res) => {
+  api.post('/backup/reset-sample', (req, res) => {
+    const currentDb = readDatabase();
     const freshDb = getInitialDatabase();
-    addAudit(freshDb, freshDb.currentUser.name, 'leader', 'backup', 'reset', 'إعادة ضبط قاعدة البيانات إلى البيانات النموذجية الأصلية');
-    writeDatabase(freshDb);
-    res.json({ success: true, database: freshDb });
+    freshDb.users = freshDb.users.map((user: any) => ({
+      ...user,
+      passcode: currentDb.users.find((current: any) => current.id === user.id)?.passcode || ''
+    }));
+    freshDb.settings.leaderPasscode = '';
+    freshDb.currentUser = freshDb.users.find((user: any) => user.role === 'leader') || null;
+    addAudit(freshDb, (req as any).authUser.name, (req as any).authUser.role, 'backup', 'reset', 'إعادة ضبط قاعدة البيانات إلى البيانات النموذجية الأصلية');
+    if (!writeDatabase(freshDb)) return res.status(500).json({ error: 'تعذرت إعادة ضبط البيانات' });
+    res.json({ success: true });
   });
 
   app.use('/api', api);
