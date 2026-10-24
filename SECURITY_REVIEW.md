@@ -1,6 +1,6 @@
 # Security, deployment, and data-integrity review
 
-Status: remediation is in progress. This branch is not production-ready and has not received a live deployment or API integration test.
+Status: the first hardening tranche is implemented on this branch. It is not production-ready: persistent PostgreSQL storage and a real Vercel Preview deployment remain outstanding.
 
 ## Confirmed findings in the original `main`
 
@@ -12,46 +12,50 @@ Status: remediation is in progress. This branch is not production-ready and has 
 6. Mutable state was stored in a JSON file. Write errors were logged but not propagated to callers.
 7. The frontend fell back to local/sample data on API failure and could show a successful sync even when no server sync occurred.
 8. `vercel.json` used a Vite static build and an SPA catch-all while `server.ts` depended on a long-lived Express listener and a writable local JSON file.
-9. `data/database.json` is tracked in the public repository and includes user/student contact fields. Removing a default PIN does not remove historic copies from Git history or make the remaining records private.
+9. `data/database.json` is tracked in Git and contains staff/student contact fields. Removing the current file does not remove historic copies from Git history.
 
 ## Implemented on this branch
 
-- Added signed, expiring HMAC session cookies, a server-side login endpoint, logout, and authentication middleware for protected API routes.
-- Added a leader-only guard for user management, settings, backup, grading configuration, and account switching; passcode changes are restricted to the current user or leader.
-- Removed universal/default PIN acceptance and removed the default leader PIN from the tracked JSON and bundled initial data. Existing staff accounts without explicit PINs must be provisioned before use.
-- Changed both login gates to call the server authentication endpoint instead of checking PINs in the browser.
-- Redacted passcodes from state and selected user/settings responses.
-- Restricted CORS to an explicit origin allowlist and reduced the JSON body limit to 5 MB.
-- Changed data refresh to report local fallback as a failed server sync instead of a successful sync.
-- Added CI for locked dependency installation, TypeScript type-checking, and Vite build.
-- Added deployment/storage and authentication configuration notes.
+- Added signed, expiring HMAC session cookies and server-side login/logout; protected API routes now require an authenticated session.
+- Added leader-only guards for global configuration, users, backup, grading configuration, tracks, circles, students, plans, challenges, and exams.
+- Added basic circle/student scope checks for selected teacher/supervisor writes and filtered state responses to the authenticated user's allowed circles.
+- Removed universal/default PIN acceptance and the default leader PIN from server seed data, tracked JSON, and bundled initial data.
+- Added salted scrypt PIN hashing, migration of legacy PINs on successful login, and a basic per-process login throttle. The throttle is not distributed across serverless instances.
+- Changed both login gates to use the server login endpoint; added a minimal public login directory that omits contact fields.
+- Removed private sample data from the client context fallback and clear cached private state on a 401 response.
+- Redacted PINs from state, selected user/settings responses, and downloaded backups; backup restore preserves existing credential hashes by matching user IDs.
+- Propagated JSON-file write failures as HTTP 500 for API mutations and stopped several account/settings/backup UI paths from claiming success before server confirmation.
+- Exported the Express application and updated Vercel configuration to stage built Vite assets without a catch-all rewrite swallowing API routes.
+- Added CI for locked install, type-check, static security/deployment guardrails, API integration checks, and frontend build.
 
 ## Remaining high-priority work
 
 ### Authentication and authorization
-- Add a shared/distributed login rate limiter; the current branch does not implement brute-force throttling.
-- Replace plaintext PIN storage with a password-hashing scheme and a tested reset/recovery workflow.
-- Complete authorization per role and per circle/student scope. The current leader-only guard is not a complete permissions matrix.
-- Make all audit events use the authenticated request identity rather than the JSON database's global `currentUser`.
-- Review every API response and backup path for sensitive data; the current redaction is not a complete data-classification review.
+- Replace the in-memory login throttle with a shared/distributed limiter suitable for multiple serverless instances.
+- Add a tested account recovery and credential rotation flow; ensure all users without a PIN are provisioned before rollout.
+- Complete and independently review the permissions matrix for every API route and every role. Current scope checks are a first layer, not a full authorization certification.
+- Review all audit events for consistent attribution to the authenticated actor.
+- Add CSRF/origin hardening and broader response/data-classification tests.
 
 ### Durable storage and migration
-- Select and provision a managed PostgreSQL database.
-- Design and test an idempotent migration from JSON to relational tables, including relationship validation and rollback.
-- Replace whole-file read/modify/write operations with transactions.
-- Remove operational data from the deployment path only after a verified migration and backup.
-- Assess the privacy implications of personal records already present in public Git history; repository file changes alone do not erase history.
+- The API still uses `data/database.json`; no PostgreSQL provider has been provisioned and `DATABASE_URL` is not wired into the data layer yet.
+- Design and test an idempotent migration, relationship validation, concurrency-safe transactions, backup/restore, and rollback before switching production data.
+- Remove operational records from the deployment path only after a verified migration and backup.
+- Assess the privacy implications of personal records already present in public Git history.
 
 ### Vercel and runtime validation
-- Refactor the Express entry point into the currently supported Vercel deployment shape and route `/api/*` separately from the SPA fallback.
-- Replace JSON-file persistence before deploying the API to a serverless environment.
+- The app is structured for Vercel Express detection, and static assets are staged by the configured build command, but this has not been verified in a Vercel Preview deployment.
+- Replace JSON-file persistence before using serverless deployment for operational records.
 - Configure `SESSION_SECRET` and `GHAYM_INITIAL_LEADER_PASSCODE` in Preview/Production environment settings, never in Git.
-- Test login, logout, unauthorized requests, role boundaries, API read/write, and data persistence in a Vercel Preview deployment.
+- Verify preview routing, login/logout, cookie behavior, persistence, file uploads, PWA assets, and API error handling.
 
 ### Reliability and tests
-- Many mutation handlers in the frontend still show success before confirming server persistence; they need a shared request layer and failure-state handling.
-- Add automated API/security/migration tests. The current CI only type-checks and builds; it does not exercise runtime security behavior.
+- Some mutation handlers still update local state or show success before the server confirms persistence; the request layer needs a systematic pass.
+- CI's API integration script currently checks authentication, secret redaction, basic scope restrictions, logout cookie clearing, and salted PIN storage in an isolated temporary JSON file.
+- No PostgreSQL migration test, browser end-to-end test, or live Vercel Preview test has been run.
 
 ## Verification status
 
-The GitHub Actions CI run at https://github.com/yrplay/-yr/actions/runs/40083586514 completed successfully for dependency installation, TypeScript type-check, and frontend build on commit `9995b03b1a3a71ab70d2ab2f93a43efe03e40338`. This is evidence only for those CI steps at that commit, not for later commits or runtime behavior. The latest branch head still needs its own completed CI result, and no API integration test, migration test, browser test, or live Vercel Preview test has been run.
+GitHub Actions completed successfully for the API hardening branch at commit `79f70a1abbf4be3102694dbfc96b1e36c99104de`: dependency installation, TypeScript type-check, static guardrails, API integration checks, and frontend build all passed. Run details: https://github.com/yrplay/-yr/actions/runs/40086014356.
+
+This result applies to that commit. Any subsequent code changes require a fresh CI result. The tests are not a security certification and do not verify PostgreSQL or Vercel runtime behavior.
