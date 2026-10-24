@@ -53,7 +53,8 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({ children }) => {
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || 'تعذر التحقق من بيانات الدخول');
       await switchUser(selectedUser.id);
-      await refreshData();
+      const synced = await refreshData();
+      if (!synced) throw new Error('تم التحقق من الرمز لكن تعذّر تحميل بيانات الخادم.');
       sessionStorage.setItem('ghaith_session_unlocked', 'true');
       sessionStorage.setItem('ghaith_logged_user_id', selectedUser.id);
       setIsUnlocked(true);
