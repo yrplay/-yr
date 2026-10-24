@@ -1319,83 +1319,89 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       avatarColor: user.avatarColor || '#8E5364',
       ...user
     } as User;
-
-    const next = [...users, newUser];
-    setUsers(next);
-    persistState({ users: next });
-    showToast(`تمت إضافة ${newUser.name} إلى الكادر بنجاح`);
-
     try {
-      await fetch('/api/users', {
+      const response = await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify(newUser)
       });
-    } catch {}
-
-    return newUser;
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'تعذرت إضافة الحساب على الخادم');
+      const createdUser = result as User;
+      const next = [...users, createdUser];
+      setUsers(next);
+      persistState({ users: next });
+      showToast(`تمت إضافة ${createdUser.name} إلى الكادر بنجاح`);
+      return createdUser;
+    } catch (err: any) {
+      showToast(err.message || 'تعذرت إضافة الحساب؛ لم يتم تأكيد الحفظ', 'error');
+      throw err;
+    }
   };
 
   const updateUser = async (id: string, user: Partial<User>) => {
-    const nextUsers = users.map(u => u.id === id ? { ...u, ...user } : u);
-    setUsers(nextUsers);
-    if (currentUser?.id === id) {
-      setCurrentUser({ ...currentUser, ...user });
-    }
-
-    // Keep circle teacher and supervisor names in sync if name was updated
-    let nextCircles = circles;
-    if (user.name) {
-      nextCircles = circles.map(c => {
-        let changed = false;
-        let tName = c.teacherName;
-        let sName = c.supervisorName;
-        if (c.teacherId === id) {
-          tName = user.name!;
-          changed = true;
-        }
-        if (c.supervisorId === id) {
-          sName = user.name!;
-          changed = true;
-        }
-        return changed ? { ...c, teacherName: tName, supervisorName: sName } : c;
-      });
-      setCircles(nextCircles);
-    }
-
-    persistState({ users: nextUsers, circles: nextCircles });
-    showToast('تم تحديث بيانات المعلمة / المشرفة والصلاحيات بنجاح');
-
     try {
-      await fetch(`/api/users/${id}`, {
+      const response = await fetch(`/api/users/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify(user)
       });
-    } catch {}
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'تعذر تحديث الحساب على الخادم');
+      const updatedUser = result as User;
+      const nextUsers = users.map(existing => existing.id === id ? updatedUser : existing);
+      setUsers(nextUsers);
+      if (currentUser?.id === id) setCurrentUser(updatedUser);
+
+      let nextCircles = circles;
+      if (user.name) {
+        nextCircles = circles.map(c => {
+          let changed = false;
+          let teacherName = c.teacherName;
+          let supervisorName = c.supervisorName;
+          if (c.teacherId === id) { teacherName = user.name!; changed = true; }
+          if (c.supervisorId === id) { supervisorName = user.name!; changed = true; }
+          return changed ? { ...c, teacherName, supervisorName } : c;
+        });
+        setCircles(nextCircles);
+      }
+      persistState({ users: nextUsers, circles: nextCircles, ...(currentUser?.id === id ? { currentUser: updatedUser } : {}) });
+      showToast('تم تحديث بيانات المعلمة / المشرفة والصلاحيات بنجاح');
+    } catch (err: any) {
+      showToast(err.message || 'تعذر تحديث الحساب؛ لم يتم تأكيد الحفظ', 'error');
+      throw err;
+    }
   };
 
   const changeUserPasscode = async (userId: string, newPasscode: string): Promise<boolean> => {
     try {
-      const next = users.map(u => u.id === userId ? { ...u, passcode: newPasscode } : u);
+      const response = await fetch('/api/auth/change-passcode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ userId, newPasscode })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'تعذر تغيير الرمز السري على الخادم');
+      const next = users.map(user => {
+        if (user.id !== userId) return user;
+        const { passcode: _passcode, ...safeUser } = user;
+        return safeUser as User;
+      });
       setUsers(next);
+      let safeCurrentUser = currentUser;
       if (currentUser?.id === userId) {
-        setCurrentUser({ ...currentUser, passcode: newPasscode });
+        const { passcode: _passcode, ...safeUser } = currentUser;
+        safeCurrentUser = safeUser as User;
+        setCurrentUser(safeCurrentUser);
       }
-      persistState({ users: next });
+      persistState({ users: next, ...(safeCurrentUser ? { currentUser: safeCurrentUser } : {}) });
       showToast('تم تغيير رمز الدخول السري بنجاح 🔒');
-
-      try {
-        await fetch('/api/auth/change-passcode', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, newPasscode })
-        });
-      } catch {}
-
       return true;
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'تعذر تغيير الرمز السري', 'error');
       return false;
     }
   };
