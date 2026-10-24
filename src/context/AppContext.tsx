@@ -1213,18 +1213,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateSettings = async (newSettings: Partial<InstitutionSettings>) => {
-    const next = { ...settings, ...newSettings };
-    setSettings(next);
-    persistState({ settings: next });
-    showToast('تم حفظ الإعدادات العامة للمقرأة والهوية البصرية');
-
     try {
-      await fetch('/api/settings', {
+      const response = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify(newSettings)
       });
-    } catch {}
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'تعذر حفظ الإعدادات على الخادم');
+
+      const safeNext = { ...settings, ...newSettings, ...(result && typeof result === 'object' ? result : {}), leaderPasscode: '' };
+      setSettings(safeNext);
+      persistState({ settings: safeNext });
+      showToast('تم حفظ الإعدادات العامة للمقرأة والهوية البصرية');
+    } catch (err: any) {
+      showToast(err.message || 'تعذر حفظ الإعدادات؛ لم يتم تأكيد التغييرات على الخادم', 'error');
+    }
   };
 
   const downloadBackup = async () => {
