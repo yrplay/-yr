@@ -42,7 +42,7 @@ export const SettingsView: React.FC = () => {
     sealImageUrl: settings.sealImageUrl || '',
     leaderSignatureUrl: settings.leaderSignatureUrl || '',
     securityEnabled: settings.securityEnabled ?? true,
-    leaderPasscode: settings.leaderPasscode || '1234'
+    leaderPasscode: settings.leaderPasscode || '5522'
   });
 
   const [isSaving, setIsSaving] = useState(false);
@@ -218,6 +218,23 @@ export const SettingsView: React.FC = () => {
     await resetSampleData();
     setResetConfirmOpen(false);
   };
+
+  // تخصيص قسم الإعدادات للإدارة العليا فقط
+  if (currentUser?.role !== 'leader') {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center" dir="rtl">
+        <div className="w-16 h-16 rounded-3xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-center text-3xl shadow-xs mb-4">
+          🔒
+        </div>
+        <h2 className="text-xl font-bold font-quran text-stone-900 mb-2">
+          قسم الإعدادات والنسخ الاحتياطي خاص بإدارة المقرأة فقط
+        </h2>
+        <p className="text-xs sm:text-sm text-stone-500 max-w-md mb-6 leading-relaxed">
+          عذراً أ. {currentUser?.name || 'المعلمة'}، صلاحية الوصول إلى إعدادات الهوية والشعار، وضبط درجات النظام، والنسخ الاحتياطي مقصورة على قائدة المقرأة.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

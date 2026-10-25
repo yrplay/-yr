@@ -7,6 +7,8 @@ import {
 } from '../types';
 import initialData from '../data/initialData';
 import { subscribeToCloudDatabase, pushStateToCloud, CloudSyncStatus } from '../services/cloudSync';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 export interface StudentScoreSummary {
   studentId: string;
@@ -298,7 +300,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       supportEmail: "info@ghaym.org",
       supportPhone: "0500000001",
       securityEnabled: true,
-      leaderPasscode: "1234"
+      leaderPasscode: "5522"
     },
     auditLogs: initialData.auditLogs || []
   });
@@ -1640,19 +1642,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const changeUserPasscode = async (userId: string, newPasscode: string): Promise<boolean> => {
     try {
-      const next = users.map(u => u.id === userId ? { ...u, passcode: newPasscode } : u);
+      const cleanPasscode = newPasscode.trim();
+      const next = users.map(u => u.id === userId ? { ...u, passcode: cleanPasscode } : u);
       setUsers(next);
       if (currentUser?.id === userId) {
-        setCurrentUser({ ...currentUser, passcode: newPasscode });
+        setCurrentUser({ ...currentUser, passcode: cleanPasscode });
       }
       persistState({ users: next });
-      showToast('تم تغيير رمز الدخول السري بنجاح 🔒');
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`ghaith_pin_${userId}`, cleanPasscode);
+      }
+
+      try {
+        await setDoc(doc(db, 'staff_pins', userId), {
+          userId,
+          pin: cleanPasscode,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (e) {
+        console.warn('Firestore pin sync failed:', e);
+      }
+
+      showToast('تم تغيير رمز الدخول السري ومزامنته سحابياً بنجاح 🔒');
 
       try {
         await fetch('/api/auth/change-passcode', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, newPasscode })
+          body: JSON.stringify({ userId, newPasscode: cleanPasscode })
         });
       } catch {}
 

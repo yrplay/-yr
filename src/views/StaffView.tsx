@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import {
   UserCog, Plus, Edit, Shield, CheckCircle2, UserCheck,
-  Mail, Phone, Layers, Award, X, Eye, EyeOff, Upload, Trash2, Sparkles, FileSignature
+  Mail, Phone, Layers, Award, X, Eye, EyeOff, Upload, Trash2, Sparkles, FileSignature,
+  Copy, KeyRound, Check, Table, LayoutGrid, Share2, Lock
 } from 'lucide-react';
 import { User, UserRole, UserPermissions, defaultPermissionsByRole } from '../types';
 import { getIslamicIcon, IslamicIconPicker, renderUserAvatarBadge, getAvatarLabel } from '../components/IslamicIconLibrary';
@@ -80,10 +83,39 @@ const PERMISSION_ITEMS: {
 ];
 
 export const StaffView: React.FC = () => {
-  const { users, circles, currentUser, createUser, updateUser, showToast } = useApp();
+  const { users, circles, currentUser, createUser, updateUser, showToast, settings } = useApp();
+
+  // تخصيص القسم بالكامل لإدارة المقرأة فقط (القائدة)
+  if (currentUser?.role !== 'leader') {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center" dir="rtl">
+        <div className="w-16 h-16 rounded-3xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-center text-3xl shadow-xs mb-4">
+          <Lock className="w-8 h-8 text-rose-600" />
+        </div>
+        <h2 className="text-xl font-bold font-quran text-stone-900 mb-2">
+          قسم المعلمات والمشرفات خاص بإدارة المقرأة فقط
+        </h2>
+        <p className="text-xs sm:text-sm text-stone-500 max-w-md leading-relaxed">
+          عذراً أ. {currentUser?.name || 'المعلمة'}، سجلات الكادر التعليمي، والتواقيع المعتمدة، والصلاحيات، والرموز السرية مخصصة ومحفوظة لإدارة المقرأة العليا فقط.
+        </p>
+      </div>
+    );
+  }
+
+  // وضع العرض: جدول بيانات الكادر أو بطاقات تفصيلية
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  
+  // التحكم بظهور جميع الرموز السرية (تكون ظاهرة افتراضياً للإدارة كما طُلب)
+  const [showAllPins, setShowAllPins] = useState(true);
+  const [revealedPins, setRevealedPins] = useState<Record<string, boolean>>({});
 
   const [staffModalOpen, setStaffModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<User | null>(null);
+
+  // نافذة التعديل السريع للرمز السري
+  const [quickPinModalUser, setQuickPinModalUser] = useState<User | null>(null);
+  const [newPinValue, setNewPinValue] = useState('');
+  const [pinSaving, setPinSaving] = useState(false);
 
   // Manual permissions modal state
   const [permissionsModalUser, setPermissionsModalUser] = useState<User | null>(null);
@@ -97,6 +129,19 @@ export const StaffView: React.FC = () => {
     canViewReports: false,
     canManagePlans: false,
     canManageSettings: false,
+  });
+
+  const [staffForm, setStaffForm] = useState({
+    name: '',
+    role: 'teacher' as UserRole,
+    title: 'معلمة حلقة',
+    email: '',
+    phone: '05',
+    passcode: String(Math.floor(1000 + Math.random() * 9000)),
+    avatarIcon: 'mushaf',
+    avatarColor: '#8E5364',
+    signatureUrl: '',
+    circleIds: [] as string[]
   });
 
   const getUserEffectivePermissions = (user: User): UserPermissions => {
@@ -159,24 +204,15 @@ export const StaffView: React.FC = () => {
     setPermissionsModalUser(null);
   };
 
-  // Masked PIN state for cards
-  const [revealedPins, setRevealedPins] = useState<Record<string, boolean>>({});
-
-  const [staffForm, setStaffForm] = useState({
-    name: '',
-    role: 'teacher' as UserRole,
-    title: 'معلمة حلقة',
-    email: '',
-    phone: '05',
-    passcode: '1234',
-    avatarIcon: 'mushaf',
-    avatarColor: '#8E5364',
-    signatureUrl: '',
-    circleIds: [] as string[]
-  });
-
   const togglePinReveal = (userId: string) => {
     setRevealedPins(prev => ({ ...prev, [userId]: !prev[userId] }));
+  };
+
+  const isUserPinRevealed = (userId: string) => {
+    if (showAllPins) {
+      return revealedPins[userId] !== false;
+    }
+    return !!revealedPins[userId];
   };
 
   const handleOpenStaffModal = (user?: User) => {
@@ -188,7 +224,7 @@ export const StaffView: React.FC = () => {
         title: user.title,
         email: user.email,
         phone: user.phone || '05',
-        passcode: user.passcode || '1234',
+        passcode: user.passcode || localStorage.getItem(`ghaith_pin_${user.id}`) || '',
         avatarIcon: user.avatarIcon || 'mushaf',
         avatarColor: user.avatarColor || '#8E5364',
         signatureUrl: user.signatureUrl || '',
@@ -234,14 +270,97 @@ export const StaffView: React.FC = () => {
 
   const handleSaveStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!staffForm.name.trim()) return;
+    if (!staffForm.name.trim() || !staffForm.email.trim()) {
+      showToast('يرجى إدخال اسم المعلمة والبريد الإلكتروني', 'error');
+      return;
+    }
+
+    const cleanPasscode = staffForm.passcode.trim();
 
     if (editingStaff) {
       await updateUser(editingStaff.id, staffForm);
+      if (cleanPasscode) {
+        try {
+          await setDoc(doc(db, 'staff_pins', editingStaff.id), {
+            userId: editingStaff.id,
+            pin: cleanPasscode,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        } catch {}
+        localStorage.setItem(`ghaith_pin_${editingStaff.id}`, cleanPasscode);
+      }
+      showToast(`تم حفظ وتحديث بيانات ${staffForm.name} بنجاح ✨`);
     } else {
-      await createUser(staffForm);
+      const created = await createUser(staffForm);
+      if (created && cleanPasscode) {
+        try {
+          await setDoc(doc(db, 'staff_pins', created.id), {
+            userId: created.id,
+            pin: cleanPasscode,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        } catch {}
+        localStorage.setItem(`ghaith_pin_${created.id}`, cleanPasscode);
+      }
+      showToast(`تمت إضافة ${staffForm.name} إلى الكادر بنجاح ✨`);
     }
     setStaffModalOpen(false);
+  };
+
+  // فتح نافذة التعديل السريع للرمز السري
+  const handleOpenQuickPinModal = (user: User) => {
+    setQuickPinModalUser(user);
+    setNewPinValue(user.passcode || localStorage.getItem(`ghaith_pin_${user.id}`) || '');
+  };
+
+  const handleSaveQuickPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickPinModalUser || !newPinValue.trim()) return;
+
+    setPinSaving(true);
+    const cleanPin = newPinValue.trim();
+
+    try {
+      // 1. التحديث في السحابة في Firestore
+      await setDoc(doc(db, 'staff_pins', quickPinModalUser.id), {
+        userId: quickPinModalUser.id,
+        pin: cleanPin,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      // 2. التحديث في التخزين المحلي
+      localStorage.setItem(`ghaith_pin_${quickPinModalUser.id}`, cleanPin);
+
+      // 3. التحديث في حالة المستخدمين في السياق
+      await updateUser(quickPinModalUser.id, { passcode: cleanPin });
+
+      showToast(`تم تحديث الرمز السري لـ ${quickPinModalUser.name} بنجاح 🔑`, 'success');
+      setQuickPinModalUser(null);
+    } catch {
+      localStorage.setItem(`ghaith_pin_${quickPinModalUser.id}`, cleanPin);
+      await updateUser(quickPinModalUser.id, { passcode: cleanPin });
+      showToast(`تم حفظ الرمز السري محلياً لـ ${quickPinModalUser.name}`, 'info');
+      setQuickPinModalUser(null);
+    } finally {
+      setPinSaving(false);
+    }
+  };
+
+  // نسخ الرمز السري فقط
+  const handleCopyPinOnly = (user: User) => {
+    const pin = user.passcode || localStorage.getItem(`ghaith_pin_${user.id}`) || '----';
+    navigator.clipboard.writeText(pin);
+    showToast(`تم نسخ الرمز السري لـ (${user.name}) بنجاح 🔑`, 'success');
+  };
+
+  // نسخ رسالة بيانات الدخول الكاملة لإرسالها للمعلمة
+  const handleCopyLoginMessage = (user: User) => {
+    const pin = user.passcode || localStorage.getItem(`ghaith_pin_${user.id}`) || '----';
+    const siteUrl = window.location.origin;
+    const msg = `السلام عليكم ورحمة الله وبركاته أ. ${user.name} 🌸\n\nإليكِ بيانات اعتماد الدخول الرسمية لمنصة ${settings?.name || 'مقرأة غيث الغيم'}:\n• البريد الإلكتروني: ${user.email}\n• الرمز السري (PIN): ${pin}\n\nرابط المنصة المباشر:\n${siteUrl}\n\nنسأل الله لكِ التوفيق والسداد 🌿`;
+    
+    navigator.clipboard.writeText(msg);
+    showToast(`تم نسخ رسالة بيانات الدخول المكتملة لـ ${user.name} 📋`, 'success');
   };
 
   const handleToggleCircle = (circleId: string) => {
@@ -265,251 +384,607 @@ export const StaffView: React.FC = () => {
     teacher: { label: 'معلمة حلقة', bg: 'bg-emerald-100 text-emerald-800 border-emerald-300' }
   };
 
+  // إحصائيات سريعة للإدارة
+  const totalStaff = users.length;
+  const teachersCount = users.filter(u => u.role === 'teacher').length;
+  const supervisorsCount = users.filter(u => u.role === 'supervisor').length;
+  const signaturesUploaded = users.filter(u => !!u.signatureUrl).length;
+
   return (
     <div className="space-y-6">
 
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
+      {/* Header Bar للإدارة */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xl">👩‍🏫</span>
-            <h2 className="text-xl font-bold text-stone-900 font-quran">المعلمات والمشرفات والأيقونات والتواقيع</h2>
+            <h2 className="text-xl font-bold text-stone-900 font-quran">
+              سجل المعلمات والمشرفات والرموز السرية
+            </h2>
+            <span className="text-[11px] font-sans px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold border border-rose-300">
+              خاص بالإدارة العليا 🔒
+            </span>
           </div>
           <p className="text-xs text-stone-500">
-            إدارة الكادر التعليمي، تخصيص الأيقونات الرمزية الإسلامية، رفع التواقيع المعتمدة، وإدارة رموز الدخول بأمان
+            إدارة حسابات الكادر، استعراض وتعيين الرموز السرية (PIN)، مشاركة بيانات الدخول، واعتماد التواقيع والصلاحيات
           </p>
         </div>
 
-        {currentUser?.role === 'leader' && (
+        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+          {/* تبديل إظهار / إخفاء كافة الرموز */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowAllPins(!showAllPins);
+              setRevealedPins({});
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer active:scale-95 border border-stone-200"
+            title={showAllPins ? 'إخفاء كافة الرموز السرية' : 'إظهار كافة الرموز السرية'}
+          >
+            {showAllPins ? <EyeOff className="w-4 h-4 text-stone-600" /> : <Eye className="w-4 h-4 text-amber-600" />}
+            <span>{showAllPins ? 'إخفاء الرموز' : 'إظهار كافة الرموز'}</span>
+          </button>
+
+          {/* التبديل بين عرض الجدول وعرض البطاقات */}
+          <div className="flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200">
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                viewMode === 'table'
+                  ? 'bg-white text-stone-900 shadow-2xs'
+                  : 'text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              <Table className="w-3.5 h-3.5" />
+              <span>جدول الرموز</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('cards')}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                viewMode === 'cards'
+                  ? 'bg-white text-stone-900 shadow-2xs'
+                  : 'text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>البطاقات</span>
+            </button>
+          </div>
+
           <button
             onClick={() => handleOpenStaffModal()}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs transition self-start sm:self-auto active:scale-95 cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>إضافة معلمة / مشرفة</span>
+            <span>إضافة معلمة جديدة</span>
           </button>
-        )}
+        </div>
       </div>
 
-      {/* Staff Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {users.map(user => {
-          const roleConfig = roleLabels[user.role] || roleLabels.teacher;
-          const userIslamicIcon = getIslamicIcon(user.avatarIcon);
-          const iconColor = user.avatarColor || '#8E5364';
-          const isRevealed = !!revealedPins[user.id];
+      {/* KPI Stats Overview للإدارة */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        <div className="bg-white p-4 rounded-2xl border border-[#E8DFD8] shadow-2xs">
+          <div className="text-xs text-stone-500 font-semibold mb-1">إجمالي الكادر المسجل</div>
+          <div className="text-xl font-bold text-stone-900 flex items-baseline gap-1">
+            <span>{totalStaff}</span>
+            <span className="text-xs font-normal text-stone-400">معلمة ومشرفة</span>
+          </div>
+        </div>
 
-          const supervisedCircles = circles.filter(c => c.supervisorId === user.id);
-          const taughtCircles = circles.filter(c => c.teacherId === user.id);
+        <div className="bg-white p-4 rounded-2xl border border-[#E8DFD8] shadow-2xs">
+          <div className="text-xs text-stone-500 font-semibold mb-1">معلمات الحلقات</div>
+          <div className="text-xl font-bold text-emerald-700 flex items-baseline gap-1">
+            <span>{teachersCount}</span>
+            <span className="text-xs font-normal text-stone-400">معلمة نشطة</span>
+          </div>
+        </div>
 
-          return (
-            <div
-              key={user.id}
-              className="bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4 hover:border-[#D4C4BC] transition"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  {/* Islamic Avatar or Quranic Emoji Badge */}
-                  <div
-                    className="w-12 h-12 rounded-2xl flex items-center justify-center text-lg border transition shadow-2xs"
-                    style={{
-                      backgroundColor: `${iconColor}15`,
-                      borderColor: `${iconColor}40`,
-                      color: iconColor
-                    }}
-                    title={getAvatarLabel(user.avatarIcon)}
-                  >
-                    {renderUserAvatarBadge(user.avatarIcon, iconColor, 'w-6 h-6')}
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-stone-900 text-sm">{user.name}</h3>
-                    <p className="text-[11px] text-stone-500">{user.title}</p>
-                    <span className="text-[10px] text-stone-500 flex items-center gap-1 mt-0.5">
-                      <span>✨</span>
-                      <span>{getAvatarLabel(user.avatarIcon)}</span>
-                    </span>
-                  </div>
-                </div>
+        <div className="bg-white p-4 rounded-2xl border border-[#E8DFD8] shadow-2xs">
+          <div className="text-xs text-stone-500 font-semibold mb-1">المشرفات المعتمدات</div>
+          <div className="text-xl font-bold text-amber-700 flex items-baseline gap-1">
+            <span>{supervisorsCount}</span>
+            <span className="text-xs font-normal text-stone-400">مشرفة</span>
+          </div>
+        </div>
 
-                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${roleConfig.bg}`}>
-                  {roleConfig.label}
-                </span>
-              </div>
+        <div className="bg-white p-4 rounded-2xl border border-[#E8DFD8] shadow-2xs">
+          <div className="text-xs text-stone-500 font-semibold mb-1">التواقيع المعتمدة المرفوعة</div>
+          <div className="text-xl font-bold text-[#8E5364] flex items-baseline gap-1">
+            <span>{signaturesUploaded}</span>
+            <span className="text-xs font-normal text-stone-400">من {totalStaff}</span>
+          </div>
+        </div>
+      </div>
 
-              {/* Contact info */}
-              <div className="space-y-1.5 text-xs text-stone-600 bg-[#FCFAF8] p-3 rounded-2xl border border-[#EFE8E2]">
-                <div className="flex items-center gap-2">
-                  <Mail className="w-3.5 h-3.5 text-stone-400" />
-                  <span className="text-[11px] truncate">{user.email}</span>
-                </div>
-                {user.phone && (
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-3.5 h-3.5 text-stone-400" />
-                    <span className="text-[11px] font-mono">{user.phone}</span>
-                  </div>
-                )}
-              </div>
+      {/* العرض الأول: جدول بيانات الكادر والرموز السرية الشامل (Table View) */}
+      {viewMode === 'table' ? (
+        <div className="bg-white rounded-3xl border border-[#E8DFD8] shadow-2xs overflow-hidden">
+          <div className="p-4 border-b border-stone-100 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-stone-900 flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-[#8E5364]" />
+              <span>دليل بيانات الدخول والرموز السرية للكادر التعليمي والإداري</span>
+            </h3>
+            <span className="text-[11px] text-stone-400">
+              جميع الرموز ظاهرة للإدارة ويمكن نسخها أو تعديلها فوراً
+            </span>
+          </div>
 
-              {/* Circles info */}
-              <div className="pt-2 border-t border-stone-100 text-xs">
-                <span className="text-stone-400 block text-[10px] mb-1">الحلقات المسندة:</span>
-                {user.role === 'leader' ? (
-                  <span className="text-[#8E5364] font-bold text-[11px]">صلاحية شاملة على كافة الحلقات والمسارات</span>
-                ) : user.role === 'supervisor' ? (
-                  <div className="flex flex-wrap gap-1">
-                    {supervisedCircles.length > 0 ? (
-                      supervisedCircles.map(c => (
-                        <span key={c.id} className="px-2 py-0.5 rounded-md bg-[#FAF0F3] text-[#8E5364] font-medium text-[11px]">
-                          {c.name}
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-[#FAF7F5] border-b border-stone-200 text-stone-600">
+                <tr>
+                  <th className="py-3 px-4 font-bold">المعلمة / المشرفة</th>
+                  <th className="py-3 px-4 font-bold">الصفة والدور</th>
+                  <th className="py-3 px-4 font-bold">البريد الإلكتروني (اسم المستخدم)</th>
+                  <th className="py-3 px-4 font-bold">الجوال</th>
+                  <th className="py-3 px-4 font-bold bg-amber-50/50">الرمز السري (PIN)</th>
+                  <th className="py-3 px-4 font-bold">الحلقات المسندة</th>
+                  <th className="py-3 px-4 font-bold">التوقيع</th>
+                  <th className="py-3 px-4 font-bold text-center">إجراءات الإدارة</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {users.map(user => {
+                  const roleConfig = roleLabels[user.role] || roleLabels.teacher;
+                  const iconColor = user.avatarColor || '#8E5364';
+                  const isRevealed = isUserPinRevealed(user.id);
+                  const userPin = user.passcode || localStorage.getItem(`ghaith_pin_${user.id}`) || '----';
+                  
+                  const supervisedCircles = circles.filter(c => c.supervisorId === user.id);
+                  const taughtCircles = circles.filter(c => c.teacherId === user.id);
+                  const assignedCount = user.role === 'supervisor' ? supervisedCircles.length : taughtCircles.length;
+
+                  return (
+                    <tr key={user.id} className="hover:bg-stone-50/80 transition">
+                      {/* Name & Avatar */}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-sm border shrink-0 shadow-2xs"
+                            style={{
+                              backgroundColor: `${iconColor}18`,
+                              borderColor: `${iconColor}40`,
+                              color: iconColor
+                            }}
+                          >
+                            {renderUserAvatarBadge(user.avatarIcon, iconColor, 'w-4 h-4')}
+                          </div>
+                          <div>
+                            <div className="font-bold text-stone-900 text-xs sm:text-sm">{user.name}</div>
+                            <div className="text-[11px] text-stone-500">{user.title}</div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Role Badge */}
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${roleConfig.bg}`}>
+                          {roleConfig.label}
                         </span>
-                      ))
-                    ) : (
-                      <span className="text-stone-400 text-[11px]">لم يتم تحديد حلقات بعد</span>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-1">
-                    {taughtCircles.length > 0 ? (
-                      taughtCircles.map(c => (
-                        <span key={c.id} className="px-2 py-0.5 rounded-md bg-[#EBF3EE] text-[#2D5A43] font-medium text-[11px]">
-                          {c.name}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-stone-400 text-[11px]">لم يتم تحديد حلقات بعد</span>
-                    )}
-                  </div>
-                )}
-              </div>
+                      </td>
 
-              {/* Signature status preview */}
-              <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs">
-                <span className="text-stone-500 flex items-center gap-1 text-[11px]">
-                  <FileSignature className="w-3.5 h-3.5 text-[#8E5364]" />
-                  <span>التوقيع المعتمد:</span>
-                </span>
-                {user.signatureUrl ? (
-                  <div className="flex items-center gap-1.5">
-                    <img
-                      src={user.signatureUrl}
-                      alt="توقيع"
-                      className="h-6 max-w-[80px] object-contain drop-shadow-2xs"
-                    />
-                    <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">
-                      مرفوع ✅
-                    </span>
-                  </div>
-                ) : (
-                  <span className="text-[10px] text-stone-400">لم يُرفع بعد</span>
-                )}
-              </div>
+                      {/* Email */}
+                      <td className="py-3 px-4 font-mono font-medium text-stone-800">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate max-w-[170px]">{user.email}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(user.email);
+                              showToast(`تم نسخ بريد ${user.name} 📋`);
+                            }}
+                            className="text-stone-400 hover:text-stone-700 transition cursor-pointer"
+                            title="نسخ البريد الإلكتروني"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
 
-              {/* Passcode Security Information - Masked by default */}
-              <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs">
-                <span className="text-stone-500 flex items-center gap-1 text-[11px]">
-                  <Shield className="w-3.5 h-3.5 text-amber-700" />
-                  <span>رمز الدخول السري (PIN):</span>
-                </span>
-                <div className="flex items-center gap-1">
-                  <span className="font-mono bg-stone-100 border border-stone-200 px-2 py-0.5 rounded-md text-stone-800 font-bold text-xs tracking-wider">
-                    {isRevealed ? (user.passcode || '1234') : '••••'}
+                      {/* Phone */}
+                      <td className="py-3 px-4 font-mono text-stone-600">
+                        {user.phone || '—'}
+                      </td>
+
+                      {/* PIN & Actions */}
+                      <td className="py-3 px-4 bg-amber-50/30">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono bg-white border border-amber-300 px-2.5 py-1 rounded-lg text-stone-900 font-bold text-xs tracking-widest shadow-2xs">
+                            {isRevealed ? userPin : '••••'}
+                          </span>
+                          
+                          <button
+                            type="button"
+                            onClick={() => togglePinReveal(user.id)}
+                            className="p-1 text-stone-400 hover:text-stone-700 transition cursor-pointer"
+                            title={isRevealed ? 'إخفاء' : 'إظهار'}
+                          >
+                            {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleCopyPinOnly(user)}
+                            className="p-1 text-stone-400 hover:text-[#8E5364] transition cursor-pointer"
+                            title="نسخ الرمز السري"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleOpenQuickPinModal(user)}
+                            className="px-2 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold text-[10px] transition cursor-pointer"
+                            title="تعديل الرمز السري فورياً"
+                          >
+                            تعديل الرمز
+                          </button>
+                        </div>
+                      </td>
+
+                      {/* Circles */}
+                      <td className="py-3 px-4">
+                        {user.role === 'leader' ? (
+                          <span className="text-[#8E5364] font-bold text-[10px]">كافة الحلقات والمسارات</span>
+                        ) : assignedCount > 0 ? (
+                          <span className="font-bold text-stone-800 text-xs">
+                            {assignedCount} حلقة مسندة
+                          </span>
+                        ) : (
+                          <span className="text-stone-400 text-[11px]">غير مسندة</span>
+                        )}
+                      </td>
+
+                      {/* Signature */}
+                      <td className="py-3 px-4">
+                        {user.signatureUrl ? (
+                          <div className="flex items-center gap-1">
+                            <img
+                              src={user.signatureUrl}
+                              alt="توقيع"
+                              className="h-6 max-w-[60px] object-contain"
+                            />
+                            <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded font-bold">
+                              معتمد ✅
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-stone-400">غير مرفوع</span>
+                        )}
+                      </td>
+
+                      {/* Administrative Actions */}
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          {/* نسخ رسالة الدخول المنسقة */}
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLoginMessage(user)}
+                            className="p-1.5 rounded-lg bg-[#FAF0F3] hover:bg-[#8E5364] text-[#8E5364] hover:text-white transition cursor-pointer shadow-2xs"
+                            title="نسخ رسالة بيانات الدخول (البريد + الرمز + الرابط) لمشاركتها"
+                          >
+                            <Share2 className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* الصلاحيات */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPermissionsModal(user)}
+                            className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition cursor-pointer shadow-2xs"
+                            title="إدارة الصلاحيات التسع"
+                          >
+                            <Shield className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* تعديل كامل */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenStaffModal(user)}
+                            className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition cursor-pointer shadow-2xs"
+                            title="تعديل البيانات الكاملة والتوقيع"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* العرض الثاني: بطاقات الكادر التفصيلية (Cards View) */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {users.map(user => {
+            const roleConfig = roleLabels[user.role] || roleLabels.teacher;
+            const iconColor = user.avatarColor || '#8E5364';
+            const isRevealed = isUserPinRevealed(user.id);
+            const userPin = user.passcode || localStorage.getItem(`ghaith_pin_${user.id}`) || '----';
+
+            const supervisedCircles = circles.filter(c => c.supervisorId === user.id);
+            const taughtCircles = circles.filter(c => c.teacherId === user.id);
+
+            return (
+              <div
+                key={user.id}
+                className="bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4 hover:border-[#D4C4BC] transition"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    {/* Islamic Avatar */}
+                    <div
+                      className="w-12 h-12 rounded-2xl flex items-center justify-center text-lg border transition shadow-2xs"
+                      style={{
+                        backgroundColor: `${iconColor}15`,
+                        borderColor: `${iconColor}40`,
+                        color: iconColor
+                      }}
+                      title={getAvatarLabel(user.avatarIcon)}
+                    >
+                      {renderUserAvatarBadge(user.avatarIcon, iconColor, 'w-6 h-6')}
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-stone-900 text-sm">{user.name}</h3>
+                      <p className="text-[11px] text-stone-500">{user.title}</p>
+                      <span className="text-[10px] text-stone-500 flex items-center gap-1 mt-0.5">
+                        <span>✨</span>
+                        <span>{getAvatarLabel(user.avatarIcon)}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${roleConfig.bg}`}>
+                    {roleConfig.label}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => togglePinReveal(user.id)}
-                    className="p-1 text-stone-400 hover:text-stone-700 transition cursor-pointer"
-                    title={isRevealed ? 'إخفاء الرمز' : 'إظهار الرمز'}
-                  >
-                    {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
                 </div>
-              </div>
 
-              {/* Permissions summary badge */}
-              <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs">
-                <span className="text-stone-500 flex items-center gap-1 text-[11px]">
-                  <Shield className="w-3.5 h-3.5 text-[#8E5364]" />
-                  <span>الصلاحيات المخصصة:</span>
-                </span>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FAF0F3] text-[#8E5364] border border-[#F3DFE5]">
-                  {Object.values(getUserEffectivePermissions(user)).filter(Boolean).length} من ٩ صلاحيات مفعلة
-                </span>
-              </div>
+                {/* Contact info */}
+                <div className="space-y-1.5 text-xs text-stone-600 bg-[#FCFAF8] p-3 rounded-2xl border border-[#EFE8E2]">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 truncate">
+                      <Mail className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                      <span className="text-[11px] font-mono truncate">{user.email}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(user.email);
+                        showToast(`تم نسخ بريد ${user.name} 📋`);
+                      }}
+                      className="text-stone-400 hover:text-stone-700 transition"
+                      title="نسخ البريد"
+                    >
+                      <Copy className="w-3 h-3" />
+                    </button>
+                  </div>
+                  {user.phone && (
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-3.5 h-3.5 text-stone-400" />
+                      <span className="text-[11px] font-mono">{user.phone}</span>
+                    </div>
+                  )}
+                </div>
 
-              <div className="pt-2 border-t border-stone-100 flex flex-wrap items-center gap-2">
-                {/* زر تعديل الشعار والألوان والتوقيع: متاح للقائدة وللمعلمة نفسها */}
-                {(currentUser?.role === 'leader' || currentUser?.id === user.id) && (
+                {/* الرمز السري (PIN) - بارز وظاهر للإدارة */}
+                <div className="p-3 bg-amber-50/40 rounded-2xl border border-amber-200/80 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                    <span className="font-bold text-stone-800 text-[11px]">الرمز السري (PIN):</span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono bg-white border border-amber-300 px-2.5 py-0.5 rounded-lg text-stone-900 font-bold text-xs tracking-wider shadow-2xs">
+                      {isRevealed ? userPin : '••••'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => togglePinReveal(user.id)}
+                      className="p-1 text-stone-400 hover:text-stone-700 transition cursor-pointer"
+                      title={isRevealed ? 'إخفاء الرمز' : 'إظهار الرمز'}
+                    >
+                      {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyPinOnly(user)}
+                      className="p-1 text-stone-400 hover:text-[#8E5364] transition cursor-pointer"
+                      title="نسخ الرمز السري"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenQuickPinModal(user)}
+                      className="px-2 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-[10px] transition cursor-pointer"
+                      title="تعديل الرمز"
+                    >
+                      تعديل
+                    </button>
+                  </div>
+                </div>
+
+                {/* Circles info */}
+                <div className="pt-2 border-t border-stone-100 text-xs">
+                  <span className="text-stone-400 block text-[10px] mb-1">الحلقات المسندة:</span>
+                  {user.role === 'leader' ? (
+                    <span className="text-[#8E5364] font-bold text-[11px]">صلاحية شاملة على كافة الحلقات والمسارات</span>
+                  ) : user.role === 'supervisor' ? (
+                    <div className="flex flex-wrap gap-1">
+                      {supervisedCircles.length > 0 ? (
+                        supervisedCircles.map(c => (
+                          <span key={c.id} className="px-2 py-0.5 rounded-md bg-[#FAF0F3] text-[#8E5364] font-medium text-[11px]">
+                            {c.name}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-stone-400 text-[11px]">لم يتم تحديد حلقات بعد</span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {taughtCircles.length > 0 ? (
+                        taughtCircles.map(c => (
+                          <span key={c.id} className="px-2 py-0.5 rounded-md bg-[#EBF3EE] text-[#2D5A43] font-medium text-[11px]">
+                            {c.name}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-stone-400 text-[11px]">لم يتم تحديد حلقات بعد</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Signature status preview */}
+                <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs">
+                  <span className="text-stone-500 flex items-center gap-1 text-[11px]">
+                    <FileSignature className="w-3.5 h-3.5 text-[#8E5364]" />
+                    <span>التوقيع المعتمد:</span>
+                  </span>
+                  {user.signatureUrl ? (
+                    <div className="flex items-center gap-1.5">
+                      <img
+                        src={user.signatureUrl}
+                        alt="توقيع"
+                        className="h-6 max-w-[80px] object-contain drop-shadow-2xs"
+                      />
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">
+                        مرفوع ✅
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-stone-400">لم يُرفع بعد</span>
+                  )}
+                </div>
+
+                {/* Permissions summary */}
+                <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs">
+                  <span className="text-stone-500 flex items-center gap-1 text-[11px]">
+                    <Shield className="w-3.5 h-3.5 text-[#8E5364]" />
+                    <span>الصلاحيات المخصصة:</span>
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FAF0F3] text-[#8E5364] border border-[#F3DFE5]">
+                    {Object.values(getUserEffectivePermissions(user)).filter(Boolean).length} من ٩ صلاحيات
+                  </span>
+                </div>
+
+                {/* Actions Bar */}
+                <div className="pt-2 border-t border-stone-100 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => handleOpenStaffModal(user)}
-                    className="flex-1 py-2 px-3 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
-                    title="تعديل الشعار (أيقونة / إيموجي) والألوان والتوقيع والبيانات"
+                    onClick={() => handleCopyLoginMessage(user)}
+                    className="flex-1 py-2 px-2.5 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border border-stone-200 cursor-pointer shadow-2xs active:scale-95"
+                    title="نسخ رسالة بيانات الدخول للمشاركة"
                   >
-                    <Edit className="w-3.5 h-3.5" />
-                    <span>{currentUser?.id === user.id ? 'تعديل شعاري وألواني وتوقيعي' : 'تعديل الشعار والتوقيع'}</span>
+                    <Share2 className="w-3.5 h-3.5 text-[#8E5364]" />
+                    <span>مشاركة الدخول</span>
                   </button>
-                )}
 
-                {/* زر الصلاحيات اليدوية للقائدة فقط */}
-                {currentUser?.role === 'leader' && (
                   <button
                     type="button"
                     onClick={() => handleOpenPermissionsModal(user)}
                     className="py-2 px-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border border-stone-200 cursor-pointer shadow-2xs"
-                    title="تحديد الصلاحيات يدوياً"
+                    title="تحديد الصلاحيات"
                   >
                     <Shield className="w-3.5 h-3.5 text-[#8E5364]" />
                     <span>الصلاحيات</span>
                   </button>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenStaffModal(user)}
+                    className="py-2 px-3 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer active:scale-95"
+                    title="تعديل الشعار والبيانات"
+                  >
+                    <Edit className="w-3.5 h-3.5" />
+                    <span>تعديل</span>
+                  </button>
+                </div>
               </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* نافذة التعديل السريع للرمز السري (Quick PIN Change Modal) */}
+      {quickPinModalUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150" dir="rtl">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-stone-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-stone-900 text-sm">تعديل الرمز السري</h3>
+                  <p className="text-[11px] text-stone-500">أ. {quickPinModalUser.name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuickPinModalUser(null)}
+                className="text-stone-400 hover:text-stone-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-          );
-        })}
-      </div>
 
-      {/* Permissions Matrix Explanation */}
-      <div className="bg-white p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4">
-        <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
-          <Shield className="w-4 h-4 text-[#8E5364]" />
-          <span>مصفوفة الصلاحيات المطبقة على الخادم:</span>
-        </h3>
+            <form onSubmit={handleSaveQuickPin} className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-stone-700">الرمز السري الجديد (PIN):</label>
+                  <button
+                    type="button"
+                    onClick={() => setNewPinValue(String(Math.floor(1000 + Math.random() * 9000)))}
+                    className="text-[11px] text-[#8E5364] hover:underline font-bold cursor-pointer"
+                  >
+                    توليد عشوائي 🎲
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  required
+                  value={newPinValue}
+                  onChange={e => setNewPinValue(e.target.value)}
+                  placeholder="مثال: 4589"
+                  maxLength={8}
+                  autoFocus
+                  dir="ltr"
+                  className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2.5 text-center font-mono font-bold text-lg tracking-widest text-stone-900 focus:bg-white focus:border-[#8E5364] focus:outline-hidden"
+                />
+                <span className="text-[10px] text-stone-400 block mt-1">
+                  يحفظ سحابياً ومحلياً فورياً وستتمكن المعلمة من الدخول به مباشرة.
+                </span>
+              </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-          <div className="p-4 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2] space-y-2">
-            <span className="font-bold text-rose-900 block text-sm">١. قائدة المقرأة:</span>
-            <ul className="space-y-1 text-stone-600 text-[11px] list-disc list-inside leading-relaxed">
-              <li>صلاحية كاملة لإنشاء وتعديل وحذف وأرشفة المسارات والحلقات.</li>
-              <li>إدارة الكادر التعليمي، تعيين رموز الدخول واعتماد تواقيع المعلمات.</li>
-              <li>تخصيص الهوية البصرية، الشعار، وختم الاعتماد الرسمي.</li>
-              <li>النسخ الاحتياطي واستعادة البيانات بالكامل.</li>
-            </ul>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2] space-y-2">
-            <span className="font-bold text-amber-900 block text-sm">٢. مشرفة المسار / الحلقات:</span>
-            <ul className="space-y-1 text-stone-600 text-[11px] list-disc list-inside leading-relaxed">
-              <li>متابعة كافة حلقات المسار المسند إليها وسجلات الحفظ والغياب.</li>
-              <li>اعتماد الخطط الشهرية والتحديات ومتابعة نتائج الاختبارات.</li>
-              <li>استخراج تقارير التحصيل التراكمية وسجلات الإنجاز.</li>
-            </ul>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2] space-y-2">
-            <span className="font-bold text-emerald-900 block text-sm">٣. معلمة الحلقة:</span>
-            <ul className="space-y-1 text-stone-600 text-[11px] list-disc list-inside leading-relaxed">
-              <li>رصد الحضور اليومي والتحضير المبكر لطالبات حلقتها.</li>
-              <li>تقييم التسميع اليومي وفق معايير مشكاة الغيم والخصومات المعتمدة.</li>
-              <li>تعيين الرفيقة والثنائيات مباشرة من مصفوفة المراجعة.</li>
-              <li>تصحيح واجبات «أتقني» ورصد نتائج التحديات الأسبوعية.</li>
-            </ul>
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setQuickPinModalUser(null)}
+                  className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={pinSaving}
+                  className="px-5 py-2 bg-[#8E5364] hover:bg-[#744251] text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer active:scale-95 disabled:opacity-50"
+                >
+                  {pinSaving ? 'جاري الحفظ...' : 'حفظ الرمز السري'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Staff Modal (Add / Edit) */}
+      {/* Staff Modal (Add / Edit Full Profile) */}
       {staffModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150" dir="rtl">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-stone-200 space-y-4 max-h-[92vh] overflow-y-auto">
             
             <div className="flex items-center justify-between border-b border-stone-100 pb-3">
@@ -547,9 +1022,8 @@ export const StaffView: React.FC = () => {
                   <label className="block text-xs font-bold text-stone-700 mb-1">الصفة / الدور *</label>
                   <select
                     value={staffForm.role}
-                    disabled={currentUser?.role !== 'leader'}
                     onChange={e => setStaffForm({ ...staffForm, role: e.target.value as UserRole })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white font-bold disabled:bg-stone-100 disabled:text-stone-500"
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white font-bold"
                   >
                     <option value="teacher">معلمة حلقة قرآنية</option>
                     <option value="supervisor">مشرفة مسار / حلقات</option>
@@ -571,13 +1045,14 @@ export const StaffView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">البريد الإلكتروني</label>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">البريد الإلكتروني (لتسجيل الدخول) *</label>
                   <input
                     type="email"
                     required
                     value={staffForm.email}
                     onChange={e => setStaffForm({ ...staffForm, email: e.target.value })}
                     placeholder="name@ghaym.org"
+                    dir="ltr"
                     className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs font-mono"
                   />
                 </div>
@@ -589,6 +1064,7 @@ export const StaffView: React.FC = () => {
                     value={staffForm.phone}
                     onChange={e => setStaffForm({ ...staffForm, phone: e.target.value })}
                     placeholder="05XXXXXXXX"
+                    dir="ltr"
                     className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs font-mono"
                   />
                 </div>
@@ -614,6 +1090,8 @@ export const StaffView: React.FC = () => {
                   value={staffForm.passcode}
                   onChange={e => setStaffForm({ ...staffForm, passcode: e.target.value })}
                   placeholder="مثال: 5432"
+                  dir="ltr"
+                  maxLength={8}
                   className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs font-mono font-bold tracking-wider"
                 />
                 <span className="text-[10px] text-stone-400 mt-1 block">
@@ -643,7 +1121,7 @@ export const StaffView: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleRemoveSignature}
-                      className="text-xs text-rose-600 hover:text-rose-800 flex items-center gap-1 cursor-pointer"
+                      className="text-xs text-rose-600 hover:text-rose-800 flex items-center gap-1 cursor-pointer font-bold"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>حذف التوقيع</span>
@@ -674,7 +1152,7 @@ export const StaffView: React.FC = () => {
                     </div>
                   ) : (
                     <span className="text-[11px] text-stone-400">
-                      يُفضل رفع صورة مفرغة الخلفية بتنسيق PNG لإظهارها فوق خط التوقيع
+                      يُفضل رفع صورة مفرغة بتنسيق PNG لتظهر واضحة فوق ختم المقرأة
                     </span>
                   )}
                 </div>
@@ -726,7 +1204,7 @@ export const StaffView: React.FC = () => {
 
       {/* Manual Permissions Configuration Modal */}
       {permissionsModalUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150" dir="rtl">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-stone-200 space-y-5 max-h-[92vh] overflow-y-auto">
             
             {/* Modal Header */}
@@ -739,7 +1217,7 @@ export const StaffView: React.FC = () => {
                   <h3 className="font-bold text-stone-900 text-base font-quran flex items-center gap-2">
                     <span>نافذة تحديد الصلاحيات يدوياً</span>
                     <span className="text-[11px] font-sans px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
-                      تحكم يدوي مباشر
+                      تحكم إداري مباشر
                     </span>
                   </h3>
                   <p className="text-xs text-stone-500 mt-0.5">

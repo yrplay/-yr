@@ -1,128 +1,105 @@
-import React, { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import React, { useState } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
-import { User } from '../types';
-import { ShieldCheck, KeyRound, CheckCircle2, RotateCcw, Sun, Moon } from 'lucide-react';
+import { Mail, KeyRound, Eye, EyeOff, Lock, LogIn, AlertCircle, Sun, Moon, X } from 'lucide-react';
 
 interface StaffLoginGateProps {
   onClose?: () => void;
 }
 
 export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onClose }) => {
-  const { users, currentUser, switchUser, showToast, settings, isDarkMode, toggleTheme } = useApp();
-  
-  // تحديد الحساب المختار افتراضياً (القائدة أو الحساب الحالي) لتسهيل الدخول المباشر
-  const [selectedUser, setSelectedUser] = useState<User | null>(() => {
-    const savedUserId = typeof window !== 'undefined' ? localStorage.getItem('ghaith_current_user_id') : null;
-    return users.find(u => u.id === savedUserId) || currentUser || users[0] || null;
-  });
+  const { users, switchUser, showToast, settings, isDarkMode, toggleTheme } = useApp();
 
+  const [email, setEmail] = useState('');
   const [pin, setPin] = useState('');
+  const [showPin, setShowPin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // في حال تم تحميل قائمة المستخدمين بعد المرة الأولى
-  useEffect(() => {
-    if (!selectedUser && users.length > 0) {
-      const savedUserId = typeof window !== 'undefined' ? localStorage.getItem('ghaith_current_user_id') : null;
-      const initial = users.find(u => u.id === savedUserId) || currentUser || users[0];
-      setSelectedUser(initial);
-    }
-  }, [users, currentUser, selectedUser]);
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPin = pin.trim();
 
-  const handleConfirmLogin = async (e?: React.FormEvent, bypassPin?: string) => {
-    if (e) e.preventDefault();
-    const activePinInput = bypassPin !== undefined ? bypassPin : pin;
-
-    if (!selectedUser) {
-      setError('يرجى تحديد المعلمة أو المشرفة من القائمة');
+    if (!cleanEmail || !cleanPin) {
+      setError('يرجى إدخال البريد الإلكتروني والرمز السري معاً');
       return;
     }
 
     setLoading(true);
     setError('');
 
-    let correctPin = '1234';
-
     try {
-      // التحقق أولاً من السحابة ثم التخزين المحلي
-      const pinDocRef = doc(db, 'staff_pins', selectedUser.id);
-      const pinSnap = await getDoc(pinDocRef);
+      // البحث عن المستخدم بالبريد الإلكتروني المسجل
+      const matchedUser = users.find(
+        u => u.email && u.email.trim().toLowerCase() === cleanEmail
+      );
 
-      if (pinSnap.exists() && pinSnap.data()?.pin) {
-        correctPin = pinSnap.data().pin.toString().trim();
-        localStorage.setItem(`ghaith_pin_${selectedUser.id}`, correctPin);
-      } else {
+      if (!matchedUser) {
+        setError('لم يتم العثور على حساب مسجل بهذا البريد الإلكتروني. يرجى مراجعة إدارة المقرأة.');
+        setLoading(false);
+        return;
+      }
+
+      // جلب الرمز السري الفعلي من قاعدة بيانات Firestore أو التخزين المحلي أو سجل المستخدم
+      let correctPin = '';
+      try {
+        const pinDocRef = doc(db, 'staff_pins', matchedUser.id);
+        const pinSnap = await getDoc(pinDocRef);
+
+        if (pinSnap.exists() && pinSnap.data()?.pin) {
+          correctPin = pinSnap.data().pin.toString().trim();
+          localStorage.setItem(`ghaith_pin_${matchedUser.id}`, correctPin);
+        } else {
+          correctPin = (
+            localStorage.getItem(`ghaith_pin_${matchedUser.id}`) ||
+            matchedUser.passcode ||
+            (matchedUser.role === 'leader' ? (settings?.leaderPasscode || '1446') : '')
+          ).toString().trim();
+        }
+      } catch {
         correctPin = (
-          localStorage.getItem(`ghaith_pin_${selectedUser.id}`) ||
-          selectedUser.passcode ||
-          '1234'
+          localStorage.getItem(`ghaith_pin_${matchedUser.id}`) ||
+          matchedUser.passcode ||
+          (matchedUser.role === 'leader' ? (settings?.leaderPasscode || '1446') : '')
         ).toString().trim();
       }
-    } catch {
-      correctPin = (
-        localStorage.getItem(`ghaith_pin_${selectedUser.id}`) ||
-        selectedUser.passcode ||
-        '1234'
-      ).toString().trim();
-    }
 
-    // قبول الدخول إذا تطابق الرمز أو كان الرمز الافتراضي 1234
-    if (activePinInput.trim() === correctPin || activePinInput.trim() === '1234') {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('ghaith_authenticated', 'true');
-        localStorage.setItem('ghaith_current_user_id', selectedUser.id);
-        sessionStorage.setItem('ghaith_authenticated', 'true');
-        sessionStorage.setItem('ghaith_gate_authorized', 'true');
-        sessionStorage.setItem('ghaith_current_user_id', selectedUser.id);
-      }
-      
-      try {
-        await switchUser(selectedUser.id);
-      } catch (err) {
-        console.warn('switchUser error:', err);
-      }
+      // التحقق الصارم من الرمز السري الخاص بالمعلمة (بدون أي رمز افتراضي عام)
+      if (cleanPin === correctPin && correctPin !== '') {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('ghaith_authenticated', 'true');
+          localStorage.setItem('ghaith_current_user_id', matchedUser.id);
+          sessionStorage.setItem('ghaith_authenticated', 'true');
+          sessionStorage.setItem('ghaith_gate_authorized', 'true');
+          sessionStorage.setItem('ghaith_current_user_id', matchedUser.id);
+        }
 
-      showToast(`مرحباً بكِ أ. ${selectedUser.name}`, 'success');
-      
-      if (onClose) {
-        onClose();
-      }
-    } else {
-      setError('الرمز السري غير صحيح. يمكنك استخدام الرمز الافتراضي (1234)');
-      setLoading(false);
-    }
-  };
+        try {
+          await switchUser(matchedUser.id);
+        } catch (err) {
+          console.warn('switchUser error:', err);
+        }
 
-  const handleResetToDefaultPin = async () => {
-    if (!selectedUser) return;
-    try {
-      setLoading(true);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(`ghaith_pin_${selectedUser.id}`, '1234');
-      }
-      const pinDocRef = doc(db, 'staff_pins', selectedUser.id);
-      await setDoc(pinDocRef, {
-        userId: selectedUser.id,
-        pin: '1234',
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
+        showToast(`مرحباً بكِ أ. ${matchedUser.name} (${matchedUser.title})`, 'success');
 
-      setPin('1234');
-      showToast('تمت استعادة الرمز الافتراضي (1234) بنجاح', 'success');
-      setError('');
+        if (onClose) {
+          onClose();
+        }
+      } else {
+        setError('الرمز السري غير صحيح. يرجى التأكد من الرمز الخاص بكِ أو التواصل مع قائدة المقرأة.');
+      }
     } catch (err) {
-      setPin('1234');
-      showToast('تم ضبط الرمز محلياً إلى 1234', 'info');
+      setError('حدث خطأ أثناء محاولة تسجيل الدخول، يرجى المحاولة مرة أخرى.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" dir="rtl">
-      <div className="bg-[#FCFAF8] border border-[#E8D5D8] rounded-3xl p-6 sm:p-7 w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-200 relative">
+    <div className="fixed inset-0 bg-stone-900/65 backdrop-blur-xs z-50 flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-[#FCFAF8] border border-[#E8D5D8] rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-200 relative">
         {/* زر تبديل المظهر في نافذة الدخول */}
         <button
           type="button"
@@ -133,135 +110,117 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onClose }) => {
           {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-[#8E5364]" />}
         </button>
 
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            title="إغلاق النافذة"
+            className="absolute top-5 right-5 p-2 rounded-xl bg-white border border-stone-200 text-stone-500 hover:text-stone-800 shadow-2xs transition cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+
         {/* ترويسة نافذة الدخول */}
-        <div className="text-center mb-5">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-[#FAF0F3] border border-[#E8D5D8] text-[#8E5364] flex items-center justify-center shadow-xs mb-3 text-2xl">
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 mx-auto rounded-3xl bg-[#FAF0F3] border border-[#E8D5D8] text-[#8E5364] flex items-center justify-center shadow-xs mb-3 text-3xl">
             📖
           </div>
-          <h2 className="text-lg sm:text-xl font-bold font-quran text-stone-900">
+          <h2 className="text-xl sm:text-2xl font-bold font-quran text-stone-900">
             {settings?.name || 'مقرأة غيث الغيم'}
           </h2>
-          <p className="text-xs text-stone-500 mt-1">
-            بوابة تسجيل دخول الكادر التعليمي والإداري
+          <p className="text-xs text-stone-500 mt-1 font-medium">
+            بوابة الدخول الرسمية للكادر التعليمي والإداري
           </p>
         </div>
 
         {error && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-2xl mb-4 text-xs text-center font-bold">
-            {error}
+          <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3.5 rounded-2xl mb-5 text-xs text-right font-bold flex items-start gap-2 shadow-2xs">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <span className="leading-relaxed">{error}</span>
           </div>
         )}
 
-        {/* قائمة اختيار المعلمة أو المشرفة */}
-        <div className="mb-4">
-          <label className="block text-xs font-bold text-stone-700 mb-2">
-            ١. حددي حسابكِ:
-          </label>
-          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-            {users.map((u) => {
-              const isSelected = selectedUser?.id === u.id;
-
-              return (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedUser(u);
-                    setError('');
-                    setPin('');
-                  }}
-                  className={`w-full text-right p-2.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
-                    isSelected
-                      ? 'bg-[#FAF0F3] border-[#8E5364] text-[#8E5364] shadow-xs ring-1 ring-[#8E5364]/20'
-                      : 'bg-white border-[#EBE3DC] text-stone-700 hover:bg-[#FAF7F5]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-[#8E5364]' : 'bg-stone-300'}`} />
-                    <div>
-                      <div className="font-bold text-xs sm:text-sm text-stone-900">
-                        {u.name}
-                      </div>
-                      <div className="text-[11px] text-stone-500">{u.title}</div>
-                    </div>
-                  </div>
-
-                  <span className="text-[10px] px-2 py-0.5 rounded-lg bg-stone-100 border border-stone-200 font-bold text-stone-600">
-                    {u.role === 'leader' ? 'إدارة' : u.role === 'supervisor' ? 'إشراف' : 'معلمة'}
-                  </span>
-                </button>
-              );
-            })}
+        {/* نموذج تسجيل الدخول بالبريد الإلكتروني والرمز السري */}
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-stone-700 mb-1.5 flex items-center gap-1.5">
+              <Mail className="w-3.5 h-3.5 text-[#8E5364]" />
+              <span>البريد الإلكتروني:</span>
+            </label>
+            <div className="relative">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setError('');
+                }}
+                placeholder="teacher@ghaym.org"
+                required
+                autoFocus
+                dir="ltr"
+                className="w-full bg-white border border-[#E2D5CC] rounded-2xl px-4 py-2.5 text-stone-900 text-sm font-medium focus:border-[#8E5364] focus:ring-2 focus:ring-[#8E5364]/20 focus:outline-hidden transition shadow-2xs"
+              />
+            </div>
           </div>
+
+          <div>
+            <label className="block text-xs font-bold text-stone-700 mb-1.5 flex items-center gap-1.5">
+              <KeyRound className="w-3.5 h-3.5 text-[#8E5364]" />
+              <span>الرمز السري (PIN):</span>
+            </label>
+            <div className="relative">
+              <input
+                type={showPin ? 'text' : 'password'}
+                value={pin}
+                onChange={(e) => {
+                  setPin(e.target.value);
+                  setError('');
+                }}
+                placeholder="••••"
+                maxLength={8}
+                required
+                dir="ltr"
+                className="w-full bg-white border border-[#E2D5CC] rounded-2xl px-4 py-2.5 text-stone-900 text-center text-lg tracking-widest font-mono font-bold focus:border-[#8E5364] focus:ring-2 focus:ring-[#8E5364]/20 focus:outline-hidden transition shadow-2xs"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPin(!showPin)}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 transition p-1 cursor-pointer"
+                title={showPin ? 'إخفاء الرمز' : 'إظهار الرمز'}
+              >
+                {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-[#8E5364] hover:bg-[#744251] text-white text-sm font-bold py-3 rounded-2xl transition shadow-xs active:scale-98 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <span className="animate-spin">⏳</span>
+                  <span>جاري التحقق من الاعتماد...</span>
+                </>
+              ) : (
+                <>
+                  <LogIn className="w-4 h-4" />
+                  <span>تسجيل الدخول للمنصة</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+
+        <div className="mt-5 pt-4 border-t border-stone-200/60 text-center">
+          <p className="text-[11px] text-stone-400 leading-relaxed">
+            🔒 يتم الدخول حصراً بالبريد الإلكتروني والرمز المعتمد الصادر من إدارة المقرأة. في حال نسيان الرمز، يُرجى مراجعة قائدة المقرأة لاستخراجه أو تحديثه.
+          </p>
         </div>
-
-        {/* إدخال الرمز السري */}
-        {selectedUser && (
-          <form onSubmit={(e) => handleConfirmLogin(e)} className="space-y-3 pt-3 border-t border-[#EBE3DC]">
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold text-stone-700">
-                  ٢. الرمز السري لـ <span className="text-[#8E5364]">{selectedUser.name}</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setPin('1234')}
-                  className="text-[11px] text-[#8E5364] hover:underline font-bold cursor-pointer"
-                >
-                  تعبئة الافتراضي (1234)
-                </button>
-              </div>
-
-              <div className="relative">
-                <input
-                  type="password"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  placeholder="••••"
-                  maxLength={6}
-                  required
-                  autoFocus
-                  className="w-full bg-white border border-[#E2D5CC] rounded-xl px-3 py-2.5 text-stone-900 text-center text-lg tracking-widest font-mono focus:border-[#8E5364] focus:outline-hidden"
-                />
-              </div>
-
-              <p className="text-[11px] text-stone-400 mt-1.5 text-center">
-                الرمز الافتراضي لجميع الحسابات: <span className="font-bold font-mono text-stone-600">1234</span>
-              </p>
-            </div>
-
-            <div className="flex gap-2 pt-1">
-              <button
-                type="submit"
-                disabled={loading}
-                className="flex-1 bg-[#8E5364] hover:bg-[#774252] text-white text-xs font-bold py-2.5 rounded-xl transition shadow-xs active:scale-98 cursor-pointer disabled:opacity-50"
-              >
-                {loading ? 'جاري التحقق...' : 'تأكيد الدخول'}
-              </button>
-              
-              <button
-                type="button"
-                onClick={() => handleConfirmLogin(undefined, '1234')}
-                className="px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold rounded-xl transition active:scale-98 cursor-pointer"
-                title="دخول مباشر بالرمز الافتراضي 1234"
-              >
-                دخول سريع (1234)
-              </button>
-            </div>
-
-            {/* خيار استعادة الرمز */}
-            <div className="text-center pt-1">
-              <button
-                type="button"
-                onClick={handleResetToDefaultPin}
-                className="text-[11px] text-stone-400 hover:text-stone-600 transition inline-flex items-center gap-1 cursor-pointer"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span>نسيت الرمز؟ اضغط هنا لإعادة ضبطه إلى 1234</span>
-              </button>
-            </div>
-          </form>
-        )}
       </div>
     </div>
   );

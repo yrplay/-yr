@@ -3,6 +3,8 @@ import { useApp } from '../context/AppContext';
 import { User } from '../types';
 import { IslamicIconPicker, renderUserAvatarBadge, getAvatarLabel } from './IslamicIconLibrary';
 import { X, Upload, Trash2, FileSignature, Sparkles, Check, KeyRound } from 'lucide-react';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface EditTeacherProfileModalProps {
   user: User;
@@ -23,7 +25,7 @@ export const EditTeacherProfileModal: React.FC<EditTeacherProfileModalProps> = (
     title: user.title || 'معلمة حلقة قرآنية',
     email: user.email || '',
     phone: user.phone || '05',
-    passcode: user.passcode || '1234',
+    passcode: user.passcode || localStorage.getItem(`ghaith_pin_${user.id}`) || '',
     avatarIcon: user.avatarIcon || 'mushaf',
     avatarColor: user.avatarColor || '#8E5364',
     signatureUrl: user.signatureUrl || ''
@@ -58,17 +60,31 @@ export const EditTeacherProfileModal: React.FC<EditTeacherProfileModalProps> = (
     }
 
     setLoading(true);
+    const cleanPasscode = formData.passcode.trim();
+
     try {
       await updateUser(user.id, {
         name: formData.name.trim(),
         title: formData.title.trim(),
         email: formData.email.trim(),
         phone: formData.phone.trim(),
-        passcode: formData.passcode.trim(),
+        passcode: cleanPasscode,
         avatarIcon: formData.avatarIcon,
         avatarColor: formData.avatarColor,
         signatureUrl: formData.signatureUrl
       });
+
+      if (cleanPasscode) {
+        try {
+          await setDoc(doc(db, 'staff_pins', user.id), {
+            userId: user.id,
+            pin: cleanPasscode,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        } catch {}
+        localStorage.setItem(`ghaith_pin_${user.id}`, cleanPasscode);
+      }
+
       showToast('تم حفظ وتحديث الشعار والألوان والتوقيع بنجاح ✨', 'success');
       onSuccess?.();
       onClose();
@@ -178,8 +194,8 @@ export const EditTeacherProfileModal: React.FC<EditTeacherProfileModalProps> = (
                 type="text"
                 value={formData.passcode}
                 onChange={e => setFormData({ ...formData, passcode: e.target.value })}
-                placeholder="1234"
-                maxLength={6}
+                placeholder="••••"
+                maxLength={8}
                 className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs font-mono font-bold text-center tracking-widest bg-stone-50/50 focus:bg-white focus:border-[#8E5364] outline-hidden"
               />
             </div>

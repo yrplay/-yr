@@ -85,9 +85,9 @@ export const Header: React.FC<HeaderProps> = ({
       const pinSnap = await getDoc(pinDocRef);
       const activePin = pinSnap.exists()
         ? pinSnap.data().pin.toString().trim()
-        : (localStorage.getItem(`ghaith_pin_${currentUser.id}`) || currentUser.passcode || '1234').toString().trim();
+        : (localStorage.getItem(`ghaith_pin_${currentUser.id}`) || currentUser.passcode || '').toString().trim();
 
-      if (oldPin.trim() !== activePin) {
+      if (!activePin || oldPin.trim() !== activePin) {
         setPinMsg({ text: 'الرمز الحالي غير صحيح', isError: true });
         setPinLoading(false);
         return;
@@ -148,8 +148,14 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             type="button"
-            onClick={onNavigateToSettings}
-            title="الانتقال إلى الإعدادات والنسخ الاحتياطي"
+            onClick={() => {
+              if (isLeader) {
+                onNavigateToSettings?.();
+              } else {
+                showToast('قسم الإعدادات والنسخ الاحتياطي مخصص لإدارة المقرأة فقط 🔒', 'info');
+              }
+            }}
+            title={isLeader ? "الانتقال إلى الإعدادات والنسخ الاحتياطي" : (settings?.name || 'مقرأة غيث الغيم')}
             aria-label="الانتقال إلى الإعدادات"
             className="flex items-center gap-2.5 text-right p-1.5 -m-1.5 rounded-2xl hover:bg-[#722F37]/5 active:scale-98 transition group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#722F37]/30"
           >

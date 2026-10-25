@@ -33,10 +33,11 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isOpen, onClose, onLockSession, onOpenAuditLog }) => {
-  const { circles, students, settings, isDarkMode, toggleTheme } = useApp();
+  const { circles, students, settings, isDarkMode, toggleTheme, currentUser } = useApp();
   const primaryColor = settings?.primaryColor || '#8E5364';
+  const isLeader = currentUser?.role === 'leader';
 
-  const menuItems: { id: ViewType; label: string; icon: any; badge?: string | number; accent?: string }[] = [
+  const rawMenuItems: { id: ViewType; label: string; icon: any; badge?: string | number; accent?: string; adminOnly?: boolean }[] = [
     { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
     { id: 'tracks_circles', label: 'المسارات والحلقات', icon: Layers, badge: circles.length },
     { id: 'students', label: 'شؤون الطالبات', icon: Users, badge: students.length },
@@ -49,9 +50,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
     { id: 'grading', label: 'نظام الدرجات والمعايير', icon: Sliders },
     { id: 'portfolio', label: 'ملف الإنجاز الشهري', icon: UserCheck },
     { id: 'reports', label: 'التقارير والإحصائيات', icon: BarChart3 },
-    { id: 'staff', label: 'المعلمات والمشرفات', icon: UserCog },
-    { id: 'settings', label: 'الإعدادات والنسخ الاحتياطي', icon: Settings },
+    { id: 'staff', label: 'المعلمات والمشرفات', icon: UserCog, adminOnly: true },
+    { id: 'settings', label: 'الإعدادات والنسخ الاحتياطي', icon: Settings, adminOnly: true },
   ];
+
+  // تخصيص قسم المعلمات والمشرفات والإعدادات للإدارة فقط
+  const menuItems = rawMenuItems.filter(item => !item.adminOnly || isLeader);
 
   return (
     <>

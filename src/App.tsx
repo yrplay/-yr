@@ -22,7 +22,7 @@ import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 import { UpdateNotification } from './components/UpdateNotification';
 
 const AppContent: React.FC = () => {
-  const { loading, error, toast, triggerQuickModal, settings } = useApp();
+  const { loading, error, toast, triggerQuickModal, settings, currentUser } = useApp();
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
@@ -254,11 +254,53 @@ const AppContent: React.FC = () => {
           )}
 
           {currentView === 'staff' && (
-            <StaffView />
+            currentUser?.role === 'leader' ? (
+              <StaffView />
+            ) : (
+              <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center" dir="rtl">
+                <div className="w-16 h-16 rounded-3xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-center text-3xl shadow-xs mb-4">
+                  🔒
+                </div>
+                <h2 className="text-xl font-bold font-quran text-stone-900 mb-2">
+                  قسم المعلمات والمشرفات خاص بإدارة المقرأة فقط
+                </h2>
+                <p className="text-xs sm:text-sm text-stone-500 max-w-md mb-6 leading-relaxed">
+                  عذراً، هذا القسم يشتمل على سجلات الكادر التعليمي، والتواقيع المعتمدة، والصلاحيات، والرموز السرية، وصلاحية الوصول إليه محصورة على قائدة المقرأة.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setCurrentView('dashboard')}
+                  className="px-5 py-2.5 bg-[#8E5364] text-white rounded-xl text-xs font-bold shadow-xs hover:bg-[#744251] transition cursor-pointer"
+                >
+                  العودة للوحة التحكم الرئيسية
+                </button>
+              </div>
+            )
           )}
 
           {currentView === 'settings' && (
-            <SettingsView />
+            currentUser?.role === 'leader' ? (
+              <SettingsView />
+            ) : (
+              <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center" dir="rtl">
+                <div className="w-16 h-16 rounded-3xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-center text-3xl shadow-xs mb-4">
+                  🔒
+                </div>
+                <h2 className="text-xl font-bold font-quran text-stone-900 mb-2">
+                  قسم الإعدادات والنسخ الاحتياطي خاص بإدارة المقرأة فقط
+                </h2>
+                <p className="text-xs sm:text-sm text-stone-500 max-w-md mb-6 leading-relaxed">
+                  عذراً، صلاحية الوصول إلى إعدادات الهوية والشعار، وضبط درجات النظام، والنسخ الاحتياطي مقصورة على قائدة المقرأة.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setCurrentView('dashboard')}
+                  className="px-5 py-2.5 bg-[#8E5364] text-white rounded-xl text-xs font-bold shadow-xs hover:bg-[#744251] transition cursor-pointer"
+                >
+                  العودة للوحة التحكم الرئيسية
+                </button>
+              </div>
+            )
           )}
 
           {/* التذييل الرسمي */}
