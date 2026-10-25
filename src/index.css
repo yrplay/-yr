@@ -573,4 +573,98 @@ html.dark ::-webkit-scrollbar-thumb:hover {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
+
+/* ========================================================
+   تحسينات الوضع الليلي الشاملة (Dark Mode Eye-Comfort Fix)
+   ======================================================== */
+
+.dark {
+  /* ضبط الخلفيات البيضاء الفاقعة داخل البطاقات والحقول */
+  .bg-white,
+  div[class*="bg-white"],
+  input[class*="bg-white"],
+  select[class*="bg-white"],
+  textarea[class*="bg-white"] {
+    background-color: #1A1A1E !important;
+    color: #F3F4F6 !important;
+    border-color: #2E2E35 !important;
+  }
+
+  /* معالجة خانات المقرر والمراجعة الفاقعة */
+  .dark div[class*="bg-white"]:has(span),
+  .dark div[class*="bg-white"]:has(p) {
+    background-color: #1F1F24 !important;
+    border-color: #2F2F38 !important;
+  }
+
+  /* بطاقات الإحصائيات الفاتحة والرمادية الباهتة (مثل حالة Firebase وسجل المعلمات) */
+  .bg-[#FAF7F5],
+  .bg-[#FAF6F2],
+  .bg-[#FCFAF8],
+  .bg-stone-50,
+  .bg-stone-100 {
+    background-color: #18181C !important;
+    border-color: #292930 !important;
+    color: #E4E4E7 !important;
+  }
+
+  /* إزالة التوهج الفاقع من بطاقات النسب والمعدلات الكبرى (97.2%) */
+  .bg-emerald-900\/80,
+  div[class*="bg-emerald-800"],
+  div[class*="bg-emerald-900"] {
+    background-color: #12281E !important;
+    border: 1px solid #1E4432 !important;
+  }
+
+  /* تحسين وتهدئة أزرار الإجراءات والرصد (التسميع، التحديات، الواجبات) */
+  button[class*="bg-[#8E5364]"],
+  button[class*="bg-[#744251]"],
+  button:has(svg)[class*="text-stone-700"] {
+    border-color: #3F2C34 !important;
+  }
+
+  /* بطاقات الأزرار الطينية المزعجة في الجداول وتحويلها لعنابي مريح وواضح */
+  button[class*="bg-[#9E5D4B]"],
+  button[class*="bg-[#8C4A38]"],
+  button[class*="bg-[#7A3E2E]"] {
+    background-color: #4A2832 !important;
+    color: #F8E7ED !important;
+    border-color: #633342 !important;
+  }
+
+  /* شريط التوقيع السفلي (yr_alhosine) لمنع توهجه الأبيض */
+  div:has(> a[href*="yr_alhosine"]),
+  span:has(> a[href*="yr_alhosine"]),
+  .dark a[class*="bg-white"],
+  .dark div[class*="bg-white"]:has(svg) {
+    background-color: #1C1C21 !important;
+    border-color: #2E2E36 !important;
+    color: #D4D4D8 !important;
+  }
+
+  /* ضبط نصوص العناوين والتنبيهات لتكون واضحة ومريحة */
+  .text-stone-900,
+  .text-stone-800 {
+    color: #F4F4F5 !important;
+  }
+
+  .text-stone-600,
+  .text-stone-500 {
+    color: #A1A1AA !important;
+  }
+
+  /* حدود الجداول والبطاقات لتكون متناسقة وغير فاقعة */
+  .border-[#E8DFD8],
+  .border-[#E2D5CC],
+  .border-stone-200,
+  .border-stone-100 {
+    border-color: #27272A !important;
+  }
+
+  /* بطاقة خيارات الأوزان المئوية في شاشة الدرجات */
+  div[class*="border-emerald"]:has(input[type="radio"]:checked),
+  label:has(input[type="radio"]:checked) {
+    background-color: #16241D !important;
+    border-color: #234E37 !important;
+  }
 }
