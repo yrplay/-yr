@@ -54,9 +54,9 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
     );
   }
 
-  // الربط المباشر: جميع الطالبات النشطات في المنظومة بلا استثناء
+ // جلب كل الطالبات المسجلات فوراً وبدون أي شرط
   const allActiveStudents = useMemo(() => {
-    return students.filter(s => s.status === 'active');
+    return students || [];
   }, [students]);
 
   const filteredStudents = useMemo(() => {
