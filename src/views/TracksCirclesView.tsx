@@ -4,10 +4,11 @@ import {
   Layers, Plus, Edit, Archive, Users, Calendar, Clock,
   Sparkles, Trophy, BookOpen, ChevronLeft, CheckCircle2,
   Sliders, UserCheck, Shield, AlertCircle, Trash2, RotateCcw,
-  Eye, EyeOff, AlertTriangle, X
+  Eye, EyeOff, AlertTriangle, X, ExternalLink
 } from 'lucide-react';
 import { Circle, Track } from '../types';
 import { CircleIconPicker } from '../components/CircleIconLibrary';
+import { TrackDetailView } from './TrackDetailView';
 
 const TRACK_EMOJIS = [
   '🪴', '📖', '🌸', '🌟', '🌿', '💎', '🕊️', '📜',
@@ -28,13 +29,15 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     tracks, circles, students, users, allStudentScores,
     createTrack, updateTrack, archiveTrack, restoreTrack,
     createCircle, updateCircle, archiveCircle, restoreCircle,
-    currentUser, quickModalAction, clearQuickModal, settings,
-    setSelectedTrackForDetail
+    currentUser, quickModalAction, clearQuickModal, settings
   } = useApp();
 
   const [selectedTrackId, setSelectedTrackId] = useState<string>(tracks[0]?.id || 't-1');
   const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+
+  // حالة فتح صفحة تفاصيل المسار المستقلة
+  const [selectedTrackDetailId, setSelectedTrackDetailId] = useState<string | null>(null);
 
   // Modals state
   const [trackModalOpen, setTrackModalOpen] = useState(false);
@@ -87,13 +90,23 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     }
   }, [quickModalAction]);
 
+  // عرض صفحة تفاصيل ونظام المسار عند اختيار مسار معين
+  if (selectedTrackDetailId) {
+    return (
+      <TrackDetailView
+        trackId={selectedTrackDetailId}
+        onBack={() => setSelectedTrackDetailId(null)}
+      />
+    );
+  }
+
   const handleOpenTrackModal = (track?: Track) => {
     if (track) {
       setEditingTrack(track);
       setTrackForm({
         name: track.name,
         code: track.code,
-        description: track.description,
+        description: track.description || '',
         logoUrl: track.logoUrl || '',
         icon: track.icon || '🪴'
       });
@@ -185,7 +198,6 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     setCircleModalOpen(false);
   };
 
-  // Trigger Delete Circle Confirmation
   const confirmDeleteCircle = (circle: Circle, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const studentsInCircle = students.filter(s => s.circleId === circle.id && s.status === 'active').length;
@@ -198,7 +210,6 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     });
   };
 
-  // Trigger Delete Track Confirmation
   const confirmDeleteTrack = (track: Track) => {
     const studentsInTrack = students.filter(s => s.trackId === track.id && s.status === 'active').length;
     setConfirmDelete({
@@ -210,7 +221,6 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     });
   };
 
-  // Perform confirmed deletion
   const executeConfirmDelete = async () => {
     if (!confirmDelete) return;
     if (confirmDelete.type === 'circle') {
@@ -230,7 +240,6 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     setConfirmDelete(null);
   };
 
-  // Active circle detail if selected
   const activeCircle = selectedCircleId ? circles.find(c => c.id === selectedCircleId) : null;
   const activeCircleStudents = activeCircle
     ? students.filter(s => s.circleId === activeCircle.id && s.status === 'active')
@@ -252,7 +261,6 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Toggle Archive view */}
           {(archivedTracks.length > 0 || archivedTrackCircles.length > 0) && (
             <button
               onClick={() => setShowArchived(!showArchived)}
@@ -337,33 +345,44 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-stone-600 mt-1 max-w-2xl leading-relaxed">
-                  {currentTrack.description}
+                  {currentTrack.description || 'لا يوجد وصف مضاف لهذا المسار.'}
                 </p>
               </div>
             </div>
 
-            {currentUser?.role === 'leader' && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleOpenTrackModal(currentTrack)}
-                  className="p-2 rounded-xl text-stone-600 hover:bg-stone-100 text-xs flex items-center gap-1 border border-stone-200 transition"
-                  title="تعديل المسار"
-                >
-                  <Edit className="w-3.5 h-3.5" />
-                  <span>تعديل</span>
-                </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* زر الدخول لصفحة تفاصيل ونظام المسار */}
+              <button
+                onClick={() => setSelectedTrackDetailId(currentTrack.id)}
+                className="px-3 py-2 rounded-xl bg-[#FAF0F3] hover:bg-[#F2E0E6] text-[#8E5364] text-xs font-bold flex items-center gap-1.5 border border-[#E2D5CC] transition cursor-pointer"
+                title="عرض صفحة ونظام والمالية للمسار"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>تفاصيل ونظام المسار</span>
+              </button>
 
-                {/* Delete / Archive Track Button */}
-                <button
-                  onClick={() => confirmDeleteTrack(currentTrack)}
-                  className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 text-xs flex items-center gap-1 border border-rose-200 transition"
-                  title="أرشفة أو حذف هذا المسار"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>حذف المسار</span>
-                </button>
-              </div>
-            )}
+              {currentUser?.role === 'leader' && (
+                <>
+                  <button
+                    onClick={() => handleOpenTrackModal(currentTrack)}
+                    className="p-2 rounded-xl text-stone-600 hover:bg-stone-100 text-xs flex items-center gap-1 border border-stone-200 transition cursor-pointer"
+                    title="تعديل المسار"
+                  >
+                    <Edit className="w-3.5 h-3.5" />
+                    <span>تعديل</span>
+                  </button>
+
+                  <button
+                    onClick={() => confirmDeleteTrack(currentTrack)}
+                    className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 text-xs flex items-center gap-1 border border-rose-200 transition cursor-pointer"
+                    title="أرشفة أو حذف هذا المسار"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>حذف المسار</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Track Summary Stats */}
@@ -423,10 +442,10 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {trackCircles.map((circle) => {
-              const circleStudents = students.filter(s => s.circleId === circle.id && s.status === 'active');
+              const cStudents = students.filter(s => s.circleId === circle.id && s.status === 'active');
               const isSelected = selectedCircleId === circle.id;
-              const avgCircleScore = circleStudents.length > 0
-                ? Math.round(circleStudents.reduce((acc, s) => acc + (allStudentScores[s.id]?.finalPercentage || 0), 0) / circleStudents.length)
+              const avgCircleScore = cStudents.length > 0
+                ? Math.round(cStudents.reduce((acc, s) => acc + (allStudentScores[s.id]?.finalPercentage || 0), 0) / cStudents.length)
                 : 0;
 
               return (
@@ -457,12 +476,12 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                   <div className="space-y-2 text-xs text-stone-600 mb-4">
                     <div className="flex justify-between text-[11px]">
                       <span>استيعاب الحلقة:</span>
-                      <span className="font-semibold text-stone-800">{circleStudents.length} / {circle.maxStudents} طالبة</span>
+                      <span className="font-semibold text-stone-800">{cStudents.length} / {circle.maxStudents} طالبة</span>
                     </div>
                     <div className="w-full bg-[#EFEAE5] h-1.5 rounded-full overflow-hidden">
                       <div
                         className="bg-[#8E5364] h-full rounded-full transition-all"
-                        style={{ width: `${Math.min(100, (circleStudents.length / circle.maxStudents) * 100)}%` }}
+                        style={{ width: `${Math.min(100, (cStudents.length / circle.maxStudents) * 100)}%` }}
                       />
                     </div>
                     <div className="flex justify-between text-[11px] text-stone-400 pt-1">
@@ -489,7 +508,6 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                         <span>تعديل</span>
                       </button>
 
-                      {/* Quick Delete Circle Button on Card */}
                       <button
                         onClick={(e) => confirmDeleteCircle(circle, e)}
                         className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs flex items-center gap-1 transition"
@@ -802,14 +820,16 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                   className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-2 focus:ring-[#8E5364]"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">وصف المسار وأهدافه</label>
+
+              {/* خانة وصف ونبذة عن المسار المضافة والمحسنة */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-stone-700">وصف المسار وأهدافه</label>
                 <textarea
-                  rows={2}
-                  placeholder="وصف الخطة والأهداف وضوابط المسار..."
+                  rows={3}
+                  placeholder="اكتبي هنا نبذة تعريفية عن المسار، أهدافه، والفئة المستهدفة..."
                   value={trackForm.description}
                   onChange={e => setTrackForm({ ...trackForm, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-2 focus:ring-[#8E5364]"
+                  className="w-full p-2.5 border border-stone-200 rounded-xl text-xs leading-relaxed focus:ring-2 focus:ring-[#8E5364] resize-none"
                 />
               </div>
 
@@ -818,7 +838,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 <div className="flex items-center justify-between">
                   <div>
                     <label className="block text-xs font-bold text-stone-700">
-                      أيقونة وإيموجي المسار (اختاري بنفسك):
+                      أيقونة وإيموجي المسار:
                     </label>
                     <span className="text-[11px] text-stone-500">
                       تظهر في رأس المسار، وبطاقات الحلقات، وقوائم التبديل
@@ -829,7 +849,6 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                   </div>
                 </div>
 
-                {/* Emoji Grid */}
                 <div className="grid grid-cols-8 gap-1.5 p-2 bg-white rounded-xl border border-stone-200 max-h-36 overflow-y-auto">
                   {TRACK_EMOJIS.map((emoji) => (
                     <button
@@ -848,9 +867,8 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                   ))}
                 </div>
 
-                {/* Custom Emoji Input */}
                 <div className="flex items-center gap-2 pt-1 text-xs text-stone-600">
-                  <span>أو اكتبي رمزاً / إيموجي مخصصاً:</span>
+                  <span>أو اكتبي رمزاً مخصصاً:</span>
                   <input
                     type="text"
                     maxLength={4}
@@ -862,10 +880,10 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 </div>
               </div>
 
-              {/* Track Logo / Badge Upload from Device */}
+              {/* Track Logo Upload */}
               <div className="p-3 bg-[#FCFAF8] rounded-2xl border border-stone-200 space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-stone-700">شعار أو وسم المسار:</label>
+                  <label className="block text-xs font-bold text-stone-700">شعار أو صورة المسار:</label>
                   {trackForm.logoUrl && (
                     <button
                       type="button"
@@ -960,7 +978,6 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 />
               </div>
 
-              {/* Dedicated Circle Icons Library Picker */}
               <CircleIconPicker
                 selectedIcon={circleForm.icon || '🪴'}
                 onSelectIcon={(icon) => setCircleForm(prev => ({ ...prev, icon }))}
