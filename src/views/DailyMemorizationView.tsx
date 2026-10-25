@@ -46,9 +46,9 @@ export const DailyMemorizationView: React.FC = () => {
   const [activeModalStudentId, setActiveModalStudentId] = useState<string | null>(null);
   const [showSigPad, setShowSigPad] = useState(false);
 
-  // نموذج الرصد الكامل المتوافق
+  // نموذج الرصد الكامل
   const [form, setForm] = useState({
-    // الحفظ الجديد (مطابق للصورة)
+    // قسم الحفظ الجديد (مطابق للصورة)
     hifzErrors: 0,
     alerts: 0,
     tajweedErrors: 0,
@@ -78,13 +78,13 @@ export const DailyMemorizationView: React.FC = () => {
     signatureUrl: ''
   });
 
-  // ثوابت الخصم والمعادلة
+  // ثوابت الخصم من نظام المعايير
   const baseScore = settings?.gradingRules?.recitationBaseScore ?? 10;
   const hifzDeduction = settings?.gradingRules?.hifzErrorDeduction ?? 0.5;
   const alertDeduction = settings?.gradingRules?.alertDeduction ?? 0.25;
   const tajweedDeduction = settings?.gradingRules?.tajweedErrorDeduction ?? 0.25;
 
-  // الحساب الفوري للدرجة النهائية
+  // الحساب الفوري التلقائي للدرجة النهائية (من 10)
   const calculatedNewScore = useMemo(() => {
     const totalDeductions = 
       (Number(form.hifzErrors || 0) * hifzDeduction) +
@@ -186,7 +186,7 @@ export const DailyMemorizationView: React.FC = () => {
 
   return (
     <div className="space-y-6 text-right pb-12" dir="rtl">
-      {/* رأس الصفحة مع المحددات */}
+      {/* شريط رأس الصفحة */}
       <div className="bg-white dark:bg-stone-900 p-6 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -227,7 +227,7 @@ export const DailyMemorizationView: React.FC = () => {
         </div>
       </div>
 
-      {/* قائمة الطالبات للتسميع */}
+      {/* قائمة الطالبات */}
       <div className="bg-white dark:bg-stone-900 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 overflow-hidden shadow-xs space-y-3">
         <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
@@ -310,7 +310,7 @@ export const DailyMemorizationView: React.FC = () => {
         </div>
       </div>
 
-      {/* نافذة رصد التسميع اليومي الأصلية مع واجهة الحفظ الجديد المطابقة للصورة */}
+      {/* النافذة المنبثقة لرصد التسميع اليومي */}
       {activeModalStudentId && modalStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white dark:bg-[#1A1A1E] border border-[#E2D5CC] dark:border-stone-800 rounded-3xl w-full max-w-xl max-h-[92vh] overflow-y-auto p-6 space-y-5 shadow-2xl text-right" dir="rtl">
@@ -337,9 +337,10 @@ export const DailyMemorizationView: React.FC = () => {
             </div>
 
             {/* ===================== قسم الحفظ الجديد (مطابق للصورة تماماً) ===================== */}
-            <div className="space-y-4">
-              {/* بطاقة الدرجة النهائية المحصلة من 10 */}
-              <div className="p-4 rounded-3xl bg-[#FCFAF8] dark:bg-[#141417] border border-[#EAE2DC] dark:border-stone-800 text-center space-y-1">
+            <div className="p-4 rounded-3xl bg-[#FAF7F5] dark:bg-stone-900/60 border border-[#E2D5CC] dark:border-stone-800 space-y-4">
+              
+              {/* صندوق الدرجة النهائية المحصلة (من 10) */}
+              <div className="p-4 rounded-2xl bg-white dark:bg-stone-900 border border-[#EAE2DC] dark:border-stone-800 text-center space-y-1 shadow-2xs">
                 <span className="text-xs font-bold text-stone-700 dark:text-stone-300">
                   الدرجة النهائية المحصلة (من 10):
                 </span>
@@ -351,7 +352,7 @@ export const DailyMemorizationView: React.FC = () => {
                 </span>
               </div>
 
-              {/* حقول الإدخال اليدوي للأخطاء الثلاثة (حفظ - تنبيهات - تجويد) */}
+              {/* حقول الأخطاء الثلاثة (حفظ - تنبيهات - تجويد) */}
               <div className="grid grid-cols-3 gap-2.5 text-center">
                 {/* أخطاء الحفظ */}
                 <div className="space-y-1">
@@ -363,7 +364,7 @@ export const DailyMemorizationView: React.FC = () => {
                     min="0"
                     value={form.hifzErrors}
                     onChange={e => setForm({ ...form, hifzErrors: Math.max(0, Number(e.target.value)) })}
-                    className="w-full text-center py-2 border-2 border-rose-200 dark:border-rose-900/60 bg-white dark:bg-stone-900 rounded-2xl text-base font-bold text-stone-900 dark:text-stone-100 outline-hidden focus:border-rose-500"
+                    className="w-full text-center py-2.5 border-2 border-rose-200 dark:border-rose-900/60 bg-white dark:bg-stone-900 rounded-2xl text-base font-bold text-stone-900 dark:text-stone-100 outline-hidden focus:border-rose-500 shadow-2xs"
                   />
                 </div>
 
@@ -377,7 +378,7 @@ export const DailyMemorizationView: React.FC = () => {
                     min="0"
                     value={form.alerts}
                     onChange={e => setForm({ ...form, alerts: Math.max(0, Number(e.target.value)) })}
-                    className="w-full text-center py-2 border-2 border-amber-200 dark:border-amber-900/60 bg-white dark:bg-stone-900 rounded-2xl text-base font-bold text-stone-900 dark:text-stone-100 outline-hidden focus:border-amber-500"
+                    className="w-full text-center py-2.5 border-2 border-amber-200 dark:border-amber-900/60 bg-white dark:bg-stone-900 rounded-2xl text-base font-bold text-stone-900 dark:text-stone-100 outline-hidden focus:border-amber-500 shadow-2xs"
                   />
                 </div>
 
@@ -391,13 +392,13 @@ export const DailyMemorizationView: React.FC = () => {
                     min="0"
                     value={form.tajweedErrors}
                     onChange={e => setForm({ ...form, tajweedErrors: Math.max(0, Number(e.target.value)) })}
-                    className="w-full text-center py-2 border-2 border-purple-200 dark:border-purple-900/60 bg-white dark:bg-stone-900 rounded-2xl text-base font-bold text-stone-900 dark:text-stone-100 outline-hidden focus:border-purple-500"
+                    className="w-full text-center py-2.5 border-2 border-purple-200 dark:border-purple-900/60 bg-white dark:bg-stone-900 rounded-2xl text-base font-bold text-stone-900 dark:text-stone-100 outline-hidden focus:border-purple-500 shadow-2xs"
                   />
                 </div>
               </div>
 
-              {/* المقرر الذي تم تسميعه */}
-              <div className="space-y-1">
+              {/* خانة المقرر الذي تم تسميعه بالكتابة اليدوية */}
+              <div className="space-y-1 pt-1">
                 <label className="block text-xs font-bold text-stone-700 dark:text-stone-300">
                   المقرر الذي تم تسميعه:
                 </label>
@@ -406,11 +407,11 @@ export const DailyMemorizationView: React.FC = () => {
                   placeholder="مثال: من سورة البقرة آية ١ إلى ٢٥"
                   value={form.recitedPortion}
                   onChange={e => setForm({ ...form, recitedPortion: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl text-xs text-stone-800 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-[#8E5364]"
+                  className="w-full px-3.5 py-2.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl text-xs text-stone-800 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-[#8E5364]"
                 />
               </div>
 
-              {/* ملاحظات وتوجيهات للمعلمة */}
+              {/* خانة ملاحظات وتوجيهات للمعلمة */}
               <div className="space-y-1">
                 <label className="block text-xs font-bold text-stone-700 dark:text-stone-300">
                   ملاحظات وتوجيهات للمعلمة (اختياري):
@@ -420,13 +421,11 @@ export const DailyMemorizationView: React.FC = () => {
                   placeholder="مثال: إتقان ممتاز مع الانتباه لمراتب الغنن..."
                   value={form.notes}
                   onChange={e => setForm({ ...form, notes: e.target.value })}
-                  className="w-full p-2.5 bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl text-xs text-stone-800 dark:text-stone-100 outline-hidden resize-none focus:ring-2 focus:ring-[#8E5364]"
+                  className="w-full p-2.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl text-xs text-stone-800 dark:text-stone-100 outline-hidden resize-none focus:ring-2 focus:ring-[#8E5364]"
                 />
               </div>
             </div>
 
             {/* ===================== المراجعة الصغرى (الربط القريب) ===================== */}
             <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-3">
-              <h4 className="font-bold text-xs text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
-                <span>🔄</span>
-                <span>ال
+              <h4 className=
