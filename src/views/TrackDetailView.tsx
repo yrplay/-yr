@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   ArrowRight, Settings, DollarSign, Users, BookOpen, Layers, 
   CheckCircle2, Clock, AlertCircle, Edit3, Plus, 
-  CreditCard, FileText, Check, PenTool, Search
+  CreditCard, FileText, Check, PenTool, Search, ShieldAlert
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Track, TrackSystemRules, StudentSubscription } from '../types';
@@ -29,6 +29,30 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
 
   const track = tracks.find(t => t.id === trackId);
   const isLeader = currentUser?.role === 'leader';
+
+  // قفل أمني: حصر قسم المالية والاشتراكات بالإدارة العليا فقط
+  if (!isLeader) {
+    return (
+      <div className="bg-white dark:bg-stone-900 p-8 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 text-center space-y-4 text-right" dir="rtl">
+        <div className="w-16 h-16 rounded-3xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center mx-auto text-2xl">
+          <ShieldAlert className="w-8 h-8 text-rose-600" />
+        </div>
+        <h3 className="text-base font-bold text-stone-800 dark:text-stone-100">
+          منطقة مخصصة للإدارة العليا فقط
+        </h3>
+        <p className="text-xs text-stone-500 dark:text-stone-400 max-w-md mx-auto leading-relaxed">
+          عذراً، هذا القسم يختص بالاشتراكات والتقارير المالية للمقرأة وسندات التحصيل، وتقتصر صلاحية الاطلاع عليه وإدارته على حساب الإدارة العليا فقط.
+        </p>
+        <button
+          onClick={onBack}
+          className="px-5 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition inline-flex items-center gap-2"
+        >
+          <ArrowRight className="w-4 h-4" />
+          العودة للمسارات والحلقات
+        </button>
+      </div>
+    );
+  }
 
   // الربط المباشر: جميع الطالبات النشطات في المنظومة بلا استثناء
   const allActiveStudents = useMemo(() => {
@@ -177,7 +201,7 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
           </div>
         </div>
 
-        {isLeader && track && (
+        {track && (
           <button
             onClick={() => setShowEditModal(true)}
             className="px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-xs"
