@@ -351,14 +351,17 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => setSelectedTrackDetailId(currentTrack.id)}
-                className="px-3 py-2 rounded-xl bg-[#FAF0F3] hover:bg-[#F2E0E6] text-[#8E5364] text-xs font-bold flex items-center gap-1.5 border border-[#E2D5CC] transition cursor-pointer"
-                title="عرض صفحة ونظام والمالية للمسار"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>تفاصيل ونظام المسار</span>
-              </button>
+              {/* زر الدخول لصفحة الاشتراكات والمالية (محصور بالإدارة العليا فقط) */}
+              {currentUser?.role === 'leader' && (
+                <button
+                  onClick={() => setSelectedTrackDetailId(currentTrack.id)}
+                  className="px-3 py-2 rounded-xl bg-[#FAF0F3] hover:bg-[#F2E0E6] text-[#8E5364] text-xs font-bold flex items-center gap-1.5 border border-[#E2D5CC] transition cursor-pointer"
+                  title="عرض وإدارة الاشتراكات والمالية العامة"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>الاشتراكات والمالية (خاص بالإدارة)</span>
+                </button>
+              )}
 
               {currentUser?.role === 'leader' && (
                 <>
