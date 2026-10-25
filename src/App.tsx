@@ -20,21 +20,24 @@ import { StaffLoginGate } from './components/StaffLoginGate';
 import { Footer } from './components/Footer';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 import { UpdateNotification } from './components/UpdateNotification';
-import { AuditLogModal } from './components/AuditLogModal';
 
 const AppContent: React.FC = () => {
   const { loading, error, toast, triggerQuickModal, settings } = useApp();
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
-  const [auditModalOpen, setAuditModalOpen] = useState(false);
   
+  // الاعتماد على التخزين الدائم لمنع طلب الرمز مع كل تحديث
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
-    return sessionStorage.getItem('ghaith_authenticated') === 'true';
+    return (
+      localStorage.getItem('ghaith_authenticated') === 'true' ||
+      sessionStorage.getItem('ghaith_authenticated') === 'true' ||
+      sessionStorage.getItem('ghaith_gate_authorized') === 'true'
+    );
   });
 
-  // Apply visual identity, font family & custom theme dynamically
+  // تطبيق الهوية البصرية ونوع الخط تلقائياً
   React.useEffect(() => {
     if (typeof document !== 'undefined') {
       if (settings?.primaryColor) {
@@ -67,7 +70,6 @@ const AppContent: React.FC = () => {
         document.documentElement.style.setProperty('--btn-radius', '1rem');
       }
 
-      // Apply selected font family to document body and --font-active
       let fontStr = "'Thmanyah Sans', 'Tajawal', sans-serif";
       if (settings?.fontFamily === 'amiri') {
         fontStr = "'Amiri', serif";
@@ -83,7 +85,9 @@ const AppContent: React.FC = () => {
 
   const handleLockSession = () => {
     if (typeof window !== 'undefined') {
-      sessionStorage.removeItem('ghaith_authenticated');
+      localStorage.removeItem('ghaith_authenticated');
+      localStorage.removeItem('ghaith_current_user_id');
+      sessionStorage.clear();
     }
     setIsAuthenticated(false);
   };
@@ -145,41 +149,48 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // Security Gate: Protect app access if security is active (defaults to true) and session is locked
+  // التحقق من صلاحية الدخول
   const securityActive = settings?.securityEnabled ?? true;
   if (securityActive && !isAuthenticated) {
-    return <StaffLoginGate onClose={() => setIsAuthenticated(true)} />;
+    return (
+      <StaffLoginGate
+        onClose={() => {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('ghaith_authenticated', 'true');
+          }
+          setIsAuthenticated(true);
+        }}
+      />
+    );
   }
 
   return (
-    <div className="min-h-screen bg-[#F9F7F5] flex flex-col antialiased selection:bg-[#E8D5D8] selection:text-[#5B3946]">
-      {/* تنبيه التحديث التلقائي للـ PWA */}
+    <div className="min-h-screen bg-[#F9F7F5] dark:bg-[#0E0E11] text-stone-900 dark:text-stone-100 flex flex-col antialiased selection:bg-[#E8D5D8] dark:selection:bg-[#5B3946] selection:text-[#5B3946] dark:selection:text-white transition-colors duration-200">
+      {/* تنبيه التحديث التلقائي للتطبيق */}
       <UpdateNotification />
 
-      {/* Header */}
+      {/* الشريط العلوي */}
       <Header
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
         onOpenQuickModal={handleOpenQuickModal}
         onNavigateToStudent={handleSelectStudentForPortfolio}
         onLockSession={handleLockSession}
         onNavigateToSettings={() => setCurrentView('settings')}
-        onOpenAuditLog={() => setAuditModalOpen(true)}
       />
 
-      {/* Main Layout Container */}
+      {/* الحاوية الرئيسية للمنصة */}
       <div className="flex-1 max-w-7xl w-full mx-auto flex">
         
-        {/* Sidebar */}
+        {/* القائمة الجانبية */}
         <Sidebar
           currentView={currentView}
           onSelectView={setCurrentView}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           onLockSession={handleLockSession}
-          onOpenAuditLog={() => setAuditModalOpen(true)}
         />
 
-        {/* View Content Area */}
+        {/* مساحة عرض المحتوى */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto max-w-full">
           {currentView === 'dashboard' && (
             <DashboardView
@@ -250,12 +261,12 @@ const AppContent: React.FC = () => {
             <SettingsView />
           )}
 
-          {/* Platform Footer with Developer Signature */}
+          {/* التذييل الرسمي */}
           <Footer />
         </main>
       </div>
 
-      {/* Toast Notification Popup */}
+      {/* التنبيهات المنبثقة (Toast) */}
       {toast && (
         <div className="fixed bottom-5 left-5 z-50 animate-in fade-in slide-in-from-bottom duration-200">
           <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold ${
@@ -276,12 +287,6 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Audit Log Modal (سجل التعديلات الإدارية) */}
-      <AuditLogModal
-        isOpen={auditModalOpen}
-        onClose={() => setAuditModalOpen(false)}
-      />
 
     </div>
   );

@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import {
   LayoutDashboard, Layers, Users, Calendar, CheckSquare,
   BookOpenCheck, Sparkles, Trophy, FileText, Sliders,
-  UserCheck, BarChart3, UserCog, Settings, X, Heart, Lock, History
+  UserCheck, BarChart3, UserCog, Settings, X, Heart, Lock, History, Sun, Moon
 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 
@@ -33,7 +33,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isOpen, onClose, onLockSession, onOpenAuditLog }) => {
-  const { circles, students, settings } = useApp();
+  const { circles, students, settings, isDarkMode, toggleTheme } = useApp();
   const primaryColor = settings?.primaryColor || '#8E5364';
 
   const menuItems: { id: ViewType; label: string; icon: any; badge?: string | number; accent?: string }[] = [
@@ -117,9 +117,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
                 style={
                   isActive
                     ? {
-                        backgroundColor: `${primaryColor}15`,
-                        color: primaryColor,
-                        borderColor: `${primaryColor}35`
+                        backgroundColor: isDarkMode ? 'rgba(226, 167, 181, 0.16)' : `${primaryColor}15`,
+                        color: isDarkMode ? '#E2A7B5' : primaryColor,
+                        borderColor: isDarkMode ? 'rgba(226, 167, 181, 0.35)' : `${primaryColor}35`
                       }
                     : undefined
                 }
@@ -127,7 +127,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
                 <div className="flex items-center gap-2.5">
                   <Icon
                     className="w-4 h-4 shrink-0"
-                    style={{ color: isActive ? primaryColor : undefined }}
+                    style={{ color: isActive ? (isDarkMode ? '#E2A7B5' : primaryColor) : undefined }}
                   />
                   <span>{item.label}</span>
                 </div>
@@ -136,7 +136,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
                     className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
                       isActive ? 'text-white' : 'bg-[#EAE2D8] text-stone-600'
                     }`}
-                    style={isActive ? { backgroundColor: primaryColor } : undefined}
+                    style={isActive ? { backgroundColor: isDarkMode ? '#9E5B6D' : primaryColor } : undefined}
                   >
                     {item.badge}
                   </span>
@@ -170,6 +170,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
             </button>
           </div>
         )}
+
+        {/* Theme mode toggle in Sidebar */}
+        <div className="px-3 py-1">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="w-full py-2 px-3 rounded-xl bg-stone-100 hover:bg-stone-200/80 text-stone-700 text-xs font-bold transition flex items-center justify-between cursor-pointer border border-stone-200 shadow-2xs active:scale-98"
+          >
+            <div className="flex items-center gap-2">
+              {isDarkMode ? (
+                <Sun className="w-3.5 h-3.5 text-amber-500" />
+              ) : (
+                <Moon className="w-3.5 h-3.5 text-[#8E5364]" />
+              )}
+              <span>{isDarkMode ? 'الوضع النهاري' : 'الوضع الليلي'}</span>
+            </div>
+            <span className="text-[10px] bg-white text-stone-700 px-1.5 py-0.5 rounded-md border border-stone-200 font-normal">
+              {isDarkMode ? '☀️ نشط' : '🌙 نشط'}
+            </span>
+          </button>
+        </div>
 
         {/* Lock Session / Logout Action */}
         {onLockSession && (

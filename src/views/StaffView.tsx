@@ -5,7 +5,7 @@ import {
   Mail, Phone, Layers, Award, X, Eye, EyeOff, Upload, Trash2, Sparkles, FileSignature
 } from 'lucide-react';
 import { User, UserRole, UserPermissions, defaultPermissionsByRole } from '../types';
-import { getIslamicIcon, IslamicIconPicker } from '../components/IslamicIconLibrary';
+import { getIslamicIcon, IslamicIconPicker, renderUserAvatarBadge, getAvatarLabel } from '../components/IslamicIconLibrary';
 
 const PERMISSION_ITEMS: {
   key: keyof UserPermissions;
@@ -309,7 +309,7 @@ export const StaffView: React.FC = () => {
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  {/* Islamic Avatar Badge */}
+                  {/* Islamic Avatar or Quranic Emoji Badge */}
                   <div
                     className="w-12 h-12 rounded-2xl flex items-center justify-center text-lg border transition shadow-2xs"
                     style={{
@@ -317,16 +317,16 @@ export const StaffView: React.FC = () => {
                       borderColor: `${iconColor}40`,
                       color: iconColor
                     }}
-                    title={userIslamicIcon.name}
+                    title={getAvatarLabel(user.avatarIcon)}
                   >
-                    {userIslamicIcon.svg({ className: 'w-6 h-6', color: iconColor })}
+                    {renderUserAvatarBadge(user.avatarIcon, iconColor, 'w-6 h-6')}
                   </div>
                   <div>
                     <h3 className="font-bold text-stone-900 text-sm">{user.name}</h3>
                     <p className="text-[11px] text-stone-500">{user.title}</p>
-                    <span className="text-[10px] text-stone-400 flex items-center gap-1 mt-0.5">
+                    <span className="text-[10px] text-stone-500 flex items-center gap-1 mt-0.5">
                       <span>✨</span>
-                      <span>{userIslamicIcon.name}</span>
+                      <span>{getAvatarLabel(user.avatarIcon)}</span>
                     </span>
                   </div>
                 </div>
@@ -436,27 +436,33 @@ export const StaffView: React.FC = () => {
                 </span>
               </div>
 
-              {currentUser?.role === 'leader' && (
-                <div className="pt-2 border-t border-stone-100 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenPermissionsModal(user)}
-                    className="flex-1 py-2 px-3 bg-[#8E5364]/10 hover:bg-[#8E5364] text-[#8E5364] hover:text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border border-[#8E5364]/20 cursor-pointer shadow-2xs group"
-                    title="تحديد وتعديل الصلاحيات يدوياً لهذه المعلمة أو المشرفة"
-                  >
-                    <Shield className="w-3.5 h-3.5 text-[#8E5364] group-hover:text-white transition" />
-                    <span>تحديد الصلاحيات يدوياً</span>
-                  </button>
+              <div className="pt-2 border-t border-stone-100 flex flex-wrap items-center gap-2">
+                {/* زر تعديل الشعار والألوان والتوقيع: متاح للقائدة وللمعلمة نفسها */}
+                {(currentUser?.role === 'leader' || currentUser?.id === user.id) && (
                   <button
                     type="button"
                     onClick={() => handleOpenStaffModal(user)}
-                    className="p-2 text-stone-600 hover:text-stone-900 text-xs flex items-center gap-1 hover:bg-stone-100 rounded-xl transition border border-stone-200 cursor-pointer shadow-2xs"
-                    title="تعديل البيانات والرمز والأيقونة والتوقيع"
+                    className="flex-1 py-2 px-3 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+                    title="تعديل الشعار (أيقونة / إيموجي) والألوان والتوقيع والبيانات"
                   >
                     <Edit className="w-3.5 h-3.5" />
+                    <span>{currentUser?.id === user.id ? 'تعديل شعاري وألواني وتوقيعي' : 'تعديل الشعار والتوقيع'}</span>
                   </button>
-                </div>
-              )}
+                )}
+
+                {/* زر الصلاحيات اليدوية للقائدة فقط */}
+                {currentUser?.role === 'leader' && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenPermissionsModal(user)}
+                    className="py-2 px-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border border-stone-200 cursor-pointer shadow-2xs"
+                    title="تحديد الصلاحيات يدوياً"
+                  >
+                    <Shield className="w-3.5 h-3.5 text-[#8E5364]" />
+                    <span>الصلاحيات</span>
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}
@@ -541,8 +547,9 @@ export const StaffView: React.FC = () => {
                   <label className="block text-xs font-bold text-stone-700 mb-1">الصفة / الدور *</label>
                   <select
                     value={staffForm.role}
+                    disabled={currentUser?.role !== 'leader'}
                     onChange={e => setStaffForm({ ...staffForm, role: e.target.value as UserRole })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white font-bold"
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white font-bold disabled:bg-stone-100 disabled:text-stone-500"
                   >
                     <option value="teacher">معلمة حلقة قرآنية</option>
                     <option value="supervisor">مشرفة مسار / حلقات</option>

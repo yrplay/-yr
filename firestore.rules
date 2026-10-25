@@ -2,6 +2,20 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // قاعدة بيانات المنصة المركزية والمزامنة السحابية
+    match /institution_database/{docId} {
+      allow read, write: if true;
+    }
+
+    // الرموز السرية للمعلمات والمشرفات
+    match /staff_pins/{pinId} {
+      allow read, write: if true;
+    }
+
+    match /ghaym_institution/{docId} {
+      allow read, write: if true;
+    }
+
     // التحقق من أن المستخدم مسجل دخول
     function isAuthenticated() {
       return request.auth != null;

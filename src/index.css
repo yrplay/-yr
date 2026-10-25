@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* =========================================================================
    Local Thmanyah Sans Font Family Definition (All 5 Weights)
    ========================================================================= */
@@ -166,6 +168,342 @@ button.rounded-2xl {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #b5a498;
+}
+
+/* =========================================================================
+   Universal Dark Mode Constitution & System Styles (Eye-Friendly & Balanced)
+   ========================================================================= */
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #121215 !important;
+  color: #D6D6DE !important;
+}
+
+/* Base Card & Container Surfaces in Dark Mode */
+html.dark .bg-white {
+  background-color: #19191F !important;
+}
+
+html.dark .bg-\[\#F9F7F5\],
+html.dark .bg-\[\#FCFAF8\],
+html.dark .bg-\[\#FAF7F5\],
+html.dark .bg-\[\#FAF7F4\],
+html.dark .bg-\[\#FAF5F2\],
+html.dark .bg-\[\#F7F3EE\],
+html.dark .bg-stone-50 {
+  background-color: #131317 !important;
+}
+
+html.dark .bg-stone-100,
+html.dark .bg-\[\#F2ECE6\],
+html.dark .bg-\[\#EAE2D8\] {
+  background-color: #202028 !important;
+}
+
+html.dark .bg-stone-200 {
+  background-color: #272733 !important;
+}
+
+/* Header & Sidebar in Dark Mode (Soft Depth, No Glare) */
+html.dark header {
+  background-color: rgba(19, 19, 24, 0.94) !important;
+  border-color: #262633 !important;
+}
+
+html.dark aside {
+  background-color: #141419 !important;
+  border-color: #262633 !important;
+}
+
+html.dark .backdrop-blur-md,
+html.dark .backdrop-blur-sm,
+html.dark .backdrop-blur-xs {
+  background-color: rgba(18, 18, 23, 0.90) !important;
+}
+
+/* Subtle Hairline Borders in Dark Mode */
+html.dark .border-stone-100,
+html.dark .border-stone-200,
+html.dark .border-stone-300,
+html.dark .border-\[\#EBE3DC\],
+html.dark .border-\[\#E8DFD8\],
+html.dark .border-\[\#EFE8E2\],
+html.dark .border-\[\#E2D5CC\],
+html.dark .border-\[\#D4C4BC\],
+html.dark .border-\[\#C4B2AA\],
+html.dark .border-\[\#F0E8E2\],
+html.dark .divide-stone-100,
+html.dark .divide-stone-200 {
+  border-color: #262633 !important;
+}
+
+/* Balanced Typographic Hierarchy (Eye-Friendly: Soft Headings, Sharp Details) */
+html.dark .text-stone-900 {
+  color: #EDECEF !important;
+}
+
+html.dark .text-stone-800 {
+  color: #D6D6DE !important;
+}
+
+html.dark .text-stone-700 {
+  color: #BCBCC8 !important;
+}
+
+html.dark .text-stone-600 {
+  color: #A3A3B5 !important;
+}
+
+html.dark .text-stone-500 {
+  color: #8C8C9E !important;
+}
+
+html.dark .text-stone-400 {
+  color: #757588 !important;
+}
+
+/* Brand & Accent Inks in Dark Mode (Transformed into Luminous Pastels) */
+html.dark .text-\[\#8E5364\],
+html.dark .text-\[\#744251\],
+html.dark .text-theme-primary {
+  color: #E2A7B5 !important;
+}
+
+html.dark .hover\:text-\[\#8E5364\]:hover,
+html.dark .hover\:text-\[\#744251\]:hover {
+  color: #ECC0CC !important;
+}
+
+html.dark .text-\[\#2D5A43\],
+html.dark .text-\[\#234835\],
+html.dark .text-theme-secondary {
+  color: #7ED4A7 !important;
+}
+
+html.dark .text-\[\#8B5E3C\],
+html.dark .text-\[\#634832\] {
+  color: #FBBF7E !important;
+}
+
+html.dark .text-\[\#9E5B6D\],
+html.dark .text-\[\#5B3946\] {
+  color: #F5A9B8 !important;
+}
+
+html.dark .text-\[\#3E6B48\],
+html.dark .text-\[\#4D6B53\] {
+  color: #86EFAC !important;
+}
+
+/* Semantic Status Inks (High Legibility, Anti-Dim) */
+html.dark .text-emerald-800,
+html.dark .text-emerald-900,
+html.dark .text-emerald-700 {
+  color: #6EE7B7 !important;
+}
+
+html.dark .text-amber-800,
+html.dark .text-amber-900,
+html.dark .text-amber-700 {
+  color: #FCD34D !important;
+}
+
+html.dark .text-rose-800,
+html.dark .text-rose-900,
+html.dark .text-rose-700,
+html.dark .text-rose-600 {
+  color: #FDA4AF !important;
+}
+
+html.dark .text-blue-800,
+html.dark .text-blue-900,
+html.dark .text-blue-700,
+html.dark .text-\[\#0D7490\] {
+  color: #93C5FD !important;
+}
+
+/* Status & Metric Pills / Badges (Subtle Translucent Dark Backings) */
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-100 {
+  background-color: rgba(16, 185, 129, 0.14) !important;
+  border-color: rgba(16, 185, 129, 0.28) !important;
+  color: #6EE7B7 !important;
+}
+
+html.dark .bg-amber-50,
+html.dark .bg-amber-100 {
+  background-color: rgba(245, 158, 11, 0.14) !important;
+  border-color: rgba(245, 158, 11, 0.28) !important;
+  color: #FCD34D !important;
+}
+
+html.dark .bg-rose-50,
+html.dark .bg-rose-100 {
+  background-color: rgba(244, 63, 94, 0.14) !important;
+  border-color: rgba(244, 63, 94, 0.28) !important;
+  color: #FDA4AF !important;
+}
+
+html.dark .bg-blue-50,
+html.dark .bg-blue-100 {
+  background-color: rgba(59, 130, 246, 0.14) !important;
+  border-color: rgba(59, 130, 246, 0.28) !important;
+  color: #93C5FD !important;
+}
+
+/* Metric KPI Icon Box Badges */
+html.dark .bg-\[\#F7EFE9\] {
+  background-color: rgba(251, 191, 126, 0.14) !important;
+  border-color: rgba(251, 191, 126, 0.25) !important;
+  color: #FBBF7E !important;
+}
+
+html.dark .bg-\[\#F2F6F3\] {
+  background-color: rgba(134, 239, 172, 0.14) !important;
+  border-color: rgba(134, 239, 172, 0.25) !important;
+  color: #86EFAC !important;
+}
+
+html.dark .bg-\[\#F9EFF2\] {
+  background-color: rgba(245, 169, 184, 0.14) !important;
+  border-color: rgba(245, 169, 184, 0.25) !important;
+  color: #F5A9B8 !important;
+}
+
+html.dark .bg-\[\#FAF0F3\],
+html.dark .bg-\[\#F4ECEE\],
+html.dark .bg-\[\#FAF2F4\],
+html.dark .bg-\[\#F6EEF1\] {
+  background-color: rgba(226, 167, 181, 0.14) !important;
+  border-color: rgba(226, 167, 181, 0.25) !important;
+  color: #E2A7B5 !important;
+}
+
+html.dark .border-\[\#E8D5D8\],
+html.dark .border-\[\#E2CBD2\],
+html.dark .border-\[\#E4D1D6\],
+html.dark .border-\[\#E0D0D4\] {
+  border-color: rgba(226, 167, 181, 0.28) !important;
+}
+
+html.dark .bg-\[\#EBF3EE\],
+html.dark .bg-\[\#DCEADA\] {
+  background-color: rgba(126, 212, 167, 0.14) !important;
+  border-color: rgba(126, 212, 167, 0.25) !important;
+  color: #7ED4A7 !important;
+}
+
+html.dark .border-\[\#2D5A43\] {
+  border-color: rgba(126, 212, 167, 0.35) !important;
+}
+
+html.dark .bg-\[\#F6FBF8\] {
+  background-color: rgba(16, 185, 129, 0.08) !important;
+  border-color: rgba(16, 185, 129, 0.22) !important;
+}
+
+html.dark .bg-\[\#FBF1F3\] {
+  background-color: rgba(245, 169, 184, 0.14) !important;
+  border-color: rgba(245, 169, 184, 0.25) !important;
+  color: #F5A9B8 !important;
+}
+
+html.dark .bg-\[\#F5F2F9\] {
+  background-color: rgba(147, 112, 219, 0.14) !important;
+  border-color: rgba(147, 112, 219, 0.25) !important;
+}
+
+html.dark .text-\[\#735290\] {
+  color: #C084FC !important;
+}
+
+html.dark .bg-\[\#EFEAE5\] {
+  background-color: #23232C !important;
+}
+
+html.dark .hover\:bg-\[\#F8F2F4\]:hover {
+  background-color: #241D23 !important;
+}
+
+html.dark .bg-stone-50\/50 {
+  background-color: #17171D !important;
+}
+
+/* Form Inputs, Selects, and Textareas in Dark Mode (Anti-Glare, Crisp Text) */
+html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+html.dark select,
+html.dark textarea {
+  background-color: #1D1D25 !important;
+  border-color: #313140 !important;
+  color: #EDECEF !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #6C6C7E !important;
+}
+
+html.dark select option {
+  background-color: #19191F !important;
+  color: #EDECEF !important;
+}
+
+/* Interactive Hover States in Dark Mode */
+html.dark .hover\:bg-stone-50:hover,
+html.dark .hover\:bg-stone-100:hover,
+html.dark .hover\:bg-\[\#FAF7F5\]:hover,
+html.dark .hover\:bg-\[\#FAF5F2\]:hover,
+html.dark .hover\:bg-\[\#F2ECE6\]:hover {
+  background-color: #23232D !important;
+}
+
+/* Tables in Dark Mode (Comfortable Row Scanning) */
+html.dark th {
+  background-color: #15151A !important;
+  color: #BCBCC8 !important;
+  border-color: #262633 !important;
+}
+
+html.dark td {
+  border-color: #23232F !important;
+  color: #CECED6 !important;
+}
+
+html.dark tbody tr:hover {
+  background-color: #21212B !important;
+}
+
+/* Modals & Dialogs in Dark Mode */
+html.dark .fixed.inset-0.bg-black\/40,
+html.dark .fixed.inset-0.bg-black\/50,
+html.dark .fixed.inset-0.bg-black\/60,
+html.dark .fixed.inset-0.bg-stone-900\/50,
+html.dark .fixed.inset-0.bg-stone-900\/60 {
+  background-color: rgba(10, 10, 14, 0.76) !important;
+}
+
+/* Diffused Ambient Shadows and Smooth Scrollbars */
+html.dark .shadow-2xs,
+html.dark .shadow-xs,
+html.dark .shadow-sm,
+html.dark .shadow-md,
+html.dark .shadow-lg,
+html.dark .shadow-xl,
+html.dark .shadow-2xl {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.45) !important;
+}
+
+html.dark ::-webkit-scrollbar-track {
+  background: #121215;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #2D2D38;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #444454;
 }
 
 /* =========================================================

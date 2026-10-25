@@ -13,8 +13,10 @@ import { AuditLogModal } from '../components/AuditLogModal';
 export const SettingsView: React.FC = () => {
   const {
     settings, updateSettings, downloadBackup, restoreBackup, resetSampleData,
-    auditLogs, currentUser, showToast
+    auditLogs, currentUser, showToast, cloudStatus, syncNow, lastSynced,
+    theme, setTheme, isDarkMode, toggleTheme
   } = useApp();
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
 
   const [auditModalOpen, setAuditModalOpen] = useState(false);
 
@@ -252,6 +254,73 @@ export const SettingsView: React.FC = () => {
       </div>
 
       <form onSubmit={handleSaveSettings} className="space-y-6">
+
+        {/* مظهر المنصة: الوضع الليلي والوضع النهاري */}
+        <div className="bg-white p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4">
+          <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+            <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
+              <span className="text-lg">🌓</span>
+              <span>مظهر المنصة: الوضع الليلي والوضع النهاري (Dark & Light Theme):</span>
+            </h3>
+            <span className="text-[11px] text-stone-400">ينطبق على كامل واجهات وشاشات التطبيق فورياً</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div
+              onClick={() => {
+                setTheme('light');
+                showToast('تم تفعيل الوضع النهاري ☀️');
+              }}
+              className={`p-4 rounded-2xl border-2 transition cursor-pointer flex items-center justify-between ${
+                theme === 'light'
+                  ? 'border-[#8E5364] bg-[#FAF0F3] shadow-xs'
+                  : 'border-stone-200 hover:border-stone-300 bg-white'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center text-2xl shadow-2xs">
+                  ☀️
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-stone-900">الوضع النهاري (Light Mode)</h4>
+                  <p className="text-[11px] text-stone-500 mt-0.5">ألوان هادئة واضحة، خلفيات دافئة ونصوص مريحة للعين</p>
+                </div>
+              </div>
+              {theme === 'light' && (
+                <span className="text-xs font-bold text-[#8E5364] bg-white px-3 py-1 rounded-full border border-[#8E5364]/30 shadow-2xs">
+                  المفعل حالياً ✅
+                </span>
+              )}
+            </div>
+
+            <div
+              onClick={() => {
+                setTheme('dark');
+                showToast('تم تفعيل الوضع الليلي 🌙');
+              }}
+              className={`p-4 rounded-2xl border-2 transition cursor-pointer flex items-center justify-between ${
+                theme === 'dark'
+                  ? 'border-[#8E5364] bg-[#8E5364]/10 shadow-xs'
+                  : 'border-stone-200 hover:border-stone-300 bg-white'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-[#262632] text-amber-300 flex items-center justify-center text-2xl shadow-2xs">
+                  🌙
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-stone-900">الوضع الليلي (Dark Mode)</h4>
+                  <p className="text-[11px] text-stone-500 mt-0.5">مريح للعينين في الإضاءة الخافتة، خلفيات داكنة فخمة بدون وهج</p>
+                </div>
+              </div>
+              {theme === 'dark' && (
+                <span className="text-xs font-bold text-amber-300 bg-stone-800 px-3 py-1 rounded-full border border-amber-400/30 shadow-2xs">
+                  المفعل حالياً ✅
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* 1. Main Titles & Information */}
         <div className="bg-white p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4">
@@ -883,6 +952,85 @@ export const SettingsView: React.FC = () => {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Cloud Persistence & Real-Time Synchronization Card */}
+      <div className="bg-white p-6 rounded-3xl border border-emerald-200 shadow-2xs space-y-4 relative overflow-hidden">
+        <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-emerald-400 via-teal-500 to-emerald-600" />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-xs">
+              <Cloud className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
+                <span>التخزين السحابي والمزامنة الفورية (Firebase Firestore)</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  مفعلة وتعمل لحظياً
+                </span>
+              </h3>
+              <p className="text-xs text-stone-500 mt-0.5">
+                قاعدة بيانات مركزية موحدة ومتزامنة فورياً بين القائدة وجميع المعلمات والمشرفات
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={isManualSyncing}
+            onClick={async () => {
+              setIsManualSyncing(true);
+              try {
+                await syncNow();
+              } finally {
+                setTimeout(() => setIsManualSyncing(false), 600);
+              }
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer active:scale-95 disabled:opacity-50 self-start sm:self-auto"
+          >
+            <Cloud className={`w-3.5 h-3.5 ${isManualSyncing ? 'animate-bounce' : ''}`} />
+            <span>{isManualSyncing ? 'جاري المزامنة...' : 'مزامنة فورية الآن'}</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="p-3.5 rounded-2xl bg-emerald-50/50 border border-emerald-100">
+            <div className="text-[11px] font-bold text-emerald-900 mb-1 flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>حالة الاتصال السحابي:</span>
+            </div>
+            <div className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>{cloudStatus === 'connected' ? 'متصل ومؤمّن بنجاح' : 'جاري فحص الاتصال...'}</span>
+            </div>
+            <p className="text-[10px] text-stone-500 mt-1">
+              آخر مزامنة ناجحة: {lastSynced ? new Date(lastSynced).toLocaleTimeString('ar-SA') : 'الآن'}
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-[#FCFAF8] border border-stone-200">
+            <div className="text-[11px] font-bold text-stone-800 mb-1 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-[#8E5364]" />
+              <span>المزامنة الحية (Real-time):</span>
+            </div>
+            <div className="text-xs font-bold text-stone-700">مباشرة دون حاجة لتحديث الصفحة</div>
+            <p className="text-[10px] text-stone-500 mt-1">
+              أي رصد لحفظ أو حضور من أي معلمة ينعكس فوراً عند بقية الكادر.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-[#FCFAF8] border border-stone-200">
+            <div className="text-[11px] font-bold text-stone-800 mb-1 flex items-center gap-1.5">
+              <Database className="w-3.5 h-3.5 text-[#8E5364]" />
+              <span>حماية عدم فقدان البيانات (Offline):</span>
+            </div>
+            <div className="text-xs font-bold text-stone-700">حفظ محلي + دمج ذكي متزامن</div>
+            <p className="text-[10px] text-stone-500 mt-1">
+              عند انقطاع النت يتم الحفظ في الجهاز، وترفع السجلات فور عودة الاتصال.
+            </p>
+          </div>
         </div>
       </div>
 

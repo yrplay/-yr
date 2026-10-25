@@ -159,6 +159,12 @@ interface AppContextType {
   quickModalAction: { type: string; timestamp: number } | null;
   triggerQuickModal: (type: string) => void;
   clearQuickModal: () => void;
+
+  // Theme Mode (Dark / Light)
+  theme: 'light' | 'dark';
+  isDarkMode: boolean;
+  toggleTheme: () => void;
+  setTheme: (theme: 'light' | 'dark') => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -211,6 +217,42 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [lastSynced, setLastSynced] = useState<Date>(new Date());
   const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>('syncing');
   const [quickModalAction, setQuickModalAction] = useState<{ type: string; timestamp: number } | null>(null);
+
+  // Theme Mode (Light / Dark) State
+  const [theme, setThemeState] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('ghaith_theme');
+      if (saved === 'dark' || saved === 'light') return saved;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return 'light';
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const root = document.documentElement;
+      if (theme === 'dark') {
+        root.classList.add('dark');
+        root.setAttribute('data-theme', 'dark');
+        root.style.colorScheme = 'dark';
+      } else {
+        root.classList.remove('dark');
+        root.setAttribute('data-theme', 'light');
+        root.style.colorScheme = 'light';
+      }
+      localStorage.setItem('ghaith_theme', theme);
+    }
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setThemeState(prev => (prev === 'light' ? 'dark' : 'light'));
+  };
+
+  const setTheme = (newTheme: 'light' | 'dark') => {
+    setThemeState(newTheme);
+  };
+
+  const isDarkMode = theme === 'dark';
 
   const triggerQuickModal = (type: string) => {
     setQuickModalAction({ type, timestamp: Date.now() });
@@ -1903,7 +1945,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         switchToLeader,
         quickModalAction,
         triggerQuickModal,
-        clearQuickModal
+        clearQuickModal,
+        theme,
+        isDarkMode,
+        toggleTheme,
+        setTheme
       }}
     >
       {children}

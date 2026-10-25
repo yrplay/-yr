@@ -186,8 +186,72 @@ export const ISLAMIC_COLOR_PALETTES = [
   { name: 'التركواز القرآني', hex: '#0D7490' }
 ];
 
+export interface EmojiOption {
+  id: string;
+  emoji: string;
+  name: string;
+  category: string;
+}
+
+export const QURANIC_EMOJIS: EmojiOption[] = [
+  { id: 'emoji_mushaf', emoji: '📖', name: 'المصحف الشريف', category: 'القرآن والوحي' },
+  { id: 'emoji_tasbih', emoji: '📿', name: 'السبحة والأذكار', category: 'الذكر والصلة' },
+  { id: 'emoji_mosque', emoji: '🕌', name: 'المسجد والقبلة', category: 'المساجد' },
+  { id: 'emoji_cloud', emoji: '☁️', name: 'غيمة الغيث المباركة', category: 'رمز غيث الغيم' },
+  { id: 'emoji_flower', emoji: '🌸', name: 'الزهرة الندية', category: 'الطبيعة والجمال' },
+  { id: 'emoji_plant', emoji: '🪴', name: 'الغراس الصالح', category: 'الطبيعة والجمال' },
+  { id: 'emoji_herb', emoji: '🌿', name: 'الغصن الرطيب', category: 'الطبيعة والجمال' },
+  { id: 'emoji_crescent', emoji: '🌙', name: 'هلال البركة', category: 'الأنوار والأهلة' },
+  { id: 'emoji_star', emoji: '⭐', name: 'نجم الهدى', category: 'الأنوار والأهلة' },
+  { id: 'emoji_feather', emoji: '🪶', name: 'ريشة الإتقان', category: 'العلم والتدوين' },
+  { id: 'emoji_diamond', emoji: '💎', name: 'جوهرة التميز', category: 'الإتقان والرفعة' },
+  { id: 'emoji_dove', emoji: '🕊️', name: 'حمامة السلام والسكينة', category: 'السكينة' },
+  { id: 'emoji_candle', emoji: '🕯️', name: 'مشكاة النور', category: 'الأنوار والأهلة' },
+  { id: 'emoji_crown', emoji: '👑', name: 'تاج الوقار القرآني', category: 'الإتقان والرفعة' },
+  { id: 'emoji_tulip', emoji: '🌷', name: 'الوردة العطرة', category: 'الطبيعة والجمال' },
+  { id: 'emoji_scroll', emoji: '📜', name: 'صحيفة السند والإجازة', category: 'العلم والتدوين' },
+  { id: 'emoji_wheat', emoji: '🌾', name: 'السنبلة المباركة', category: 'الطبيعة والجمال' },
+  { id: 'emoji_white_heart', emoji: '🤍', name: 'القلب النقي المخلص', category: 'الإخلاص' },
+  { id: 'emoji_sparkles', emoji: '✨', name: 'بريق الإتقان والهمة', category: 'الإتقان والرفعة' },
+  { id: 'emoji_hibiscus', emoji: '🌺', name: 'الريحان والبشرى', category: 'الطبيعة والجمال' },
+];
+
 export const getIslamicIcon = (iconId?: string) => {
   return ISLAMIC_ICONS.find(i => i.id === iconId) || ISLAMIC_ICONS[0];
+};
+
+export const getAvatarLabel = (iconId?: string): string => {
+  if (!iconId) return 'المصحف الشريف';
+  const foundEmoji = QURANIC_EMOJIS.find(e => e.id === iconId || e.emoji === iconId);
+  if (foundEmoji) return `${foundEmoji.emoji} ${foundEmoji.name}`;
+  const foundSvg = ISLAMIC_ICONS.find(i => i.id === iconId);
+  if (foundSvg) return `✨ ${foundSvg.name}`;
+  return iconId;
+};
+
+export const renderUserAvatarBadge = (
+  avatarIcon?: string,
+  avatarColor: string = '#8E5364',
+  className = 'w-5 h-5'
+): React.ReactNode => {
+  if (!avatarIcon) {
+    return <span className="text-base select-none leading-none">📖</span>;
+  }
+
+  // Check in Quranic Emojis
+  const foundEmoji = QURANIC_EMOJIS.find(e => e.id === avatarIcon || e.emoji === avatarIcon);
+  if (foundEmoji) {
+    return <span className="text-lg select-none leading-none">{foundEmoji.emoji}</span>;
+  }
+
+  // Check if it is a raw emoji string
+  if (avatarIcon.length <= 4 && !ISLAMIC_ICONS.some(i => i.id === avatarIcon)) {
+    return <span className="text-lg select-none leading-none">{avatarIcon}</span>;
+  }
+
+  // Fallback to SVG Islamic Icon
+  const icon = getIslamicIcon(avatarIcon);
+  return icon.svg({ className, color: avatarColor });
 };
 
 interface IslamicIconPickerProps {
@@ -203,6 +267,11 @@ export const IslamicIconPicker: React.FC<IslamicIconPickerProps> = ({
 }) => {
   const [activeColor, setActiveColor] = React.useState(selectedColor);
   const [activeId, setActiveId] = React.useState(selectedIconId);
+  const [activeTab, setActiveTab] = React.useState<'svg' | 'emoji'>(
+    selectedIconId && (selectedIconId.startsWith('emoji_') || QURANIC_EMOJIS.some(e => e.id === selectedIconId || e.emoji === selectedIconId))
+      ? 'emoji'
+      : 'svg'
+  );
 
   const handlePickIcon = (id: string) => {
     setActiveId(id);
@@ -216,36 +285,77 @@ export const IslamicIconPicker: React.FC<IslamicIconPickerProps> = ({
 
   return (
     <div className="space-y-4 p-4 bg-[#FAF7F4] rounded-2xl border border-[#EFE8E2]">
-      <div className="flex items-center justify-between">
+      {/* Header and Live Preview */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h4 className="font-bold text-xs text-stone-800 flex items-center gap-1.5">
             <span>✨</span>
-            <span>المكتبة الرمزية الإسلامية للأيقونات المرسومة</span>
+            <span>شعار المعلمة: الأيقونات المرسومة والإيموجيات القرآنية والألوان</span>
           </h4>
           <p className="text-[11px] text-stone-500 mt-0.5">
-            اختاري أيقونتكِ المرسومة ولونها المفضل لتمثيل هويتكِ في المقرأة والحلقات
+            اختاري شعاركِ المفضل (أيقونة مرسومة أو إيموجي) ولونكِ الخاص لتمييز هويتكِ في المنصة والشهادات
           </p>
         </div>
 
         {/* Current Preview Badge */}
-        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-stone-200 shadow-2xs">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${activeColor}15` }}>
-            {getIslamicIcon(activeId).svg({ className: 'w-5 h-5', color: activeColor })}
+        <div className="flex items-center gap-2.5 bg-white px-3 py-1.5 rounded-2xl border border-stone-200 shadow-2xs self-start sm:self-auto">
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition border shadow-2xs"
+            style={{
+              backgroundColor: `${activeColor}18`,
+              borderColor: `${activeColor}40`,
+              color: activeColor
+            }}
+          >
+            {renderUserAvatarBadge(activeId, activeColor, 'w-5 h-5')}
           </div>
-          <span className="text-xs font-bold text-stone-800">
-            {getIslamicIcon(activeId).name}
-          </span>
+          <div>
+            <span className="text-xs font-bold text-stone-800 block">
+              {getAvatarLabel(activeId)}
+            </span>
+            <span className="text-[10px] text-stone-400 font-mono">
+              {activeColor}
+            </span>
+          </div>
         </div>
+      </div>
+
+      {/* Tabs between SVG Icons & Emojis */}
+      <div className="flex items-center gap-1 p-1 bg-stone-200/60 rounded-xl">
+        <button
+          type="button"
+          onClick={() => setActiveTab('svg')}
+          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+            activeTab === 'svg'
+              ? 'bg-white text-stone-900 shadow-xs'
+              : 'text-stone-600 hover:text-stone-900'
+          }`}
+        >
+          <span>🎨</span>
+          <span>الأيقونات المرسومة (SVG)</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('emoji')}
+          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+            activeTab === 'emoji'
+              ? 'bg-white text-stone-900 shadow-xs'
+              : 'text-stone-600 hover:text-stone-900'
+          }`}
+        >
+          <span>🌟</span>
+          <span>الإيموجيات القرآنية (Emojis)</span>
+        </button>
       </div>
 
       {/* Color Palette Row & Manual Color Picker */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <label className="block text-[11px] font-bold text-stone-600">
-            اختاري لون الأيقونة (لوحة ألوان حرة أو باليتات معتمدة):
+            تخصيص لون الشعار والخلفية (اختيار حر أو باليتات):
           </label>
           <div className="flex items-center gap-1.5 text-xs text-stone-500">
-            <span>اللون المختار:</span>
+            <span>اللون:</span>
             <span
               className="w-4 h-4 rounded-full border border-stone-300 shadow-2xs inline-block"
               style={{ backgroundColor: activeColor }}
@@ -255,8 +365,8 @@ export const IslamicIconPicker: React.FC<IslamicIconPickerProps> = ({
         </div>
 
         {/* Manual color picker and HEX input */}
-        <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-2xl bg-stone-50 border border-stone-200">
-          <label className="flex items-center gap-2 px-3 py-1.5 bg-white border border-stone-300 rounded-xl cursor-pointer hover:border-stone-400 shadow-2xs transition text-xs font-bold text-stone-700">
+        <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-2xl bg-white border border-stone-200 shadow-2xs">
+          <label className="flex items-center gap-2 px-3 py-1.5 bg-stone-50 border border-stone-300 rounded-xl cursor-pointer hover:border-stone-400 shadow-2xs transition text-xs font-bold text-stone-700">
             <input
               type="color"
               value={activeColor.startsWith('#') && activeColor.length === 7 ? activeColor : '#8E5364'}
@@ -266,7 +376,7 @@ export const IslamicIconPicker: React.FC<IslamicIconPickerProps> = ({
             <span>🎨 لوحة الألوان اليدوية (اختيار حر)</span>
           </label>
 
-          <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-stone-200 text-xs">
+          <div className="flex items-center gap-1.5 bg-stone-50 px-2.5 py-1 rounded-xl border border-stone-200 text-xs">
             <span className="text-stone-400 font-mono text-[11px]">HEX:</span>
             <input
               type="text"
@@ -278,7 +388,7 @@ export const IslamicIconPicker: React.FC<IslamicIconPickerProps> = ({
             />
           </div>
 
-          <div className="text-[11px] text-stone-400 mr-auto">
+          <div className="text-[11px] text-stone-400 mr-auto hidden sm:block">
             أو اختاري سريعاً من الباليتات المقترحة:
           </div>
         </div>
@@ -289,8 +399,10 @@ export const IslamicIconPicker: React.FC<IslamicIconPickerProps> = ({
               key={c.hex}
               type="button"
               onClick={() => handlePickColor(c.hex)}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-xl text-[11px] font-bold border transition ${
-                activeColor.toLowerCase() === c.hex.toLowerCase() ? 'border-stone-800 bg-stone-100 shadow-xs ring-1 ring-stone-800' : 'border-stone-200 bg-white hover:bg-stone-50'
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition cursor-pointer ${
+                activeColor.toLowerCase() === c.hex.toLowerCase()
+                  ? 'border-stone-800 bg-stone-100 shadow-xs ring-1 ring-stone-800'
+                  : 'border-stone-200 bg-white hover:bg-stone-50'
               }`}
             >
               <span className="w-3 h-3 rounded-full inline-block shadow-2xs" style={{ backgroundColor: c.hex }} />
@@ -300,38 +412,78 @@ export const IslamicIconPicker: React.FC<IslamicIconPickerProps> = ({
         </div>
       </div>
 
-      {/* Icons Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2.5 pt-1">
-        {ISLAMIC_ICONS.map(icon => {
-          const isSelected = activeId === icon.id;
-          return (
-            <button
-              key={icon.id}
-              type="button"
-              onClick={() => handlePickIcon(icon.id)}
-              className={`p-3 rounded-2xl flex flex-col items-center justify-center gap-2 border transition text-center cursor-pointer ${
-                isSelected
-                  ? 'bg-white shadow-sm'
-                  : 'bg-white/60 hover:bg-white border-stone-200/80 hover:border-stone-300'
-              }`}
-              style={{
-                borderColor: isSelected ? activeColor : undefined,
-                boxShadow: isSelected ? `0 0 0 2px ${activeColor}33` : undefined
-              }}
-            >
-              <div
-                className="w-11 h-11 rounded-xl flex items-center justify-center transition"
-                style={{ backgroundColor: `${activeColor}${isSelected ? '22' : '10'}` }}
+      {/* Grid of Choices based on selected tab */}
+      {activeTab === 'svg' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2.5 pt-1">
+          {ISLAMIC_ICONS.map(icon => {
+            const isSelected = activeId === icon.id;
+            return (
+              <button
+                key={icon.id}
+                type="button"
+                onClick={() => handlePickIcon(icon.id)}
+                className={`p-3 rounded-2xl flex flex-col items-center justify-center gap-2 border transition text-center cursor-pointer ${
+                  isSelected
+                    ? 'bg-white shadow-sm ring-2'
+                    : 'bg-white/60 hover:bg-white border-stone-200/80 hover:border-stone-300'
+                }`}
+                style={{
+                  borderColor: isSelected ? activeColor : undefined,
+                  boxShadow: isSelected ? `0 0 0 2px ${activeColor}44` : undefined
+                }}
               >
-                {icon.svg({ className: 'w-6 h-6', color: activeColor })}
-              </div>
-              <span className="text-[11px] font-bold text-stone-800 leading-tight">
-                {icon.name}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                <div
+                  className="w-11 h-11 rounded-xl flex items-center justify-center transition border"
+                  style={{
+                    backgroundColor: `${activeColor}${isSelected ? '25' : '10'}`,
+                    borderColor: `${activeColor}${isSelected ? '50' : '20'}`
+                  }}
+                >
+                  {icon.svg({ className: 'w-6 h-6', color: activeColor })}
+                </div>
+                <span className="text-[11px] font-bold text-stone-800 leading-tight">
+                  {icon.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5 pt-1">
+          {QURANIC_EMOJIS.map(item => {
+            const isSelected = activeId === item.id || activeId === item.emoji;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handlePickIcon(item.id)}
+                className={`p-3 rounded-2xl flex flex-col items-center justify-center gap-2 border transition text-center cursor-pointer ${
+                  isSelected
+                    ? 'bg-white shadow-sm ring-2'
+                    : 'bg-white/60 hover:bg-white border-stone-200/80 hover:border-stone-300'
+                }`}
+                style={{
+                  borderColor: isSelected ? activeColor : undefined,
+                  boxShadow: isSelected ? `0 0 0 2px ${activeColor}44` : undefined
+                }}
+              >
+                <div
+                  className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl transition border"
+                  style={{
+                    backgroundColor: `${activeColor}${isSelected ? '25' : '10'}`,
+                    borderColor: `${activeColor}${isSelected ? '50' : '20'}`
+                  }}
+                >
+                  {item.emoji}
+                </div>
+                <span className="text-[11px] font-bold text-stone-800 leading-tight">
+                  {item.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };
