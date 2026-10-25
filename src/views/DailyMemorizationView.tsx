@@ -1,10 +1,36 @@
 import React, { useState, useMemo } from 'react';
 import { 
   BookOpen, Calendar, Clock, CheckCircle2, AlertCircle, 
-  Search, Award, Edit3, X, Check, Sparkles, ChevronDown 
+  Search, Award, Edit3, X, Check, PenTool, Sparkles 
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { DailyRecitationRecord } from '../types';
+import { SignaturePad } from '../components/SignaturePad';
+
+const QURAN_SURAHS = [
+  '1. الفاتحة', '2. البقرة', '3. آل عمران', '4. النساء', '5. المائدة',
+  '6. الأنعام', '7. الأعراف', '8. الأنفال', '9. التوبة', '10. يونس',
+  '11. هود', '12. يوسف', '13. الرعد', '14. إبراهيم', '15. الحجر',
+  '16. النحل', '17. الإسراء', '18. الكهف', '19. مريم', '20. طه',
+  '21. الأنبياء', '22. الحج', '23. المؤمنون', '24. النور', '25. الفرقان',
+  '26. الشعراء', '27. النمل', '28. القصص', '29. العنكبوت', '30. الروم',
+  '31. لقمان', '32. السجدة', '33. الأحزاب', '34. سبأ', '35. فاطر',
+  '36. يس', '37. الصافات', '38. ص', '39. الزمر', '40. غافر',
+  '41. فصلت', '42. الشورى', '43. الزخرف', '44. الدخان', '45. الجاثية',
+  '46. الأحقاف', '47. محمد', '48. الفتح', '49. الحجرات', '50. ق',
+  '51. الذاريات', '52. الطور', '53. النجم', '54. القمر', '55. الرحمن',
+  '56. الواقعة', '57. الحديد', '58. المجادلة', '59. الحشر', '60. الممتحنة',
+  '61. الصف', '62. الجمعة', '63. المنافقون', '64. التغابن', '65. الطلاق',
+  '66. التحريم', '67. الملك', '68. القلم', '69. الحاقة', '70. المعارج',
+  '71. نوح', '72. الجن', '73. المزمل', '74. المدثر', '75. القيامة',
+  '76. الإنسان', '77. المرسلات', '78. النبأ', '79. النازعات', '80. عبس',
+  '81. التكوير', '82. الانفطار', '83. المطففين', '84. الانشقاق', '85. البروج',
+  '86. الطارق', '87. الأعلى', '88. الغاشية', '89. الفجر', '90. البلد',
+  '91. الشمس', '92. الليل', '93. الضحى', '94. الشرح', '95. التين',
+  '96. العلق', '97. القدر', '98. البينة', '99. الزلزلة', '100. العاديات',
+  '101. القارعة', '102. التكاثر', '103. العصر', '104. الهمزة', '105. الفيل',
+  '106. قريش', '107. الماعون', '108. الكوثر', '109. الكافرون', '110. النصر',
+  '111. المسد', '112. الإخلاص', '113. الفلق', '114. الناس'
+];
 
 export const DailyMemorizationView: React.FC = () => {
   const { 
@@ -17,40 +43,57 @@ export const DailyMemorizationView: React.FC = () => {
     new Date().toISOString().split('T')[0]
   );
   const [searchQuery, setSearchQuery] = useState('');
-
-  // نافذة الرصد التلقائي
   const [activeModalStudentId, setActiveModalStudentId] = useState<string | null>(null);
+  const [showSigPad, setShowSigPad] = useState(false);
 
-  // حقول رصد الأخطاء التلقائية
-  const [scoringForm, setScoringForm] = useState({
+  // نموذج الرصد الكامل
+  const [form, setForm] = useState({
+    // الحفظ الجديد
+    newHifzPages: 1,
     hifzErrors: 0,
     alerts: 0,
     tajweedErrors: 0,
+
+    // المراجعة الصغرى (الربط القريب)
+    minorSurah: '2. سورة البقرة',
+    minorFromAyah: '1',
+    minorToAyah: '25',
+    minorDone: true,
+
+    // مراجعة التمكين (المراجعة الكبرى)
+    majorSurah: '11. سورة هود',
+    majorFromAyah: '36',
+    majorToAyah: '50',
+    majorPages: 2,
+    majorDone: true,
+
+    // معايير التحضير والإتقان
+    criteriaListen: true,
+    criteriaRecite: true,
+    criteriaRepeat: true,
+    hasMedal: false,
+
+    // ملاحظات وتوقيع
     notes: '',
-    surahFrom: '',
-    surahTo: '',
-    passed: true
+    signatureUrl: ''
   });
 
-  // استخراج معايير الخصم من إعدادات النظام إن وجدت أو الاعتماد على المعادلة المعتمدة
+  // معادلة احتساب درجة الحفظ الجديد التلقائية المربوطة بنظام المعايير
   const baseScore = settings?.gradingRules?.recitationBaseScore ?? 10;
   const hifzDeduction = settings?.gradingRules?.hifzErrorDeduction ?? 0.5;
   const alertDeduction = settings?.gradingRules?.alertDeduction ?? 0.25;
   const tajweedDeduction = settings?.gradingRules?.tajweedErrorDeduction ?? 0.25;
-  const minScore = 0;
 
-  // الحساب الرياضي التلقائي الفوري للدرجة النهائية
-  const calculatedScore = useMemo(() => {
+  const calculatedNewScore = useMemo(() => {
     const totalDeductions = 
-      (scoringForm.hifzErrors * hifzDeduction) +
-      (scoringForm.alerts * alertDeduction) +
-      (scoringForm.tajweedErrors * tajweedDeduction);
+      (Number(form.hifzErrors || 0) * hifzDeduction) +
+      (Number(form.alerts || 0) * alertDeduction) +
+      (Number(form.tajweedErrors || 0) * tajweedDeduction);
     
-    const finalScore = Math.max(minScore, baseScore - totalDeductions);
-    return Math.round(finalScore * 100) / 100;
-  }, [scoringForm.hifzErrors, scoringForm.alerts, scoringForm.tajweedErrors, baseScore, hifzDeduction, alertDeduction, tajweedDeduction]);
+    return Math.max(0, Math.round((baseScore - totalDeductions) * 100) / 100);
+  }, [form.hifzErrors, form.alerts, form.tajweedErrors, baseScore, hifzDeduction, alertDeduction, tajweedDeduction]);
 
-  // تصفية الطالبات التابعات للحلقة المحددة
+  // تصفية الطالبات
   const circleStudents = useMemo(() => {
     let list = students.filter(s => s.status === 'active');
     if (selectedCircleId) {
@@ -65,38 +108,63 @@ export const DailyMemorizationView: React.FC = () => {
   }, [students, selectedCircleId, searchQuery]);
 
   const selectedCircle = circles.find(c => c.id === selectedCircleId);
+  const modalStudent = students.find(s => s.id === activeModalStudentId);
+  const modalTrack = tracks.find(t => t.id === modalStudent?.trackId) || tracks[0];
 
-  // فتح نافذة الرصد للطالبة
   const handleOpenModal = (studentId: string) => {
     const existing = (dailyRecitations || []).find(
       r => r.studentId === studentId && r.date === selectedDate
     );
 
     if (existing) {
-      setScoringForm({
-        hifzErrors: existing.hifzErrors ?? 0,
-        alerts: existing.alerts ?? 0,
-        tajweedErrors: existing.tajweedErrors ?? 0,
+      setForm({
+        newHifzPages: existing.newHifzPages || 1,
+        hifzErrors: existing.hifzErrors || 0,
+        alerts: existing.alerts || 0,
+        tajweedErrors: existing.tajweedErrors || 0,
+        minorSurah: existing.minorSurah || '2. سورة البقرة',
+        minorFromAyah: existing.minorFromAyah || '1',
+        minorToAyah: existing.minorToAyah || '25',
+        minorDone: existing.minorDone ?? true,
+        majorSurah: existing.majorSurah || '11. سورة هود',
+        majorFromAyah: existing.majorFromAyah || '36',
+        majorToAyah: existing.majorToAyah || '50',
+        majorPages: existing.majorPages || 2,
+        majorDone: existing.majorDone ?? true,
+        criteriaListen: existing.criteriaListen ?? true,
+        criteriaRecite: existing.criteriaRecite ?? true,
+        criteriaRepeat: existing.criteriaRepeat ?? true,
+        hasMedal: existing.hasMedal ?? false,
         notes: existing.notes || '',
-        surahFrom: existing.surahFrom || '',
-        surahTo: existing.surahTo || '',
-        passed: existing.score >= (baseScore * 0.6)
+        signatureUrl: existing.signatureUrl || ''
       });
     } else {
-      setScoringForm({
+      setForm({
+        newHifzPages: 1,
         hifzErrors: 0,
         alerts: 0,
         tajweedErrors: 0,
+        minorSurah: '2. سورة البقرة',
+        minorFromAyah: '1',
+        minorToAyah: '25',
+        minorDone: true,
+        majorSurah: '11. سورة هود',
+        majorFromAyah: '36',
+        majorToAyah: '50',
+        majorPages: 2,
+        majorDone: true,
+        criteriaListen: true,
+        criteriaRecite: true,
+        criteriaRepeat: true,
+        hasMedal: false,
         notes: '',
-        surahFrom: '',
-        surahTo: '',
-        passed: true
+        signatureUrl: ''
       });
     }
+    setShowSigPad(false);
     setActiveModalStudentId(studentId);
   };
 
-  // حفظ السجل بعد الحساب التلقائي
   const handleSaveRecitation = async () => {
     if (!activeModalStudentId) return;
 
@@ -104,22 +172,15 @@ export const DailyMemorizationView: React.FC = () => {
       studentId: activeModalStudentId,
       date: selectedDate,
       circleId: selectedCircleId,
-      score: calculatedScore,
+      score: calculatedNewScore,
       maxScore: baseScore,
-      hifzErrors: scoringForm.hifzErrors,
-      alerts: scoringForm.alerts,
-      tajweedErrors: scoringForm.tajweedErrors,
-      notes: scoringForm.notes,
-      surahFrom: scoringForm.surahFrom,
-      surahTo: scoringForm.surahTo,
+      ...form,
       evaluatorId: currentUser?.id,
       evaluatorName: currentUser?.name
     });
 
     setActiveModalStudentId(null);
   };
-
-  const modalStudent = students.find(s => s.id === activeModalStudentId);
 
   return (
     <div className="space-y-6 text-right pb-12" dir="rtl">
@@ -133,7 +194,7 @@ export const DailyMemorizationView: React.FC = () => {
             </h1>
           </div>
           <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
-            رصد التسميع اليومي بحساب آلي فوري يربط الأخطاء والتنبيهات مباشرة بمعايير الدرجات
+            رصد الحفظ الجديد، وتفاصيل المراجعة الصغرى والتمكين وفق معايير دليل الإتقان
           </p>
         </div>
 
@@ -213,14 +274,14 @@ export const DailyMemorizationView: React.FC = () => {
                   {record ? (
                     <div className="flex items-center gap-3 text-left">
                       <div className="text-xs text-stone-500 text-right">
+                        <span>درجة الحفظ: <strong className="text-[#8E5364] font-bold">{record.score}/10</strong></span>
+                        <span className="mx-1.5">•</span>
                         <span>أخطاء: <strong className="text-rose-600">{record.hifzErrors ?? 0}</strong></span>
                         <span className="mx-1.5">•</span>
                         <span>تنبيهات: <strong className="text-amber-600">{record.alerts ?? 0}</strong></span>
-                        <span className="mx-1.5">•</span>
-                        <span>تجويد: <strong className="text-purple-600">{record.tajweedErrors ?? 0}</strong></span>
                       </div>
-                      <div className="px-3.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-400 font-bold text-sm">
-                        {record.score} / {record.maxScore || 10}
+                      <div className="px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-400 font-bold text-xs">
+                        تم الرصد ✅
                       </div>
                     </div>
                   ) : (
@@ -247,122 +308,268 @@ export const DailyMemorizationView: React.FC = () => {
         </div>
       </div>
 
-      {/* نافذة الرصد الفوري الذكية (مطابقة للصورة تماماً) */}
+      {/* نافذة رصد التسميع اليومي الأصلية بالكامل */}
       {activeModalStudentId && modalStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white dark:bg-[#1A1A1E] border border-[#E2D5CC] dark:border-stone-800 rounded-3xl w-full max-w-md p-6 space-y-5 shadow-2xl text-right" dir="rtl">
+          <div className="bg-white dark:bg-[#1A1A1E] border border-[#E2D5CC] dark:border-stone-800 rounded-3xl w-full max-w-2xl max-h-[92vh] overflow-y-auto p-6 space-y-5 shadow-2xl text-right" dir="rtl">
             
-            {/* عنوان النافذة */}
+            {/* رأس النافذة */}
             <div className="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
               <div>
                 <h3 className="text-base font-bold text-stone-900 dark:text-stone-100 font-quran">
-                  رصد التسميع اليومي
+                  رصد تسميع: {modalStudent.name}
                 </h3>
-                <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-                  للطالبة: <strong>{modalStudent.name}</strong> • تاريخ: {selectedDate}
-                </p>
+                <span className="text-[11px] text-stone-400 font-mono">{selectedDate}</span>
               </div>
-              <button 
-                onClick={() => setActiveModalStudentId(null)}
-                className="p-1 rounded-xl text-stone-400 hover:text-stone-600 dark:hover:text-stone-200"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-stone-500 font-bold">
+                  {modalTrack?.name || 'مشكاة الغيم للحفظ'}
+                </span>
+                <button 
+                  onClick={() => setActiveModalStudentId(null)}
+                  className="p-1 rounded-xl text-stone-400 hover:text-stone-600 dark:hover:text-stone-200"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            {/* بطاقة الدرجة النهائية المحصلة التلقائية (مطابقة للصورة 100%) */}
-            <div className="p-5 rounded-3xl bg-[#FAF7F5] dark:bg-[#141417] border border-[#EAE2DC] dark:border-stone-800 text-center space-y-1">
-              <span className="text-xs font-bold text-stone-700 dark:text-stone-300">
-                الدرجة النهائية المحصلة (من {baseScore}):
+            {/* 1. الحفظ الجديد (مع الحساب التلقائي الفوري) */}
+            <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-xs text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                  <span>📖</span>
+                  <span>الحفظ الجديد:</span>
+                </h4>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-stone-500">الدرجة المحصلة تلقائياً:</span>
+                  <div className="px-3 py-1 bg-white dark:bg-stone-800 border-2 border-[#8E5364] rounded-xl text-base font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono min-w-16 text-center">
+                    {calculatedNewScore} <span className="text-[10px] font-normal text-stone-400">/ 10</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                <div>
+                  <label className="block text-[11px] text-stone-600 dark:text-stone-400 mb-1">أوجه الحفظ</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.newHifzPages}
+                    onChange={e => setForm({ ...form, newHifzPages: Number(e.target.value) })}
+                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-rose-600 dark:text-rose-400 font-bold mb-1">أخطاء الحفظ</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.hifzErrors}
+                    onChange={e => setForm({ ...form, hifzErrors: Math.max(0, Number(e.target.value)) })}
+                    className="w-full text-center py-1.5 border border-rose-300 dark:border-rose-900/60 bg-white dark:bg-stone-800 rounded-xl font-bold text-rose-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-amber-600 dark:text-amber-400 font-bold mb-1">تنبيهات</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.alerts}
+                    onChange={e => setForm({ ...form, alerts: Math.max(0, Number(e.target.value)) })}
+                    className="w-full text-center py-1.5 border border-amber-300 dark:border-amber-900/60 bg-white dark:bg-stone-800 rounded-xl font-bold text-amber-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-purple-600 dark:text-purple-400 font-bold mb-1">أخطاء التجويد</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.tajweedErrors}
+                    onChange={e => setForm({ ...form, tajweedErrors: Math.max(0, Number(e.target.value)) })}
+                    className="w-full text-center py-1.5 border border-purple-300 dark:border-purple-900/60 bg-white dark:bg-stone-800 rounded-xl font-bold text-purple-600"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 2. المراجعة الصغرى (الربط القريب) */}
+            <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-3">
+              <h4 className="font-bold text-xs text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                <span>🔄</span>
+                <span>المراجعة الصغرى (الربط القريب):</span>
+              </h4>
+
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">السورة</label>
+                  <select
+                    value={form.minorSurah}
+                    onChange={e => setForm({ ...form, minorSurah: e.target.value })}
+                    className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  >
+                    {QURAN_SURAHS.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">من آية</label>
+                  <input
+                    type="text"
+                    value={form.minorFromAyah}
+                    onChange={e => setForm({ ...form, minorFromAyah: e.target.value })}
+                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">إلى آية</label>
+                  <input
+                    type="text"
+                    value={form.minorToAyah}
+                    onChange={e => setForm({ ...form, minorToAyah: e.target.value })}
+                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 3. مراجعة التمكين (المراجعة الكبرى) */}
+            <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-3">
+              <h4 className="font-bold text-xs text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                <span>✨</span>
+                <span>مراجعة التمكين (المراجعة الكبرى):</span>
+              </h4>
+
+              <div className="grid grid-cols-4 gap-2 text-xs">
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">السورة</label>
+                  <select
+                    value={form.majorSurah}
+                    onChange={e => setForm({ ...form, majorSurah: e.target.value })}
+                    className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  >
+                    {QURAN_SURAHS.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">من آية</label>
+                  <input
+                    type="text"
+                    value={form.majorFromAyah}
+                    onChange={e => setForm({ ...form, majorFromAyah: e.target.value })}
+                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">إلى آية</label>
+                  <input
+                    type="text"
+                    value={form.majorToAyah}
+                    onChange={e => setForm({ ...form, majorToAyah: e.target.value })}
+                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">الأوجه المنجزة</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.majorPages}
+                    onChange={e => setForm({ ...form, majorPages: Number(e.target.value) })}
+                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 4. معايير التحضير والإتقان */}
+            <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-2.5">
+              <span className="block text-xs font-bold text-stone-700 dark:text-stone-300">
+                معايير التحضير والإتقان:
               </span>
-              <div className="text-4xl font-extrabold text-[#744251] dark:text-[#E8BDC8] font-mono tracking-tight pt-1">
-                {calculatedScore}
-              </div>
-              <span className="text-[11px] text-stone-400 block pt-0.5">
-                تُحسب تلقائياً وفق معادلة الخصم المعتمدة في نظام المعايير
-              </span>
-            </div>
-
-            {/* حقول الأخطاء الثلاثة (حفظ - تنبيهات - تجويد) */}
-            <div className="grid grid-cols-3 gap-2.5 pt-1 text-center">
-              {/* أخطاء الحفظ */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-rose-700 dark:text-rose-400">
-                  أخطاء حفظ (-{hifzDeduction})
-                </label>
-                <div className="relative">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <label className="flex items-center gap-2 p-2 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 cursor-pointer">
                   <input
-                    type="number"
-                    min="0"
-                    max="20"
-                    value={scoringForm.hifzErrors}
-                    onChange={e => setScoringForm({ ...scoringForm, hifzErrors: Math.max(0, Number(e.target.value)) })}
-                    className="w-full text-center py-2.5 border-2 border-rose-200 dark:border-rose-900/60 bg-white dark:bg-stone-900 rounded-2xl text-base font-bold text-stone-900 dark:text-stone-100 outline-hidden focus:border-rose-500"
+                    type="checkbox"
+                    checked={form.criteriaListen}
+                    onChange={e => setForm({ ...form, criteriaListen: e.target.checked })}
+                    className="accent-[#8E5364]"
                   />
-                </div>
-              </div>
-
-              {/* التنبيهات */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-amber-700 dark:text-amber-400">
-                  تنبيهات (-{alertDeduction})
+                  <span>الاستماع للمقرئ (3 مرات)</span>
                 </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="0"
-                    max="20"
-                    value={scoringForm.alerts}
-                    onChange={e => setScoringForm({ ...scoringForm, alerts: Math.max(0, Number(e.target.value)) })}
-                    className="w-full text-center py-2.5 border-2 border-amber-200 dark:border-amber-900/60 bg-white dark:bg-stone-900 rounded-2xl text-base font-bold text-stone-900 dark:text-stone-100 outline-hidden focus:border-amber-500"
-                  />
-                </div>
-              </div>
 
-              {/* أخطاء التجويد */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-purple-700 dark:text-purple-400">
-                  تجويد (-{tajweedDeduction})
-                </label>
-                <div className="relative">
+                <label className="flex items-center gap-2 p-2 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 cursor-pointer">
                   <input
-                    type="number"
-                    min="0"
-                    max="20"
-                    value={scoringForm.tajweedErrors}
-                    onChange={e => setScoringForm({ ...scoringForm, tajweedErrors: Math.max(0, Number(e.target.value)) })}
-                    className="w-full text-center py-2.5 border-2 border-purple-200 dark:border-purple-900/60 bg-white dark:bg-stone-900 rounded-2xl text-base font-bold text-stone-900 dark:text-stone-100 outline-hidden focus:border-purple-500"
+                    type="checkbox"
+                    checked={form.criteriaRecite}
+                    onChange={e => setForm({ ...form, criteriaRecite: e.target.checked })}
+                    className="accent-[#8E5364]"
                   />
-                </div>
+                  <span>التلاوة نظراً من المصحف (5 مرات)</span>
+                </label>
+
+                <label className="flex items-center gap-2 p-2 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.criteriaRepeat}
+                    onChange={e => setForm({ ...form, criteriaRepeat: e.target.checked })}
+                    className="accent-[#8E5364]"
+                  />
+                  <span>التكرار المتقن للوجه (20 مرة)</span>
+                </label>
+
+                <label className="flex items-center gap-2 p-2 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.hasMedal}
+                    onChange={e => setForm({ ...form, hasMedal: e.target.checked })}
+                    className="accent-amber-500"
+                  />
+                  <span className="text-amber-700 dark:text-amber-400 font-bold">⭐ نيل وسام التميز لليوم</span>
+                </label>
               </div>
             </div>
 
-            {/* المقرر المسمع */}
-            <div className="space-y-1 pt-1">
-              <label className="block text-xs font-bold text-stone-700 dark:text-stone-300">
-                المقرر الذي تم تسميعه:
-              </label>
-              <input
-                type="text"
-                placeholder="مثال: من سورة البقرة آية ١ إلى ٢٥"
-                value={scoringForm.surahFrom}
-                onChange={e => setScoringForm({ ...scoringForm, surahFrom: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl text-xs text-stone-800 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-[#8E5364]"
-              />
-            </div>
+            {/* 5. توقيع المعلمة المعتمدة */}
+            <div className="pt-2 border-t border-stone-100 dark:border-stone-800">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-stone-700 dark:text-stone-300">
+                  توقيع المعلمة المعتمدة:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowSigPad(!showSigPad)}
+                  className="text-[11px] text-[#8E5364] flex items-center gap-1 font-bold cursor-pointer"
+                >
+                  <PenTool className="w-3 h-3" />
+                  {showSigPad ? 'إلغاء التوقيع' : 'توقيع يدوي ✍️'}
+                </button>
+              </div>
 
-            {/* ملاحظات المعلمة */}
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-stone-700 dark:text-stone-300">
-                ملاحظات وتوجيهات للمعلمة (اختياري):
-              </label>
-              <textarea
-                rows={2}
-                placeholder="مثال: إتقان ممتاز مع الانتباه لمراتب الغنن..."
-                value={scoringForm.notes}
-                onChange={e => setScoringForm({ ...scoringForm, notes: e.target.value })}
-                className="w-full p-2.5 bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl text-xs text-stone-800 dark:text-stone-100 outline-hidden resize-none focus:ring-2 focus:ring-[#8E5364]"
-              />
+              {showSigPad && (
+                <div className="flex justify-center my-2">
+                  <SignaturePad
+                    onSave={(dataUrl) => {
+                      setForm({ ...form, signatureUrl: dataUrl });
+                      setShowSigPad(false);
+                    }}
+                    title="توقيع المعلمة"
+                  />
+                </div>
+              )}
+
+              {form.signatureUrl && !showSigPad && (
+                <div className="flex items-center gap-3 p-2 bg-[#FAF7F5] dark:bg-stone-800 rounded-xl">
+                  <img src={form.signatureUrl} alt="التوقيع" className="h-7 bg-white border border-stone-200 rounded-md" />
+                  <span className="text-[10px] text-emerald-600 font-bold">تم توثيق التوقيع ✅</span>
+                </div>
+              )}
             </div>
 
             {/* أزرار الحفظ والإلغاء */}
@@ -373,7 +580,7 @@ export const DailyMemorizationView: React.FC = () => {
                 className="flex-1 py-3 bg-[#8E5364] hover:bg-[#744251] text-white rounded-2xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
               >
                 <Check className="w-4 h-4" />
-                اعتماد وحفظ الدرجة ({calculatedScore})
+                <span>حفظ واعتماد التسميع ({calculatedNewScore}/10)</span>
               </button>
               <button
                 type="button"
