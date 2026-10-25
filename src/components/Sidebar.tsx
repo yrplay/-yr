@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import {
   LayoutDashboard, Layers, Users, Calendar, CheckSquare,
   BookOpenCheck, Sparkles, Trophy, FileText, Sliders,
-  UserCheck, BarChart3, UserCog, Settings, X, Heart, Lock
+  UserCheck, BarChart3, UserCog, Settings, X, Heart, Lock, History
 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 
@@ -29,9 +29,10 @@ interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   onLockSession?: () => void;
+  onOpenAuditLog?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isOpen, onClose, onLockSession }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isOpen, onClose, onLockSession, onOpenAuditLog }) => {
   const { circles, students, settings } = useApp();
   const primaryColor = settings?.primaryColor || '#8E5364';
 
@@ -54,18 +55,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
 
   return (
     <>
-      {/* Mobile Backdrop */}
+      {/* Mobile Backdrop - يظهر فقط عند الفتح ويختفي تماماً برمجياً ولَمْسياً عند الإغلاق */}
       {isOpen && (
         <div
           onClick={onClose}
-          className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs z-40 lg:hidden"
+          className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-40 lg:hidden cursor-pointer touch-auto"
         />
       )}
 
       {/* Sidebar Container */}
       <aside
         className={`fixed lg:sticky top-0 lg:top-20 z-50 lg:z-10 h-screen lg:h-[calc(100vh-5rem)] w-72 bg-[#FCFAF8] border-l border-[#EBE3DC] flex flex-col transition-transform duration-200 ease-in-out ${
-          isOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
+          isOpen
+            ? 'translate-x-0 shadow-2xl lg:shadow-none pointer-events-auto'
+            : 'translate-x-full lg:translate-x-0 pointer-events-none lg:pointer-events-auto'
         }`}
       >
         {/* Mobile Header in Drawer */}
@@ -81,15 +84,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
             <span className="font-bold text-stone-800 font-quran text-base">{settings?.name || 'مقرأة غيث الغيم'}</span>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-200/50"
+            className="p-2 rounded-xl text-stone-500 hover:bg-stone-200/60 active:scale-95 transition"
+            aria-label="إغلاق القائمة"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Navigation Items */}
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1 overscroll-contain">
           <div className="text-[11px] font-bold text-stone-600 px-3 py-1 uppercase tracking-wider mb-1">
             القائمة الإدارية
           </div>
@@ -99,11 +104,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
             return (
               <button
                 key={item.id}
+                type="button"
                 onClick={() => {
                   onSelectView(item.id);
                   onClose();
                 }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all ${
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all active:scale-[0.98] ${
                   isActive
                     ? 'font-bold border shadow-xs'
                     : 'text-stone-700 hover:bg-[#F2ECE6] hover:text-stone-900'
@@ -120,7 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
               >
                 <div className="flex items-center gap-2.5">
                   <Icon
-                    className="w-4 h-4"
+                    className="w-4 h-4 shrink-0"
                     style={{ color: isActive ? primaryColor : undefined }}
                   />
                   <span>{item.label}</span>
@@ -143,10 +149,33 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
         {/* Dedicated PWA Install Banner */}
         <PWAInstallButton variant="sidebar" />
 
+        {/* Direct Audit Trail Action */}
+        {onOpenAuditLog && (
+          <div className="px-3 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                if (onClose) onClose();
+                onOpenAuditLog();
+              }}
+              className="w-full py-2 px-3 rounded-xl bg-[#FAF5F2] hover:bg-[#F2ECE6] text-stone-700 text-xs font-bold transition flex items-center justify-between cursor-pointer border border-[#E2D5CC] shadow-2xs active:scale-98"
+            >
+              <div className="flex items-center gap-2">
+                <History className="w-3.5 h-3.5 text-[#8E5364]" />
+                <span>سجل التعديلات والعمليات</span>
+              </div>
+              <span className="text-[10px] bg-white text-stone-600 px-1.5 py-0.5 rounded-md border border-stone-200 font-normal">
+                سجل الرقابة
+              </span>
+            </button>
+          </div>
+        )}
+
         {/* Lock Session / Logout Action */}
         {onLockSession && (
           <div className="px-3 py-1">
             <button
+              type="button"
               onClick={() => {
                 if (onClose) onClose();
                 onLockSession();
