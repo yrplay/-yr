@@ -506,165 +506,54 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   background: #444454;
 }
 
-/* =========================================================
-   قواعد الطباعة الرسمية للتقارير والشهادات - مقرأة غيث الغيم
-   ========================================================= */
-@media print {
-  /* 1. إخفاء العناصر غير المطلوبة في الطباعة */
-  header,
-  aside,
-  nav,
-  button,
-  .no-print,
-  .action-bar,
-  [aria-label="تنبيه تحديث التطبيق"],
-  footer {
-    display: none !important;
-  }
+/* تحسينات الوضع الليلي الشاملة المريحة للعين */
+.dark .bg-white,
+.dark div[class*="bg-white"],
+.dark input[class*="bg-white"],
+.dark select[class*="bg-white"],
+.dark textarea[class*="bg-white"] {
+  background-color: #1a1a1e !important;
+  color: #f3f4f6 !important;
+  border-color: #2e2e35 !important;
+}
 
-  /* 2. إظهار العناصر المخصصة للطباعة فقط وتفعيل فواصل الصفحات */
-  .print-only {
-    display: block !important;
-  }
-  .page-break {
-    page-break-before: always;
-  }
+.dark .bg-\[\#FAF7F5\],
+.dark .bg-\[\#FAF6F2\],
+.dark .bg-\[\#FCFAF8\],
+.dark .bg-stone-50,
+.dark .bg-stone-100 {
+  background-color: #18181c !important;
+  border-color: #292930 !important;
+  color: #e4e4e7 !important;
+}
 
-  /* 3. ضبط الصفحة وهوامش الطباعة */
-  @page {
-    size: A4 portrait;
-    margin: 12mm 15mm 12mm 15mm;
-  }
+.dark div[class*="bg-emerald-800"],
+.dark div[class*="bg-emerald-900"] {
+  background-color: #12281e !important;
+  border: 1px solid #1e4432 !important;
+}
 
-  body {
-    background-color: #ffffff !important;
-    color: #1c1917 !important;
-    font-size: 11pt !important;
-    line-height: 1.4 !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
+.dark button[class*="bg-[#9E5D4B]"],
+.dark button[class*="bg-[#8C4A38]"],
+.dark button[class*="bg-[#7A3E2E]"] {
+  background-color: #4a2832 !important;
+  color: #f8e7ed !important;
+  border-color: #633342 !important;
+}
 
-  /* 4. تمديد مساحة التقرير وإلغاء قيود العرض */
-  main,
-  .max-w-7xl,
-  .w-full {
-    max-width: 100% !important;
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
-  }
+.dark .text-stone-900,
+.dark .text-stone-800 {
+  color: #f4f4f5 !important;
+}
 
-  /* 5. منع انقسام الجداول والبطاقات والشهادات في منتصف الورقة */
-  table,
-  tr,
-  .print-avoid-break,
-  .rounded-2xl,
-  .rounded-3xl {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
+.dark .text-stone-600,
+.dark .text-stone-500 {
+  color: #a1a1aa !important;
+}
 
-  /* 6. ضمان وضوح وثبات الختم الرسمي وهوية المقرأة */
-  .official-seal,
-  svg {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-
-/* ========================================================
-   تحسينات الوضع الليلي الشاملة (Dark Mode Eye-Comfort Fix)
-   ======================================================== */
-
-.dark {
-  /* ضبط الخلفيات البيضاء الفاقعة داخل البطاقات والحقول */
-  .bg-white,
-  div[class*="bg-white"],
-  input[class*="bg-white"],
-  select[class*="bg-white"],
-  textarea[class*="bg-white"] {
-    background-color: #1A1A1E !important;
-    color: #F3F4F6 !important;
-    border-color: #2E2E35 !important;
-  }
-
-  /* معالجة خانات المقرر والمراجعة الفاقعة */
-  .dark div[class*="bg-white"]:has(span),
-  .dark div[class*="bg-white"]:has(p) {
-    background-color: #1F1F24 !important;
-    border-color: #2F2F38 !important;
-  }
-
-  /* بطاقات الإحصائيات الفاتحة والرمادية الباهتة (مثل حالة Firebase وسجل المعلمات) */
-  .bg-[#FAF7F5],
-  .bg-[#FAF6F2],
-  .bg-[#FCFAF8],
-  .bg-stone-50,
-  .bg-stone-100 {
-    background-color: #18181C !important;
-    border-color: #292930 !important;
-    color: #E4E4E7 !important;
-  }
-
-  /* إزالة التوهج الفاقع من بطاقات النسب والمعدلات الكبرى (97.2%) */
-  .bg-emerald-900\/80,
-  div[class*="bg-emerald-800"],
-  div[class*="bg-emerald-900"] {
-    background-color: #12281E !important;
-    border: 1px solid #1E4432 !important;
-  }
-
-  /* تحسين وتهدئة أزرار الإجراءات والرصد (التسميع، التحديات، الواجبات) */
-  button[class*="bg-[#8E5364]"],
-  button[class*="bg-[#744251]"],
-  button:has(svg)[class*="text-stone-700"] {
-    border-color: #3F2C34 !important;
-  }
-
-  /* بطاقات الأزرار الطينية المزعجة في الجداول وتحويلها لعنابي مريح وواضح */
-  button[class*="bg-[#9E5D4B]"],
-  button[class*="bg-[#8C4A38]"],
-  button[class*="bg-[#7A3E2E]"] {
-    background-color: #4A2832 !important;
-    color: #F8E7ED !important;
-    border-color: #633342 !important;
-  }
-
-  /* شريط التوقيع السفلي (yr_alhosine) لمنع توهجه الأبيض */
-  div:has(> a[href*="yr_alhosine"]),
-  span:has(> a[href*="yr_alhosine"]),
-  .dark a[class*="bg-white"],
-  .dark div[class*="bg-white"]:has(svg) {
-    background-color: #1C1C21 !important;
-    border-color: #2E2E36 !important;
-    color: #D4D4D8 !important;
-  }
-
-  /* ضبط نصوص العناوين والتنبيهات لتكون واضحة ومريحة */
-  .text-stone-900,
-  .text-stone-800 {
-    color: #F4F4F5 !important;
-  }
-
-  .text-stone-600,
-  .text-stone-500 {
-    color: #A1A1AA !important;
-  }
-
-  /* حدود الجداول والبطاقات لتكون متناسقة وغير فاقعة */
-  .border-[#E8DFD8],
-  .border-[#E2D5CC],
-  .border-stone-200,
-  .border-stone-100 {
-    border-color: #27272A !important;
-  }
-
-  /* بطاقة خيارات الأوزان المئوية في شاشة الدرجات */
-  div[class*="border-emerald"]:has(input[type="radio"]:checked),
-  label:has(input[type="radio"]:checked) {
-    background-color: #16241D !important;
-    border-color: #234E37 !important;
-  }
+.dark .border-\[\#E8DFD8\],
+.dark .border-\[\#E2D5CC\],
+.dark .border-stone-200,
+.dark .border-stone-100 {
+  border-color: #27272a !important;
 }
