@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   ArrowRight, Settings, DollarSign, Users, BookOpen, Layers, 
   CheckCircle2, Clock, AlertCircle, Edit3, Plus, 
-  CreditCard, FileText, Check, PenTool
+  CreditCard, FileText, Check, PenTool, RefreshCw
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Track, TrackSystemRules, StudentSubscription } from '../types';
@@ -17,10 +17,10 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
   const { 
     tracks, circles, students, users, currentUser,
     studentSubscriptions, saveStudentSubscription,
-    updateTrack, updateTrackSystemRules
+    updateTrack, updateTrackSystemRules, settings, showToast
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'circles' | 'finances'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'circles' | 'finances'>('finances');
   const [showEditModal, setShowEditModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedSub, setSelectedSub] = useState<Partial<StudentSubscription> | null>(null);
@@ -29,19 +29,30 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
   const track = tracks.find(t => t.id === trackId);
   const isLeader = currentUser?.role === 'leader';
 
-  // الحلقات والطالبات التابعة لهذا المسار
-  const trackCircles = useMemo(() => circles.filter(c => c.trackId === trackId && !c.isArchived), [circles, trackId]);
-  const trackStudents = useMemo(() => students.filter(s => s.trackId === trackId && s.status === 'active'), [students, trackId]);
+  // الحلقات التابعة للمسار
+  const trackCircles = useMemo(() => {
+    return circles.filter(c => c.trackId === trackId && !c.isArchived);
+  }, [circles, trackId]);
+
+  const circleIds = useMemo(() => new Set(trackCircles.map(c => c.id)), [trackCircles]);
+
+  // طالبات المسار: المربوطات بالمسار مباشرة أو عبر حلقات المسار
+  const trackStudents = useMemo(() => {
+    return students.filter(s => 
+      s.status === 'active' && (s.trackId === trackId || circleIds.has(s.circleId))
+    );
+  }, [students, trackId, circleIds]);
 
   // اشتراكات المسار
   const trackSubs = useMemo(() => {
-    return studentSubscriptions.filter(s => s.trackId === trackId);
+    return (studentSubscriptions || []).filter(s => s.trackId === trackId);
   }, [studentSubscriptions, trackId]);
 
-  // الحسابات المالية التلقائية للمسار
-  const feeAmount = track?.subscriptionFee?.amount || 0;
+  const feeAmount = track?.subscriptionFee?.amount ?? 150;
   const currency = track?.subscriptionFee?.currency || 'ر.س';
+  const currentCycle = settings.currentHijriMonth || 'جمادى الأولى';
 
+  // الإحصاءات المالية الحسابية
   const financialStats = useMemo(() => {
     const totalExpected = trackStudents.length * feeAmount;
     let totalCollected = 0;
@@ -51,18 +62,20 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
 
     trackStudents.forEach(st => {
       const sub = trackSubs.find(s => s.studentId === st.id);
-      if (sub) {
-        totalCollected += (sub.paidAmount || 0);
-        if (sub.status === 'paid') paidCount++;
-        else if (sub.status === 'exempt') exemptCount++;
-        else pendingCount++;
+      const paid = sub?.paidAmount ?? 0;
+      totalCollected += paid;
+
+      if (sub?.status === 'paid' || paid >= feeAmount) {
+        paidCount++;
+      } else if (sub?.status === 'exempt') {
+        exemptCount++;
       } else {
         pendingCount++;
       }
     });
 
     const totalRemaining = Math.max(0, totalExpected - totalCollected);
-    const collectionRate = totalExpected > 0 ? Math.round((totalCollected / totalExpected) * 100) : 100;
+    const collectionRate = totalExpected > 0 ? Math.round((totalCollected / totalExpected) * 100) : 0;
 
     return {
       totalExpected,
@@ -75,11 +88,10 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
     };
   }, [trackStudents, trackSubs, feeAmount]);
 
-  // نموذج التعديل الإداري
   const [editFormData, setEditFormData] = useState({
     name: track?.name || '',
     description: track?.description || '',
-    feeAmount: track?.subscriptionFee?.amount || 150,
+    feeAmount: track?.subscriptionFee?.amount ?? 150,
     feePeriod: track?.subscriptionFee?.period || 'monthly',
     feeNotes: track?.subscriptionFee?.notes || '',
     earlyPrep: track?.systemRules?.earlyPreparation ?? true,
@@ -104,6 +116,27 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
       </div>
     );
   }
+
+  // توليد فواتير الشهر الحالي لجميع الطالبات دفعة واحدة
+  const handleGenerateCycleInvoices = async () => {
+    let count = 0;
+    for (const st of trackStudents) {
+      const existing = trackSubs.find(s => s.studentId === st.id && s.cycleMonth === currentCycle);
+      if (!existing) {
+        await saveStudentSubscription({
+          studentId: st.id,
+          trackId: track.id,
+          cycleMonth: currentCycle,
+          requiredAmount: feeAmount,
+          paidAmount: 0,
+          status: 'pending',
+          paymentMethod: 'bank_transfer'
+        });
+        count++;
+      }
+    }
+    showToast(`تم تحديث وتوليد مطالبات الشهر لـ ${count || trackStudents.length} طالبة بنجاح 💳`, 'success');
+  };
 
   const handleSaveTrackRules = async () => {
     await updateTrack(track.id, {
@@ -141,7 +174,7 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
     setSelectedSub(existing || {
       studentId,
       trackId: track.id,
-      cycleMonth: 'الشهر الحالي',
+      cycleMonth: currentCycle,
       requiredAmount: feeAmount,
       paidAmount: feeAmount,
       status: 'paid',
@@ -159,7 +192,7 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
 
   return (
     <div className="space-y-6 text-right pb-12" dir="rtl">
-      {/* رأس الصفحة وزر العودة */}
+      {/* رأس الصفحة */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-stone-900 p-6 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 shadow-xs">
         <div className="flex items-center gap-4">
           <button 
@@ -183,15 +216,17 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
           </div>
         </div>
 
-        {isLeader && (
-          <button
-            onClick={() => setShowEditModal(true)}
-            className="px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-xs"
-          >
-            <Settings className="w-4 h-4" />
-            ضبط معايير ونظام المسار
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {isLeader && (
+            <button
+              onClick={() => setShowEditModal(true)}
+              className="px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-xs"
+            >
+              <Settings className="w-4 h-4" />
+              ضبط معايير ورسوم المسار
+            </button>
+          )}
+        </div>
       </div>
 
       {/* المؤشرات السريعة للمسار */}
@@ -207,7 +242,7 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
         <div className="bg-white dark:bg-stone-900 p-4 rounded-2xl border border-[#E2D5CC] dark:border-stone-800">
           <span className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5 font-bold">
             <BookOpen className="w-3.5 h-3.5 text-emerald-600" />
-            الحلقات النشطة
+            الحلقات التابعة
           </span>
           <p className="text-xl font-bold text-stone-800 dark:text-stone-100 mt-1">{trackCircles.length}</p>
         </div>
@@ -234,6 +269,18 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
       {/* شريط التبويبات */}
       <div className="flex border-b border-[#E2D5CC] dark:border-stone-800 gap-6 text-sm font-bold">
         <button
+          onClick={() => setActiveTab('finances')}
+          className={`pb-3 transition flex items-center gap-2 ${
+            activeTab === 'finances' 
+              ? 'border-b-2 border-[#8E5364] text-[#8E5364] dark:text-[#E8BDC8]' 
+              : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+          }`}
+        >
+          <CreditCard className="w-4 h-4" />
+          المالية والاشتراكات ({trackStudents.length})
+        </button>
+
+        <button
           onClick={() => setActiveTab('overview')}
           className={`pb-3 transition flex items-center gap-2 ${
             activeTab === 'overview' 
@@ -256,24 +303,133 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
           <BookOpen className="w-4 h-4" />
           الحلقات التابعة ({trackCircles.length})
         </button>
-
-        <button
-          onClick={() => setActiveTab('finances')}
-          className={`pb-3 transition flex items-center gap-2 ${
-            activeTab === 'finances' 
-              ? 'border-b-2 border-[#8E5364] text-[#8E5364] dark:text-[#E8BDC8]' 
-              : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
-          }`}
-        >
-          <CreditCard className="w-4 h-4" />
-          المالية والاشتراكات
-        </button>
       </div>
 
-      {/* تبويب 1: النظام ودليل مشكاة الغيم */}
+      {/* تبويب المالية والاشتراكات */}
+      {activeTab === 'finances' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white dark:bg-stone-900 p-5 rounded-3xl border border-[#E2D5CC] dark:border-stone-800">
+              <span className="text-xs text-stone-500 font-bold block mb-1">إجمالي الرسوم المتوقعة ({currentCycle})</span>
+              <p className="text-2xl font-bold text-stone-800 dark:text-stone-100">
+                {financialStats.totalExpected} <span className="text-xs font-normal text-stone-500">{currency}</span>
+              </p>
+            </div>
+
+            <div className="bg-white dark:bg-stone-900 p-5 rounded-3xl border border-[#E2D5CC] dark:border-stone-800">
+              <span className="text-xs text-emerald-600 font-bold block mb-1">المبالغ المحصلة فعلياً</span>
+              <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">
+                {financialStats.totalCollected} <span className="text-xs font-normal text-stone-500">{currency}</span>
+              </p>
+            </div>
+
+            <div className="bg-white dark:bg-stone-900 p-5 rounded-3xl border border-[#E2D5CC] dark:border-stone-800">
+              <span className="text-xs text-rose-600 font-bold block mb-1">المتبقي للتحصيل</span>
+              <p className="text-2xl font-bold text-rose-700 dark:text-rose-400">
+                {financialStats.totalRemaining} <span className="text-xs font-normal text-stone-500">{currency}</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-stone-900 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 overflow-hidden shadow-xs">
+            <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-sm text-stone-800 dark:text-stone-100 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[#8E5364]" />
+                  كشف اشتراكات وسداد طالبات المسار لشهر ({currentCycle})
+                </h3>
+                <span className="text-xs text-stone-500 mt-1 block">
+                  المسددات: {financialStats.paidCount} • المتبقيات: {financialStats.pendingCount} • المعفيات: {financialStats.exemptCount}
+                </span>
+              </div>
+
+              <button
+                onClick={handleGenerateCycleInvoices}
+                className="px-3.5 py-1.5 bg-[#FAF7F5] dark:bg-stone-800 hover:bg-[#8E5364] hover:text-white dark:hover:bg-[#8E5364] text-[#8E5364] dark:text-[#E8BDC8] border border-[#E2D5CC] dark:border-stone-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 self-start sm:self-auto"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                توليد/تحديث مطالبات الشهر
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-right">
+                <thead className="bg-[#FAF7F5] dark:bg-stone-800 text-stone-600 dark:text-stone-300 font-bold">
+                  <tr>
+                    <th className="p-3.5">#</th>
+                    <th className="p-3.5">الطالبة</th>
+                    <th className="p-3.5">الحلقة</th>
+                    <th className="p-3.5">المبلغ المطلوب</th>
+                    <th className="p-3.5">المسدد فعلياً</th>
+                    <th className="p-3.5">حالة السداد</th>
+                    <th className="p-3.5">التوقيع</th>
+                    <th className="p-3.5 text-center">الإجراء</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100 dark:divide-stone-800 text-stone-700 dark:text-stone-200">
+                  {trackStudents.map((st, idx) => {
+                    const circle = circles.find(c => c.id === st.circleId);
+                    const sub = trackSubs.find(s => s.studentId === st.id);
+                    const isPaid = sub?.status === 'paid' || (sub?.paidAmount ?? 0) >= feeAmount;
+                    const isExempt = sub?.status === 'exempt';
+                    const isPartial = (sub?.paidAmount ?? 0) > 0 && !isPaid;
+
+                    return (
+                      <tr key={st.id} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition">
+                        <td className="p-3.5 text-stone-400 font-mono">{idx + 1}</td>
+                        <td className="p-3.5">
+                          <strong className="block text-stone-900 dark:text-stone-100">{st.name}</strong>
+                          <span className="text-[10px] text-stone-400 font-mono">{st.code}</span>
+                        </td>
+                        <td className="p-3.5 text-stone-500">{circle?.name || 'غير محدد'}</td>
+                        <td className="p-3.5 font-mono">{sub?.requiredAmount ?? feeAmount} {currency}</td>
+                        <td className="p-3.5 font-mono font-bold text-emerald-600">{sub?.paidAmount ?? 0} {currency}</td>
+                        <td className="p-3.5">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                            isPaid ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
+                            isExempt ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300' :
+                            isPartial ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300' :
+                            'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+                          }`}>
+                            {isPaid ? 'مدفوع بالكامل' : isExempt ? 'معفاة / منحة' : isPartial ? 'سداد جزئي' : 'معلق / لم يدفع'}
+                          </span>
+                        </td>
+                        <td className="p-3.5">
+                          {sub?.signatureUrl ? (
+                            <img src={sub.signatureUrl} alt="توقيع" className="h-6 w-auto border border-stone-200 rounded-sm bg-white" />
+                          ) : (
+                            <span className="text-stone-400 text-[10px]">بدون توقيع</span>
+                          )}
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <button
+                            onClick={() => handleOpenPayment(st.id)}
+                            className="px-3 py-1 bg-[#FAF7F5] dark:bg-stone-800 hover:bg-[#8E5364] hover:text-white dark:hover:bg-[#8E5364] text-[#8E5364] dark:text-[#E8BDC8] rounded-xl text-[11px] font-bold transition flex items-center gap-1 mx-auto"
+                          >
+                            <CreditCard className="w-3 h-3" />
+                            سند السداد
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {trackStudents.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="p-8 text-center text-stone-400 text-xs">
+                        لا توجد طالبات مقيدات في هذا المسار حالياً. يمكنك توزيع الطالبات على هذا المسار من قسم الطالبات.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* تبويب النظام ودليل الإتقان */}
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* بطاقة معايير دليل الإتقان */}
           <div className="bg-white dark:bg-stone-900 p-6 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 space-y-4">
             <div className="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
               <h2 className="text-sm font-bold text-stone-800 dark:text-stone-100 flex items-center gap-2">
@@ -323,7 +479,6 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
             </div>
           </div>
 
-          {/* بطاقة ضوابط وآلية العمل */}
           <div className="bg-white dark:bg-stone-900 p-6 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 space-y-4">
             <div className="border-b border-stone-100 dark:border-stone-800 pb-3">
               <h2 className="text-sm font-bold text-stone-800 dark:text-stone-100 flex items-center gap-2">
@@ -364,7 +519,7 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
         </div>
       )}
 
-      {/* تبويب 2: الحلقات التابعة للمسار */}
+      {/* تبويب الحلقات التابعة */}
       {activeTab === 'circles' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {trackCircles.map(c => {
@@ -400,114 +555,7 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
         </div>
       )}
 
-      {/* تبويب 3: المالية والاشتراكات */}
-      {activeTab === 'finances' && (
-        <div className="space-y-6">
-          {/* كروت الملخص المالي */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white dark:bg-stone-900 p-5 rounded-3xl border border-[#E2D5CC] dark:border-stone-800">
-              <span className="text-xs text-stone-500 font-bold block mb-1">إجمالي المستهدف (المفترض)</span>
-              <p className="text-2xl font-bold text-stone-800 dark:text-stone-100">
-                {financialStats.totalExpected} <span className="text-xs font-normal text-stone-500">{currency}</span>
-              </p>
-            </div>
-
-            <div className="bg-white dark:bg-stone-900 p-5 rounded-3xl border border-[#E2D5CC] dark:border-stone-800">
-              <span className="text-xs text-emerald-600 font-bold block mb-1">المبالغ المحصلة فعلياً</span>
-              <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">
-                {financialStats.totalCollected} <span className="text-xs font-normal text-stone-500">{currency}</span>
-              </p>
-            </div>
-
-            <div className="bg-white dark:bg-stone-900 p-5 rounded-3xl border border-[#E2D5CC] dark:border-stone-800">
-              <span className="text-xs text-rose-600 font-bold block mb-1">المبالغ المتبقية / المعلقة</span>
-              <p className="text-2xl font-bold text-rose-700 dark:text-rose-400">
-                {financialStats.totalRemaining} <span className="text-xs font-normal text-stone-500">{currency}</span>
-              </p>
-            </div>
-          </div>
-
-          {/* جدول اشتراكات الطالبات */}
-          <div className="bg-white dark:bg-stone-900 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 overflow-hidden shadow-xs">
-            <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
-              <h3 className="font-bold text-sm text-stone-800 dark:text-stone-100 flex items-center gap-2">
-                <FileText className="w-4 h-4 text-[#8E5364]" />
-                سجل اشتراكات وسداد طالبات المسار
-              </h3>
-              <span className="text-xs text-stone-500">
-                المسددات: {financialStats.paidCount} من {trackStudents.length}
-              </span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-right">
-                <thead className="bg-[#FAF7F5] dark:bg-stone-800 text-stone-600 dark:text-stone-300 font-bold">
-                  <tr>
-                    <th className="p-3.5">الطالبة</th>
-                    <th className="p-3.5">الحلقة</th>
-                    <th className="p-3.5">المبلغ المطلوب</th>
-                    <th className="p-3.5">المدفوع</th>
-                    <th className="p-3.5">الحالة</th>
-                    <th className="p-3.5">التوقيع</th>
-                    <th className="p-3.5 text-center">إجراء السداد</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100 dark:divide-stone-800 text-stone-700 dark:text-stone-200">
-                  {trackStudents.map(st => {
-                    const circle = circles.find(c => c.id === st.circleId);
-                    const sub = trackSubs.find(s => s.studentId === st.id);
-                    const isPaid = sub?.status === 'paid';
-                    const isExempt = sub?.status === 'exempt';
-
-                    return (
-                      <tr key={st.id} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition">
-                        <td className="p-3.5 font-bold">{st.name}</td>
-                        <td className="p-3.5 text-stone-500">{circle?.name || 'غير محدد'}</td>
-                        <td className="p-3.5 font-mono">{sub?.requiredAmount ?? feeAmount} {currency}</td>
-                        <td className="p-3.5 font-mono font-bold text-emerald-600">{sub?.paidAmount ?? 0} {currency}</td>
-                        <td className="p-3.5">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            isPaid ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
-                            isExempt ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300' :
-                            'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
-                          }`}>
-                            {isPaid ? 'مدفوع بالكامل' : isExempt ? 'معفاة / منحة' : 'معلق / جزئي'}
-                          </span>
-                        </td>
-                        <td className="p-3.5">
-                          {sub?.signatureUrl ? (
-                            <img src={sub.signatureUrl} alt="توقيع" className="h-6 w-auto border border-stone-200 rounded-sm bg-white" />
-                          ) : (
-                            <span className="text-stone-400 text-[10px]">بدون توقيع</span>
-                          )}
-                        </td>
-                        <td className="p-3.5 text-center">
-                          <button
-                            onClick={() => handleOpenPayment(st.id)}
-                            className="px-3 py-1 bg-[#FAF7F5] dark:bg-stone-800 hover:bg-[#8E5364] hover:text-white dark:hover:bg-[#8E5364] text-[#8E5364] dark:text-[#E8BDC8] rounded-xl text-[11px] font-bold transition flex items-center gap-1 mx-auto"
-                          >
-                            <CreditCard className="w-3 h-3" />
-                            سند السداد
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {trackStudents.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="p-8 text-center text-stone-400 text-xs">
-                        لا توجد طالبات مقيدات في هذا المسار حالياً.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* نافذة ضبط وتعديل معايير ونظام المسار */}
+      {/* نافذة ضبط معايير ورسوم المسار */}
       {showEditModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white dark:bg-stone-900 border border-[#E2D5CC] dark:border-stone-800 rounded-3xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-6 space-y-5 shadow-2xl text-right" dir="rtl">
@@ -739,7 +787,6 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
                 />
               </div>
 
-              {/* قسم التوقيع اليدوي */}
               <div className="pt-2 border-t border-stone-100 dark:border-stone-800">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-bold text-stone-700 dark:text-stone-300">توقيع الاعتماد اليدوي</span>
