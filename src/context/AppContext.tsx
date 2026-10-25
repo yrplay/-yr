@@ -179,7 +179,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [studentChallengeSubmissions, setStudentChallengeSubmissions] = useState<StudentChallengeSubmission[]>([]);
   const [monthlyExams, setMonthlyExams] = useState<MonthlyExam[]>([]);
   const [studentExamResults, setStudentExamResults] = useState<StudentExamResult[]>([]);
-  const [gradingConfigs, setGradingConfigs] = useState<TrackGradingConfig[]>([]);
+  const [gradingConfigs, setGradingConfigs] = useState<TrackGradingConfig[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('ghaith_grading_configs');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return (initialData.gradingConfigs as TrackGradingConfig[]) || [];
+  });
   const [settings, setSettings] = useState<InstitutionSettings>({
     name: "غيث الغيم",
     leaderName: "ريفة المنصوري",
@@ -1412,6 +1423,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     masterStateRef.current.gradingConfigs = next;
     setGradingConfigs(next);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('ghaith_grading_configs', JSON.stringify(next));
+      } catch {}
+    }
     persistState({ gradingConfigs: next });
     showToast('تم حفظ وتحديث أوزان ومعايير نظام الدرجات بنجاح ⚖️');
 

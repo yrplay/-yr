@@ -60,7 +60,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ variant = 'h
       )}
 
       {variant === 'sidebar' && (
-        <div className="p-3 mx-3 my-2 bg-gradient-to-br from-[#FAF2F4] to-[#F2E8EB] rounded-2xl border border-[#E8D5D8] space-y-2">
+        <div className="p-3 mx-3 my-2 bg-[#FAF2F4] rounded-2xl border border-[#E8D5D8] space-y-2">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-white border border-[#E0D0D4] flex items-center justify-center text-sm shadow-xs overflow-hidden">
               {settings.logoUrl ? (

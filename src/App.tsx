@@ -20,12 +20,14 @@ import { StaffLoginGate } from './components/StaffLoginGate';
 import { Footer } from './components/Footer';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 import { UpdateNotification } from './components/UpdateNotification';
+import { AuditLogModal } from './components/AuditLogModal';
 
 const AppContent: React.FC = () => {
   const { loading, error, toast, triggerQuickModal, settings } = useApp();
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+  const [auditModalOpen, setAuditModalOpen] = useState(false);
   
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
@@ -161,6 +163,7 @@ const AppContent: React.FC = () => {
         onNavigateToStudent={handleSelectStudentForPortfolio}
         onLockSession={handleLockSession}
         onNavigateToSettings={() => setCurrentView('settings')}
+        onOpenAuditLog={() => setAuditModalOpen(true)}
       />
 
       {/* Main Layout Container */}
@@ -173,6 +176,7 @@ const AppContent: React.FC = () => {
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           onLockSession={handleLockSession}
+          onOpenAuditLog={() => setAuditModalOpen(true)}
         />
 
         {/* View Content Area */}
@@ -272,6 +276,12 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Audit Log Modal (سجل التعديلات الإدارية) */}
+      <AuditLogModal
+        isOpen={auditModalOpen}
+        onClose={() => setAuditModalOpen(false)}
+      />
 
     </div>
   );

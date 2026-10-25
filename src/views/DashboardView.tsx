@@ -395,10 +395,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                   <div className="flex items-center gap-2">
                     <span
-                      className="text-xs font-bold px-2.5 py-1 rounded-xl text-white shadow-2xs font-mono"
+                      className="text-xs font-bold px-3 py-1 rounded-xl text-white shadow-2xs font-mono border border-white/20 select-none inline-flex items-center gap-1"
                       style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
                     >
-                      {score?.finalPercentage}% ({score?.gradeLabel})
+                      <span>{score?.finalPercentage}%</span>
+                      <span className="opacity-80 text-[10px]">({score?.gradeLabel})</span>
                     </span>
                   </div>
                 </div>

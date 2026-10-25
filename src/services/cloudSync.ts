@@ -98,6 +98,8 @@ export const pushStateToCloud = async (statePayload: any): Promise<void> => {
         studentExamResults: mergeArrayByKey(remoteData.studentExamResults, statePayload.studentExamResults, 'id'),
         studentAtqiniSubmissions: mergeArrayByKey(remoteData.studentAtqiniSubmissions, statePayload.studentAtqiniSubmissions, 'id'),
         studentChallengeSubmissions: mergeArrayByKey(remoteData.studentChallengeSubmissions, statePayload.studentChallengeSubmissions, 'id'),
+        gradingConfigs: mergeArrayByKey(remoteData.gradingConfigs, statePayload.gradingConfigs, 'trackId'),
+        settings: { ...(remoteData.settings || {}), ...(statePayload.settings || {}) },
         lastSyncedAt: new Date().toISOString()
       };
     }

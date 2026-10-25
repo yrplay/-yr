@@ -19,14 +19,18 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
 
   const filteredLogs = useMemo(() => {
     return (auditLogs || []).filter(log => {
+      const targetId = log.entityId || (log as any).targetId || '';
+      const action = log.actionType || (log as any).action || '';
+      const target = log.entity || (log as any).targetType || '';
+
       const matchSearch =
         !searchQuery.trim() ||
         log.details.toLowerCase().includes(searchQuery.toLowerCase()) ||
         log.userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (log.targetId && log.targetId.toLowerCase().includes(searchQuery.toLowerCase()));
+        (targetId && targetId.toLowerCase().includes(searchQuery.toLowerCase()));
 
-      const matchAction = selectedAction === 'all' || log.action === selectedAction;
-      const matchTarget = selectedTarget === 'all' || log.targetType === selectedTarget;
+      const matchAction = selectedAction === 'all' || action === selectedAction;
+      const matchTarget = selectedTarget === 'all' || target === selectedTarget;
 
       return matchSearch && matchAction && matchTarget;
     });
@@ -202,7 +206,9 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
                 </thead>
                 <tbody className="divide-y divide-stone-100">
                   {filteredLogs.map(log => {
-                    const badge = getActionBadge(log.action);
+                    const action = log.actionType || (log as any).action || '';
+                    const entity = log.entity || (log as any).targetType || '';
+                    const badge = getActionBadge(action);
                     const formattedDate = new Date(log.timestamp).toLocaleDateString('ar-SA', {
                       year: 'numeric',
                       month: 'short',
@@ -240,7 +246,7 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
                         </td>
 
                         <td className="p-3 whitespace-nowrap text-stone-600 font-medium">
-                          {getTargetLabel(log.targetType)}
+                          {getTargetLabel(entity)}
                         </td>
 
                         <td className="p-3 text-stone-800 font-medium leading-relaxed">

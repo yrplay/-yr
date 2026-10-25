@@ -11,17 +11,23 @@ export const GradingSystemView: React.FC = () => {
     gradingConfigs, tracks, updateGradingConfig, currentUser, showToast
   } = useApp();
 
-  const [selectedTrackId, setSelectedTrackId] = useState<string>(tracks[0]?.id || 't-1');
-  const currentConfig = gradingConfigs.find(g => g.trackId === selectedTrackId) || gradingConfigs[0];
-
-  const [isDirty, setIsDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  // Local editable state for config
-  const [configState, setConfigState] = useState<TrackGradingConfig>(() => {
-    return currentConfig ? JSON.parse(JSON.stringify(currentConfig)) : {
-      id: 'gc-1',
-      trackId: selectedTrackId,
+  const getTrackConfig = (trackId: string): TrackGradingConfig => {
+    const found = gradingConfigs.find(g => g.trackId === trackId);
+    if (found) {
+      return JSON.parse(JSON.stringify(found));
+    }
+    const template = gradingConfigs[0];
+    if (template) {
+      const cloned = JSON.parse(JSON.stringify(template));
+      return {
+        ...cloned,
+        id: `gc-${trackId}`,
+        trackId
+      };
+    }
+    return {
+      id: `gc-${trackId}`,
+      trackId,
       calculationMethod: 'weighted_percentage',
       items: [],
       recitationFormula: {
@@ -43,24 +49,35 @@ export const GradingSystemView: React.FC = () => {
       },
       gradeScale: []
     };
-  });
+  };
 
-  const lastTrackIdRef = React.useRef(selectedTrackId);
+  const [selectedTrackId, setSelectedTrackId] = useState<string>(tracks[0]?.id || 't-1');
+  const [configState, setConfigState] = useState<TrackGradingConfig>(() => getTrackConfig(tracks[0]?.id || 't-1'));
+  const [isDirty, setIsDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const currentTrackIdRef = React.useRef(selectedTrackId);
 
-  // Sync state when track changes or when clean (not dirty)
+  // Sync state cleanly without clobbering in-progress user changes
   React.useEffect(() => {
-    const trackChanged = lastTrackIdRef.current !== selectedTrackId;
-    lastTrackIdRef.current = selectedTrackId;
-
-    if (trackChanged) {
+    if (currentTrackIdRef.current !== selectedTrackId) {
+      currentTrackIdRef.current = selectedTrackId;
       setIsDirty(false);
-      if (currentConfig) {
-        setConfigState(JSON.parse(JSON.stringify(currentConfig)));
+      setConfigState(getTrackConfig(selectedTrackId));
+    } else if (!isDirty && (!configState.items || configState.items.length === 0)) {
+      const fresh = getTrackConfig(selectedTrackId);
+      if (fresh.items && fresh.items.length > 0) {
+        setConfigState(fresh);
       }
-    } else if (!isDirty && currentConfig) {
-      setConfigState(JSON.parse(JSON.stringify(currentConfig)));
     }
-  }, [currentConfig, selectedTrackId, isDirty]);
+  }, [selectedTrackId, gradingConfigs]);
+
+  const handleSelectTrack = (trackId: string) => {
+    if (trackId === selectedTrackId) return;
+    setSelectedTrackId(trackId);
+    currentTrackIdRef.current = trackId;
+    setIsDirty(false);
+    setConfigState(getTrackConfig(trackId));
+  };
 
   // Modal for adding a custom grading item
   const [customItemModalOpen, setCustomItemModalOpen] = useState(false);
@@ -77,7 +94,13 @@ export const GradingSystemView: React.FC = () => {
   const handleSaveConfig = async () => {
     setSaving(true);
     try {
-      await updateGradingConfig(selectedTrackId, configState);
+      const payloadToSave: TrackGradingConfig = {
+        ...configState,
+        trackId: selectedTrackId,
+        id: configState.id || `gc-${selectedTrackId}`
+      };
+      await updateGradingConfig(selectedTrackId, payloadToSave);
+      setConfigState(payloadToSave);
       setIsDirty(false);
     } catch (e: any) {
       showToast('تعذر حفظ المعايير: ' + (e?.message || ''), 'error');
@@ -87,11 +110,10 @@ export const GradingSystemView: React.FC = () => {
   };
 
   const handleResetConfig = () => {
-    if (currentConfig) {
-      setConfigState(JSON.parse(JSON.stringify(currentConfig)));
-      setIsDirty(false);
-      showToast('تمت استعادة معايير المسار الأصلية ↺', 'info');
-    }
+    const original = getTrackConfig(selectedTrackId);
+    setConfigState(original);
+    setIsDirty(false);
+    showToast('تمت استعادة معايير المسار الأصلية ↺', 'info');
   };
 
   const handleUpdateItem = (itemId: string, field: keyof GradingItemConfig, value: any) => {
@@ -264,9 +286,7 @@ export const GradingSystemView: React.FC = () => {
           <button
             key={t.id}
             type="button"
-            onClick={() => {
-              setSelectedTrackId(t.id);
-            }}
+            onClick={() => handleSelectTrack(t.id)}
             className={`px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition flex items-center gap-2 shrink-0 cursor-pointer ${
               selectedTrackId === t.id
                 ? 'bg-[#8E5364] text-white shadow-xs'
