@@ -80,11 +80,9 @@ interface AppContextType {
   loading: boolean;
   error: string | null;
   
-  // Actions
   refreshData: () => Promise<void>;
   switchUser: (userId: string) => Promise<boolean>;
   
-  // Tracks & Circles
   selectedTrackId: string | null;
   setSelectedTrackId: (id: string | null) => void;
   createTrack: (track: Partial<Track>) => Promise<Track>;
@@ -96,73 +94,60 @@ interface AppContextType {
   archiveCircle: (id: string) => Promise<void>;
   restoreCircle: (id: string) => Promise<void>;
   
-  // Students
   createStudent: (student: Partial<Student>) => Promise<Student>;
   updateStudent: (id: string, student: Partial<Student>) => Promise<void>;
   archiveStudent: (id: string) => Promise<void>;
   assignPartner: (studentId: string, partnerId: string | null) => Promise<void>;
   
-  // Plans
   createMonthlyPlan: (plan: Partial<MonthlyPlan>) => Promise<MonthlyPlan>;
   updateMonthlyPlan: (id: string, plan: Partial<MonthlyPlan>) => Promise<void>;
   duplicateMonthlyPlan: (id: string) => Promise<void>;
   saveStudentPlan: (plan: Partial<StudentMonthlyPlan>) => Promise<void>;
   
-  // Daily & Attendance
   saveDailyRecord: (record: Partial<DailyRecord>) => Promise<void>;
   saveAttendance: (record: Partial<AttendanceRecord>) => Promise<void>;
   saveBulkAttendance: (records: Partial<AttendanceRecord>[]) => Promise<void>;
   
-  // Atqini
   createAtqiniAssignment: (assignment: Partial<AtqiniAssignment>) => Promise<AtqiniAssignment>;
   updateAtqiniAssignment: (id: string, assignment: Partial<AtqiniAssignment>) => Promise<void>;
   deleteAtqiniAssignment: (id: string) => Promise<void>;
   saveAtqiniSubmission: (sub: Partial<StudentAtqiniSubmission>) => Promise<void>;
   
-  // Challenges
   createChallenge: (challenge: Partial<Challenge>) => Promise<Challenge>;
   updateChallenge: (id: string, challenge: Partial<Challenge>) => Promise<void>;
   deleteChallenge: (id: string) => Promise<void>;
   saveChallengeSubmission: (sub: Partial<StudentChallengeSubmission>) => Promise<void>;
   
-  // Exams
   createMonthlyExam: (exam: Partial<MonthlyExam>) => Promise<MonthlyExam>;
   updateMonthlyExam: (id: string, exam: Partial<MonthlyExam>) => Promise<void>;
   deleteMonthlyExam: (id: string) => Promise<void>;
   saveExamResult: (result: Partial<StudentExamResult>) => Promise<void>;
   
-  // Grading & Settings
   updateGradingConfig: (trackId: string, config: Partial<TrackGradingConfig>) => Promise<void>;
   updateSettings: (settings: Partial<InstitutionSettings>) => Promise<void>;
   downloadBackup: () => void;
   restoreBackup: (backupData: any) => Promise<boolean>;
   resetSampleData: () => Promise<void>;
 
-  // Users & Staff
   createUser: (user: Partial<User>) => Promise<User>;
   updateUser: (id: string, user: Partial<User>) => Promise<void>;
   changeUserPasscode: (userId: string, newPasscode: string) => Promise<boolean>;
   
-  // Computed helpers
   getStudentScoreSummary: (studentId: string) => StudentScoreSummary;
   allStudentScores: Record<string, StudentScoreSummary>;
   
-  // Toast notifications
   toast: { message: string; type: 'success' | 'error' | 'info' } | null;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 
-  // Real-time synchronization
   lastSynced: Date;
   cloudStatus: CloudSyncStatus;
   syncNow: () => Promise<void>;
   switchToLeader: () => Promise<void>;
 
-  // Global Quick Modal Trigger
   quickModalAction: { type: string; timestamp: number } | null;
   triggerQuickModal: (type: string) => void;
   clearQuickModal: () => void;
 
-  // Theme Mode (Dark / Light)
   theme: 'light' | 'dark';
   isDarkMode: boolean;
   toggleTheme: () => void;
@@ -220,7 +205,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>('syncing');
   const [quickModalAction, setQuickModalAction] = useState<{ type: string; timestamp: number } | null>(null);
 
-  // Theme Mode (Light / Dark) State
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const [theme, setThemeState] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('ghaith_theme');
@@ -246,29 +232,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [theme]);
 
-  const toggleTheme = () => {
-    setThemeState(prev => (prev === 'light' ? 'dark' : 'light'));
-  };
-
-  const setTheme = (newTheme: 'light' | 'dark') => {
-    setThemeState(newTheme);
-  };
-
+  const toggleTheme = () => setThemeState(prev => (prev === 'light' ? 'dark' : 'light'));
+  const setTheme = (newTheme: 'light' | 'dark') => setThemeState(newTheme);
   const isDarkMode = theme === 'dark';
 
-  const triggerQuickModal = (type: string) => {
-    setQuickModalAction({ type, timestamp: Date.now() });
-  };
-
-  const clearQuickModal = () => {
-    setQuickModalAction(null);
-  };
+  const triggerQuickModal = (type: string) => setQuickModalAction({ type, timestamp: Date.now() });
+  const clearQuickModal = () => setQuickModalAction(null);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ message, type });
-    setTimeout(() => {
-      setToast(null);
-    }, 4000);
+    setTimeout(() => setToast(null), 4000);
   };
 
   const STORAGE_KEY = 'ghaith_alghaym_db_v1';
@@ -300,7 +273,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       supportEmail: "info@ghaym.org",
       supportPhone: "0500000001",
       securityEnabled: true,
-      leaderPasscode: "5522"
+      leaderPasscode: "1234"
     },
     auditLogs: initialData.auditLogs || []
   });
@@ -308,11 +281,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const mergeDailyRecords = (localRecs: DailyRecord[] = [], incomingRecs: DailyRecord[] = []): DailyRecord[] => {
     const map = new Map<string, DailyRecord>();
     for (const inc of incomingRecs) {
-      const key = inc.id || `${inc.studentId}_${inc.date}`;
+      const key = inc.id || `dr_${inc.studentId}_${inc.date}`;
       map.set(key, inc);
     }
     for (const loc of localRecs) {
-      const key = loc.id || `${loc.studentId}_${loc.date}`;
+      const key = loc.id || `dr_${loc.studentId}_${loc.date}`;
       const inc = map.get(key);
       if (!inc) {
         map.set(key, loc);
@@ -328,17 +301,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const mergeStudentPlans = (localPlans: StudentMonthlyPlan[] = [], incomingPlans: StudentMonthlyPlan[] = []): StudentMonthlyPlan[] => {
     const map = new Map<string, StudentMonthlyPlan>();
     for (const inc of incomingPlans) {
-      const key = inc.id || `${inc.studentId}_${inc.monthlyPlanId}`;
+      const key = inc.id || `sp_${inc.studentId}_${inc.monthlyPlanId}`;
       map.set(key, inc);
     }
     for (const loc of localPlans) {
-      const key = loc.id || `${loc.studentId}_${loc.monthlyPlanId}`;
+      const key = loc.id || `sp_${loc.studentId}_${loc.monthlyPlanId}`;
       const inc = map.get(key);
-      if (!inc) {
-        map.set(key, loc);
-      } else {
-        map.set(key, { ...inc, ...loc });
-      }
+      if (!inc) map.set(key, loc);
+      else map.set(key, { ...inc, ...loc });
     }
     return Array.from(map.values());
   };
@@ -346,17 +316,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const mergeAttendanceRecords = (localAtt: AttendanceRecord[] = [], incomingAtt: AttendanceRecord[] = []): AttendanceRecord[] => {
     const map = new Map<string, AttendanceRecord>();
     for (const inc of incomingAtt) {
-      const key = inc.id || `${inc.studentId}_${inc.date}`;
+      const key = inc.id || `att_${inc.studentId}_${inc.date}`;
       map.set(key, inc);
     }
     for (const loc of localAtt) {
-      const key = loc.id || `${loc.studentId}_${loc.date}`;
+      const key = loc.id || `att_${loc.studentId}_${loc.date}`;
       const inc = map.get(key);
-      if (!inc) {
-        map.set(key, loc);
-      } else {
-        map.set(key, { ...inc, ...loc });
-      }
+      if (!inc) map.set(key, loc);
+      else map.set(key, { ...inc, ...loc });
     }
     return Array.from(map.values());
   };
@@ -364,9 +331,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const mergeGradingConfigs = (localConfigs: TrackGradingConfig[] = [], incomingConfigs: TrackGradingConfig[] = []): TrackGradingConfig[] => {
     const map = new Map<string, TrackGradingConfig>();
     for (const inc of incomingConfigs) {
-      if (inc && inc.trackId) {
-        map.set(inc.trackId, inc);
-      }
+      if (inc && inc.trackId) map.set(inc.trackId, inc);
     }
     for (const loc of localConfigs) {
       if (!loc || !loc.trackId) continue;
@@ -388,7 +353,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return Array.from(map.values());
   };
 
-  // تطبيق الحالة بدون محو البيانات المحفوظة
   const applyState = (data: any) => {
     if (!data || typeof data !== 'object') return;
     
@@ -405,8 +369,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...restData
     };
 
-    // الحفاظ على المستخدم النشط من الجلسة
-    const activeUserId = typeof window !== 'undefined' ? sessionStorage.getItem('ghaith_current_user_id') : null;
+    const activeUserId = typeof window !== 'undefined'
+      ? (localStorage.getItem('ghaith_current_user_id') || sessionStorage.getItem('ghaith_current_user_id'))
+      : null;
+
     const userList: User[] = Array.isArray(data.users) && data.users.length > 0 ? data.users : masterStateRef.current.users;
     
     if (activeUserId) {
@@ -471,9 +437,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (Array.isArray(data.studentChallengeSubmissions)) setStudentChallengeSubmissions(data.studentChallengeSubmissions);
     if (Array.isArray(data.monthlyExams)) setMonthlyExams(data.monthlyExams);
     if (Array.isArray(data.studentExamResults)) setStudentExamResults(data.studentExamResults);
-    if (data.settings) {
-      setSettings(prev => ({ ...prev, ...data.settings }));
-    }
+    if (data.settings) setSettings(prev => ({ ...prev, ...data.settings }));
     if (Array.isArray(data.auditLogs)) setAuditLogs(data.auditLogs);
     setLastSynced(new Date());
   };
@@ -508,21 +472,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
       }
 
-      pushStateToCloud(payload)
-        .then(() => setCloudStatus('connected'))
-        .catch(() => setCloudStatus('offline'));
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+      
+      syncTimeoutRef.current = setTimeout(() => {
+        pushStateToCloud(payload)
+          .then(() => setCloudStatus('connected'))
+          .catch(() => setCloudStatus('offline'));
 
-      fetch('/api/state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).catch(() => {});
+        fetch('/api/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).catch(() => {});
+      }, 1200);
+
     } catch (e) {
       console.warn('LocalStorage save failed:', e);
     }
   };
 
-  // توحيد مصدر البيانات: يقرأ المحفوظ أولاً ويمنع العودة لـ initialData إلا إذا كان التطبيق فارغاً تماماً
   const refreshData = async () => {
     try {
       if (typeof window !== 'undefined') {
@@ -557,7 +527,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       }
     } catch {
-      // الاعتماد التام على الكاش المحلي والسحابة في حال غياب سيرفر الـ API
       if (typeof window !== 'undefined') {
         const cached = localStorage.getItem(STORAGE_KEY);
         if (cached) {
@@ -570,7 +539,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       }
       
-      // أول تشغيل للمشروع فقط
       applyState(initialData);
       if (typeof window !== 'undefined') {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(initialData));
@@ -586,7 +554,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await refreshData();
     persistState();
     setCloudStatus('connected');
-    showToast('تمت المزامنة السحابية الفورية بنجاح ✅ (Firebase)', 'success');
+    showToast('تمت المزامنة السحابية الفورية بنجاح ✅', 'success');
   };
 
   useEffect(() => {
@@ -610,14 +578,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     return () => {
       if (unsubscribeCloud) unsubscribeCloud();
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     };
   }, []);
 
   const switchToLeader = async () => {
     const leader = users.find(u => u.role === 'leader') || users[0];
-    if (leader) {
-      await switchUser(leader.id);
-    }
+    if (leader) await switchUser(leader.id);
   };
 
   const switchUser = async (userId: string) => {
@@ -626,6 +593,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (targetUser) {
         setCurrentUser(targetUser);
         if (typeof window !== 'undefined') {
+          localStorage.setItem('ghaith_current_user_id', targetUser.id);
           sessionStorage.setItem('ghaith_current_user_id', targetUser.id);
         }
         persistState({ currentUser: targetUser });
@@ -750,13 +718,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const supervisorObj = users.find(u => u.id === circle.supervisorId);
     const next = circles.map(c => {
       if (c.id !== id) return c;
-      const updatedTeacher = teacherObj ? teacherObj.name : (circle.teacherName || c.teacherName);
-      const updatedSupervisor = supervisorObj ? supervisorObj.name : (circle.supervisorName || c.supervisorName);
       return {
         ...c,
         ...circle,
-        teacherName: updatedTeacher,
-        supervisorName: updatedSupervisor
+        teacherName: teacherObj ? teacherObj.name : (circle.teacherName || c.teacherName),
+        supervisorName: supervisorObj ? supervisorObj.name : (circle.supervisorName || c.supervisorName)
       };
     });
     setCircles(next);
@@ -937,7 +903,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = [...monthlyPlans, duplicated];
     setMonthlyPlans(next);
     persistState({ monthlyPlans: next });
-    showToast('تم نسخ الخطة الشهرية مع الحفاظ على سجلات الشهور الماضية');
+    showToast('تم نسخ الخطة الشهرية بنجاح');
     try {
       await fetch(`/api/monthly-plans/${id}/duplicate`, { method: 'POST' });
     } catch {}
@@ -946,7 +912,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const saveStudentPlan = async (plan: Partial<StudentMonthlyPlan>) => {
     const studentId = plan.studentId || '';
     const monthlyPlanId = plan.monthlyPlanId || monthlyPlans[0]?.id || 'mp-1';
-    const cleanId = plan.id || `sp-${studentId}-${monthlyPlanId}`;
+    const cleanId = plan.id || `sp_${studentId}_${monthlyPlanId}`;
 
     const newPlan: StudentMonthlyPlan = {
       id: cleanId,
@@ -977,12 +943,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const currentPlans: StudentMonthlyPlan[] = masterStateRef.current.studentPlans || [];
     const existingIdx = currentPlans.findIndex(
-      p => (plan.id && p.id === plan.id) || (p.studentId === newPlan.studentId && p.monthlyPlanId === newPlan.monthlyPlanId)
+      p => p.id === cleanId || (p.studentId === newPlan.studentId && p.monthlyPlanId === newPlan.monthlyPlanId)
     );
 
     let next: StudentMonthlyPlan[];
     if (existingIdx >= 0) {
-      newPlan.id = currentPlans[existingIdx].id;
       next = [...currentPlans];
       next[existingIdx] = { ...next[existingIdx], ...newPlan };
     } else {
@@ -995,8 +960,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('تم حفظ خطة الطالبة وتحديث المقرر بنجاح');
 
     try {
-      await fetch(newPlan.id ? `/api/student-plans/${newPlan.id}` : '/api/student-plans', {
-        method: newPlan.id ? 'PUT' : 'POST',
+      await fetch('/api/student-plans', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPlan)
       });
@@ -1006,7 +971,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const saveDailyRecord = async (record: Partial<DailyRecord>) => {
     const studentId = record.studentId || '';
     const recDate = record.date || new Date().toISOString().split('T')[0];
-    const cleanId = record.id || `dr-${studentId}-${recDate}`;
+    const cleanId = record.id || `dr_${studentId}_${recDate}`;
 
     const newRecord: DailyRecord = {
       id: cleanId,
@@ -1040,12 +1005,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const currentRecords: DailyRecord[] = masterStateRef.current.dailyRecords || [];
     const existingIdx = currentRecords.findIndex(
-      d => (record.id && d.id === record.id) || (d.studentId === newRecord.studentId && d.date === newRecord.date)
+      d => d.id === cleanId || (d.studentId === newRecord.studentId && d.date === newRecord.date)
     );
 
     let next: DailyRecord[];
     if (existingIdx >= 0) {
-      newRecord.id = currentRecords[existingIdx].id;
       next = [...currentRecords];
       next[existingIdx] = { ...next[existingIdx], ...newRecord };
     } else {
@@ -1058,8 +1022,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('تم رصد التسميع وتحديث درجات الطالبة 📖');
 
     try {
-      await fetch(newRecord.id ? `/api/daily-records/${newRecord.id}` : '/api/daily-records', {
-        method: newRecord.id ? 'PUT' : 'POST',
+      await fetch('/api/daily-records', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newRecord)
       });
@@ -1067,12 +1031,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const saveAttendance = async (record: Partial<AttendanceRecord>) => {
-    const cleanId = record.id || `att-${record.studentId}-${record.date}`;
+    const recDate = record.date || new Date().toISOString().split('T')[0];
+    const cleanId = record.id || `att_${record.studentId}_${recDate}`;
     const newRecord: AttendanceRecord = {
       id: cleanId,
       studentId: record.studentId || '',
       circleId: record.circleId || '',
-      date: record.date || new Date().toISOString().split('T')[0],
+      date: recDate,
       status: record.status || 'present',
       earlyPrepCardSent: !!record.earlyPrepCardSent,
       reason: record.reason,
@@ -1083,7 +1048,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const currentAtt = masterStateRef.current.attendanceRecords || attendanceRecords;
     const existingIdx = currentAtt.findIndex(
-      (a: AttendanceRecord) => (a.id && a.id === cleanId) || (a.studentId === newRecord.studentId && a.date === newRecord.date)
+      (a: AttendanceRecord) => a.id === cleanId || (a.studentId === newRecord.studentId && a.date === newRecord.date)
     );
     let next: AttendanceRecord[];
     if (existingIdx >= 0) {
@@ -1109,12 +1074,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const saveBulkAttendance = async (records: Partial<AttendanceRecord>[]) => {
     let next = [...(masterStateRef.current.attendanceRecords || attendanceRecords)];
     records.forEach(rec => {
-      const cleanId = rec.id || `att-${rec.studentId}-${rec.date}`;
+      const recDate = rec.date || new Date().toISOString().split('T')[0];
+      const cleanId = rec.id || `att_${rec.studentId}_${recDate}`;
       const newRecord: AttendanceRecord = {
         id: cleanId,
         studentId: rec.studentId || '',
         circleId: rec.circleId || '',
-        date: rec.date || new Date().toISOString().split('T')[0],
+        date: recDate,
         status: rec.status || 'present',
         earlyPrepCardSent: !!rec.earlyPrepCardSent,
         reason: rec.reason,
@@ -1123,13 +1089,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ...rec
       };
       const idx = next.findIndex(
-        a => (a.id && a.id === cleanId) || (a.studentId === newRecord.studentId && a.date === newRecord.date)
+        a => a.id === cleanId || (a.studentId === newRecord.studentId && a.date === newRecord.date)
       );
-      if (idx >= 0) {
-        next[idx] = { ...next[idx], ...newRecord };
-      } else {
-        next.push(newRecord);
-      }
+      if (idx >= 0) next[idx] = { ...next[idx], ...newRecord };
+      else next.push(newRecord);
     });
     masterStateRef.current.attendanceRecords = next;
     setAttendanceRecords(next);
@@ -1200,7 +1163,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const saveAtqiniSubmission = async (sub: Partial<StudentAtqiniSubmission>) => {
-    const cleanId = sub.id || `atqs-${Date.now()}`;
+    const cleanId = sub.id || `atqs_${sub.assignmentId}_${sub.studentId}`;
     const newSub: StudentAtqiniSubmission = {
       id: cleanId,
       assignmentId: sub.assignmentId || '',
@@ -1299,7 +1262,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const saveChallengeSubmission = async (sub: Partial<StudentChallengeSubmission>) => {
-    const cleanId = sub.id || `cs-${Date.now()}`;
+    const cleanId = sub.id || `cs_${sub.challengeId}_${sub.studentId}`;
     const newSub: StudentChallengeSubmission = {
       id: cleanId,
       challengeId: sub.challengeId || '',
@@ -1397,8 +1360,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const saveExamResult = async (result: Partial<StudentExamResult>) => {
+    const cleanId = result.id || `er_${result.examId}_${result.studentId}`;
     const existingIdx = studentExamResults.findIndex(
-      r => r.examId === result.examId && r.studentId === result.studentId
+      r => r.id === cleanId || (r.examId === result.examId && r.studentId === result.studentId)
     );
     let next: StudentExamResult[];
     if (existingIdx >= 0) {
@@ -1416,7 +1380,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
     } else {
       const newResult: StudentExamResult = {
-        id: result.id || `er-${Date.now()}`,
+        id: cleanId,
         examId: result.examId || '',
         studentId: result.studentId || '',
         score: result.score ?? 0,
@@ -1629,7 +1593,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     persistState({ users: nextUsers, circles: nextCircles });
-    showToast('تم تحديث بيانات المعلمة / المشرفة والصلاحيات بنجاح');
+    showToast('تم تحديث بيانات المعلمة / المشرفة بنجاح');
 
     try {
       await fetch(`/api/users/${id}`, {
@@ -1681,12 +1645,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const computeStudentScore = (studentId: string): StudentScoreSummary => {
-    const student = students.find(s => s.id === studentId);
-    const trackId = student?.trackId || tracks[0]?.id;
-    const gradingConfig = gradingConfigs.find(g => g.trackId === trackId) || gradingConfigs[0];
-    
-    const sAttendance = attendanceRecords.filter(a => a.studentId === studentId);
+  const computeStudentScoreFast = (
+    studentId: string,
+    sAttendance: AttendanceRecord[],
+    sDaily: DailyRecord[],
+    sPlan: StudentMonthlyPlan | undefined,
+    sAtqini: StudentAtqiniSubmission[],
+    sChallenges: StudentChallengeSubmission[],
+    sExam: StudentExamResult | undefined,
+    gradingConfig: TrackGradingConfig | undefined
+  ): StudentScoreSummary => {
     const presentCount = sAttendance.filter(a => a.status === 'present').length;
     const absentUnexcusedCount = sAttendance.filter(a => a.status === 'absent_unexcused').length;
     const absentExcusedCount = sAttendance.filter(a => a.status === 'absent_excused').length;
@@ -1698,7 +1666,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const attendanceMax = maxAttendanceItem?.maxScore || 10;
     const attendanceScore = totalRecordedDays > 0 ? Math.min(attendanceMax, (attendanceRate / 100) * attendanceMax) : attendanceMax;
 
-    const sDaily = dailyRecords.filter(d => d.studentId === studentId);
     let memorizationScoreSum = 0;
     let memorizationMistakesTotal = 0;
     let hintsTotal = 0;
@@ -1708,7 +1675,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let conditionsDistinctionCount = 0;
     let conditionsSum = 0;
 
-    sDaily.forEach(dr => {
+    for (let i = 0; i < sDaily.length; i++) {
+      const dr = sDaily[i];
       memorizationMistakesTotal += (dr.memorizationMistakes || 0);
       hintsTotal += (dr.hintsCount || 0);
       tajweedErrorsTotal += (dr.tajweedErrorsCount || 0);
@@ -1717,17 +1685,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       memorizationScoreSum += (dr.recitationScore || 0);
       
       const cond = dr.conditions;
-      let cPoints = 0;
-      if (cond.listenedToReader) cPoints += 2;
-      if (cond.recitedLooking) cPoints += 2;
-      if (cond.masteryRepetition) cPoints += 2;
-      if (cond.minorRevision) cPoints += 2;
-      if (cond.tamkeenRevision) cPoints += 2;
-      if (cond.achievedDistinction) {
-        conditionsDistinctionCount++;
+      if (cond) {
+        let cPoints = 0;
+        if (cond.listenedToReader) cPoints += 2;
+        if (cond.recitedLooking) cPoints += 2;
+        if (cond.masteryRepetition) cPoints += 2;
+        if (cond.minorRevision) cPoints += 2;
+        if (cond.tamkeenRevision) cPoints += 2;
+        if (cond.achievedDistinction) conditionsDistinctionCount++;
+        conditionsSum += cPoints;
       }
-      conditionsSum += cPoints;
-    });
+    }
 
     const memorizationItem = gradingConfig?.items.find(i => i.category === 'memorization');
     const memorizationMax = memorizationItem?.maxScore || 25;
@@ -1739,33 +1707,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const avgConditionsOutOf10 = sDaily.length > 0 ? (conditionsSum / sDaily.length) : 10;
     const conditionsFulfilledScore = (avgConditionsOutOf10 / 10) * conditionsMax;
 
-    const sPlan = studentPlans.find(sp => sp.studentId === studentId);
     const newMemorizationPagesTarget = sPlan?.newMemorization?.targetPages || 8;
     const revisionPagesTarget = sPlan?.revision?.targetPages || 6;
 
-    const sAtqini = studentAtqiniSubmissions.filter(a => a.studentId === studentId);
     const atqiniItem = gradingConfig?.items.find(i => i.category === 'atqini');
     const atqiniMax = atqiniItem?.maxScore || 10;
     const atqiniCompletedCount = sAtqini.filter(a => a.status === 'completed').length;
     let atqiniTotalScore = 0;
-    sAtqini.forEach(a => { atqiniTotalScore += (a.score || 0); });
+    for (let i = 0; i < sAtqini.length; i++) {
+      atqiniTotalScore += (sAtqini[i].score || 0);
+    }
     const atqiniScore = sAtqini.length > 0 ? (atqiniTotalScore / (sAtqini.length * 10)) * atqiniMax : atqiniMax;
 
-    const sChallenges = studentChallengeSubmissions.filter(c => c.studentId === studentId);
     const challengeItem = gradingConfig?.items.find(i => i.category === 'thursday_challenge');
     const challengesMax = challengeItem?.maxScore || 10;
     let challengeEarned = 0;
     let peerReviewEarned = 0;
-    sChallenges.forEach(c => {
+    for (let i = 0; i < sChallenges.length; i++) {
+      const c = sChallenges[i];
       challengeEarned += (c.totalPointsEarned || 0);
       if (c.peerReviewEvaluation) {
         peerReviewEarned += (c.peerReviewEvaluation.totalEarned || 0);
       }
-    });
+    }
     const challengesScore = sChallenges.length > 0 ? Math.min(challengesMax, challengeEarned / sChallenges.length) : challengesMax;
 
-    const studentExams = studentExamResults.filter(e => e.studentId === studentId);
-    const sExam = studentExams[studentExams.length - 1];
     const examItem = gradingConfig?.items.find(i => i.category === 'exam');
     const examMax = examItem?.maxScore || 15;
     const hasExam = !!sExam && typeof sExam.score === 'number';
@@ -1810,9 +1776,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const matchedScale = scale.find(s => finalPercentage >= s.minPercentage) || scale[scale.length - 1];
 
-    const hasFrequentAbsence = absentUnexcusedCount >= 2;
-    const hasUnrecordedLogs = sDaily.length === 0;
-
     return {
       studentId,
       attendanceScore: Number(attendanceScore.toFixed(1)),
@@ -1851,15 +1814,66 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       gradeColor: matchedScale.color,
       rankInCircle: 1,
       rankInTrack: 1,
-      hasUnrecordedLogs,
-      hasFrequentAbsence
+      hasUnrecordedLogs: sDaily.length === 0,
+      hasFrequentAbsence: absentUnexcusedCount >= 2
     };
   };
 
   const allStudentScores = useMemo(() => {
     const scoresMap: Record<string, StudentScoreSummary> = {};
+
+    const attByStudent = new Map<string, AttendanceRecord[]>();
+    attendanceRecords.forEach(a => {
+      const arr = attByStudent.get(a.studentId) || [];
+      arr.push(a);
+      attByStudent.set(a.studentId, arr);
+    });
+
+    const dailyByStudent = new Map<string, DailyRecord[]>();
+    dailyRecords.forEach(d => {
+      const arr = dailyByStudent.get(d.studentId) || [];
+      arr.push(d);
+      dailyByStudent.set(d.studentId, arr);
+    });
+
+    const plansByStudent = new Map<string, StudentMonthlyPlan>();
+    studentPlans.forEach(p => plansByStudent.set(p.studentId, p));
+
+    const atqiniByStudent = new Map<string, StudentAtqiniSubmission[]>();
+    studentAtqiniSubmissions.forEach(sub => {
+      const arr = atqiniByStudent.get(sub.studentId) || [];
+      arr.push(sub);
+      atqiniByStudent.set(sub.studentId, arr);
+    });
+
+    const chByStudent = new Map<string, StudentChallengeSubmission[]>();
+    studentChallengeSubmissions.forEach(sub => {
+      const arr = chByStudent.get(sub.studentId) || [];
+      arr.push(sub);
+      chByStudent.set(sub.studentId, arr);
+    });
+
+    const examByStudent = new Map<string, StudentExamResult>();
+    studentExamResults.forEach(r => examByStudent.set(r.studentId, r));
+
+    const gradingByTrack = new Map<string, TrackGradingConfig>();
+    gradingConfigs.forEach(g => gradingByTrack.set(g.trackId, g));
+    const fallbackGrading = gradingConfigs[0];
+
     students.forEach(st => {
-      scoresMap[st.id] = computeStudentScore(st.id);
+      const trackId = st.trackId || tracks[0]?.id;
+      const gConfig = gradingByTrack.get(trackId) || fallbackGrading;
+
+      scoresMap[st.id] = computeStudentScoreFast(
+        st.id,
+        attByStudent.get(st.id) || [],
+        dailyByStudent.get(st.id) || [],
+        plansByStudent.get(st.id),
+        atqiniByStudent.get(st.id) || [],
+        chByStudent.get(st.id) || [],
+        examByStudent.get(st.id),
+        gConfig
+      );
     });
 
     circles.forEach(circle => {
@@ -1884,7 +1898,47 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [students, circles, tracks, attendanceRecords, dailyRecords, studentPlans, studentAtqiniSubmissions, studentChallengeSubmissions, studentExamResults, gradingConfigs]);
 
   const getStudentScoreSummary = (studentId: string): StudentScoreSummary => {
-    return allStudentScores[studentId] || computeStudentScore(studentId);
+    return allStudentScores[studentId] || {
+      studentId,
+      attendanceScore: 10,
+      attendanceMax: 10,
+      attendanceRate: 100,
+      presentCount: 0,
+      absentUnexcusedCount: 0,
+      absentExcusedCount: 0,
+      earlyPrepCount: 0,
+      perfectWeeksCount: 1,
+      memorizationScore: 25,
+      memorizationMax: 25,
+      newMemorizationPagesDone: 0,
+      newMemorizationPagesTarget: 8,
+      revisionPagesDone: 0,
+      revisionPagesTarget: 6,
+      memorizationMistakesTotal: 0,
+      hintsTotal: 0,
+      tajweedErrorsTotal: 0,
+      conditionsFulfilledScore: 10,
+      conditionsMax: 10,
+      conditionsDistinctionCount: 0,
+      atqiniScore: 10,
+      atqiniMax: 10,
+      atqiniCompletedCount: 0,
+      challengesScore: 10,
+      challengesMax: 10,
+      peerReviewScore: 0,
+      examScore: 0,
+      examMax: 15,
+      totalEarnedPoints: 65,
+      totalPossiblePoints: 65,
+      finalPercentage: 100,
+      gradeLabel: "ممتاز مرتفع",
+      gradeLetter: "أ+",
+      gradeColor: "#2D5A43",
+      rankInCircle: 1,
+      rankInTrack: 1,
+      hasUnrecordedLogs: true,
+      hasFrequentAbsence: false
+    };
   };
 
   return (
