@@ -3,7 +3,8 @@ import {
   User, Track, Circle, Student, MonthlyPlan, StudentMonthlyPlan,
   DailyRecord, AttendanceRecord, AtqiniAssignment, StudentAtqiniSubmission,
   Challenge, StudentChallengeSubmission, MonthlyExam, StudentExamResult,
-  TrackGradingConfig, InstitutionSettings, AuditLog
+  TrackGradingConfig, InstitutionSettings, AuditLog, StudentSubscription,
+  TrackSystemRules
 } from '../types';
 import initialData from '../data/initialData';
 import { subscribeToCloudDatabase, pushStateToCloud, CloudSyncStatus } from '../services/cloudSync';
@@ -75,6 +76,7 @@ interface AppContextType {
   monthlyExams: MonthlyExam[];
   studentExamResults: StudentExamResult[];
   gradingConfigs: TrackGradingConfig[];
+  studentSubscriptions: StudentSubscription[];
   settings: InstitutionSettings;
   auditLogs: AuditLog[];
   loading: boolean;
@@ -87,6 +89,7 @@ interface AppContextType {
   setSelectedTrackId: (id: string | null) => void;
   createTrack: (track: Partial<Track>) => Promise<Track>;
   updateTrack: (id: string, track: Partial<Track>) => Promise<void>;
+  updateTrackSystemRules: (trackId: string, rules: Partial<TrackSystemRules>) => Promise<void>;
   archiveTrack: (id: string) => Promise<void>;
   restoreTrack: (id: string) => Promise<void>;
   createCircle: (circle: Partial<Circle>) => Promise<Circle>;
@@ -108,6 +111,8 @@ interface AppContextType {
   saveAttendance: (record: Partial<AttendanceRecord>) => Promise<void>;
   saveBulkAttendance: (records: Partial<AttendanceRecord>[]) => Promise<void>;
   
+  saveStudentSubscription: (sub: Partial<StudentSubscription>) => Promise<void>;
+
   createAtqiniAssignment: (assignment: Partial<AtqiniAssignment>) => Promise<AtqiniAssignment>;
   updateAtqiniAssignment: (id: string, assignment: Partial<AtqiniAssignment>) => Promise<void>;
   deleteAtqiniAssignment: (id: string) => Promise<void>;
@@ -172,6 +177,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [studentChallengeSubmissions, setStudentChallengeSubmissions] = useState<StudentChallengeSubmission[]>([]);
   const [monthlyExams, setMonthlyExams] = useState<MonthlyExam[]>([]);
   const [studentExamResults, setStudentExamResults] = useState<StudentExamResult[]>([]);
+  const [studentSubscriptions, setStudentSubscriptions] = useState<StudentSubscription[]>([]);
   const [gradingConfigs, setGradingConfigs] = useState<TrackGradingConfig[]>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -262,6 +268,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     studentChallengeSubmissions: initialData.studentChallengeSubmissions || [],
     monthlyExams: initialData.monthlyExams || [],
     studentExamResults: initialData.studentExamResults || [],
+    studentSubscriptions: [],
     gradingConfigs: initialData.gradingConfigs || [],
     settings: {
       name: "غيث الغيم",
@@ -328,27 +335,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return Array.from(map.values());
   };
 
-  const mergeGradingConfigs = (localConfigs: TrackGradingConfig[] = [], incomingConfigs: TrackGradingConfig[] = []): TrackGradingConfig[] => {
-    const map = new Map<string, TrackGradingConfig>();
-    for (const inc of incomingConfigs) {
-      if (inc && inc.trackId) map.set(inc.trackId, inc);
+  const mergeSubscriptions = (localSubs: StudentSubscription[] = [], incomingSubs: StudentSubscription[] = []): StudentSubscription[] => {
+    const map = new Map<string, StudentSubscription>();
+    for (const inc of incomingSubs) {
+      const key = inc.id || `sub_${inc.studentId}_${inc.cycleMonth}`;
+      map.set(key, inc);
     }
-    for (const loc of localConfigs) {
-      if (!loc || !loc.trackId) continue;
-      const inc = map.get(loc.trackId);
-      if (!inc) {
-        map.set(loc.trackId, loc);
-      } else {
-        map.set(loc.trackId, {
-          ...inc,
-          ...loc,
-          calculationMethod: loc.calculationMethod || inc.calculationMethod,
-          recitationFormula: { ...(inc.recitationFormula || {}), ...(loc.recitationFormula || {}) },
-          attendanceRules: { ...(inc.attendanceRules || {}), ...(loc.attendanceRules || {}) },
-          items: (loc.items && loc.items.length > 0) ? loc.items : inc.items,
-          gradeScale: (loc.gradeScale && loc.gradeScale.length > 0) ? loc.gradeScale : inc.gradeScale
-        });
-      }
+    for (const loc of localSubs) {
+      const key = loc.id || `sub_${loc.studentId}_${loc.cycleMonth}`;
+      map.set(key, loc);
     }
     return Array.from(map.values());
   };
@@ -360,7 +355,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       dailyRecords: incomingDaily,
       studentPlans: incomingPlans,
       attendanceRecords: incomingAtt,
-      gradingConfigs: incomingGrading,
+      studentSubscriptions: incomingSubs,
       ...restData
     } = data;
 
@@ -425,10 +420,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setAttendanceRecords(mergedAtt);
     }
 
-    if (Array.isArray(incomingGrading)) {
-      const mergedGrading = mergeGradingConfigs(masterStateRef.current.gradingConfigs, incomingGrading);
-      masterStateRef.current.gradingConfigs = mergedGrading;
-      setGradingConfigs(mergedGrading);
+    if (Array.isArray(incomingSubs)) {
+      const merged = mergeSubscriptions(masterStateRef.current.studentSubscriptions, incomingSubs);
+      masterStateRef.current.studentSubscriptions = merged;
+      setStudentSubscriptions(merged);
     }
 
     if (Array.isArray(data.atqiniAssignments)) setAtqiniAssignments(data.atqiniAssignments);
@@ -437,6 +432,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (Array.isArray(data.studentChallengeSubmissions)) setStudentChallengeSubmissions(data.studentChallengeSubmissions);
     if (Array.isArray(data.monthlyExams)) setMonthlyExams(data.monthlyExams);
     if (Array.isArray(data.studentExamResults)) setStudentExamResults(data.studentExamResults);
+    if (Array.isArray(data.gradingConfigs)) setGradingConfigs(data.gradingConfigs);
     if (data.settings) setSettings(prev => ({ ...prev, ...data.settings }));
     if (Array.isArray(data.auditLogs)) setAuditLogs(data.auditLogs);
     setLastSynced(new Date());
@@ -460,6 +456,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         studentChallengeSubmissions: masterStateRef.current.studentChallengeSubmissions || studentChallengeSubmissions,
         monthlyExams: masterStateRef.current.monthlyExams || monthlyExams,
         studentExamResults: masterStateRef.current.studentExamResults || studentExamResults,
+        studentSubscriptions: masterStateRef.current.studentSubscriptions || studentSubscriptions,
         gradingConfigs: masterStateRef.current.gradingConfigs || gradingConfigs,
         settings: { ...(masterStateRef.current.settings || settings), ...(overrides?.settings || {}) },
         auditLogs: masterStateRef.current.auditLogs || auditLogs,
@@ -538,11 +535,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           } catch {}
         }
       }
-      
       applyState(initialData);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(initialData));
-      }
       setError(null);
     } finally {
       setLoading(false);
@@ -559,7 +552,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   useEffect(() => {
     refreshData();
-
     const unsubscribeCloud = subscribeToCloudDatabase(
       (cloudData) => {
         if (cloudData && typeof cloudData === 'object' && (Array.isArray(cloudData.tracks) || Array.isArray(cloudData.students))) {
@@ -571,11 +563,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setCloudStatus('connected');
         }
       },
-      (status) => {
-        setCloudStatus(status);
-      }
+      (status) => setCloudStatus(status)
     );
-
     return () => {
       if (unsubscribeCloud) unsubscribeCloud();
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
@@ -599,13 +588,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         persistState({ currentUser: targetUser });
         showToast(`مرحباً بك: ${targetUser.name} (${targetUser.title})`, 'info');
       }
-      try {
-        await fetch('/api/auth/switch-user', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId })
-        });
-      } catch {}
       return true;
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -614,6 +596,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const createTrack = async (track: Partial<Track>) => {
+    const defaultMastery = {
+      listenToReciterTimes: 3,
+      reciteLookingTimes: 5,
+      masteryRepetitionTimes: 20,
+      minorRevisionAmount: 'آخر ٣ أوجه',
+      tamkeenRevisionAmount: 'ربع حزب',
+      pointsPerCondition: 2
+    };
+
     const newTrack: Track = {
       id: track.id || `t-${Date.now()}`,
       name: track.name || 'مسار جديد',
@@ -622,6 +613,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       logoUrl: track.logoUrl,
       icon: track.icon || '🪴',
       isArchived: false,
+      subscriptionFee: track.subscriptionFee || {
+        amount: 150,
+        currency: 'ر.س',
+        period: 'monthly'
+      },
+      systemRules: track.systemRules || {
+        earlyPreparation: true,
+        atqiniHomeworkRequired: true,
+        thursdayChallenges: true,
+        customPlansAllowed: false,
+        detailedWorkflowText: 'نظام الحفظ والتمكين اليومي مع التحضير المسبق وتسميع الواجبات.',
+        masteryGuide: defaultMastery
+      },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       ...track
@@ -630,13 +634,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setTracks(next);
     persistState({ tracks: next });
     showToast(`تمت إضافة المسار "${newTrack.name}" بنجاح`);
-    try {
-      await fetch('/api/tracks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newTrack)
-      });
-    } catch {}
     return newTrack;
   };
 
@@ -645,13 +642,42 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setTracks(next);
     persistState({ tracks: next });
     showToast('تم تحديث المسار بنجاح');
-    try {
-      await fetch(`/api/tracks/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(track)
-      });
-    } catch {}
+  };
+
+  const updateTrackSystemRules = async (trackId: string, rules: Partial<TrackSystemRules>) => {
+    const next = tracks.map(t => {
+      if (t.id !== trackId) return t;
+      const currentRules = t.systemRules || {
+        earlyPreparation: true,
+        atqiniHomeworkRequired: true,
+        thursdayChallenges: true,
+        customPlansAllowed: false,
+        detailedWorkflowText: '',
+        masteryGuide: {
+          listenToReciterTimes: 3,
+          reciteLookingTimes: 5,
+          masteryRepetitionTimes: 20,
+          minorRevisionAmount: 'آخر ٣ أوجه',
+          tamkeenRevisionAmount: 'ربع حزب',
+          pointsPerCondition: 2
+        }
+      };
+      return {
+        ...t,
+        systemRules: {
+          ...currentRules,
+          ...rules,
+          masteryGuide: {
+            ...currentRules.masteryGuide,
+            ...(rules.masteryGuide || {})
+          }
+        },
+        updatedAt: new Date().toISOString()
+      };
+    });
+    setTracks(next);
+    persistState({ tracks: next });
+    showToast('تم تحديث نظام ومعايير المسار بنجاح ⚙️');
   };
 
   const archiveTrack = async (id: string) => {
@@ -659,9 +685,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setTracks(next);
     persistState({ tracks: next });
     showToast('تمت أرشفة المسار بنجاح');
-    try {
-      await fetch(`/api/tracks/${id}`, { method: 'DELETE' });
-    } catch {}
   };
 
   const restoreTrack = async (id: string) => {
@@ -669,13 +692,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setTracks(next);
     persistState({ tracks: next });
     showToast('تمت استعادة المسار بنجاح');
-    try {
-      await fetch(`/api/tracks/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isArchived: false })
-      });
-    } catch {}
   };
 
   const createCircle = async (circle: Partial<Circle>) => {
@@ -703,13 +719,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCircles(next);
     persistState({ circles: next });
     showToast(`تمت إضافة الحلقة "${newCircle.name}" بنجاح`);
-    try {
-      await fetch('/api/circles', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCircle)
-      });
-    } catch {}
     return newCircle;
   };
 
@@ -728,37 +737,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCircles(next);
     persistState({ circles: next });
     showToast('تم تحديث بيانات الحلقة بنجاح');
-    try {
-      await fetch(`/api/circles/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(circle)
-      });
-    } catch {}
   };
 
   const archiveCircle = async (id: string) => {
     const next = circles.map(c => c.id === id ? { ...c, isArchived: true } : c);
     setCircles(next);
     persistState({ circles: next });
-    showToast('تمت أرشفة الحلقة وحفظ سجلاتها بأمان');
-    try {
-      await fetch(`/api/circles/${id}`, { method: 'DELETE' });
-    } catch {}
+    showToast('تمت أرشفة الحلقة');
   };
 
   const restoreCircle = async (id: string) => {
     const next = circles.map(c => c.id === id ? { ...c, isArchived: false } : c);
     setCircles(next);
     persistState({ circles: next });
-    showToast('تمت استعادة الحلقة بنجاح');
-    try {
-      await fetch(`/api/circles/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isArchived: false })
-      });
-    } catch {}
+    showToast('تمت استعادة الحلقة');
   };
 
   const createStudent = async (student: Partial<Student>) => {
@@ -783,13 +775,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStudents(next);
     persistState({ students: next });
     showToast(`تم تسجيل الطالبة "${newStudent.name}" بنجاح`);
-    try {
-      await fetch('/api/students', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newStudent)
-      });
-    } catch {}
     return newStudent;
   };
 
@@ -798,13 +783,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStudents(next);
     persistState({ students: next });
     showToast('تم تحديث ملف الطالبة بنجاح');
-    try {
-      await fetch(`/api/students/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(student)
-      });
-    } catch {}
   };
 
   const archiveStudent = async (id: string) => {
@@ -812,9 +790,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStudents(next);
     persistState({ students: next });
     showToast('تمت أرشفة سجل الطالبة بنجاح');
-    try {
-      await fetch(`/api/students/${id}`, { method: 'DELETE' });
-    } catch {}
   };
 
   const assignPartner = async (studentId: string, partnerId: string | null) => {
@@ -831,20 +806,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
     setStudents(next);
     persistState({ students: next });
+    showToast(partnerId ? `تم تعيين الثنائي: ${s1?.name || ''} ↔ ${s2?.name || ''}` : 'تم إلغاء اقتران الثنائي');
+  };
 
-    if (!partnerId) {
-      showToast('تم إلغاء اقتران الثنائي بنجاح 🔄');
+  const saveStudentSubscription = async (sub: Partial<StudentSubscription>) => {
+    const studentId = sub.studentId || '';
+    const cycleMonth = sub.cycleMonth || settings.currentHijriMonth || 'جمادى الأولى';
+    const cleanId = sub.id || `sub_${studentId}_${cycleMonth.replace(/\s+/g, '_')}`;
+
+    const newSub: StudentSubscription = {
+      id: cleanId,
+      studentId,
+      trackId: sub.trackId || (students.find(s => s.id === studentId)?.trackId || tracks[0]?.id || 't-1'),
+      cycleMonth,
+      requiredAmount: sub.requiredAmount ?? 150,
+      paidAmount: sub.paidAmount ?? 0,
+      status: sub.status || ((sub.paidAmount ?? 0) >= (sub.requiredAmount ?? 150) ? 'paid' : (sub.paidAmount ?? 0) > 0 ? 'partial' : 'pending'),
+      paymentMethod: sub.paymentMethod || 'bank_transfer',
+      paymentDate: sub.paymentDate || new Date().toISOString().split('T')[0],
+      receiptNumber: sub.receiptNumber || '',
+      signatureUrl: sub.signatureUrl,
+      notes: sub.notes || '',
+      updatedAt: new Date().toISOString(),
+      ...sub
+    };
+
+    const currentSubs: StudentSubscription[] = masterStateRef.current.studentSubscriptions || [];
+    const existingIdx = currentSubs.findIndex(s => s.id === cleanId || (s.studentId === studentId && s.cycleMonth === cycleMonth));
+
+    let next: StudentSubscription[];
+    if (existingIdx >= 0) {
+      next = [...currentSubs];
+      next[existingIdx] = { ...next[existingIdx], ...newSub };
     } else {
-      showToast(`تم تعيين الثنائي بنجاح: ${s1?.name || ''} ↔ ${s2?.name || ''} 🪴`);
+      next = [...currentSubs, newSub];
     }
 
-    try {
-      await fetch('/api/students/pair', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId1: studentId, studentId2: partnerId || null })
-      });
-    } catch {}
+    masterStateRef.current.studentSubscriptions = next;
+    setStudentSubscriptions(next);
+    persistState({ studentSubscriptions: next });
+    showToast('تم رصد وتحديث سند السداد والاشتراك المالي بنجاح 💳');
   };
 
   const createMonthlyPlan = async (plan: Partial<MonthlyPlan>) => {
@@ -867,13 +868,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setMonthlyPlans(next);
     persistState({ monthlyPlans: next });
     showToast(`تم إنشاء الخطة الشهرية: ${newPlan.title}`);
-    try {
-      await fetch('/api/monthly-plans', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPlan)
-      });
-    } catch {}
     return newPlan;
   };
 
@@ -882,13 +876,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setMonthlyPlans(next);
     persistState({ monthlyPlans: next });
     showToast('تم تعديل الخطة الشهرية');
-    try {
-      await fetch(`/api/monthly-plans/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(plan)
-      });
-    } catch {}
   };
 
   const duplicateMonthlyPlan = async (id: string) => {
@@ -904,9 +891,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setMonthlyPlans(next);
     persistState({ monthlyPlans: next });
     showToast('تم نسخ الخطة الشهرية بنجاح');
-    try {
-      await fetch(`/api/monthly-plans/${id}/duplicate`, { method: 'POST' });
-    } catch {}
   };
 
   const saveStudentPlan = async (plan: Partial<StudentMonthlyPlan>) => {
@@ -958,14 +942,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStudentPlans(next);
     persistState({ studentPlans: next });
     showToast('تم حفظ خطة الطالبة وتحديث المقرر بنجاح');
-
-    try {
-      await fetch('/api/student-plans', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPlan)
-      });
-    } catch {}
   };
 
   const saveDailyRecord = async (record: Partial<DailyRecord>) => {
@@ -988,6 +964,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       hintsCount: record.hintsCount || 0,
       tajweedErrorsCount: record.tajweedErrorsCount || 0,
       recitationScore: record.recitationScore ?? 10,
+      minorRevisionPortion: record.minorRevisionPortion,
+      tamkeenRevisionPortion: record.tamkeenRevisionPortion,
+      signatureUrl: record.signatureUrl,
       conditions: record.conditions || {
         listenedToReader: false,
         recitedLooking: false,
@@ -1020,14 +999,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setDailyRecords(next);
     persistState({ dailyRecords: next });
     showToast('تم رصد التسميع وتحديث درجات الطالبة 📖');
-
-    try {
-      await fetch('/api/daily-records', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newRecord)
-      });
-    } catch {}
   };
 
   const saveAttendance = async (record: Partial<AttendanceRecord>) => {
@@ -1061,14 +1032,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setAttendanceRecords(next);
     persistState({ attendanceRecords: next });
     showToast('تم تسجيل الحضور والتحضير بنجاح ✅');
-
-    try {
-      await fetch('/api/attendance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newRecord)
-      });
-    } catch {}
   };
 
   const saveBulkAttendance = async (records: Partial<AttendanceRecord>[]) => {
@@ -1098,14 +1061,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setAttendanceRecords(next);
     persistState({ attendanceRecords: next });
     showToast(`تم رصد الحضور لـ ${records.length} طالبة بنجاح ✅`);
-
-    try {
-      await fetch('/api/attendance/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ records })
-      });
-    } catch {}
   };
 
   const createAtqiniAssignment = async (assignment: Partial<AtqiniAssignment>) => {
@@ -1128,13 +1083,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setAtqiniAssignments(next);
     persistState({ atqiniAssignments: next });
     showToast(`تم نشر واجب التجويد: ${newAss.title}`);
-    try {
-      await fetch('/api/atqini', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newAss)
-      });
-    } catch {}
     return newAss;
   };
 
@@ -1143,13 +1091,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setAtqiniAssignments(next);
     persistState({ atqiniAssignments: next });
     showToast('تم تعديل واجب التجويد');
-    try {
-      await fetch(`/api/atqini/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(assignment)
-      });
-    } catch {}
   };
 
   const deleteAtqiniAssignment = async (id: string) => {
@@ -1157,9 +1098,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setAtqiniAssignments(next);
     persistState({ atqiniAssignments: next });
     showToast('تم حذف واجب التجويد');
-    try {
-      await fetch(`/api/atqini/${id}`, { method: 'DELETE' });
-    } catch {}
   };
 
   const saveAtqiniSubmission = async (sub: Partial<StudentAtqiniSubmission>) => {
@@ -1192,13 +1130,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStudentAtqiniSubmissions(next);
     persistState({ studentAtqiniSubmissions: next });
     showToast('تم رصد تقييم واجب «أتقني» للتجويد');
-    try {
-      await fetch('/api/atqini-submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSub)
-      });
-    } catch {}
   };
 
   const createChallenge = async (challenge: Partial<Challenge>) => {
@@ -1227,13 +1158,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setChallenges(next);
     persistState({ challenges: next });
     showToast(`تم إطلاق التحدي القرآني: ${newCh.title}`);
-    try {
-      await fetch('/api/challenges', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCh)
-      });
-    } catch {}
     return newCh;
   };
 
@@ -1242,13 +1166,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setChallenges(next);
     persistState({ challenges: next });
     showToast('تم تحديث التحدي القرآني');
-    try {
-      await fetch(`/api/challenges/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(challenge)
-      });
-    } catch {}
   };
 
   const deleteChallenge = async (id: string) => {
@@ -1256,9 +1173,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setChallenges(next);
     persistState({ challenges: next });
     showToast('تم حذف التحدي');
-    try {
-      await fetch(`/api/challenges/${id}`, { method: 'DELETE' });
-    } catch {}
   };
 
   const saveChallengeSubmission = async (sub: Partial<StudentChallengeSubmission>) => {
@@ -1290,13 +1204,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStudentChallengeSubmissions(next);
     persistState({ studentChallengeSubmissions: next });
     showToast('تم رصد نتيجة التحدي والمراجعة الثنائية');
-    try {
-      await fetch('/api/challenge-submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSub)
-      });
-    } catch {}
   };
 
   const createMonthlyExam = async (exam: Partial<MonthlyExam>) => {
@@ -1314,20 +1221,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
       ...exam
     };
-
     const next = [...monthlyExams, newExam];
     setMonthlyExams(next);
     persistState({ monthlyExams: next });
     showToast(`تمت جدولة الاختبار الشهري: ${newExam.title}`);
-
-    try {
-      await fetch('/api/exams', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newExam)
-      });
-    } catch {}
-
     return newExam;
   };
 
@@ -1336,14 +1233,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setMonthlyExams(next);
     persistState({ monthlyExams: next });
     showToast('تم تعديل بيانات الاختبار الشهري');
-
-    try {
-      await fetch(`/api/exams/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(exam)
-      });
-    } catch {}
   };
 
   const deleteMonthlyExam = async (id: string) => {
@@ -1353,10 +1242,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStudentExamResults(nextResults);
     persistState({ monthlyExams: nextExams, studentExamResults: nextResults });
     showToast('تم حذف الاختبار الشهري بنجاح 🗑️');
-
-    try {
-      await fetch(`/api/exams/${id}`, { method: 'DELETE' });
-    } catch {}
   };
 
   const saveExamResult = async (result: Partial<StudentExamResult>) => {
@@ -1391,6 +1276,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         examinerName: currentUser?.name || result.examinerName || 'لجنة الاختبارات',
         evaluatedAt: new Date().toISOString(),
         customPortion: result.customPortion || '',
+        signatureUrl: result.signatureUrl,
         ...result
       };
       next = [...studentExamResults, newResult];
@@ -1398,14 +1284,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStudentExamResults(next);
     persistState({ studentExamResults: next });
     showToast('تم رصد درجة ومقرر الاختبار الشهري بنجاح');
-
-    try {
-      await fetch('/api/exam-results', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(result)
-      });
-    } catch {}
   };
 
   const updateGradingConfig = async (trackId: string, config: Partial<TrackGradingConfig>) => {
@@ -1438,29 +1316,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     persistState({ gradingConfigs: next });
     showToast('تم حفظ وتحديث أوزان ومعايير نظام الدرجات بنجاح ⚖️');
-
-    try {
-      await fetch(`/api/grading-config/${trackId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
-      });
-    } catch {}
   };
 
   const updateSettings = async (newSettings: Partial<InstitutionSettings>) => {
     const next = { ...settings, ...newSettings };
     setSettings(next);
     persistState({ settings: next });
-    showToast('تم حفظ الإعدادات العامة للمقرأة والهوية البصرية');
-
-    try {
-      await fetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSettings)
-      });
-    } catch {}
+    showToast('تم حفظ الإعدادات العامة للمقرأة');
   };
 
   const downloadBackup = async () => {
@@ -1481,6 +1343,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         studentChallengeSubmissions,
         monthlyExams,
         studentExamResults,
+        studentSubscriptions,
         gradingConfigs,
         settings,
         auditLogs
@@ -1509,15 +1372,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       applyState(backupData);
       persistState(backupData);
       showToast('تمت استعادة قاعدة البيانات بالكامل بنجاح');
-
-      try {
-        await fetch('/api/backup/restore', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ backupData })
-        });
-      } catch {}
-
       return true;
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -1529,10 +1383,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     applyState(initialData);
     persistState(initialData);
     showToast('تمت إعادة ضبط البيانات النموذجية بنجاح');
-
-    try {
-      await fetch('/api/backup/reset-sample', { method: 'POST' });
-    } catch {}
   };
 
   const createUser = async (user: Partial<User>) => {
@@ -1554,15 +1404,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setUsers(next);
     persistState({ users: next });
     showToast(`تمت إضافة ${newUser.name} إلى الكادر بنجاح`);
-
-    try {
-      await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newUser)
-      });
-    } catch {}
-
     return newUser;
   };
 
@@ -1594,14 +1435,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     persistState({ users: nextUsers, circles: nextCircles });
     showToast('تم تحديث بيانات المعلمة / المشرفة بنجاح');
-
-    try {
-      await fetch(`/api/users/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(user)
-      });
-    } catch {}
   };
 
   const changeUserPasscode = async (userId: string, newPasscode: string): Promise<boolean> => {
@@ -1629,15 +1462,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       showToast('تم تغيير رمز الدخول السري ومزامنته سحابياً بنجاح 🔒');
-
-      try {
-        await fetch('/api/auth/change-passcode', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, newPasscode: cleanPasscode })
-        });
-      } catch {}
-
       return true;
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -1959,6 +1783,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         studentChallengeSubmissions,
         monthlyExams,
         studentExamResults,
+        studentSubscriptions,
         gradingConfigs,
         settings,
         auditLogs,
@@ -1968,6 +1793,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         switchUser,
         createTrack,
         updateTrack,
+        updateTrackSystemRules,
         archiveTrack,
         restoreTrack,
         createCircle,
@@ -1985,6 +1811,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         saveDailyRecord,
         saveAttendance,
         saveBulkAttendance,
+        saveStudentSubscription,
         createAtqiniAssignment,
         updateAtqiniAssignment,
         deleteAtqiniAssignment,

@@ -28,7 +28,8 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     tracks, circles, students, users, allStudentScores,
     createTrack, updateTrack, archiveTrack, restoreTrack,
     createCircle, updateCircle, archiveCircle, restoreCircle,
-    currentUser, quickModalAction, clearQuickModal, settings
+    currentUser, quickModalAction, clearQuickModal, settings,
+    setSelectedTrackForDetail
   } = useApp();
 
   const [selectedTrackId, setSelectedTrackId] = useState<string>(tracks[0]?.id || 't-1');

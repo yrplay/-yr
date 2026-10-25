@@ -64,16 +64,55 @@ export interface User {
   permissions?: Partial<UserPermissions>; // الصلاحيات المخصصة يدوياً
 }
 
+// 1. معايير دليل الإتقان (مشكاة الغيم) القابلة للتعديل
+export interface MasteryGuideConfig {
+  listenToReciterTimes: number;    // عدد مرات الاستماع للقارئ (مثلاً 3)
+  reciteLookingTimes: number;       // عدد مرات التلاوة نظراً من المصحف (مثلاً 5)
+  masteryRepetitionTimes: number;   // عدد مرات التكرار المتقن (مثلاً 20)
+  minorRevisionAmount: string;      // مقدار المراجعة الصغرى (مثلاً: آخر 3 أوجه)
+  tamkeenRevisionAmount: string;    // مقدار مراجعة التمكين (مثلاً: ربع حزب)
+  pointsPerCondition: number;       // وزن كل شرط في النقاط
+}
+
+export const defaultMasteryGuideConfig: MasteryGuideConfig = {
+  listenToReciterTimes: 3,
+  reciteLookingTimes: 5,
+  masteryRepetitionTimes: 20,
+  minorRevisionAmount: 'آخر 3 أوجه',
+  tamkeenRevisionAmount: 'ربع حزب',
+  pointsPerCondition: 2
+};
+
+// 2. نظام العمل ورسوم الاشتراك التابعة للمسار
+export interface TrackSystemRules {
+  earlyPreparation: boolean;        // اشتراط التحضير المبكر
+  atqiniHomeworkRequired: boolean;  // اشتراط واجبات أتقني للتجويد
+  thursdayChallenges: boolean;      // تفعيل تحديات الخميس والمراجعة الثنائية
+  customPlansAllowed: boolean;      // السماح بالخطط الفردية المرنة
+  detailedWorkflowText: string;     // نص يشرح آلية ونظام المسار
+  masteryGuide: MasteryGuideConfig; // معايير الدليل الخاصة بالمسار
+}
+
+export interface TrackSubscriptionFee {
+  amount: number;                   // مبلغ الاشتراك
+  currency: string;                 // العملة (ر.س)
+  period: 'monthly' | 'term' | 'annual'; // دورية الدفع
+  notes?: string;                   // ملاحظات أو شروط الرسوم
+}
+
+// تحديث كائن المسار الأساسي
 export interface Track {
   id: string;
   name: string;
   code: string;
-  description: string;
-  logoUrl?: string;    // شعار المسار المرفوع من الجهاز
-  icon?: string;       // رمز أو وسم المسار
+  description: string;              // نبذة ووصف المسار
+  icon?: string;
+  logoUrl?: string;                 // شعار المسار المرفوع
+  subscriptionFee?: TrackSubscriptionFee;
+  systemRules?: TrackSystemRules;
   isArchived: boolean;
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
 }
 
 export interface Circle {
@@ -162,6 +201,34 @@ export interface StudentMonthlyPlan {
   status: 'active' | 'completed' | 'paused';
 }
 
+// 3. سجلات اشتراكات ودفع الطالبات
+export type PaymentStatus = 'paid' | 'partial' | 'pending' | 'exempt'; // مدفوع، جزئي، معلق، معفى
+export type PaymentMethod = 'bank_transfer' | 'cash' | 'pos' | 'other';
+
+export interface StudentSubscription {
+  id: string;
+  studentId: string;
+  trackId: string;
+  cycleMonth: string;               // الشهر/الفصل الدراسي (مثال: جمادى الأولى 1446)
+  requiredAmount: number;           // المبلغ المطلوب
+  paidAmount: number;               // المبلغ المدفوع
+  status: PaymentStatus;
+  paymentMethod?: PaymentMethod;
+  paymentDate?: string;
+  receiptNumber?: string;
+  notes?: string;
+  updatedAt: string;
+}
+
+// 4. سجل التسميع اليومي DailyRecord وفصل المراجعة الصغرى عن التمكين
+export interface RevisionPortion {
+  surahNumber: number;
+  fromAyah: number;
+  toAyah: number;
+  pagesCount?: number;
+  status: 'excellent' | 'acceptable' | 'needs_repetition' | 'unrecited';
+}
+
 export interface DailyRecord {
   id: string;
   studentId: string;
@@ -175,6 +242,10 @@ export interface DailyRecord {
   newMemorizationPages: number;
   revisionCompleted: boolean;
   revisionPages: number;
+
+  // فصل المراجعة الصغرى ومراجعة التمكين تفصيلياً
+  minorRevisionPortion?: RevisionPortion;
+  tamkeenRevisionPortion?: RevisionPortion;
   
   // تقييم التسميع
   memorizationMistakes: number;  // أخطاء الحفظ
@@ -421,6 +492,9 @@ export interface InstitutionSettings {
   // Security & PIN Gate
   securityEnabled?: boolean;
   leaderPasscode?: string;
+  
+  // معايير دليل الإتقان الافتراضية للمقرأة (مشكاة الغيم)
+  defaultMasteryGuide?: MasteryGuideConfig;
 }
 
 export interface AuditLog {

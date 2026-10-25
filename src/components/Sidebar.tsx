@@ -3,14 +3,17 @@ import { useApp } from '../context/AppContext';
 import {
   LayoutDashboard, Layers, Users, Calendar, CheckSquare,
   BookOpenCheck, Sparkles, Trophy, FileText, Sliders,
-  UserCheck, BarChart3, UserCog, Settings, X, Heart, Lock, History, Sun, Moon
+  UserCheck, BarChart3, UserCog, Settings, X, Heart, Lock, History, Sun, Moon,
+  CreditCard
 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 
 export type ViewType =
   | 'dashboard'
   | 'tracks_circles'
+  | 'track_detail'
   | 'students'
+  | 'subscriptions'
   | 'monthly_plans'
   | 'attendance'
   | 'recitation'
@@ -40,6 +43,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
   const rawMenuItems: { id: ViewType; label: string; icon: any; badge?: string | number; accent?: string; adminOnly?: boolean }[] = [
     { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
     { id: 'tracks_circles', label: 'المسارات والحلقات', icon: Layers, badge: circles.length },
+    { id: 'subscriptions', label: 'الاشتراكات والمالية', icon: CreditCard },
     { id: 'students', label: 'شؤون الطالبات', icon: Users, badge: students.length },
     { id: 'monthly_plans', label: 'الخطط الشهرية والمقرر', icon: Calendar },
     { id: 'attendance', label: 'الحضور والتحضير المبكر', icon: CheckSquare },

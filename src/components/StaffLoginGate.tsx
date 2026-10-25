@@ -5,10 +5,11 @@ import { useApp } from '../context/AppContext';
 import { Mail, KeyRound, Eye, EyeOff, Lock, LogIn, AlertCircle, Sun, Moon, X } from 'lucide-react';
 
 interface StaffLoginGateProps {
+  onSuccess?: () => void;
   onClose?: () => void;
 }
 
-export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onClose }) => {
+export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClose }) => {
   const { users, switchUser, showToast, settings, isDarkMode, toggleTheme } = useApp();
 
   const [email, setEmail] = useState('');
@@ -84,13 +85,16 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onClose }) => {
 
         showToast(`مرحباً بكِ أ. ${matchedUser.name} (${matchedUser.title})`, 'success');
 
+        if (onSuccess) {
+          onSuccess();
+        }
         if (onClose) {
           onClose();
         }
       } else {
         setError('الرمز السري غير صحيح. يرجى التأكد من الرمز الخاص بكِ أو التواصل مع قائدة المقرأة.');
       }
-    } catch (err) {
+    } catch {
       setError('حدث خطأ أثناء محاولة تسجيل الدخول، يرجى المحاولة مرة أخرى.');
     } finally {
       setLoading(false);
@@ -98,24 +102,25 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-stone-900/65 backdrop-blur-xs z-50 flex items-center justify-center p-4" dir="rtl">
-      <div className="bg-[#FCFAF8] border border-[#E8D5D8] rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-200 relative">
+    <div className="fixed inset-0 bg-stone-900/75 dark:bg-black/85 backdrop-blur-xs z-50 flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-[#FCFAF8] dark:bg-[#16161A] border border-[#E8D5D8] dark:border-stone-800 rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-200 relative">
         {/* زر تبديل المظهر في نافذة الدخول */}
         <button
           type="button"
           onClick={toggleTheme}
           title={isDarkMode ? 'التبديل للوضع النهاري ☀️' : 'التبديل للوضع الليلي 🌙'}
-          className="absolute top-5 left-5 p-2 rounded-xl bg-white border border-stone-200 text-stone-600 hover:text-stone-900 shadow-2xs transition cursor-pointer"
+          className="absolute top-5 left-5 p-2 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 hover:text-stone-900 dark:hover:text-white shadow-2xs transition cursor-pointer"
         >
-          {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-[#8E5364]" />}
+          {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-[#8E5364] dark:text-[#E8A5B8]" />}
         </button>
 
+        {/* زر الإغلاق: يظهر فقط في حال كانت النافذة منبثقة اختيارية (مثل تبديل الحساب) ولا يظهر إطلاقاً في تسجيل الدخول الإجباري */}
         {onClose && (
           <button
             type="button"
             onClick={onClose}
-            title="إغلاق النافذة"
-            className="absolute top-5 right-5 p-2 rounded-xl bg-white border border-stone-200 text-stone-500 hover:text-stone-800 shadow-2xs transition cursor-pointer"
+            title="إغلاق نافذة التبديل"
+            className="absolute top-5 right-5 p-2 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-white shadow-2xs transition cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -123,20 +128,26 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onClose }) => {
 
         {/* ترويسة نافذة الدخول */}
         <div className="text-center mb-6">
-          <div className="w-16 h-16 mx-auto rounded-3xl bg-[#FAF0F3] border border-[#E8D5D8] text-[#8E5364] flex items-center justify-center shadow-xs mb-3 text-3xl">
+          <div className="w-16 h-16 mx-auto rounded-3xl bg-[#FAF0F3] dark:bg-[#2A1B22] border border-[#E8D5D8] dark:border-[#5B3946] text-[#8E5364] dark:text-[#E8A5B8] flex items-center justify-center shadow-xs mb-3 text-3xl">
             📖
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold font-quran text-stone-900">
+          <h2 className="text-xl sm:text-2xl font-bold font-quran text-stone-900 dark:text-stone-100">
             {settings?.name || 'مقرأة غيث الغيم'}
           </h2>
-          <p className="text-xs text-stone-500 mt-1 font-medium">
+          <p className="text-xs text-stone-500 dark:text-stone-400 mt-1 font-medium">
             بوابة الدخول الرسمية للكادر التعليمي والإداري
           </p>
+          {!onClose && (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 mt-2.5 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-[11px] font-semibold">
+              <Lock className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>تسجيل الدخول إلزامي لمتابعة العمل في المنصة</span>
+            </div>
+          )}
         </div>
 
         {error && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3.5 rounded-2xl mb-5 text-xs text-right font-bold flex items-start gap-2 shadow-2xs">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+          <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-800 dark:text-rose-200 p-3.5 rounded-2xl mb-5 text-xs text-right font-bold flex items-start gap-2 shadow-2xs">
+            <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
             <span className="leading-relaxed">{error}</span>
           </div>
         )}
@@ -144,8 +155,8 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onClose }) => {
         {/* نموذج تسجيل الدخول بالبريد الإلكتروني والرمز السري */}
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-stone-700 mb-1.5 flex items-center gap-1.5">
-              <Mail className="w-3.5 h-3.5 text-[#8E5364]" />
+            <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
+              <Mail className="w-3.5 h-3.5 text-[#8E5364] dark:text-[#E8A5B8]" />
               <span>البريد الإلكتروني:</span>
             </label>
             <div className="relative">
@@ -160,14 +171,14 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onClose }) => {
                 required
                 autoFocus
                 dir="ltr"
-                className="w-full bg-white border border-[#E2D5CC] rounded-2xl px-4 py-2.5 text-stone-900 text-sm font-medium focus:border-[#8E5364] focus:ring-2 focus:ring-[#8E5364]/20 focus:outline-hidden transition shadow-2xs"
+                className="w-full bg-white dark:bg-stone-900 border border-[#E2D5CC] dark:border-stone-700 rounded-2xl px-4 py-2.5 text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 text-sm font-medium focus:border-[#8E5364] dark:focus:border-[#B57388] focus:ring-2 focus:ring-[#8E5364]/20 focus:outline-hidden transition shadow-2xs"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-stone-700 mb-1.5 flex items-center gap-1.5">
-              <KeyRound className="w-3.5 h-3.5 text-[#8E5364]" />
+            <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
+              <KeyRound className="w-3.5 h-3.5 text-[#8E5364] dark:text-[#E8A5B8]" />
               <span>الرمز السري (PIN):</span>
             </label>
             <div className="relative">
@@ -182,12 +193,12 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onClose }) => {
                 maxLength={8}
                 required
                 dir="ltr"
-                className="w-full bg-white border border-[#E2D5CC] rounded-2xl px-4 py-2.5 text-stone-900 text-center text-lg tracking-widest font-mono font-bold focus:border-[#8E5364] focus:ring-2 focus:ring-[#8E5364]/20 focus:outline-hidden transition shadow-2xs"
+                className="w-full bg-white dark:bg-stone-900 border border-[#E2D5CC] dark:border-stone-700 rounded-2xl px-4 py-2.5 text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 text-center text-lg tracking-widest font-mono font-bold focus:border-[#8E5364] dark:focus:border-[#B57388] focus:ring-2 focus:ring-[#8E5364]/20 focus:outline-hidden transition shadow-2xs"
               />
               <button
                 type="button"
                 onClick={() => setShowPin(!showPin)}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 transition p-1 cursor-pointer"
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 dark:text-stone-500 dark:hover:text-stone-200 transition p-1 cursor-pointer"
                 title={showPin ? 'إخفاء الرمز' : 'إظهار الرمز'}
               >
                 {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -199,7 +210,7 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onClose }) => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#8E5364] hover:bg-[#744251] text-white text-sm font-bold py-3 rounded-2xl transition shadow-xs active:scale-98 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full bg-[#8E5364] hover:bg-[#744251] dark:bg-[#744251] dark:hover:bg-[#5E3440] text-white text-sm font-bold py-3 rounded-2xl transition shadow-xs active:scale-98 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
@@ -216,8 +227,8 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onClose }) => {
           </div>
         </form>
 
-        <div className="mt-5 pt-4 border-t border-stone-200/60 text-center">
-          <p className="text-[11px] text-stone-400 leading-relaxed">
+        <div className="mt-5 pt-4 border-t border-stone-200/60 dark:border-stone-800 text-center">
+          <p className="text-[11px] text-stone-400 dark:text-stone-500 leading-relaxed">
             🔒 يتم الدخول حصراً بالبريد الإلكتروني والرمز المعتمد الصادر من إدارة المقرأة. في حال نسيان الرمز، يُرجى مراجعة قائدة المقرأة لاستخراجه أو تحديثه.
           </p>
         </div>

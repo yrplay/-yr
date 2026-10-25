@@ -16,6 +16,8 @@ import { StudentPortfolioView } from './views/StudentPortfolioView';
 import { ReportsView } from './views/ReportsView';
 import { StaffView } from './views/StaffView';
 import { SettingsView } from './views/SettingsView';
+import { TrackDetailPage } from './views/TrackDetailPage';
+import { SubscriptionsFinancialsView } from './views/SubscriptionsFinancialsView';
 import { StaffLoginGate } from './components/StaffLoginGate';
 import { Footer } from './components/Footer';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
@@ -149,15 +151,12 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // التحقق من صلاحية الدخول
+  // التحقق من صلاحية الدخول الإلزامي (لا يمكن إغلاقه أو تجاوزه)
   const securityActive = settings?.securityEnabled ?? true;
   if (securityActive && !isAuthenticated) {
     return (
       <StaffLoginGate
-        onClose={() => {
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('ghaith_authenticated', 'true');
-          }
+        onSuccess={() => {
           setIsAuthenticated(true);
         }}
       />
@@ -204,6 +203,19 @@ const AppContent: React.FC = () => {
             <TracksCirclesView
               onSelectStudent={handleSelectStudentForPortfolio}
               onNavigateToSection={(s) => setCurrentView(s as ViewType)}
+            />
+          )}
+
+          {currentView === 'track_detail' && (
+            <TrackDetailPage
+              onNavigateBack={() => setCurrentView('tracks_circles')}
+              onNavigateToStudent={handleSelectStudentForPortfolio}
+            />
+          )}
+
+          {currentView === 'subscriptions' && (
+            <SubscriptionsFinancialsView
+              onNavigateToStudent={handleSelectStudentForPortfolio}
             />
           )}
 

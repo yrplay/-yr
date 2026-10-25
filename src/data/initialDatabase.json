@@ -85,6 +85,59 @@
       "name": "مشكاة الغيم للحفظ",
       "code": "MG-MEM",
       "description": "المسار التأسيسي والتمكيني لحفظ كتاب الله وضبطه وإتقانه وتطبيق أحكام التجويد وفق خطط مشكاة الغيم المعتمدة.",
+      "icon": "🪴",
+      "subscriptionFee": {
+        "amount": 250,
+        "currency": "ر.س",
+        "period": "monthly",
+        "notes": "شامل الحقيبة القرآنية ومقررات التجويد ومتابعة التسميع اليومي والشهادات المعتمدة"
+      },
+      "systemRules": {
+        "earlyPreparation": true,
+        "atqiniHomeworkRequired": true,
+        "thursdayChallenges": true,
+        "customPlansAllowed": true,
+        "detailedWorkflowText": "يبدأ اليوم القرآني بإرسال بطاقة التحضير المبكر قبل بدء الحلقة بربع ساعة، يليه التسميع اليومي غيباً مع تطبيق أحكام التجويد، ثم مصفوفة المراجعة الصغرى والتمكين مع الرفيقة، وتُختم بمطابقة شروط دليل مشكاة الغيم للإتقان.",
+        "masteryGuide": {
+          "listenToReciterTimes": 3,
+          "reciteLookingTimes": 5,
+          "masteryRepetitionTimes": 20,
+          "minorRevisionAmount": "آخر 3 أوجه",
+          "tamkeenRevisionAmount": "ربع حزب",
+          "pointsPerCondition": 2
+        }
+      },
+      "isArchived": false,
+      "createdAt": "2024-10-01T08:00:00Z",
+      "updatedAt": "2024-10-01T08:00:00Z"
+    },
+    {
+      "id": "t-2",
+      "name": "مسار التمكين والرسوخ",
+      "code": "MG-TAM",
+      "description": "مسار متخصص للمتقدمات وخاتمات الأجزاء لضبط الأوجه الصعبة، مراجعة ربع حزب يومياً، والتثبيت المتقن تمهيداً للإجازة بالسند.",
+      "icon": "🌸",
+      "subscriptionFee": {
+        "amount": 350,
+        "currency": "ر.س",
+        "period": "monthly",
+        "notes": "يشمل جلسات التسميع الفردية واختبارات الأجزاء التراكمية والتأهيل للإسناد"
+      },
+      "systemRules": {
+        "earlyPreparation": true,
+        "atqiniHomeworkRequired": true,
+        "thursdayChallenges": true,
+        "customPlansAllowed": false,
+        "detailedWorkflowText": "يركز المسار على الضبط الصارم والاستظهار مع التدقيق على المتشابهات اللفظية، مع إلزامية مراجعة حزب كامل أسبوعياً والمشاركة في التحدي التنافسي المباشر.",
+        "masteryGuide": {
+          "listenToReciterTimes": 5,
+          "reciteLookingTimes": 7,
+          "masteryRepetitionTimes": 30,
+          "minorRevisionAmount": "نصف حزب",
+          "tamkeenRevisionAmount": "حزب كامل",
+          "pointsPerCondition": 3
+        }
+      },
       "isArchived": false,
       "createdAt": "2024-10-01T08:00:00Z",
       "updatedAt": "2024-10-01T08:00:00Z"
@@ -1189,6 +1242,86 @@
       "actionType": "create",
       "entity": "system",
       "details": "تهيئة النظام واعتماد مسار مشكاة الغيم وحلقات راسخات (١، ٢، ٣)"
+    }
+  ],
+  "studentSubscriptions": [
+    {
+      "id": "sub-1",
+      "studentId": "s-1",
+      "trackId": "t-1",
+      "cycleMonth": "ربيع الآخر - جمادى الأولى 1446",
+      "requiredAmount": 250,
+      "paidAmount": 250,
+      "status": "paid",
+      "paymentMethod": "bank_transfer",
+      "paymentDate": "2026-10-15",
+      "receiptNumber": "TRX-88491",
+      "notes": "تم استلام التحويل البنكي وتأكيد القيد",
+      "updatedAt": "2026-10-15T10:00:00Z"
+    },
+    {
+      "id": "sub-2",
+      "studentId": "s-2",
+      "trackId": "t-1",
+      "cycleMonth": "ربيع الآخر - جمادى الأولى 1446",
+      "requiredAmount": 250,
+      "paidAmount": 250,
+      "status": "paid",
+      "paymentMethod": "pos",
+      "paymentDate": "2026-10-16",
+      "receiptNumber": "POS-55102",
+      "notes": "سداد عبر جهاز الشبكة في المقرأة",
+      "updatedAt": "2026-10-16T11:30:00Z"
+    },
+    {
+      "id": "sub-3",
+      "studentId": "s-3",
+      "trackId": "t-1",
+      "cycleMonth": "ربيع الآخر - جمادى الأولى 1446",
+      "requiredAmount": 250,
+      "paidAmount": 150,
+      "status": "partial",
+      "paymentMethod": "bank_transfer",
+      "paymentDate": "2026-10-18",
+      "receiptNumber": "TRX-99014",
+      "notes": "دفعة أولى 150 ريال والمتبقي 100 ريال مع نهاية الشهر",
+      "updatedAt": "2026-10-18T09:15:00Z"
+    },
+    {
+      "id": "sub-4",
+      "studentId": "s-4",
+      "trackId": "t-1",
+      "cycleMonth": "ربيع الآخر - جمادى الأولى 1446",
+      "requiredAmount": 250,
+      "paidAmount": 0,
+      "status": "pending",
+      "notes": "بانتظار إشعار السداد من ولي الأمر",
+      "updatedAt": "2026-10-19T08:00:00Z"
+    },
+    {
+      "id": "sub-5",
+      "studentId": "s-5",
+      "trackId": "t-1",
+      "cycleMonth": "ربيع الآخر - جمادى الأولى 1446",
+      "requiredAmount": 250,
+      "paidAmount": 250,
+      "status": "paid",
+      "paymentMethod": "cash",
+      "paymentDate": "2026-10-17",
+      "receiptNumber": "REC-1029",
+      "notes": "سداد نقدي في شؤون الطالبات",
+      "updatedAt": "2026-10-17T12:00:00Z"
+    },
+    {
+      "id": "sub-6",
+      "studentId": "s-6",
+      "trackId": "t-1",
+      "cycleMonth": "ربيع الآخر - جمادى الأولى 1446",
+      "requiredAmount": 250,
+      "paidAmount": 0,
+      "status": "exempt",
+      "notes": "معفاة بقرار الإدارة لمنحة التفوق القرآني وحفظة الأجزاء",
+      "updatedAt": "2026-10-14T08:00:00Z"
     }
   ]
 }

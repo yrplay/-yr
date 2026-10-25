@@ -9,6 +9,7 @@ import {
 import { OfficialSeal } from '../components/OfficialSeal';
 import { PWAInstallButton } from '../components/PWAInstallButton';
 import { AuditLogModal } from '../components/AuditLogModal';
+import { defaultMasteryGuideConfig } from '../types';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -42,7 +43,14 @@ export const SettingsView: React.FC = () => {
     sealImageUrl: settings.sealImageUrl || '',
     leaderSignatureUrl: settings.leaderSignatureUrl || '',
     securityEnabled: settings.securityEnabled ?? true,
-    leaderPasscode: settings.leaderPasscode || '5522'
+    leaderPasscode: settings.leaderPasscode || '5522',
+    // معايير دليل مشكاة الغيم للإتقان
+    listenToReciterTimes: settings.defaultMasteryGuide?.listenToReciterTimes ?? defaultMasteryGuideConfig.listenToReciterTimes,
+    reciteLookingTimes: settings.defaultMasteryGuide?.reciteLookingTimes ?? defaultMasteryGuideConfig.reciteLookingTimes,
+    masteryRepetitionTimes: settings.defaultMasteryGuide?.masteryRepetitionTimes ?? defaultMasteryGuideConfig.masteryRepetitionTimes,
+    minorRevisionAmount: settings.defaultMasteryGuide?.minorRevisionAmount || defaultMasteryGuideConfig.minorRevisionAmount,
+    tamkeenRevisionAmount: settings.defaultMasteryGuide?.tamkeenRevisionAmount || defaultMasteryGuideConfig.tamkeenRevisionAmount,
+    pointsPerCondition: settings.defaultMasteryGuide?.pointsPerCondition ?? defaultMasteryGuideConfig.pointsPerCondition
   });
 
   const [isSaving, setIsSaving] = useState(false);
@@ -155,9 +163,19 @@ export const SettingsView: React.FC = () => {
     e.preventDefault();
     setIsSaving(true);
     try {
-      await updateSettings(form);
+      await updateSettings({
+        ...form,
+        defaultMasteryGuide: {
+          listenToReciterTimes: Number(form.listenToReciterTimes),
+          reciteLookingTimes: Number(form.reciteLookingTimes),
+          masteryRepetitionTimes: Number(form.masteryRepetitionTimes),
+          minorRevisionAmount: form.minorRevisionAmount,
+          tamkeenRevisionAmount: form.tamkeenRevisionAmount,
+          pointsPerCondition: Number(form.pointsPerCondition)
+        }
+      });
       applyLiveIdentity(form);
-      showToast('تم حفظ كافة التعديلات والعناوين والألوان والشعار والتواقيع بنجاح في النظام ✅');
+      showToast('تم حفظ كافة التعديلات، الهوية، الشعار، ومعايير دليل الإتقان بنجاح في النظام ✅');
     } finally {
       setIsSaving(false);
     }
@@ -423,6 +441,184 @@ export const SettingsView: React.FC = () => {
                 placeholder="لوحة قيادة المقرأة، متابعة الحلقات، التحضير والإنجاز، ورصد التحديات والاختبارات المعتمدة"
                 className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-2 focus:ring-[#8E5364]"
               />
+            </div>
+          </div>
+        </div>
+
+        {/* معايير دليل مشكاة الغيم للإتقان الديناميكية */}
+        <div className="bg-white dark:bg-[#16161A] p-6 rounded-3xl border border-[#E8DFD8] dark:border-stone-800 shadow-2xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 dark:border-stone-800 pb-3">
+            <div>
+              <h3 className="font-bold text-stone-900 dark:text-stone-100 text-sm flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#8E5364] dark:text-[#E8A5B8]" />
+                <span>معايير «دليل مشكاة الغيم للإتقان» الافتراضية للمقرأة:</span>
+              </h3>
+              <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">
+                تضبط عدد مرات الاستماع، التلاوة نظراً، والتكرار المتقن، وتنعكس مباشرة على خانات رصد التسميع اليومي ومسارات المقرأة
+              </p>
+            </div>
+
+            {/* Quick Presets */}
+            <div className="flex items-center gap-1.5 self-start">
+              <span className="text-[11px] font-bold text-stone-400">نماذج سريعة:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setForm(prev => ({
+                    ...prev,
+                    listenToReciterTimes: 3,
+                    reciteLookingTimes: 5,
+                    masteryRepetitionTimes: 20,
+                    minorRevisionAmount: 'آخر 3 أوجه',
+                    tamkeenRevisionAmount: 'ربع حزب',
+                    pointsPerCondition: 2
+                  }));
+                  showToast('تم تطبيق نموذج التأسيس (3 - 5 - 20) 🌿');
+                }}
+                className="px-2.5 py-1 bg-stone-100 dark:bg-stone-800 hover:bg-[#FAF0F3] hover:text-[#8E5364] text-[11px] font-bold rounded-lg transition cursor-pointer"
+              >
+                التأسيس
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setForm(prev => ({
+                    ...prev,
+                    listenToReciterTimes: 5,
+                    reciteLookingTimes: 7,
+                    masteryRepetitionTimes: 30,
+                    minorRevisionAmount: 'نصف حزب',
+                    tamkeenRevisionAmount: 'حزب كامل',
+                    pointsPerCondition: 3
+                  }));
+                  showToast('تم تطبيق نموذج التمكين (5 - 7 - 30) 🌸');
+                }}
+                className="px-2.5 py-1 bg-stone-100 dark:bg-stone-800 hover:bg-[#FAF0F3] hover:text-[#8E5364] text-[11px] font-bold rounded-lg transition cursor-pointer"
+              >
+                التمكين
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setForm(prev => ({
+                    ...prev,
+                    listenToReciterTimes: 7,
+                    reciteLookingTimes: 10,
+                    masteryRepetitionTimes: 40,
+                    minorRevisionAmount: 'حزب كامل',
+                    tamkeenRevisionAmount: 'جزء كامل',
+                    pointsPerCondition: 4
+                  }));
+                  showToast('تم تطبيق نموذج الإجازة والرسوخ (7 - 10 - 40) 💎');
+                }}
+                className="px-2.5 py-1 bg-stone-100 dark:bg-stone-800 hover:bg-[#FAF0F3] hover:text-[#8E5364] text-[11px] font-bold rounded-lg transition cursor-pointer"
+              >
+                الرسوخ
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 bg-[#FCFAF8] dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-1.5">
+              <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+                <span>🎧</span>
+                <span>عدد مرات الاستماع للقارئ المجوّد:</span>
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="50"
+                required
+                value={form.listenToReciterTimes}
+                onChange={e => setForm({ ...form, listenToReciterTimes: Number(e.target.value) })}
+                className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl text-center font-bold text-sm bg-white dark:bg-stone-800"
+              />
+              <span className="text-[10px] text-stone-400 block text-center">الافتراضي: 3 مرات</span>
+            </div>
+
+            <div className="p-4 bg-[#FCFAF8] dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-1.5">
+              <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+                <span>📖</span>
+                <span>عدد مرات التلاوة نظراً من المصحف:</span>
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="50"
+                required
+                value={form.reciteLookingTimes}
+                onChange={e => setForm({ ...form, reciteLookingTimes: Number(e.target.value) })}
+                className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl text-center font-bold text-sm bg-white dark:bg-stone-800"
+              />
+              <span className="text-[10px] text-stone-400 block text-center">الافتراضي: 5 مرات</span>
+            </div>
+
+            <div className="p-4 bg-[#FCFAF8] dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-1.5">
+              <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+                <span>🔁</span>
+                <span>عدد مرات التكرار المتقن غيباً:</span>
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="100"
+                required
+                value={form.masteryRepetitionTimes}
+                onChange={e => setForm({ ...form, masteryRepetitionTimes: Number(e.target.value) })}
+                className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl text-center font-bold text-sm bg-white dark:bg-stone-800 text-[#8E5364] dark:text-[#E8A5B8]"
+              />
+              <span className="text-[10px] text-stone-400 block text-center">الافتراضي: 20 مرة</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 bg-[#FCFAF8] dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-1.5">
+              <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+                <span>🌿</span>
+                <span>مقدار المراجعة الصغرى الافتراضي:</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={form.minorRevisionAmount}
+                onChange={e => setForm({ ...form, minorRevisionAmount: e.target.value })}
+                placeholder="آخر 3 أوجه"
+                className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-bold bg-white dark:bg-stone-800"
+              />
+              <span className="text-[10px] text-stone-400 block">المراجعة اليومية لآخر ما حُفظ</span>
+            </div>
+
+            <div className="p-4 bg-[#FCFAF8] dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-1.5">
+              <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+                <span>🛡️</span>
+                <span>مقدار مراجعة التمكين الافتراضي:</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={form.tamkeenRevisionAmount}
+                onChange={e => setForm({ ...form, tamkeenRevisionAmount: e.target.value })}
+                placeholder="ربع حزب"
+                className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-bold bg-white dark:bg-stone-800"
+              />
+              <span className="text-[10px] text-stone-400 block">تثبيت المحفوظ القديم بالتعاقب</span>
+            </div>
+
+            <div className="p-4 bg-[#FCFAF8] dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-1.5">
+              <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+                <span>⭐️</span>
+                <span>وزن كل شرط في درجات التسميع:</span>
+              </label>
+              <input
+                type="number"
+                min="0.5"
+                step="0.5"
+                required
+                value={form.pointsPerCondition}
+                onChange={e => setForm({ ...form, pointsPerCondition: Number(e.target.value) })}
+                className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl text-center font-bold text-xs bg-white dark:bg-stone-800"
+              />
+              <span className="text-[10px] text-stone-400 block text-center">الوزن الافتراضي: درجتان</span>
             </div>
           </div>
         </div>
