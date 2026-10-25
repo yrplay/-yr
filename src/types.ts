@@ -387,3 +387,41 @@ export interface AuditLog {
   details: string;
   timestamp: string;
 }
+
+// معايير دليل الإتقان الافتراضية
+export const defaultMasteryGuideConfig = {
+  listenToReciterTimes: 3,
+  reciteLookingTimes: 5,
+  masteryRepetitionTimes: 20,
+  minorRevisionAmount: 'آخر ٣ أوجه',
+  tamkeenRevisionAmount: 'ربع حزب',
+  pointsPerCondition: 2
+};
+
+// صلاحيات الأدوار الافتراضية
+export const defaultPermissionsByRole: Record<string, any> = {
+  leader: {
+    canManageUsers: true,
+    canManageTracks: true,
+    canManageCircles: true,
+    canManageFinances: true,
+    canEditScores: true,
+    canExportReports: true
+  },
+  supervisor: {
+    canManageUsers: false,
+    canManageTracks: false,
+    canManageCircles: true,
+    canManageFinances: true,
+    canEditScores: true,
+    canExportReports: true
+  },
+  teacher: {
+    canManageUsers: false,
+    canManageTracks: false,
+    canManageCircles: false,
+    canManageFinances: false,
+    canEditScores: true,
+    canExportReports: false
+  }
+};
