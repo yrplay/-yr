@@ -72,7 +72,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
   const archivedTracks = tracks.filter(t => t.isArchived);
 
   const currentTrack = tracks.find(t => t.id === selectedTrackId) || activeTracks[0] || tracks[0];
-  
+
   const trackCircles = circles.filter(c => c.trackId === currentTrack?.id && !c.isArchived);
   const archivedTrackCircles = circles.filter(c => c.trackId === currentTrack?.id && c.isArchived);
   const trackStudents = students.filter(s => s.trackId === currentTrack?.id && s.status === 'active');
@@ -351,7 +351,6 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              {/* زر الدخول لصفحة تفاصيل ونظام المسار */}
               <button
                 onClick={() => setSelectedTrackDetailId(currentTrack.id)}
                 className="px-3 py-2 rounded-xl bg-[#FAF0F3] hover:bg-[#F2E0E6] text-[#8E5364] text-xs font-bold flex items-center gap-1.5 border border-[#E2D5CC] transition cursor-pointer"
