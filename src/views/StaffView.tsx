@@ -222,7 +222,7 @@ export const StaffView: React.FC = () => {
         name: user.name,
         role: user.role,
         title: user.title,
-        email: user.email,
+        email: user.email || '',
         phone: user.phone || '05',
         passcode: user.passcode || localStorage.getItem(`ghaith_pin_${user.id}`) || '',
         avatarIcon: user.avatarIcon || 'mushaf',
@@ -572,7 +572,7 @@ export const StaffView: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => {
-                              navigator.clipboard.writeText(user.email);
+                              navigator.clipboard.writeText(user.email || '');
                               showToast(`تم نسخ بريد ${user.name} 📋`);
                             }}
                             className="text-stone-400 hover:text-stone-700 transition cursor-pointer"
@@ -752,7 +752,7 @@ export const StaffView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => {
-                        navigator.clipboard.writeText(user.email);
+                        navigator.clipboard.writeText(user.email || '');
                         showToast(`تم نسخ بريد ${user.name} 📋`);
                       }}
                       className="text-stone-400 hover:text-stone-700 transition"
@@ -1270,7 +1270,7 @@ export const StaffView: React.FC = () => {
                 const isEnabled = !!userPermissionsState[item.key];
                 return (
                   <div
-                    key={item.key}
+                    key={String(item.key)}
                     onClick={() => handleToggleSinglePermission(item.key)}
                     className={`p-3.5 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 ${
                       isEnabled

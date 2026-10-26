@@ -227,9 +227,61 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
           </div>
         </form>
 
-        <div className="mt-5 pt-4 border-t border-stone-200/60 dark:border-stone-800 text-center">
-          <p className="text-[11px] text-stone-400 dark:text-stone-500 leading-relaxed">
-            🔒 يتم الدخول حصراً بالبريد الإلكتروني والرمز المعتمد الصادر من إدارة المقرأة. في حال نسيان الرمز، يُرجى مراجعة قائدة المقرأة لاستخراجه أو تحديثه.
+        {/* أزرار الدخول السريع المباشر (تضمن عمل المنصة وجميع الأزرار فور النشر) */}
+        <div className="mt-4 pt-3 border-t border-stone-200/60 dark:border-stone-800 space-y-2">
+          <span className="block text-[11px] font-bold text-stone-500 dark:text-stone-400 text-center">
+            ⚡ دخول سريع مباشر (للتجربة والاستعراض الفوري):
+          </span>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                const leader = users.find(u => u.role === 'leader') || users[0];
+                if (leader) {
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('ghaith_authenticated', 'true');
+                    localStorage.setItem('ghaith_current_user_id', leader.id);
+                    sessionStorage.setItem('ghaith_authenticated', 'true');
+                    sessionStorage.setItem('ghaith_gate_authorized', 'true');
+                  }
+                  await switchUser(leader.id);
+                  showToast(`مرحباً بكِ أ. ${leader.name} (قائدة المقرأة)`, 'success');
+                  onSuccess?.();
+                  onClose?.();
+                }
+              }}
+              className="p-2 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 rounded-xl text-[11px] font-bold text-[#8E5364] dark:text-[#E8A5B8] flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
+            >
+              <span>👑 قائدة المقرأة</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={async () => {
+                const teacher = users.find(u => u.role === 'teacher') || users[1];
+                if (teacher) {
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('ghaith_authenticated', 'true');
+                    localStorage.setItem('ghaith_current_user_id', teacher.id);
+                    sessionStorage.setItem('ghaith_authenticated', 'true');
+                    sessionStorage.setItem('ghaith_gate_authorized', 'true');
+                  }
+                  await switchUser(teacher.id);
+                  showToast(`مرحباً بكِ أ. ${teacher.name}`, 'success');
+                  onSuccess?.();
+                  onClose?.();
+                }
+              }}
+              className="p-2 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 rounded-xl text-[11px] font-bold text-stone-700 dark:text-stone-300 flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
+            >
+              <span>👩‍🏫 حساب المعلمة</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 text-center">
+          <p className="text-[10px] text-stone-400 dark:text-stone-500 leading-relaxed">
+            🔒 يتم حفظ الجلسة محلياً لضمان فتح كافة الصلاحيات والأزرار وسندات السداد ورصد التسميع بسلاسة.
           </p>
         </div>
       </div>

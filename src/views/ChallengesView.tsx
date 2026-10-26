@@ -98,8 +98,12 @@ export const ChallengesView: React.FC = () => {
         dueDateDescription: challenge.dueDateDescription,
         maxTotalPoints: challenge.maxTotalPoints,
         earlyPrepPoints: challenge.earlyPrepPoints,
-        includesPeerReview: challenge.includesPeerReview,
-        tasks: challenge.tasks || []
+        includesPeerReview: challenge.includesPeerReview ?? true,
+        tasks: (challenge.tasks || []).map((t: any) => ({
+          id: t.id,
+          name: t.name || t.title || '',
+          maxPoints: t.maxPoints ?? t.points ?? 2
+        }))
       });
     } else {
       setEditingChallenge(null);

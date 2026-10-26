@@ -119,7 +119,7 @@ export const AtqiniView: React.FC = () => {
 
   // Student Evaluation Form
   const [subForm, setSubForm] = useState<{
-    status: 'completed' | 'in_progress' | 'not_started';
+    status: 'completed' | 'in_progress' | 'not_started' | 'late' | 'pending';
     isCompletedCorrectly: boolean;
     extractedExamplesDone: boolean;
     appliedDuringRecitation: boolean;

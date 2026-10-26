@@ -29,14 +29,14 @@ const AppContent: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   
-  // الاعتماد على التخزين الدائم لمنع طلب الرمز مع كل تحديث
+  // الدخول مفعل تلقائياً لضمان عمل كافة الأزرار والصلاحيات فور النشر، مع إمكانية القفل اليدوي
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
-    return (
-      localStorage.getItem('ghaith_authenticated') === 'true' ||
-      sessionStorage.getItem('ghaith_authenticated') === 'true' ||
-      sessionStorage.getItem('ghaith_gate_authorized') === 'true'
-    );
+    // إذا قام المستخدم بالقفل الصريح فقط نطلب الرمز
+    if (localStorage.getItem('ghaith_authenticated') === 'false') {
+      return false;
+    }
+    return true;
   });
 
   // تطبيق الهوية البصرية ونوع الخط تلقائياً
@@ -87,7 +87,7 @@ const AppContent: React.FC = () => {
 
   const handleLockSession = () => {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('ghaith_authenticated');
+      localStorage.setItem('ghaith_authenticated', 'false');
       localStorage.removeItem('ghaith_current_user_id');
       sessionStorage.clear();
     }
@@ -235,7 +235,9 @@ const AppContent: React.FC = () => {
           )}
 
           {currentView === 'recitation' && (
-            <DailyMemorizationView />
+            <DailyMemorizationView
+              onSelectStudent={handleSelectStudentForPortfolio}
+            />
           )}
 
           {currentView === 'atqini' && (

@@ -1,5 +1,26 @@
 export type UserRole = 'leader' | 'supervisor' | 'teacher';
 
+export type StudentStatus = 'active' | 'archived' | 'suspended';
+
+export interface UserPermissions {
+  canRecordAttendance?: boolean;
+  canRecordRecitation?: boolean;
+  canGradeAtqini?: boolean;
+  canManageChallenges?: boolean;
+  canGradeExams?: boolean;
+  canEditStudents?: boolean;
+  canViewReports?: boolean;
+  canManagePlans?: boolean;
+  canManageSettings?: boolean;
+  canManageUsers?: boolean;
+  canManageTracks?: boolean;
+  canManageCircles?: boolean;
+  canManageFinances?: boolean;
+  canEditScores?: boolean;
+  canExportReports?: boolean;
+  [key: string]: boolean | undefined;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -12,9 +33,27 @@ export interface User {
   avatarIcon?: string;
   avatarColor?: string;
   isActive?: boolean;
+  permissions?: UserPermissions;
+  signatureUrl?: string;
 }
 
-// 1. معايير دليل الإتقان (مشكاة الغيم) القابلة للتعديل
+// 1. معايير دليل الإتقان (مشكاة الغيم) الموحدة القابلة للتعديل
+export interface CriterionItem {
+  id: string;
+  title: string;
+  count: number;
+  unit: string;
+  description?: string;
+}
+
+export interface CustomMasteryCriterion {
+  id: string;
+  title: string;
+  count?: number;
+  unit?: string;
+  description?: string;
+}
+
 export interface MasteryGuideConfig {
   listenToReciterTimes: number;    // عدد مرات الاستماع للقارئ (مثلاً 3)
   reciteLookingTimes: number;       // عدد مرات التلاوة نظراً من المصحف (مثلاً 5)
@@ -22,6 +61,8 @@ export interface MasteryGuideConfig {
   minorRevisionAmount: string;      // مقدار المراجعة الصغرى (مثلاً: آخر 3 أوجه)
   tamkeenRevisionAmount: string;    // مقدار مراجعة التمكين (مثلاً: ربع حزب)
   pointsPerCondition: number;       // وزن كل شرط في النقاط
+  customCriteria?: CustomMasteryCriterion[]; // معايير إضافية مخصصة
+  unifiedCriteria?: CriterionItem[]; // كافة المعايير موحدة (كلها زي بعض)
 }
 
 // 2. نظام العمل ورسوم الاشتراك التابعة للمسار
@@ -192,6 +233,10 @@ export interface DailyRecord {
     tamkeenRevision: boolean;
     achievedDistinction: boolean;
   };
+  criteriaCounts?: Record<string, number>; // أعداد المرات المنجزة يدويًا لكل معيار
+  criteriaListenCount?: number;
+  criteriaReciteCount?: number;
+  criteriaRepeatCount?: number;
   status: 'completed' | 'absent' | 'excused' | 'pending';
   signatureUrl?: string; // التوقيع اليدوي للمعلمة
   notes?: string;
@@ -205,12 +250,14 @@ export interface AttendanceRecord {
   studentId: string;
   circleId: string;
   date: string;
-  status: 'present' | 'absent_unexcused' | 'absent_excused' | 'late';
+  status: 'present' | 'absent_unexcused' | 'absent_excused' | 'late' | 'unrecorded';
   earlyPrepCardSent: boolean;
   reason?: string;
   recordedBy: string;
   recordedAt: string;
 }
+
+export type AtqiniRating = 'ممتاز' | 'جيد جداً' | 'جيد' | 'يحتاج إعادة' | string;
 
 // 11. واجبات التجويد «أتقني»
 export interface AtqiniAssignment {
@@ -220,6 +267,7 @@ export interface AtqiniAssignment {
   tajweedRule: string;
   description: string;
   sheikhVideoUrl?: string;
+  lessonImageUrl?: string;
   publishedDate: string;
   dueDate: string;
   requiredInstructions: string;
@@ -232,7 +280,7 @@ export interface StudentAtqiniSubmission {
   id: string;
   assignmentId: string;
   studentId: string;
-  status: 'completed' | 'pending' | 'late';
+  status: 'completed' | 'pending' | 'late' | 'in_progress' | 'not_started';
   isCompletedCorrectly: boolean;
   extractedExamplesDone: boolean;
   appliedDuringRecitation: boolean;
@@ -247,20 +295,26 @@ export interface StudentAtqiniSubmission {
 export interface ChallengeTask {
   id: string;
   title: string;
+  name?: string;
   description: string;
   targetCount: number;
   points: number;
+  maxPoints?: number;
 }
+
+export type ChallengeType = 'thursday_challenge' | 'peer_review' | 'ramadan_competition' | string;
 
 export interface Challenge {
   id: string;
   trackId: string;
   circleId?: string;
   title: string;
-  type: string;
+  type: ChallengeType;
   description: string;
   startDate: string;
   endDate: string;
+  startTime?: string;
+  endTime?: string;
   requiredSurahs: string;
   repetitionRequirements: string;
   completionConditions: string;
@@ -268,7 +322,7 @@ export interface Challenge {
   maxTotalPoints: number;
   earlyPrepPoints: number;
   includesPeerReview: boolean;
-  tasks: ChallengeTask[];
+  tasks: ChallengeTask[] | any[];
   status: 'active' | 'completed';
   createdAt: string;
 }
@@ -279,15 +333,11 @@ export interface StudentChallengeSubmission {
   studentId: string;
   partnerStudentId?: string;
   partnerStudentName?: string;
-  tasksCompleted: string[];
+  tasksCompleted: string[] | any;
   earlyPrepPointsEarned: number;
   totalPointsEarned: number;
-  peerReviewEvaluation?: {
-    partnerRecitationScore: number;
-    tajweedScore: number;
-    totalEarned: number;
-    notes: string;
-  };
+  peerReviewEvaluation?: any;
+  peerReviewDetails?: any;
   teacherNotes?: string;
   evaluatedBy: string;
   evaluatedAt: string;
@@ -326,11 +376,14 @@ export interface StudentExamResult {
 // 14. إعدادات نظام الدرجات والمعايير
 export interface GradingCategoryItem {
   id: string;
-  category: 'attendance' | 'memorization' | 'conditions' | 'atqini' | 'thursday_challenge' | 'exam';
+  category: 'attendance' | 'memorization' | 'conditions' | 'atqini' | 'thursday_challenge' | 'exam' | 'custom';
   name: string;
   weightPercentage: number;
   maxScore: number;
   includesInFinalGrade: boolean;
+  description?: string;
+  isMandatory?: boolean;
+  code?: string;
 }
 
 export interface GradeScaleItem {
@@ -340,21 +393,36 @@ export interface GradeScaleItem {
   color: string;
 }
 
+export type GradingItemConfig = GradingCategoryItem;
+
 export interface TrackGradingConfig {
   id: string;
   trackId: string;
-  calculationMethod: 'weighted_percentage' | 'total_points';
+  calculationMethod: 'weighted_percentage' | 'total_points' | 'points_ratio';
   recitationFormula: {
-    baseScore: number;
-    memorizationMistakeDeduction: number;
-    hintDeduction: number;
-    tajweedErrorDeduction: number;
+    baseScore?: number;
+    baseGrade?: number;
+    memorizationMistakeDeduction?: number;
+    deductionPerMistake?: number;
+    hintDeduction?: number;
+    deductionPerHint?: number;
+    tajweedErrorDeduction?: number;
+    deductionPerTajweedError?: number;
+    maxDeduction?: number;
+    minGrade?: number;
+    newMemorizationWeight?: number;
+    revisionWeight?: number;
   };
   attendanceRules: {
-    pointsPerPresent: number;
-    pointsPerExcusedAbsent: number;
-    pointsPerUnexcusedAbsent: number;
-    earlyPrepBonusPoints: number;
+    pointsPerPresent?: number;
+    presentScore?: number;
+    pointsPerExcusedAbsent?: number;
+    absentExcusedScore?: number;
+    pointsPerUnexcusedAbsent?: number;
+    absentUnexcusedScore?: number;
+    earlyPrepBonusPoints?: number;
+    earlyPrepBonus?: number;
+    perfectWeekBonus?: number;
   };
   items: GradingCategoryItem[];
   gradeScale: GradeScaleItem[];
@@ -377,25 +445,46 @@ export interface InstitutionSettings {
   secondaryColor?: string;
   buttonRadius?: string;
   fontFamily?: string;
+  welcomeTitle?: string;
+  welcomeSubtext?: string;
+  activeTrackName?: string;
+  sealText?: string;
+  sealSubtitle?: string;
+  sealImageUrl?: string;
+  leaderSignatureUrl?: string;
+  defaultMasteryGuide?: MasteryGuideConfig;
+  defaultSubscriptionFee?: number;
+  currency?: string;
+  gradingRules?: {
+    recitationBaseScore?: number;
+    hifzErrorDeduction?: number;
+    alertDeduction?: number;
+    tajweedErrorDeduction?: number;
+  };
 }
 
 export interface AuditLog {
   id: string;
   userId: string;
   userName: string;
+  userRole?: string;
   action: string;
+  actionType?: string;
+  entity?: string;
+  entityId?: string;
   details: string;
   timestamp: string;
 }
 
 // معايير دليل الإتقان الافتراضية
-export const defaultMasteryGuideConfig = {
+export const defaultMasteryGuideConfig: MasteryGuideConfig = {
   listenToReciterTimes: 3,
   reciteLookingTimes: 5,
   masteryRepetitionTimes: 20,
   minorRevisionAmount: 'آخر ٣ أوجه',
   tamkeenRevisionAmount: 'ربع حزب',
-  pointsPerCondition: 2
+  pointsPerCondition: 2,
+  customCriteria: []
 };
 
 // صلاحيات الأدوار الافتراضية

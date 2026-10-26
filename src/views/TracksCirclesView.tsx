@@ -96,6 +96,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
       <TrackDetailView
         trackId={selectedTrackDetailId}
         onBack={() => setSelectedTrackDetailId(null)}
+        onNavigateToSection={onNavigateToSection}
       />
     );
   }
@@ -351,17 +352,15 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              {/* زر الدخول لصفحة الاشتراكات والمالية (محصور بالإدارة العليا فقط) */}
-              {currentUser?.role === 'leader' && (
-                <button
-                  onClick={() => setSelectedTrackDetailId(currentTrack.id)}
-                  className="px-3 py-2 rounded-xl bg-[#FAF0F3] hover:bg-[#F2E0E6] text-[#8E5364] text-xs font-bold flex items-center gap-1.5 border border-[#E2D5CC] transition cursor-pointer"
-                  title="عرض وإدارة الاشتراكات والمالية العامة"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>الاشتراكات والمالية (خاص بالإدارة)</span>
-                </button>
-              )}
+              {/* زر الدخول لصفحة دليل الإتقان ومعايير المسار */}
+              <button
+                onClick={() => setSelectedTrackDetailId(currentTrack.id)}
+                className="px-3.5 py-2 rounded-xl bg-[#FAF0F3] hover:bg-[#F2E0E6] text-[#8E5364] text-xs font-bold flex items-center gap-1.5 border border-[#E2D5CC] transition cursor-pointer active:scale-95 shadow-2xs"
+                title="عرض وإدارة معايير دليل الإتقان والمنهجية الخاصة بهذا المسار"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>دليل الإتقان والمعايير</span>
+              </button>
 
               {currentUser?.role === 'leader' && (
                 <>

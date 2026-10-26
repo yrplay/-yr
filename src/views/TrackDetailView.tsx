@@ -1,142 +1,175 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  ArrowRight, Settings, DollarSign, Users, BookOpen, Layers, 
+  ArrowRight, Settings, Users, BookOpen, Layers, 
   CheckCircle2, Clock, AlertCircle, Edit3, Plus, 
-  CreditCard, FileText, Check, PenTool, Search, ShieldAlert
+  Sparkles, Trash2, X, Check, ShieldCheck, BookmarkCheck,
+  Award, Calendar, MessageSquareQuote
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { Track, TrackSystemRules, StudentSubscription } from '../types';
-import { SignaturePad } from '../components/SignaturePad';
+import { Track, CustomMasteryCriterion } from '../types';
 
 interface TrackDetailViewProps {
   trackId: string;
-  onBack: () => void;
+  onBack?: () => void;
+  onNavigateToSection?: (section: string) => void;
 }
 
-export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBack }) => {
+export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ 
+  trackId, 
+  onBack, 
+  onNavigateToSection 
+}) => {
   const { 
-    tracks, circles, students, users, currentUser,
-    studentSubscriptions, saveStudentSubscription,
-    updateTrack, updateTrackSystemRules, settings
+    tracks, circles, students, currentUser,
+    updateTrack, updateTrackSystemRules
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'finances' | 'overview'>('finances');
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [selectedSub, setSelectedSub] = useState<Partial<StudentSubscription> | null>(null);
-  const [showSigPad, setShowSigPad] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'mastery' | 'rules' | 'circles' | 'students'>('mastery');
 
-  const track = tracks.find(t => t.id === trackId);
-  const isLeader = currentUser?.role === 'leader';
+  // حالة إضافة معيار جديد مخصص داخل النافذة
+  const [newCriterionTitle, setNewCriterionTitle] = useState('');
+  const [newCriterionCount, setNewCriterionCount] = useState<number>(3);
+  const [newCriterionUnit, setNewCriterionUnit] = useState('مرات');
 
-  // قفل أمني: حصر قسم المالية والاشتراكات بالإدارة العليا فقط
-  if (!isLeader) {
-    return (
-      <div className="bg-white dark:bg-stone-900 p-8 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 text-center space-y-4 text-right" dir="rtl">
-        <div className="w-16 h-16 rounded-3xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center mx-auto text-2xl">
-          <ShieldAlert className="w-8 h-8 text-rose-600" />
-        </div>
-        <h3 className="text-base font-bold text-stone-800 dark:text-stone-100">
-          منطقة مخصصة للإدارة العليا فقط
-        </h3>
-        <p className="text-xs text-stone-500 dark:text-stone-400 max-w-md mx-auto leading-relaxed">
-          عذراً، هذا القسم يختص بالاشتراكات والتقارير المالية للمقرأة وسندات التحصيل، وتقتصر صلاحية الاطلاع عليه وإدارته على حساب الإدارة العليا فقط.
-        </p>
-        <button
-          onClick={onBack}
-          className="px-5 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition inline-flex items-center gap-2"
-        >
-          <ArrowRight className="w-4 h-4" />
-          العودة للمسارات والحلقات
-        </button>
-      </div>
-    );
-  }
+  const track = tracks.find(t => t.id === trackId) || tracks[0];
 
- // جلب كل الطالبات المسجلات فوراً وبدون أي شرط
-  const allActiveStudents = useMemo(() => {
-    return students || [];
-  }, [students]);
+  const handleBackNavigation = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (onBack) {
+      onBack();
+    }
+    if (onNavigateToSection) {
+      onNavigateToSection('tracks_circles');
+    }
+  };
 
-  const filteredStudents = useMemo(() => {
-    if (!searchQuery.trim()) return allActiveStudents;
-    return allActiveStudents.filter(s => 
-      s.name.includes(searchQuery) || (s.code && s.code.includes(searchQuery))
-    );
-  }, [allActiveStudents, searchQuery]);
+  const trackCircles = useMemo(() => {
+    if (!track) return [];
+    return circles.filter(c => c.trackId === track.id && !c.isArchived);
+  }, [circles, track]);
 
-  const feeAmount = track?.subscriptionFee?.amount ?? 150;
-  const currency = track?.subscriptionFee?.currency || 'ر.س';
-  const currentCycle = settings.currentHijriMonth || 'الشهر الحالي';
+  const trackStudents = useMemo(() => {
+    if (!track) return [];
+    return students.filter(s => s.trackId === track.id && s.status === 'active');
+  }, [students, track]);
 
-  // الحسابات المالية المباشرة لجميع الطالبات
-  const financialStats = useMemo(() => {
-    const totalExpected = allActiveStudents.length * feeAmount;
-    let totalCollected = 0;
-    let paidCount = 0;
-    let pendingCount = 0;
-    let exemptCount = 0;
+  // المعايير الموحدة للمسار (كلها زي بعض)
+  const unifiedCriteriaList = useMemo(() => {
+    const mg = track?.systemRules?.masteryGuide;
+    if (mg?.unifiedCriteria && mg.unifiedCriteria.length > 0) {
+      return mg.unifiedCriteria;
+    }
+    const list: Array<{ id: string; title: string; count: number; unit: string; description?: string }> = [
+      { id: 'crit-listen', title: 'الاستماع للمقرئ', count: mg?.listenToReciterTimes || 3, unit: 'مرات تكرار', description: 'الاستماع المتقن لمصحف الترتيل بصوت أحد مشاهير القراء المعتمدين لضبط الأداء والتجويد.' },
+      { id: 'crit-recite', title: 'التلاوة نظراً من المصحف', count: mg?.reciteLookingTimes || 5, unit: 'مرات تلاوة', description: 'القراءة البصرية من المصحف مع مطابقة مخارج الحروف والوقف والابتداء ورسم المصحف.' },
+      { id: 'crit-repeat', title: 'التكرار المتقن غيباً', count: mg?.masteryRepetitionTimes || 20, unit: 'مرة غيباً', description: 'التكرار الغيبي المركز للآيات حتى بلوغ درجة الانسيابية التامة ورسوخ الحفظ في الصدر.' }
+    ];
+    if (mg?.customCriteria && Array.isArray(mg.customCriteria)) {
+      mg.customCriteria.forEach((c, idx) => {
+        list.push({
+          id: c.id || `crit-custom-${idx}`,
+          title: c.title,
+          count: c.count || 1,
+          unit: c.unit || 'مرات',
+          description: c.description || 'معيار معتمد لتعزيز جودة الأداء والإتقان القرآني.'
+        });
+      });
+    }
+    return list;
+  }, [track]);
 
-    allActiveStudents.forEach(st => {
-      const sub = (studentSubscriptions || []).find(s => s.studentId === st.id);
-      const paid = sub?.paidAmount ?? 0;
-      totalCollected += paid;
-
-      if (sub?.status === 'paid' || paid >= feeAmount) {
-        paidCount++;
-      } else if (sub?.status === 'exempt') {
-        exemptCount++;
-      } else {
-        pendingCount++;
-      }
-    });
-
-    const totalRemaining = Math.max(0, totalExpected - totalCollected);
-    const collectionRate = totalExpected > 0 ? Math.round((totalCollected / totalExpected) * 100) : 0;
-
-    return {
-      totalExpected,
-      totalCollected,
-      totalRemaining,
-      collectionRate,
-      paidCount,
-      pendingCount,
-      exemptCount
-    };
-  }, [allActiveStudents, studentSubscriptions, feeAmount]);
-
-  // إعدادات المسار
+  // إعدادات المسار المنهجية
   const [editFormData, setEditFormData] = useState({
     name: track?.name || '',
     description: track?.description || '',
-    feeAmount: track?.subscriptionFee?.amount ?? 150,
-    feePeriod: track?.subscriptionFee?.period || 'monthly',
-    feeNotes: track?.subscriptionFee?.notes || '',
     earlyPrep: track?.systemRules?.earlyPreparation ?? true,
     atqiniReq: track?.systemRules?.atqiniHomeworkRequired ?? true,
     thursdayChallenges: track?.systemRules?.thursdayChallenges ?? true,
     customPlans: track?.systemRules?.customPlansAllowed ?? false,
     workflowText: track?.systemRules?.detailedWorkflowText || '',
-    listenTimes: track?.systemRules?.masteryGuide?.listenToReciterTimes ?? 3,
-    reciteTimes: track?.systemRules?.masteryGuide?.reciteLookingTimes ?? 5,
-    repeatTimes: track?.systemRules?.masteryGuide?.masteryRepetitionTimes ?? 20,
     minorRevAmount: track?.systemRules?.masteryGuide?.minorRevisionAmount || 'آخر ٣ أوجه',
-    tamkeenRevAmount: track?.systemRules?.masteryGuide?.tamkeenRevisionAmount || 'ربع حزب'
+    tamkeenRevAmount: track?.systemRules?.masteryGuide?.tamkeenRevisionAmount || 'ربع حزب',
+    criteriaList: [] as Array<{ id: string; title: string; count: number; unit: string; description?: string }>
   });
+
+  const handleOpenEditModal = () => {
+    if (track) {
+      setEditFormData({
+        name: track.name || '',
+        description: track.description || '',
+        earlyPrep: track.systemRules?.earlyPreparation ?? true,
+        atqiniReq: track.systemRules?.atqiniHomeworkRequired ?? true,
+        thursdayChallenges: track.systemRules?.thursdayChallenges ?? true,
+        customPlans: track.systemRules?.customPlansAllowed ?? false,
+        workflowText: track.systemRules?.detailedWorkflowText || '',
+        minorRevAmount: track.systemRules?.masteryGuide?.minorRevisionAmount || 'آخر ٣ أوجه',
+        tamkeenRevAmount: track.systemRules?.masteryGuide?.tamkeenRevisionAmount || 'ربع حزب',
+        criteriaList: unifiedCriteriaList.map(c => ({ ...c }))
+      });
+    }
+    setShowEditModal(true);
+  };
+
+  const handleAddCriterionToForm = () => {
+    if (!newCriterionTitle.trim()) return;
+    const newCrit = {
+      id: `crit-${Date.now()}`,
+      title: newCriterionTitle.trim(),
+      count: Number(newCriterionCount) || 1,
+      unit: newCriterionUnit || 'مرات',
+      description: 'معيار معتمد لتعزيز جودة الأداء والإتقان القرآني.'
+    };
+    setEditFormData(prev => ({
+      ...prev,
+      criteriaList: [...prev.criteriaList, newCrit]
+    }));
+    setNewCriterionTitle('');
+  };
+
+  const handleRemoveCriterionFromForm = (id: string) => {
+    setEditFormData(prev => ({
+      ...prev,
+      criteriaList: prev.criteriaList.filter(c => c.id !== id)
+    }));
+  };
+
+  const handleDirectDeleteCriterion = async (id: string) => {
+    if (!track) return;
+    const updatedList = unifiedCriteriaList.filter(c => c.id !== id);
+    const listenItem = updatedList.find(c => c.id === 'crit-listen' || c.title.includes('استماع'));
+    const reciteItem = updatedList.find(c => c.id === 'crit-recite' || c.title.includes('نظراً'));
+    const repeatItem = updatedList.find(c => c.id === 'crit-repeat' || c.title.includes('تكرار'));
+
+    await updateTrackSystemRules(track.id, {
+      masteryGuide: {
+        ...(track.systemRules?.masteryGuide || {
+          minorRevisionAmount: 'آخر ٣ أوجه',
+          tamkeenRevisionAmount: 'ربع حزب',
+          pointsPerCondition: 2
+        }),
+        unifiedCriteria: updatedList,
+        listenToReciterTimes: listenItem?.count || 3,
+        reciteLookingTimes: reciteItem?.count || 5,
+        masteryRepetitionTimes: repeatItem?.count || 20,
+        customCriteria: updatedList.filter(c => c.id !== 'crit-listen' && c.id !== 'crit-recite' && c.id !== 'crit-repeat')
+      }
+    });
+  };
 
   const handleSaveTrackRules = async () => {
     if (!track) return;
     await updateTrack(track.id, {
       name: editFormData.name,
-      description: editFormData.description,
-      subscriptionFee: {
-        amount: Number(editFormData.feeAmount),
-        currency: 'ر.س',
-        period: editFormData.feePeriod as any,
-        notes: editFormData.feeNotes
-      }
+      description: editFormData.description
     });
+
+    const listenItem = editFormData.criteriaList.find(c => c.id === 'crit-listen' || c.title.includes('استماع'));
+    const reciteItem = editFormData.criteriaList.find(c => c.id === 'crit-recite' || c.title.includes('نظراً'));
+    const repeatItem = editFormData.criteriaList.find(c => c.id === 'crit-repeat' || c.title.includes('تكرار'));
 
     await updateTrackSystemRules(track.id, {
       earlyPreparation: editFormData.earlyPrep,
@@ -145,167 +178,429 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
       customPlansAllowed: editFormData.customPlans,
       detailedWorkflowText: editFormData.workflowText,
       masteryGuide: {
-        listenToReciterTimes: Number(editFormData.listenTimes),
-        reciteLookingTimes: Number(editFormData.reciteTimes),
-        masteryRepetitionTimes: Number(editFormData.repeatTimes),
+        unifiedCriteria: editFormData.criteriaList,
+        listenToReciterTimes: listenItem?.count || 3,
+        reciteLookingTimes: reciteItem?.count || 5,
+        masteryRepetitionTimes: repeatItem?.count || 20,
         minorRevisionAmount: editFormData.minorRevAmount,
         tamkeenRevisionAmount: editFormData.tamkeenRevAmount,
-        pointsPerCondition: 2
+        pointsPerCondition: 2,
+        customCriteria: editFormData.criteriaList.filter(c => c.id !== 'crit-listen' && c.id !== 'crit-recite' && c.id !== 'crit-repeat')
       }
     });
 
     setShowEditModal(false);
   };
 
-  const handleOpenPayment = (studentId: string) => {
-    const existing = (studentSubscriptions || []).find(s => s.studentId === studentId);
-    setSelectedSub(existing || {
-      studentId,
-      trackId: track?.id || 'general',
-      cycleMonth: currentCycle,
-      requiredAmount: feeAmount,
-      paidAmount: feeAmount,
-      status: 'paid',
-      paymentMethod: 'bank_transfer'
-    });
-    setShowPaymentModal(true);
-  };
+  if (!track) {
+    return (
+      <div className="bg-white dark:bg-stone-900 p-8 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 text-center space-y-4" dir="rtl">
+        <AlertCircle className="w-10 h-10 text-amber-500 mx-auto" />
+        <h3 className="text-base font-bold text-stone-800 dark:text-stone-100">المسار المطلوب غير موجود</h3>
+        <button
+          type="button"
+          onClick={handleBackNavigation}
+          className="px-4 py-2 bg-[#8E5364] text-white rounded-xl text-xs font-bold"
+        >
+          العودة للمسارات والحلقات
+        </button>
+      </div>
+    );
+  }
 
-  const handleSavePayment = async () => {
-    if (!selectedSub || !selectedSub.studentId) return;
-    await saveStudentSubscription(selectedSub);
-    setShowPaymentModal(false);
-    setSelectedSub(null);
-  };
+  const customCriteriaList = track.systemRules?.masteryGuide?.customCriteria || [];
 
   return (
     <div className="space-y-6 text-right pb-12" dir="rtl">
-      {/* رأس اللوحة */}
+      {/* رأس الصفحة المنهجية */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-stone-900 p-6 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 shadow-xs">
         <div className="flex items-center gap-4">
           <button 
-            onClick={onBack}
-            className="p-2.5 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800 hover:bg-[#F2EAE5] dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 transition"
-            title="رجوع"
+            type="button"
+            onClick={handleBackNavigation}
+            className="p-2.5 px-3 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800 hover:bg-[#F2EAE5] dark:hover:bg-stone-700 text-stone-700 dark:text-stone-200 transition flex items-center gap-1.5 cursor-pointer font-bold text-xs border border-[#E2D5CC] dark:border-stone-700 hover:shadow-xs active:scale-95"
+            title="رجوع إلى المسارات والحلقات"
           >
-            <ArrowRight className="w-5 h-5" />
+            <ArrowRight className="w-4 h-4 text-[#8E5364]" />
+            <span>رجوع</span>
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-2xl">💳</span>
-              <h1 className="text-xl font-bold text-stone-800 dark:text-stone-100">سجل الاشتراكات والمالية العامة</h1>
+              <span className="text-2xl">{track.icon || '📖'}</span>
+              <h1 className="text-xl font-bold text-stone-800 dark:text-stone-100 font-quran">
+                معايير دليل الإتقان — مسار {track.name}
+              </h1>
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold border border-emerald-200/60 dark:border-emerald-800/40">
+                {track.code}
+              </span>
             </div>
-            <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
-              إدارة رسوم واشتراكات طالبات المقرأة مباشرة مع إصدار سندات السداد والتوقيع
+            <p className="text-xs text-stone-500 dark:text-stone-400 mt-1 max-w-xl">
+              {track.description || 'المنهجية القرآنية المعتمدة، معايير التكرار والاستماع، وضوابط التسميع والمراجعة اليومية'}
             </p>
           </div>
         </div>
 
-        {track && (
-          <button
-            onClick={() => setShowEditModal(true)}
-            className="px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-xs"
-          >
-            <Settings className="w-4 h-4" />
-            ضبط الرسوم ومعايير الدليل
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleOpenEditModal}
+          className="px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer active:scale-95"
+        >
+          <Settings className="w-4 h-4" />
+          <span>تعديل معايير دليل الإتقان</span>
+        </button>
       </div>
 
-      {/* المؤشرات المالية الإجمالية للطالبات */}
+      {/* المؤشرات التعليمية والتربوية للمسار */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white dark:bg-stone-900 p-4 rounded-2xl border border-[#E2D5CC] dark:border-stone-800">
           <span className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5 font-bold">
-            <Users className="w-3.5 h-3.5 text-[#8E5364]" />
-            إجمالي الطالبات
+            <BookOpen className="w-3.5 h-3.5 text-[#8E5364]" />
+            إجمالي معايير المسار
           </span>
-          <p className="text-xl font-bold text-stone-800 dark:text-stone-100 mt-1">{allActiveStudents.length}</p>
-        </div>
-
-        <div className="bg-white dark:bg-stone-900 p-4 rounded-2xl border border-[#E2D5CC] dark:border-stone-800">
-          <span className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5 font-bold">
-            <DollarSign className="w-3.5 h-3.5 text-amber-600" />
-            المبلغ المتوقع ({currentCycle})
-          </span>
-          <p className="text-xl font-bold text-stone-800 dark:text-stone-100 mt-1">
-            {financialStats.totalExpected} <span className="text-xs font-normal text-stone-500">{currency}</span>
+          <p className="text-xl font-bold text-[#8E5364] dark:text-[#E8BDC8] mt-1">
+            {unifiedCriteriaList.length} <span className="text-xs font-normal text-stone-400">معايير إتقان معتمدة</span>
           </p>
         </div>
 
         <div className="bg-white dark:bg-stone-900 p-4 rounded-2xl border border-[#E2D5CC] dark:border-stone-800">
           <span className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5 font-bold">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            المحصل فعلياً
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            الدرجة المستهدفة
+          </span>
+          <p className="text-xl font-bold text-amber-700 dark:text-amber-400 mt-1">
+            ١٠ / ١٠ <span className="text-xs font-normal text-stone-400">نقاط كاملة</span>
+          </p>
+        </div>
+
+        <div className="bg-white dark:bg-stone-900 p-4 rounded-2xl border border-[#E2D5CC] dark:border-stone-800">
+          <span className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5 font-bold">
+            <Layers className="w-3.5 h-3.5 text-emerald-600" />
+            الحلقات التابعة للمسار
           </span>
           <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400 mt-1">
-            {financialStats.totalCollected} <span className="text-xs font-normal text-stone-500">{currency}</span>
+            {trackCircles.length} <span className="text-xs font-normal text-stone-400">حلقات</span>
           </p>
         </div>
 
         <div className="bg-white dark:bg-stone-900 p-4 rounded-2xl border border-[#E2D5CC] dark:border-stone-800">
           <span className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5 font-bold">
-            <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-            المتبقي للتحصيل
+            <Users className="w-3.5 h-3.5 text-[#8E5364]" />
+            الطالبات المنتظمات
           </span>
-          <p className="text-xl font-bold text-rose-700 dark:text-rose-400 mt-1">
-            {financialStats.totalRemaining} <span className="text-xs font-normal text-stone-500">{currency}</span>
+          <p className="text-xl font-bold text-[#8E5364] dark:text-[#E8BDC8] mt-1">
+            {trackStudents.length} <span className="text-xs font-normal text-stone-400">طالبة</span>
           </p>
         </div>
       </div>
 
-      {/* التبويبات */}
+      {/* شريط التبويبات التعليمية */}
       <div className="flex border-b border-[#E2D5CC] dark:border-stone-800 gap-6 text-sm font-bold">
         <button
-          onClick={() => setActiveTab('finances')}
-          className={`pb-3 transition flex items-center gap-2 ${
-            activeTab === 'finances' 
+          type="button"
+          onClick={() => setActiveTab('mastery')}
+          className={`pb-3 transition flex items-center gap-2 cursor-pointer ${
+            activeTab === 'mastery' 
               ? 'border-b-2 border-[#8E5364] text-[#8E5364] dark:text-[#E8BDC8]' 
               : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
           }`}
         >
-          <CreditCard className="w-4 h-4" />
-          كشف الاشتراكات والسداد لجميع الطالبات ({allActiveStudents.length})
+          <Award className="w-4 h-4" />
+          معايير دليل الإتقان ({unifiedCriteriaList.length})
         </button>
 
-        {track && (
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`pb-3 transition flex items-center gap-2 ${
-              activeTab === 'overview' 
-                ? 'border-b-2 border-[#8E5364] text-[#8E5364] dark:text-[#E8BDC8]' 
-                : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            معايير دليل الإتقان ({track.name})
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setActiveTab('rules')}
+          className={`pb-3 transition flex items-center gap-2 cursor-pointer ${
+            activeTab === 'rules' 
+              ? 'border-b-2 border-[#8E5364] text-[#8E5364] dark:text-[#E8BDC8]' 
+              : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          الضوابط والآلية المنهجية
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('circles')}
+          className={`pb-3 transition flex items-center gap-2 cursor-pointer ${
+            activeTab === 'circles' 
+              ? 'border-b-2 border-[#8E5364] text-[#8E5364] dark:text-[#E8BDC8]' 
+              : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          الحلقات القرآنية ({trackCircles.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('students')}
+          className={`pb-3 transition flex items-center gap-2 cursor-pointer ${
+            activeTab === 'students' 
+              ? 'border-b-2 border-[#8E5364] text-[#8E5364] dark:text-[#E8BDC8]' 
+              : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          طالبات المسار ({trackStudents.length})
+        </button>
       </div>
 
-      {/* جدول اشتراكات الطالبات المباشر */}
-      {activeTab === 'finances' && (
-        <div className="bg-white dark:bg-stone-900 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 overflow-hidden shadow-xs space-y-3">
-          <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 className="font-bold text-sm text-stone-800 dark:text-stone-100 flex items-center gap-2">
-                <FileText className="w-4 h-4 text-[#8E5364]" />
-                سجل سداد الطالبات لشهر ({currentCycle})
-              </h3>
-              <span className="text-xs text-stone-500 mt-0.5 block">
-                المسددات: {financialStats.paidCount} من إجمالي {allActiveStudents.length} طالبة
-              </span>
+      {/* تبويب معايير دليل الإتقان الموحدة (كلها زي بعض) */}
+      {activeTab === 'mastery' && (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-stone-900 p-6 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 shadow-xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-stone-800 dark:text-stone-100 flex items-center gap-2">
+                  <span>📖</span>
+                  <span>معايير دليل الإتقان المعتمدة لمسار {track.name}</span>
+                </h3>
+                <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
+                  المعايير المنهجية المعتمدة لتحضير وتثبيت الأوجه القرآنية (كل المعايير متساوية وموحدة وقابلة للتعديل والإضافة)
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleOpenEditModal}
+                  className="px-3.5 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>إضافة أو تعديل معيار</span>
+                </button>
+              </div>
             </div>
 
-            <div className="relative w-full sm:w-64">
-              <Search className="w-4 h-4 text-stone-400 absolute right-3 top-2.5" />
-              <input
-                type="text"
-                placeholder="بحث باسم الطالبة أو الكود..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full bg-[#FAF7F5] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl pr-9 pl-3 py-2 text-xs outline-hidden"
-              />
+            {/* شبكة بطاقات المعايير الموحدة */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-1">
+              {unifiedCriteriaList.map((crit, idx) => (
+                <div 
+                  key={crit.id} 
+                  className="p-5 rounded-2xl bg-gradient-to-br from-[#FAF7F5] to-white dark:from-stone-800/60 dark:to-stone-900 border border-[#E2D5CC] dark:border-stone-700 flex flex-col justify-between hover:shadow-xs transition relative group"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="w-8 h-8 rounded-xl bg-[#FAF0F3] text-[#8E5364] dark:bg-stone-800 dark:text-[#E8BDC8] flex items-center justify-center font-bold text-xs">
+                        #{idx + 1}
+                      </div>
+                      
+                      <button
+                        type="button"
+                        onClick={() => handleDirectDeleteCriterion(crit.id)}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 text-stone-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
+                        title="حذف هذا المعيار من المسار"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <h4 className="text-xs font-bold text-stone-800 dark:text-stone-200 block mb-1">
+                      {crit.title}
+                    </h4>
+
+                    <div className="flex items-baseline gap-1.5 my-2">
+                      <span className="text-2xl font-extrabold text-[#8E5364] dark:text-[#E8BDC8]">
+                        {crit.count}
+                      </span>
+                      <span className="text-xs text-stone-500 font-bold">{crit.unit}</span>
+                    </div>
+
+                    <p className="text-[11px] text-stone-400 leading-relaxed">
+                      {crit.description || 'معيار معتمد لتعزيز جودة الأداء والإتقان القرآني.'}
+                    </p>
+                  </div>
+
+                  <div className="pt-3 mt-3 border-t border-stone-100 dark:border-stone-800 flex items-center justify-between text-[11px]">
+                    <span className="text-stone-400 font-bold">معيار إتقان</span>
+                    <button
+                      type="button"
+                      onClick={handleOpenEditModal}
+                      className="text-[#8E5364] dark:text-[#E8BDC8] font-bold hover:underline cursor-pointer"
+                    >
+                      تعديل
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* تبويب الضوابط والآلية المنهجية */}
+      {activeTab === 'rules' && (
+        <div className="bg-white dark:bg-stone-900 p-6 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 shadow-xs space-y-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-stone-800 dark:text-stone-100 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-[#8E5364]" />
+              <span>الضوابط التعليمية والمنهجية المعتمدة للمسار</span>
+            </h3>
+            <button
+              type="button"
+              onClick={handleOpenEditModal}
+              className="text-xs font-bold text-[#8E5364] dark:text-[#E8BDC8] hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>تعديل الضوابط</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-4 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs text-stone-700 dark:text-stone-200 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-[#8E5364]" />
+                  ساعة التحضير المبكر
+                </span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  track.systemRules?.earlyPreparation 
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' 
+                    : 'bg-stone-200 text-stone-600'
+                }`}>
+                  {track.systemRules?.earlyPreparation ? 'مفعلة وإلزامية' : 'اختيارية'}
+                </span>
+              </div>
+              <p className="text-[11px] text-stone-500 leading-relaxed">
+                إرسال بطاقة التحضير المسبق وتوثيق التكرار والاستماع قبل انطلاق الحلقة بربع ساعة لنيل نقاط التميز.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs text-stone-700 dark:text-stone-200 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  واجب «أتقني» للتجويد
+                </span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  track.systemRules?.atqiniHomeworkRequired 
+                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300' 
+                    : 'bg-stone-200 text-stone-600'
+                }`}>
+                  {track.systemRules?.atqiniHomeworkRequired ? 'إلزامي يومياً' : 'غير ملزم'}
+                </span>
+              </div>
+              <p className="text-[11px] text-stone-500 leading-relaxed">
+                تسجيل مقطع صوتي تطبيقي لأحكام التجويد والوقف والابتداء وإرساله للمعلمة للتقييم والتصويب.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs text-stone-700 dark:text-stone-200 flex items-center gap-1.5">
+                  <Award className="w-3.5 h-3.5 text-amber-600" />
+                  تحديات يوم الخميس والمراجعة الثنائية
+                </span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  track.systemRules?.thursdayChallenges 
+                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' 
+                    : 'bg-stone-200 text-stone-600'
+                }`}>
+                  {track.systemRules?.thursdayChallenges ? 'مفعلة أسبوعياً' : 'معطلة'}
+                </span>
+              </div>
+              <p className="text-[11px] text-stone-500 leading-relaxed">
+                تخصيص يوم الخميس للمسابقات التمكينية وتحدي الرفيقات في مراجعة ما تم حفظه خلال الأسبوع.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs text-stone-700 dark:text-stone-200 flex items-center gap-1.5">
+                  <BookmarkCheck className="w-3.5 h-3.5 text-blue-600" />
+                  مقادير المراجعة المقررة
+                </span>
+              </div>
+              <div className="flex items-center gap-4 text-xs font-bold pt-1">
+                <div>
+                  <span className="text-[10px] text-stone-400 block font-normal">المراجعة الصغرى:</span>
+                  <span className="text-[#8E5364] dark:text-[#E8BDC8]">
+                    {track.systemRules?.masteryGuide?.minorRevisionAmount || 'آخر ٣ أوجه'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-stone-400 block font-normal">مراجعة التمكين:</span>
+                  <span className="text-[#8E5364] dark:text-[#E8BDC8]">
+                    {track.systemRules?.masteryGuide?.tamkeenRevisionAmount || 'ربع حزب'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {track.systemRules?.detailedWorkflowText && (
+            <div className="p-4 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800/40 border border-stone-200 dark:border-stone-700 space-y-2">
+              <span className="font-bold text-xs text-stone-700 dark:text-stone-200 flex items-center gap-1.5">
+                <MessageSquareQuote className="w-3.5 h-3.5 text-[#8E5364]" />
+                سير العمل القرآني المفصل للمسار:
+              </span>
+              <p className="text-xs text-stone-600 dark:text-stone-300 leading-relaxed whitespace-pre-line">
+                {track.systemRules.detailedWorkflowText}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* تبويب الحلقات التابعة للمسار */}
+      {activeTab === 'circles' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-stone-800 dark:text-stone-100">
+              الحلقات التابعة لمسار {track.name} ({trackCircles.length})
+            </h3>
+            <span className="text-xs text-stone-500">
+              جميع هذه الحلقات تطبق نفس دليل ومعايير الإتقان
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {trackCircles.map(c => {
+              const count = students.filter(s => s.circleId === c.id && s.status === 'active').length;
+              return (
+                <div key={c.id} className="bg-white dark:bg-stone-900 p-5 rounded-2xl border border-[#E2D5CC] dark:border-stone-800 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">{c.icon || '🪴'}</span>
+                      <strong className="text-sm font-bold text-stone-800 dark:text-stone-100">{c.name}</strong>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300">
+                      {count} / {c.maxStudents} طالبة
+                    </span>
+                  </div>
+
+                  <div className="text-xs text-stone-500 space-y-1">
+                    <div>المعلمة: <strong className="text-stone-700 dark:text-stone-300">{c.teacherName}</strong></div>
+                    <div>المشرفة: <strong className="text-stone-700 dark:text-stone-300">{c.supervisorName}</strong></div>
+                    <div>الأيام: {c.scheduleDays.join('، ')}</div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {trackCircles.length === 0 && (
+              <div className="col-span-full p-8 text-center text-xs text-stone-400 bg-white dark:bg-stone-900 rounded-3xl border border-stone-200 dark:border-stone-800">
+                لا توجد حلقات نشطة مسجلة في هذا المسار حالياً.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* تبويب طالبات المسار */}
+      {activeTab === 'students' && (
+        <div className="bg-white dark:bg-stone-900 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 overflow-hidden shadow-xs">
+          <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
+            <h3 className="font-bold text-sm text-stone-800 dark:text-stone-100 flex items-center gap-2">
+              <Users className="w-4 h-4 text-[#8E5364]" />
+              <span>الطالبات المسجلات في هذا المسار ({trackStudents.length} طالبة)</span>
+            </h3>
+            <span className="text-xs text-stone-400">
+              مرتبطة بحلقات ومعايير هذا المسار
+            </span>
           </div>
 
           <div className="overflow-x-auto">
@@ -313,67 +608,32 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
               <thead className="bg-[#FAF7F5] dark:bg-stone-800 text-stone-600 dark:text-stone-300 font-bold">
                 <tr>
                   <th className="p-3.5">#</th>
-                  <th className="p-3.5">الطالبة</th>
-                  <th className="p-3.5">الحلقة</th>
-                  <th className="p-3.5">المطلوب</th>
-                  <th className="p-3.5">المسدد</th>
-                  <th className="p-3.5">الحالة</th>
-                  <th className="p-3.5">التوقيع</th>
-                  <th className="p-3.5 text-center">إجراء السداد</th>
+                  <th className="p-3.5">كود الطالبة</th>
+                  <th className="p-3.5">اسم الطالبة</th>
+                  <th className="p-3.5">الحلقة القرآنية</th>
+                  <th className="p-3.5">المعلمة</th>
+                  <th className="p-3.5">الرفيقة</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100 dark:divide-stone-800 text-stone-700 dark:text-stone-200">
-                {filteredStudents.map((st, idx) => {
+                {trackStudents.map((st, idx) => {
                   const circle = circles.find(c => c.id === st.circleId);
-                  const sub = (studentSubscriptions || []).find(s => s.studentId === st.id);
-                  const isPaid = sub?.status === 'paid' || (sub?.paidAmount ?? 0) >= feeAmount;
-                  const isExempt = sub?.status === 'exempt';
-                  const isPartial = (sub?.paidAmount ?? 0) > 0 && !isPaid;
-
                   return (
                     <tr key={st.id} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition">
                       <td className="p-3.5 text-stone-400 font-mono">{idx + 1}</td>
-                      <td className="p-3.5">
-                        <strong className="block text-stone-900 dark:text-stone-100 font-bold">{st.name}</strong>
-                        <span className="text-[10px] text-stone-400 font-mono">{st.code}</span>
-                      </td>
-                      <td className="p-3.5 text-stone-500">{circle?.name || 'غير محدد'}</td>
-                      <td className="p-3.5 font-mono">{sub?.requiredAmount ?? feeAmount} {currency}</td>
-                      <td className="p-3.5 font-mono font-bold text-emerald-600">{sub?.paidAmount ?? 0} {currency}</td>
-                      <td className="p-3.5">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                          isPaid ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
-                          isExempt ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300' :
-                          isPartial ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300' :
-                          'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
-                        }`}>
-                          {isPaid ? 'مدفوع بالكامل' : isExempt ? 'معفاة / منحة' : isPartial ? 'سداد جزئي' : 'معلق / لم يدفع'}
-                        </span>
-                      </td>
-                      <td className="p-3.5">
-                        {sub?.signatureUrl ? (
-                          <img src={sub.signatureUrl} alt="توقيع" className="h-6 w-auto border border-stone-200 rounded-sm bg-white" />
-                        ) : (
-                          <span className="text-stone-400 text-[10px]">بدون توقيع</span>
-                        )}
-                      </td>
-                      <td className="p-3.5 text-center">
-                        <button
-                          onClick={() => handleOpenPayment(st.id)}
-                          className="px-3.5 py-1.5 bg-[#FAF7F5] dark:bg-stone-800 hover:bg-[#8E5364] hover:text-white dark:hover:bg-[#8E5364] text-[#8E5364] dark:text-[#E8BDC8] rounded-xl text-[11px] font-bold transition flex items-center gap-1 mx-auto shadow-2xs"
-                        >
-                          <CreditCard className="w-3.5 h-3.5" />
-                          سند السداد
-                        </button>
-                      </td>
+                      <td className="p-3.5 font-mono text-stone-400">{st.code}</td>
+                      <td className="p-3.5 font-bold text-stone-900 dark:text-stone-100">{st.name}</td>
+                      <td className="p-3.5 text-stone-600 dark:text-stone-300">{circle?.name || 'غير محدد'}</td>
+                      <td className="p-3.5 text-stone-500">{circle?.teacherName || '—'}</td>
+                      <td className="p-3.5 text-stone-500">{st.partnerStudentName || '—'}</td>
                     </tr>
                   );
                 })}
 
-                {filteredStudents.length === 0 && (
+                {trackStudents.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-stone-400 text-xs">
-                      لا توجد طالبات مسجلات في المنظومة حالياً.
+                    <td colSpan={6} className="p-8 text-center text-stone-400 text-xs">
+                      لا توجد طالبات مسجلات في هذا المسار حالياً.
                     </td>
                   </tr>
                 )}
@@ -383,144 +643,234 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({ trackId, onBac
         </div>
       )}
 
-      {/* تبويب دليل الإتقان */}
-      {activeTab === 'overview' && track && (
-        <div className="bg-white dark:bg-stone-900 p-6 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 space-y-4">
-          <h2 className="text-sm font-bold text-stone-800 dark:text-stone-100 flex items-center gap-2">
-            <span>📖</span>
-            معايير «دليل مشكاة الغيم» المعتمدة
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-            <div className="p-3.5 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800/50">
-              <span className="text-stone-500 block mb-1">الاستماع للمقرئ</span>
-              <strong className="text-[#8E5364] dark:text-[#E8BDC8]">{track.systemRules?.masteryGuide?.listenToReciterTimes || 3} مرات</strong>
-            </div>
-            <div className="p-3.5 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800/50">
-              <span className="text-stone-500 block mb-1">التلاوة نظراً</span>
-              <strong className="text-[#8E5364] dark:text-[#E8BDC8]">{track.systemRules?.masteryGuide?.reciteLookingTimes || 5} مرات</strong>
-            </div>
-            <div className="p-3.5 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800/50">
-              <span className="text-stone-500 block mb-1">التكرار المتقن</span>
-              <strong className="text-[#8E5364] dark:text-[#E8BDC8]">{track.systemRules?.masteryGuide?.masteryRepetitionTimes || 20} مرة</strong>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* نافذة تسجيل دفعة وسند اشتراك للطالبة مع التوقيع */}
-      {showPaymentModal && selectedSub && (
+      {/* نافذة تعديل معايير دليل الإتقان والضوابط المنهجية (خالية 100% من المالية) */}
+      {showEditModal && track && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-stone-900 border border-[#E2D5CC] dark:border-stone-800 rounded-3xl w-full max-w-md p-6 space-y-4 shadow-2xl text-right" dir="rtl">
-            <h3 className="text-sm font-bold text-stone-800 dark:text-stone-100 border-b border-stone-100 dark:border-stone-800 pb-3">
-              سند سداد اشتراك: {students.find(s => s.id === selectedSub.studentId)?.name}
-            </h3>
+          <div className="bg-white dark:bg-stone-900 border border-[#E2D5CC] dark:border-stone-800 rounded-3xl w-full max-w-lg p-6 space-y-4 shadow-2xl text-right max-h-[90vh] overflow-y-auto animate-in fade-in" dir="rtl">
+            <div className="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
+              <h3 className="text-sm font-bold text-stone-800 dark:text-stone-100 flex items-center gap-2">
+                <Settings className="w-4 h-4 text-[#8E5364]" />
+                <span>ضبط معايير دليل الإتقان لمسار ({track.name})</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                className="text-stone-400 hover:text-stone-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-            <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-4 text-xs">
+              {/* بيانات المسار الأساسية */}
+              <div className="space-y-2">
                 <div>
-                  <label className="block text-stone-600 dark:text-stone-400 mb-1">المبلغ المطلوب</label>
+                  <label className="block text-[11px] text-stone-500 mb-1 font-bold">اسم المسار</label>
                   <input
-                    type="number"
-                    value={selectedSub.requiredAmount ?? feeAmount}
-                    onChange={e => setSelectedSub({ ...selectedSub, requiredAmount: Number(e.target.value) })}
-                    className="w-full bg-[#FAF7F5] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2"
+                    type="text"
+                    value={editFormData.name}
+                    onChange={e => setEditFormData({ ...editFormData, name: e.target.value })}
+                    className="w-full bg-[#FAF7F5] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2 font-bold"
                   />
                 </div>
                 <div>
-                  <label className="block text-stone-600 dark:text-stone-400 mb-1">المبلغ المدفوع</label>
-                  <input
-                    type="number"
-                    value={selectedSub.paidAmount ?? feeAmount}
-                    onChange={e => setSelectedSub({ ...selectedSub, paidAmount: Number(e.target.value) })}
-                    className="w-full bg-[#FAF7F5] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2 font-bold text-emerald-600"
+                  <label className="block text-[11px] text-stone-500 mb-1 font-bold">وصف المسار والمنهج</label>
+                  <textarea
+                    rows={2}
+                    value={editFormData.description}
+                    onChange={e => setEditFormData({ ...editFormData, description: e.target.value })}
+                    className="w-full bg-[#FAF7F5] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-stone-600 dark:text-stone-400 mb-1">حالة السداد</label>
-                  <select
-                    value={selectedSub.status || 'paid'}
-                    onChange={e => setSelectedSub({ ...selectedSub, status: e.target.value as any })}
-                    className="w-full bg-[#FAF7F5] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2"
-                  >
-                    <option value="paid">مدفوع بالكامل</option>
-                    <option value="partial">سداد جزئي</option>
-                    <option value="pending">معلق / لم يدفع</option>
-                    <option value="exempt">معفاة / منحة</option>
-                  </select>
+              {/* معايير دليل الإتقان الموحدة (كلها زي بعض) */}
+              <div className="p-3.5 bg-[#FAF7F5] dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                    <BookOpen className="w-3.5 h-3.5 text-[#8E5364]" />
+                    <span>معايير دليل الإتقان للمسار:</span>
+                  </h4>
+                  <span className="text-[10px] text-stone-400 font-bold">
+                    {editFormData.criteriaList.length} معايير معتمدة (موحدة بالكامل)
+                  </span>
                 </div>
-                <div>
-                  <label className="block text-stone-600 dark:text-stone-400 mb-1">طريقة الدفع</label>
-                  <select
-                    value={selectedSub.paymentMethod || 'bank_transfer'}
-                    onChange={e => setSelectedSub({ ...selectedSub, paymentMethod: e.target.value as any })}
-                    className="w-full bg-[#FAF7F5] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2"
-                  >
-                    <option value="bank_transfer">تحويل بنكي</option>
-                    <option value="cash">نقداً</option>
-                    <option value="pos">شبكة / مدى</option>
-                  </select>
+
+                {/* قائمة المعايير الموحدة الحالية */}
+                <div className="space-y-2">
+                  {editFormData.criteriaList.map((crit, idx) => (
+                    <div 
+                      key={crit.id} 
+                      className="p-2.5 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs"
+                    >
+                      <div className="flex-1">
+                        <input
+                          type="text"
+                          value={crit.title}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setEditFormData(prev => ({
+                              ...prev,
+                              criteriaList: prev.criteriaList.map((c, i) => i === idx ? { ...c, title: val } : c)
+                            }));
+                          }}
+                          className="w-full text-xs font-bold text-stone-800 dark:text-stone-100 bg-transparent outline-hidden"
+                          placeholder="اسم المعيار"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-stone-400">المستهدف:</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={crit.count}
+                          onChange={e => {
+                            const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                            setEditFormData(prev => ({
+                              ...prev,
+                              criteriaList: prev.criteriaList.map((c, i) => i === idx ? { ...c, count: val } : c)
+                            }));
+                          }}
+                          className="w-12 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] bg-stone-50 dark:bg-stone-800 rounded-lg py-1 border border-stone-200 dark:border-stone-700 outline-hidden font-mono"
+                        />
+                        <input
+                          type="text"
+                          value={crit.unit}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setEditFormData(prev => ({
+                              ...prev,
+                              criteriaList: prev.criteriaList.map((c, i) => i === idx ? { ...c, unit: val } : c)
+                            }));
+                          }}
+                          className="w-14 text-center text-[11px] font-bold text-stone-600 dark:text-stone-300 bg-stone-50 dark:bg-stone-800 rounded-lg py-1 border border-stone-200 dark:border-stone-700 outline-hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCriterionFromForm(crit.id)}
+                          className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer transition"
+                          title="حذف هذا المعيار"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* حقول إضافة معيار جديد إلى القائمة الموحدة */}
+                <div className="flex flex-col sm:flex-row items-center gap-2 pt-2 border-t border-stone-200 dark:border-stone-700">
+                  <input
+                    type="text"
+                    placeholder="اسم معيار جديد (مثال: حفظ المعاني، التسميع للرفيقة...)"
+                    value={newCriterionTitle}
+                    onChange={e => setNewCriterionTitle(e.target.value)}
+                    className="flex-1 w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl px-2.5 py-1.5 text-xs outline-hidden"
+                  />
+                  <div className="flex items-center gap-1 w-full sm:w-auto">
+                    <input
+                      type="number"
+                      min="1"
+                      value={newCriterionCount}
+                      onChange={e => setNewCriterionCount(Number(e.target.value))}
+                      className="w-14 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl px-2 py-1.5 text-xs text-center font-bold"
+                      title="عدد المرات المستهدفة"
+                    />
+                    <select
+                      value={newCriterionUnit}
+                      onChange={e => setNewCriterionUnit(e.target.value)}
+                      className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl px-2 py-1.5 text-xs font-bold"
+                    >
+                      <option value="مرات">مرات</option>
+                      <option value="مرة">مرة</option>
+                      <option value="أوجه">أوجه</option>
+                      <option value="أسطر">أسطر</option>
+                      <option value="دقائق">دقائق</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleAddCriterionToForm}
+                      className="px-3 py-1.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer whitespace-nowrap shadow-2xs active:scale-95"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>إضافة</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-stone-600 dark:text-stone-400 mb-1">رقم الإيصال / المرجع</label>
-                <input
-                  type="text"
-                  placeholder="مثال: TXN-998822"
-                  value={selectedSub.receiptNumber || ''}
-                  onChange={e => setSelectedSub({ ...selectedSub, receiptNumber: e.target.value })}
-                  className="w-full bg-[#FAF7F5] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2"
-                />
-              </div>
-
-              {/* قسم التوقيع اليدوي */}
-              <div className="pt-2 border-t border-stone-100 dark:border-stone-800">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-bold text-stone-700 dark:text-stone-300">توقيع الاعتماد اليدوي</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowSigPad(!showSigPad)}
-                    className="text-[11px] text-[#8E5364] flex items-center gap-1 font-bold"
-                  >
-                    <PenTool className="w-3 h-3" />
-                    {showSigPad ? 'إخفاء لوحة التوقيع' : 'فتح التوقيع'}
-                  </button>
-                </div>
-
-                {showSigPad && (
-                  <div className="flex justify-center my-2">
-                    <SignaturePad
-                      onSave={(dataUrl) => {
-                        setSelectedSub({ ...selectedSub, signatureUrl: dataUrl });
-                        setShowSigPad(false);
-                      }}
-                      title="توقيع المشرفة / المستلم"
+              {/* الضوابط المنهجية */}
+              <div className="p-3.5 bg-[#FAF7F5] dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 space-y-2">
+                <h4 className="font-bold text-stone-800 dark:text-stone-200 mb-1">الضوابط المقررة:</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">مقدار المراجعة الصغرى</label>
+                    <input
+                      type="text"
+                      value={editFormData.minorRevAmount}
+                      onChange={e => setEditFormData({ ...editFormData, minorRevAmount: e.target.value })}
+                      className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2 font-bold"
                     />
                   </div>
-                )}
-
-                {selectedSub.signatureUrl && !showSigPad && (
-                  <div className="flex items-center gap-3 p-2 bg-[#FAF7F5] dark:bg-stone-800 rounded-xl">
-                    <img src={selectedSub.signatureUrl} alt="التوقيع" className="h-8 bg-white border border-stone-200 rounded-md" />
-                    <span className="text-[10px] text-emerald-600 font-bold">تم اعتماد التوقيع بنجاح ✅</span>
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">مقدار مراجعة التمكين</label>
+                    <input
+                      type="text"
+                      value={editFormData.tamkeenRevAmount}
+                      onChange={e => setEditFormData({ ...editFormData, tamkeenRevAmount: e.target.value })}
+                      className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2 font-bold"
+                    />
                   </div>
-                )}
+                </div>
+
+                <div className="space-y-1.5 pt-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editFormData.earlyPrep}
+                      onChange={e => setEditFormData({ ...editFormData, earlyPrep: e.target.checked })}
+                      className="accent-[#8E5364] rounded"
+                    />
+                    <span className="text-[11px] text-stone-700 dark:text-stone-300 font-bold">تفعيل التحضير المبكر وإلزامية إرسال البطاقة</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editFormData.atqiniReq}
+                      onChange={e => setEditFormData({ ...editFormData, atqiniReq: e.target.checked })}
+                      className="accent-[#8E5364] rounded"
+                    />
+                    <span className="text-[11px] text-stone-700 dark:text-stone-300 font-bold">إلزامية واجب «أتقني» للتجويد الصوتي</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editFormData.thursdayChallenges}
+                      onChange={e => setEditFormData({ ...editFormData, thursdayChallenges: e.target.checked })}
+                      className="accent-[#8E5364] rounded"
+                    />
+                    <span className="text-[11px] text-stone-700 dark:text-stone-300 font-bold">تفعيل تحديات يوم الخميس والمراجعة الثنائية</span>
+                  </label>
+                </div>
               </div>
             </div>
 
             <div className="flex gap-2 pt-3 border-t border-stone-100 dark:border-stone-800">
               <button
-                onClick={handleSavePayment}
-                className="flex-1 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition"
+                type="button"
+                onClick={handleSaveTrackRules}
+                className="flex-1 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-xs active:scale-95 flex items-center justify-center gap-1.5"
               >
-                اعتماد وحفظ السند
+                <Check className="w-4 h-4" />
+                <span>حفظ التعديلات والمعايير</span>
               </button>
               <button
-                onClick={() => setShowPaymentModal(false)}
-                className="px-4 py-2.5 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-xl text-xs font-bold"
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                className="px-4 py-2.5 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-xl text-xs font-bold cursor-pointer"
               >
                 إلغاء
               </button>

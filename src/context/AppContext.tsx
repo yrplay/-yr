@@ -68,6 +68,7 @@ interface AppContextType {
   monthlyPlans: MonthlyPlan[];
   studentPlans: StudentMonthlyPlan[];
   dailyRecords: DailyRecord[];
+  dailyRecitations?: any[];
   attendanceRecords: AttendanceRecord[];
   atqiniAssignments: AtqiniAssignment[];
   studentAtqiniSubmissions: StudentAtqiniSubmission[];
@@ -108,6 +109,7 @@ interface AppContextType {
   saveStudentPlan: (plan: Partial<StudentMonthlyPlan>) => Promise<void>;
   
   saveDailyRecord: (record: Partial<DailyRecord>) => Promise<void>;
+  saveDailyRecitation?: (record: any) => Promise<void>;
   saveAttendance: (record: Partial<AttendanceRecord>) => Promise<void>;
   saveBulkAttendance: (records: Partial<AttendanceRecord>[]) => Promise<void>;
   
@@ -162,7 +164,31 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const defaultLeader: User = (initialData.users?.[0] as unknown as User) || {
+    id: 'u-1',
+    name: 'ريفة المنصوري',
+    role: 'leader',
+    title: 'قائدة المقرأة',
+    phone: '0500000001',
+    email: 'leader@ghaym.org',
+    circleIds: [],
+    passcode: '1234',
+    isArchived: false,
+    createdAt: new Date().toISOString()
+  };
+
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedId = localStorage.getItem('ghaith_current_user_id') || sessionStorage.getItem('ghaith_current_user_id');
+        if (savedId && Array.isArray(initialData.users)) {
+          const found = (initialData.users as unknown as User[]).find(u => u.id === savedId);
+          if (found) return found;
+        }
+      } catch {}
+    }
+    return defaultLeader;
+  });
   const [users, setUsers] = useState<User[]>([]);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [circles, setCircles] = useState<Circle[]>([]);
@@ -188,7 +214,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       } catch {}
     }
-    return (initialData.gradingConfigs as TrackGradingConfig[]) || [];
+    return (initialData.gradingConfigs as unknown as TrackGradingConfig[]) || [];
   });
   const [settings, setSettings] = useState<InstitutionSettings>({
     name: "غيث الغيم",
@@ -374,8 +400,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const found = userList.find(u => u.id === activeUserId);
       if (found) setCurrentUser(found);
       else if (data.currentUser) setCurrentUser(data.currentUser);
-    } else if (data.currentUser !== undefined) {
-      setCurrentUser(prev => prev || data.currentUser);
+      else setCurrentUser(prev => prev || userList[0] || defaultLeader);
+    } else if (data.currentUser) {
+      setCurrentUser(data.currentUser);
+    } else {
+      setCurrentUser(prev => prev || userList[0] || defaultLeader);
     }
 
     if (Array.isArray(data.users) && data.users.length > 0) {
@@ -1776,6 +1805,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         monthlyPlans,
         studentPlans,
         dailyRecords,
+        dailyRecitations: dailyRecords,
         attendanceRecords,
         atqiniAssignments,
         studentAtqiniSubmissions,
@@ -1809,6 +1839,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         duplicateMonthlyPlan,
         saveStudentPlan,
         saveDailyRecord,
+        saveDailyRecitation: saveDailyRecord,
         saveAttendance,
         saveBulkAttendance,
         saveStudentSubscription,

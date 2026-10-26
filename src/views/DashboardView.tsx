@@ -93,7 +93,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Students with incomplete/unrecorded daily logs
   const incompleteDailyLogs = displayedStudents.filter(s => {
     const recs = dailyRecords.filter(d => d.studentId === s.id);
-    return recs.length === 0 || recs.some(r => r.status === 'incomplete' || r.status === 'partial');
+    return recs.length === 0 || recs.some(r => r.status === 'pending' || (r.status as any) === 'incomplete' || (r.status as any) === 'partial');
   });
 
   return (

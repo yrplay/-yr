@@ -114,7 +114,10 @@ export const MonthlyPlansView: React.FC = () => {
     if (existing) {
       setStudentPlanForm({
         newMemorization: { ...existing.newMemorization },
-        revision: { ...existing.revision }
+        revision: { 
+          ...existing.revision,
+          status: (['completed', 'in_progress', 'pending'].includes(existing.revision?.status) ? existing.revision.status : 'in_progress') as any
+        }
       });
     } else {
       setStudentPlanForm({
