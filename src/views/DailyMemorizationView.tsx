@@ -48,7 +48,7 @@ export const DailyMemorizationView: React.FC = () => {
 
   // نموذج الرصد الكامل
   const [form, setForm] = useState({
-    // قسم الحفظ الجديد (مطابق للصورة)
+    // قسم الحفظ الجديد
     hifzErrors: 0,
     alerts: 0,
     tajweedErrors: 0,
@@ -119,9 +119,9 @@ export const DailyMemorizationView: React.FC = () => {
 
     if (existing) {
       setForm({
-        hifzErrors: existing.hifzErrors || 0,
-        alerts: existing.alerts || 0,
-        tajweedErrors: existing.tajweedErrors || 0,
+        hifzErrors: existing.hifzErrors ?? 0,
+        alerts: existing.alerts ?? 0,
+        tajweedErrors: existing.tajweedErrors ?? 0,
         recitedPortion: existing.recitedPortion || existing.surahFrom || '',
         notes: existing.notes || '',
         minorSurah: existing.minorSurah || '2. سورة البقرة',
@@ -336,7 +336,7 @@ export const DailyMemorizationView: React.FC = () => {
               </div>
             </div>
 
-            {/* ===================== قسم الحفظ الجديد (مطابق للصورة تماماً) ===================== */}
+            {/* ===================== قسم الحفظ الجديد (مطابق للصورة) ===================== */}
             <div className="p-4 rounded-3xl bg-[#FAF7F5] dark:bg-stone-900/60 border border-[#E2D5CC] dark:border-stone-800 space-y-4">
               
               {/* صندوق الدرجة النهائية المحصلة (من 10) */}
@@ -428,4 +428,201 @@ export const DailyMemorizationView: React.FC = () => {
 
             {/* ===================== المراجعة الصغرى (الربط القريب) ===================== */}
             <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-3">
-              <h4 className=
+              <h4 className="font-bold text-xs text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                <span>🔄</span>
+                <span>المراجعة الصغرى (الربط القريب):</span>
+              </h4>
+
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">السورة</label>
+                  <select
+                    value={form.minorSurah}
+                    onChange={e => setForm({ ...form, minorSurah: e.target.value })}
+                    className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  >
+                    {QURAN_SURAHS.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">من آية</label>
+                  <input
+                    type="text"
+                    value={form.minorFromAyah}
+                    onChange={e => setForm({ ...form, minorFromAyah: e.target.value })}
+                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">إلى آية</label>
+                  <input
+                    type="text"
+                    value={form.minorToAyah}
+                    onChange={e => setForm({ ...form, minorToAyah: e.target.value })}
+                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* ===================== مراجعة التمكين (المراجعة الكبرى) ===================== */}
+            <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-3">
+              <h4 className="font-bold text-xs text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                <span>✨</span>
+                <span>مراجعة التمكين (المراجعة الكبرى):</span>
+              </h4>
+
+              <div className="grid grid-cols-4 gap-2 text-xs">
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">السورة</label>
+                  <select
+                    value={form.majorSurah}
+                    onChange={e => setForm({ ...form, majorSurah: e.target.value })}
+                    className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  >
+                    {QURAN_SURAHS.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">من آية</label>
+                  <input
+                    type="text"
+                    value={form.majorFromAyah}
+                    onChange={e => setForm({ ...form, majorFromAyah: e.target.value })}
+                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">إلى آية</label>
+                  <input
+                    type="text"
+                    value={form.majorToAyah}
+                    onChange={e => setForm({ ...form, majorToAyah: e.target.value })}
+                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-stone-500 mb-1">الأوجه المنجزة</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.majorPages}
+                    onChange={e => setForm({ ...form, majorPages: Number(e.target.value) })}
+                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* ===================== معايير التحضير والإتقان ===================== */}
+            <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-2.5">
+              <span className="block text-xs font-bold text-stone-700 dark:text-stone-300">
+                معايير التحضير والإتقان:
+              </span>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <label className="flex items-center gap-2 p-2 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.criteriaListen}
+                    onChange={e => setForm({ ...form, criteriaListen: e.target.checked })}
+                    className="accent-[#8E5364]"
+                  />
+                  <span>الاستماع للمقرئ (3 مرات)</span>
+                </label>
+
+                <label className="flex items-center gap-2 p-2 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.criteriaRecite}
+                    onChange={e => setForm({ ...form, criteriaRecite: e.target.checked })}
+                    className="accent-[#8E5364]"
+                  />
+                  <span>التلاوة نظراً من المصحف (5 مرات)</span>
+                </label>
+
+                <label className="flex items-center gap-2 p-2 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.criteriaRepeat}
+                    onChange={e => setForm({ ...form, criteriaRepeat: e.target.checked })}
+                    className="accent-[#8E5364]"
+                  />
+                  <span>التكرار المتقن للوجه (20 مرة)</span>
+                </label>
+
+                <label className="flex items-center gap-2 p-2 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.hasMedal}
+                    onChange={e => setForm({ ...form, hasMedal: e.target.checked })}
+                    className="accent-amber-500"
+                  />
+                  <span className="text-amber-700 dark:text-amber-400 font-bold">⭐ نيل وسام التميز لليوم</span>
+                </label>
+              </div>
+            </div>
+
+            {/* ===================== توقيع المعلمة المعتمدة ===================== */}
+            <div className="pt-2 border-t border-stone-100 dark:border-stone-800">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-stone-700 dark:text-stone-300">
+                  توقيع المعلمة المعتمدة:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowSigPad(!showSigPad)}
+                  className="text-[11px] text-[#8E5364] flex items-center gap-1 font-bold cursor-pointer"
+                >
+                  <PenTool className="w-3 h-3" />
+                  {showSigPad ? 'إلغاء التوقيع' : 'توقيع يدوي ✍️'}
+                </button>
+              </div>
+
+              {showSigPad && (
+                <div className="flex justify-center my-2">
+                  <SignaturePad
+                    onSave={(dataUrl) => {
+                      setForm({ ...form, signatureUrl: dataUrl });
+                      setShowSigPad(false);
+                    }}
+                    title="توقيع المعلمة"
+                  />
+                </div>
+              )}
+
+              {form.signatureUrl && !showSigPad && (
+                <div className="flex items-center gap-3 p-2 bg-[#FAF7F5] dark:bg-stone-800 rounded-xl">
+                  <img src={form.signatureUrl} alt="التوقيع" className="h-7 bg-white border border-stone-200 rounded-md" />
+                  <span className="text-[10px] text-emerald-600 font-bold">تم توثيق التوقيع ✅</span>
+                </div>
+              )}
+            </div>
+
+            {/* ===================== أزرار الحفظ والإلغاء ===================== */}
+            <div className="flex gap-2 pt-2 border-t border-stone-100 dark:border-stone-800">
+              <button
+                type="button"
+                onClick={handleSaveRecitation}
+                className="flex-1 py-3 bg-[#744251] hover:bg-[#5e3541] text-white rounded-2xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>اعتماد وحفظ الدرجة ({calculatedNewScore})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveModalStudentId(null)}
+                className="px-5 py-3 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-2xl text-xs font-bold cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
