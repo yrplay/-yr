@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import {
   Users, Search, Filter, Plus, Edit, Archive, HeartHandshake,
   UserCheck, Shield, Phone, Mail, Award, ArrowUpDown, ChevronLeft,
-  Calendar, CheckCircle2, AlertCircle
+  Calendar, CheckCircle2, AlertCircle, Trash2
 } from 'lucide-react';
 import { StudentStatus } from '../types';
 
@@ -18,7 +18,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 }) => {
   const {
     students, circles, tracks, allStudentScores,
-    createStudent, updateStudent, archiveStudent, assignPartner,
+    createStudent, updateStudent, archiveStudent, deleteStudent, assignPartner,
     currentUser, quickModalAction, clearQuickModal, settings
   } = useApp();
 
@@ -367,11 +367,15 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                         </button>
                         {currentUser?.role === 'leader' && (
                           <button
-                            onClick={() => archiveStudent(student.id)}
-                            className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-stone-100"
-                            title="أرشفة سجل الطالبة"
+                            onClick={() => {
+                              if (window.confirm(`هل أنتِ متأكدة من حذف الطالبة "${student.name}" نهائياً من المقرأة بدون أرشفة؟ سيتم حذف كافة بياناتها وسجلاتها بشكل نهائي.`)) {
+                                deleteStudent(student.id);
+                              }
+                            }}
+                            className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition cursor-pointer"
+                            title="حذف نهائي بدون أرشفة"
                           >
-                            <Archive className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>

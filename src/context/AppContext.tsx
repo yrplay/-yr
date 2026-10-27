@@ -101,6 +101,7 @@ interface AppContextType {
   createStudent: (student: Partial<Student>) => Promise<Student>;
   updateStudent: (id: string, student: Partial<Student>) => Promise<void>;
   archiveStudent: (id: string) => Promise<void>;
+  deleteStudent: (id: string) => Promise<void>;
   assignPartner: (studentId: string, partnerId: string | null) => Promise<void>;
   
   createMonthlyPlan: (plan: Partial<MonthlyPlan>) => Promise<MonthlyPlan>;
@@ -197,7 +198,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [studentPlans, setStudentPlans] = useState<StudentMonthlyPlan[]>([]);
   const [dailyRecords, setDailyRecords] = useState<DailyRecord[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
-  const [atqiniAssignments, setAtqiniAssignments] = useState<AtqiniAssignment[]>([]);
+  const [atqiniAssignments, setAtqiniAssignments] = useState<AtqiniAssignment[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('ghaith_alghaym_db_v1');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed.atqiniAssignments) && parsed.atqiniAssignments.length > 0) {
+            return parsed.atqiniAssignments;
+          }
+        }
+      } catch {}
+    }
+    return (initialData.atqiniAssignments as unknown as AtqiniAssignment[]) || [];
+  });
   const [studentAtqiniSubmissions, setStudentAtqiniSubmissions] = useState<StudentAtqiniSubmission[]>([]);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [studentChallengeSubmissions, setStudentChallengeSubmissions] = useState<StudentChallengeSubmission[]>([]);
@@ -414,7 +428,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    if (Array.isArray(data.tracks) && data.tracks.length > 0) setTracks(data.tracks);
+    if (Array.isArray(data.tracks) && data.tracks.length > 0) {
+      masterStateRef.current.tracks = data.tracks;
+      setTracks(data.tracks);
+    }
     if (Array.isArray(data.circles) && data.circles.length > 0) {
       const normalizedCircles = data.circles.map((c: any) => {
         const t = userList.find(u => u.id === c.teacherId);
@@ -455,14 +472,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setStudentSubscriptions(merged);
     }
 
-    if (Array.isArray(data.atqiniAssignments)) setAtqiniAssignments(data.atqiniAssignments);
+    if (Array.isArray(data.atqiniAssignments) && data.atqiniAssignments.length > 0) {
+      masterStateRef.current.atqiniAssignments = data.atqiniAssignments;
+      setAtqiniAssignments(data.atqiniAssignments);
+    } else if (masterStateRef.current.atqiniAssignments && masterStateRef.current.atqiniAssignments.length > 0) {
+      setAtqiniAssignments(masterStateRef.current.atqiniAssignments);
+    } else if (Array.isArray(initialData.atqiniAssignments) && initialData.atqiniAssignments.length > 0) {
+      const fallbackAtq = initialData.atqiniAssignments as unknown as AtqiniAssignment[];
+      masterStateRef.current.atqiniAssignments = fallbackAtq;
+      setAtqiniAssignments(fallbackAtq);
+    }
     if (Array.isArray(data.studentAtqiniSubmissions)) setStudentAtqiniSubmissions(data.studentAtqiniSubmissions);
     if (Array.isArray(data.challenges)) setChallenges(data.challenges);
     if (Array.isArray(data.studentChallengeSubmissions)) setStudentChallengeSubmissions(data.studentChallengeSubmissions);
     if (Array.isArray(data.monthlyExams)) setMonthlyExams(data.monthlyExams);
     if (Array.isArray(data.studentExamResults)) setStudentExamResults(data.studentExamResults);
     if (Array.isArray(data.gradingConfigs)) setGradingConfigs(data.gradingConfigs);
-    if (data.settings) setSettings(prev => ({ ...prev, ...data.settings }));
+    if (data.settings) {
+      const mergedSettings = { ...masterStateRef.current.settings, ...data.settings };
+      masterStateRef.current.settings = mergedSettings;
+      setSettings(mergedSettings);
+    }
     if (Array.isArray(data.auditLogs)) setAuditLogs(data.auditLogs);
     setLastSynced(new Date());
   };
@@ -668,6 +698,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const updateTrack = async (id: string, track: Partial<Track>) => {
     const next = tracks.map(t => t.id === id ? { ...t, ...track, updatedAt: new Date().toISOString() } : t);
+    masterStateRef.current.tracks = next;
     setTracks(next);
     persistState({ tracks: next });
     showToast('تم تحديث المسار بنجاح');
@@ -704,6 +735,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updatedAt: new Date().toISOString()
       };
     });
+    masterStateRef.current.tracks = next;
     setTracks(next);
     persistState({ tracks: next });
     showToast('تم تحديث نظام ومعايير المسار بنجاح ⚙️');
@@ -819,6 +851,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStudents(next);
     persistState({ students: next });
     showToast('تمت أرشفة سجل الطالبة بنجاح');
+  };
+
+  const deleteStudent = async (id: string) => {
+    const studentToDelete = students.find(s => s.id === id);
+    const next = students.filter(s => s.id !== id);
+    masterStateRef.current.students = next;
+    setStudents(next);
+    persistState({ students: next });
+    showToast(`تم حذف سجل الطالبة "${studentToDelete?.name || ''}" نهائياً من المقرأة بنجاح`);
   };
 
   const assignPartner = async (studentId: string, partnerId: string | null) => {
@@ -1109,6 +1150,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...assignment
     };
     const next = [...atqiniAssignments, newAss];
+    masterStateRef.current.atqiniAssignments = next;
     setAtqiniAssignments(next);
     persistState({ atqiniAssignments: next });
     showToast(`تم نشر واجب التجويد: ${newAss.title}`);
@@ -1117,6 +1159,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const updateAtqiniAssignment = async (id: string, assignment: Partial<AtqiniAssignment>) => {
     const next = atqiniAssignments.map(a => a.id === id ? { ...a, ...assignment } : a);
+    masterStateRef.current.atqiniAssignments = next;
     setAtqiniAssignments(next);
     persistState({ atqiniAssignments: next });
     showToast('تم تعديل واجب التجويد');
@@ -1124,6 +1167,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const deleteAtqiniAssignment = async (id: string) => {
     const next = atqiniAssignments.filter(a => a.id !== id);
+    masterStateRef.current.atqiniAssignments = next;
     setAtqiniAssignments(next);
     persistState({ atqiniAssignments: next });
     showToast('تم حذف واجب التجويد');
@@ -1349,6 +1393,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const updateSettings = async (newSettings: Partial<InstitutionSettings>) => {
     const next = { ...settings, ...newSettings };
+    masterStateRef.current.settings = next;
     setSettings(next);
     persistState({ settings: next });
     showToast('تم حفظ الإعدادات العامة للمقرأة');
@@ -1550,6 +1595,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
+    const planNewActual = sPlan?.newMemorization?.actualPages;
+    if (typeof planNewActual === 'number' && (newPagesDone === 0 || planNewActual > newPagesDone)) {
+      newPagesDone = planNewActual;
+    }
+    const planRevActual = sPlan?.revision?.actualPages;
+    if (typeof planRevActual === 'number' && (revisionPagesDone === 0 || planRevActual > revisionPagesDone)) {
+      revisionPagesDone = planRevActual;
+    }
+
     const memorizationItem = gradingConfig?.items.find(i => i.category === 'memorization');
     const memorizationMax = memorizationItem?.maxScore || 25;
     const avgRecitationOutOf10 = sDaily.length > 0 ? (memorizationScoreSum / sDaily.length) : 10;
@@ -1560,8 +1614,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const avgConditionsOutOf10 = sDaily.length > 0 ? (conditionsSum / sDaily.length) : 10;
     const conditionsFulfilledScore = (avgConditionsOutOf10 / 10) * conditionsMax;
 
-    const newMemorizationPagesTarget = sPlan?.newMemorization?.targetPages || 8;
-    const revisionPagesTarget = sPlan?.revision?.targetPages || 6;
+    const newMemorizationPagesTarget = (typeof sPlan?.newMemorization?.targetPages === 'number') ? sPlan.newMemorization.targetPages : 8;
+    const revisionPagesTarget = (typeof sPlan?.revision?.targetPages === 'number') ? sPlan.revision.targetPages : 6;
 
     const atqiniItem = gradingConfig?.items.find(i => i.category === 'atqini');
     const atqiniMax = atqiniItem?.maxScore || 10;
@@ -1690,7 +1744,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     const plansByStudent = new Map<string, StudentMonthlyPlan>();
-    studentPlans.forEach(p => plansByStudent.set(p.studentId, p));
+    studentPlans.forEach(p => {
+      const existing = plansByStudent.get(p.studentId);
+      if (!existing || p.status === 'active') {
+        plansByStudent.set(p.studentId, p);
+      }
+    });
 
     const atqiniByStudent = new Map<string, StudentAtqiniSubmission[]>();
     studentAtqiniSubmissions.forEach(sub => {
@@ -1833,6 +1892,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         createStudent,
         updateStudent,
         archiveStudent,
+        deleteStudent,
         assignPartner,
         createMonthlyPlan,
         updateMonthlyPlan,

@@ -15,7 +15,7 @@ export const SettingsView: React.FC = () => {
   const {
     settings, updateSettings, downloadBackup, restoreBackup, resetSampleData,
     auditLogs, currentUser, showToast, cloudStatus, syncNow, lastSynced,
-    theme, setTheme, isDarkMode, toggleTheme
+    theme, setTheme, isDarkMode, toggleTheme, tracks, updateTrackSystemRules
   } = useApp();
   const [isManualSyncing, setIsManualSyncing] = useState(false);
 
@@ -53,6 +53,43 @@ export const SettingsView: React.FC = () => {
     tamkeenRevisionAmount: settings.defaultMasteryGuide?.tamkeenRevisionAmount || defaultMasteryGuideConfig.tamkeenRevisionAmount,
     pointsPerCondition: settings.defaultMasteryGuide?.pointsPerCondition ?? defaultMasteryGuideConfig.pointsPerCondition
   });
+
+  useEffect(() => {
+    if (settings) {
+      setForm(prev => ({
+        ...prev,
+        name: settings.name || prev.name,
+        leaderName: settings.leaderName || prev.leaderName,
+        subtitle: settings.subtitle || prev.subtitle,
+        welcomeTitle: settings.welcomeTitle || prev.welcomeTitle,
+        welcomeSubtext: settings.welcomeSubtext || prev.welcomeSubtext,
+        motto: settings.motto || prev.motto,
+        academicYear: settings.academicYear || prev.academicYear,
+        currentHijriMonth: settings.currentHijriMonth || prev.currentHijriMonth,
+        supportEmail: settings.supportEmail || prev.supportEmail,
+        supportPhone: settings.supportPhone || prev.supportPhone,
+        primaryColor: settings.primaryColor || prev.primaryColor,
+        secondaryColor: settings.secondaryColor || prev.secondaryColor,
+        buttonRadius: settings.buttonRadius || prev.buttonRadius,
+        activeTrackName: settings.activeTrackName || prev.activeTrackName,
+        logoUrl: settings.logoUrl || prev.logoUrl,
+        fontFamily: settings.fontFamily || prev.fontFamily,
+        sealText: settings.sealText || prev.sealText,
+        sealSubtitle: settings.sealSubtitle || prev.sealSubtitle,
+        sealImageUrl: settings.sealImageUrl || prev.sealImageUrl,
+        showOfficialSeal: settings.showOfficialSeal ?? prev.showOfficialSeal,
+        leaderSignatureUrl: settings.leaderSignatureUrl || prev.leaderSignatureUrl,
+        securityEnabled: settings.securityEnabled ?? prev.securityEnabled,
+        leaderPasscode: settings.leaderPasscode || prev.leaderPasscode,
+        listenToReciterTimes: settings.defaultMasteryGuide?.listenToReciterTimes ?? prev.listenToReciterTimes,
+        reciteLookingTimes: settings.defaultMasteryGuide?.reciteLookingTimes ?? prev.reciteLookingTimes,
+        masteryRepetitionTimes: settings.defaultMasteryGuide?.masteryRepetitionTimes ?? prev.masteryRepetitionTimes,
+        minorRevisionAmount: settings.defaultMasteryGuide?.minorRevisionAmount || prev.minorRevisionAmount,
+        tamkeenRevisionAmount: settings.defaultMasteryGuide?.tamkeenRevisionAmount || prev.tamkeenRevisionAmount,
+        pointsPerCondition: settings.defaultMasteryGuide?.pointsPerCondition ?? prev.pointsPerCondition
+      }));
+    }
+  }, [settings]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
@@ -164,17 +201,32 @@ export const SettingsView: React.FC = () => {
     e.preventDefault();
     setIsSaving(true);
     try {
+      const masteryData = {
+        listenToReciterTimes: Number(form.listenToReciterTimes),
+        reciteLookingTimes: Number(form.reciteLookingTimes),
+        masteryRepetitionTimes: Number(form.masteryRepetitionTimes),
+        minorRevisionAmount: form.minorRevisionAmount,
+        tamkeenRevisionAmount: form.tamkeenRevisionAmount,
+        pointsPerCondition: Number(form.pointsPerCondition)
+      };
+
       await updateSettings({
         ...form,
-        defaultMasteryGuide: {
-          listenToReciterTimes: Number(form.listenToReciterTimes),
-          reciteLookingTimes: Number(form.reciteLookingTimes),
-          masteryRepetitionTimes: Number(form.masteryRepetitionTimes),
-          minorRevisionAmount: form.minorRevisionAmount,
-          tamkeenRevisionAmount: form.tamkeenRevisionAmount,
-          pointsPerCondition: Number(form.pointsPerCondition)
-        }
+        defaultMasteryGuide: masteryData
       });
+
+      // مزامنة معايير الدليل فورياً مع جميع مسارات المقرأة
+      if (Array.isArray(tracks)) {
+        for (const tr of tracks) {
+          await updateTrackSystemRules(tr.id, {
+            masteryGuide: {
+              ...(tr.systemRules?.masteryGuide || {}),
+              ...masteryData
+            }
+          });
+        }
+      }
+
       applyLiveIdentity(form);
       showToast('تم حفظ كافة التعديلات، الهوية، الشعار، ومعايير دليل الإتقان بنجاح في النظام ✅');
     } finally {

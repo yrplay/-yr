@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-  Printer, Download, Share2, Award, Calendar, CheckCircle2,
+  Download, Award, Calendar, CheckCircle2,
   Clock, BookOpen, Sparkles, Trophy, HeartHandshake, FileText,
-  UserCheck, Shield, ChevronLeft, Check, FileSignature
+  UserCheck, Shield, ChevronLeft, Check, FileSignature,
+  Eye, Edit3, Palette, X, RefreshCw, Upload, Trash2, Printer
 } from 'lucide-react';
 import { OfficialSeal } from '../components/OfficialSeal';
 
@@ -19,7 +20,8 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
     students, circles, tracks, users, monthlyPlans, studentPlans,
     dailyRecords, attendanceRecords, studentAtqiniSubmissions,
     studentChallengeSubmissions, studentExamResults,
-    allStudentScores, settings, showToast
+    allStudentScores, settings, showToast, updateSettings,
+    saveStudentPlan, updateStudent, saveDailyRecord, saveExamResult
   } = useApp();
 
   const [selectedStudentId, setSelectedStudentId] = useState<string>(
@@ -30,8 +32,6 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   const circle = circles.find(c => c.id === student?.circleId);
   const track = tracks.find(t => t.id === student?.trackId) || tracks[0];
   const score = allStudentScores[student?.id];
-  const plan = studentPlans.find(sp => sp.studentId === student?.id);
-  const currentPlan = monthlyPlans[0];
 
   // Specific student records
   const studentAtqini = studentAtqiniSubmissions.filter(a => a.studentId === student?.id);
@@ -44,53 +44,191 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   const teacherSig = teacher?.signatureUrl;
   const leaderSig = settings.leaderSignatureUrl || leader?.signatureUrl;
 
-  const [printPreviewMode, setPrintPreviewMode] = useState(false);
+  // Active student plan with reliable fallback
+  const activeStudentPlan = studentPlans.find(sp => sp.studentId === student?.id && sp.status === 'active')
+    || studentPlans.find(sp => sp.studentId === student?.id)
+    || monthlyPlans.find(mp => mp.trackId === student?.trackId)
+    || monthlyPlans[0];
 
-  const handlePrint = () => {
+  const currentPlan = monthlyPlans.find(p => p.id === (activeStudentPlan as any)?.monthlyPlanId) || monthlyPlans[0];
+
+  // Target and actual pages calculations (reactive and never overriding 0 to arbitrary defaults)
+  const targetNewPages = (activeStudentPlan as any)?.newMemorization?.targetPages ?? score?.newMemorizationPagesTarget ?? 8;
+  const targetRevPages = (activeStudentPlan as any)?.revision?.targetPages ?? score?.revisionPagesTarget ?? 4;
+  
+  const doneNewPages = (score?.newMemorizationPagesDone !== undefined && score?.newMemorizationPagesDone !== null && score.newMemorizationPagesDone > 0)
+    ? score.newMemorizationPagesDone
+    : ((activeStudentPlan as any)?.newMemorization?.actualPages ?? score?.newMemorizationPagesDone ?? 0);
+
+  const doneRevPages = (score?.revisionPagesDone !== undefined && score?.revisionPagesDone !== null && score.revisionPagesDone > 0)
+    ? score.revisionPagesDone
+    : ((activeStudentPlan as any)?.revision?.actualPages ?? score?.revisionPagesDone ?? 0);
+
+  const totalAbsentDays = (score?.absentUnexcusedCount || 0) + (score?.absentExcusedCount || 0);
+
+  // Dynamic Free Color Customization state
+  const [customPrimaryColor, setCustomPrimaryColor] = useState<string>(settings.primaryColor || '#8E5364');
+  const [customSecondaryColor, setCustomSecondaryColor] = useState<string>(settings.secondaryColor || '#2D5A43');
+
+  // Synchronize when settings change
+  useEffect(() => {
+    if (settings.primaryColor) setCustomPrimaryColor(settings.primaryColor);
+    if (settings.secondaryColor) setCustomSecondaryColor(settings.secondaryColor);
+  }, [settings.primaryColor, settings.secondaryColor]);
+
+  // Manually editable certificate Hijri date
+  const [customCertDate, setCustomCertDate] = useState<string>(
+    `${settings.currentHijriMonth || 'ربيع الآخر - جمادى الأولى'} ${settings.academicYear || '١٤٤٦هـ'}`
+  );
+
+  // Real-time toggles for seal and signatures
+  const [showSeal, setShowSeal] = useState<boolean>(settings.showOfficialSeal !== false);
+  const [showTeacherSig, setShowTeacherSig] = useState<boolean>(true);
+  const [showLeaderSig, setShowLeaderSig] = useState<boolean>(true);
+
+  // Modal states
+  const [showPreviewModal, setShowPreviewModal] = useState<boolean>(false);
+  const [showQuickEditModal, setShowQuickEditModal] = useState<boolean>(false);
+
+  // Quick edit student achievement form state
+  const [quickEditForm, setQuickEditForm] = useState({
+    targetPages: targetNewPages,
+    actualPages: doneNewPages,
+    revisionTargetPages: targetRevPages,
+    revisionActualPages: doneRevPages,
+    notes: student?.notes || '',
+    examScore: studentExam ? studentExam.score : 95
+  });
+
+  // Sync quick edit form when student changes
+  useEffect(() => {
+    setQuickEditForm({
+      targetPages: targetNewPages,
+      actualPages: doneNewPages,
+      revisionTargetPages: targetRevPages,
+      revisionActualPages: doneRevPages,
+      notes: student?.notes || '',
+      examScore: studentExam ? studentExam.score : 95
+    });
+  }, [selectedStudentId, activeStudentPlan, score, studentExam]);
+
+  // Preset theme color swatches for quick selection
+  const presetPalettes = [
+    { name: 'العنابي الأصيل', primary: '#8E5364', secondary: '#2D5A43' },
+    { name: 'الزمردي القرآني', primary: '#2D5A43', secondary: '#8E5364' },
+    { name: 'الكحلي الملكي', primary: '#1E3A8A', secondary: '#B45309' },
+    { name: 'الذهبي التراثي', primary: '#B45309', secondary: '#1E3A8A' },
+    { name: 'الزيتي العتيق', primary: '#3F6212', secondary: '#78350F' },
+    { name: 'البنفسجي الوقور', primary: '#6B21A8', secondary: '#047857' },
+    { name: 'العنابي الداكن', primary: '#831843', secondary: '#1E293B' }
+  ];
+
+  const handleCustomSealUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('حجم صورة الختم يجب أن يكون أقل من 2 ميجابايت', 'error');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const dataUrl = ev.target?.result as string;
+      updateSettings({ sealImageUrl: dataUrl, showOfficialSeal: true });
+      setShowSeal(true);
+      showToast('تم حفظ وتركيب صورة الختم المخصص بنجاح 💮');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveCustomSeal = () => {
+    updateSettings({ sealImageUrl: '' });
+    showToast('تم حذف صورة الختم المخصص والعودة للختم النظامي');
+  };
+
+  const handleSaveColorsToSettings = () => {
+    updateSettings({ primaryColor: customPrimaryColor, secondaryColor: customSecondaryColor });
+    showToast('تم حفظ الألوان المحددة كهوية معتمدة للمقرأة بنجاح 🎨');
+  };
+
+  const handleSaveQuickEdit = async () => {
     if (!student) return;
     try {
-      // 1. First trigger standalone download so file is 100% saved on user device
-      handleDownloadHtmlCertificate();
-      showToast('جاري تجهيز الشهادة المعتمدة وطباعتها... تم حفظ المستند بنجاح 📜', 'success');
-      
-      // 2. Also attempt window.print() if supported
-      setTimeout(() => {
-        try {
-          window.print();
-        } catch (e) {
-          console.log('Window print handled via direct HTML certificate export');
-        }
-      }, 300);
-    } catch (err) {
-      console.warn('Print handled via direct export', err);
-      handleDownloadHtmlCertificate();
+      // 1. Update student plan
+      await saveStudentPlan({
+        id: (activeStudentPlan as any)?.id,
+        studentId: student.id,
+        monthlyPlanId: currentPlan?.id || 'mp-1',
+        newMemorization: {
+          ...((activeStudentPlan as any)?.newMemorization || {}),
+          targetPages: Number(quickEditForm.targetPages),
+          actualPages: Number(quickEditForm.actualPages)
+        },
+        revision: {
+          ...((activeStudentPlan as any)?.revision || {}),
+          targetPages: Number(quickEditForm.revisionTargetPages),
+          actualPages: Number(quickEditForm.revisionActualPages)
+        },
+        status: 'active'
+      });
+
+      // 2. Also record in daily record so score calculation picks it up
+      const today = new Date().toISOString().split('T')[0];
+      await saveDailyRecord({
+        studentId: student.id,
+        circleId: student.circleId,
+        date: today,
+        newMemorizationPages: Number(quickEditForm.actualPages),
+        revisionPages: Number(quickEditForm.revisionActualPages),
+        status: 'completed'
+      });
+
+      // 3. Update student notes
+      if (quickEditForm.notes !== student.notes) {
+        await updateStudent(student.id, { notes: quickEditForm.notes });
+      }
+
+      // 4. Update exam score if provided
+      if (quickEditForm.examScore) {
+        await saveExamResult({
+          studentId: student.id,
+          examId: 'exam-1',
+          score: Number(quickEditForm.examScore),
+          notes: 'رصد فوري معتمد من ملف الإنجاز'
+        });
+      }
+
+      setShowQuickEditModal(false);
+      showToast('تم حفظ وتحديث بيانات الخطة والصفحات المنجزة بنجاح ✅', 'success');
+    } catch (err: any) {
+      showToast('تعذر حفظ البيانات: ' + err.message, 'error');
     }
   };
 
-  const handleDownloadHtmlCertificate = () => {
-    if (!student) return;
-    const certHtml = `<!DOCTYPE html>
+  // Generate pure, self-contained HTML certificate
+  const buildCertificateHtmlString = () => {
+    if (!student) return '';
+    return `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <title>شهادة إنجاز - ${student.name} - مقرأة ${settings.name}</title>
+  <title>شهادة إنجاز معتمدة - ${student.name} - مقرأة ${settings.name}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Tajawal', sans-serif;
       background: #FAF7F5;
       color: #2D2426;
-      padding: 30px;
+      padding: 30px 15px;
       direction: rtl;
     }
     .cert-card {
-      max-width: 850px;
+      max-width: 860px;
       margin: 0 auto;
       background: white;
-      border: 3px solid #8E5364;
+      border: 3px solid ${customPrimaryColor};
       border-radius: 24px;
       padding: 40px;
       box-shadow: 0 10px 30px rgba(0,0,0,0.06);
@@ -108,47 +246,49 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
       font-family: 'Amiri', serif;
       font-size: 32px;
       color: #1c1917;
-      margin-bottom: 5px;
+      margin-bottom: 4px;
     }
     .badge-top {
-      background: #F6EEF1;
-      color: #8E5364;
+      background: ${customPrimaryColor}15;
+      color: ${customPrimaryColor};
       padding: 6px 14px;
       border-radius: 20px;
       font-size: 13px;
       font-weight: bold;
-      border: 1px solid #E2CCD3;
+      border: 1px solid ${customPrimaryColor}35;
+      display: inline-block;
     }
     .student-banner {
-      background: linear-gradient(135deg, #FAF2F4, #F0F6F2);
-      border: 1px solid #E0D3D7;
+      background: linear-gradient(135deg, ${customPrimaryColor}0d, ${customSecondaryColor}0d);
+      border: 1px solid ${customPrimaryColor}30;
       border-radius: 18px;
-      padding: 20px;
+      padding: 20px 24px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 25px;
     }
     .student-name {
-      font-size: 24px;
+      font-size: 26px;
       font-weight: 800;
-      color: #8E5364;
+      color: ${customPrimaryColor};
+      font-family: 'Amiri', serif;
     }
     .stat-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
       margin-bottom: 25px;
     }
     .stat-box {
       background: #FCFAF8;
       border: 1px solid #EFE8E2;
       border-radius: 14px;
-      padding: 12px;
+      padding: 12px 8px;
       text-align: center;
     }
     .stat-label { font-size: 11px; color: #78716c; margin-bottom: 4px; }
-    .stat-value { font-size: 18px; font-weight: bold; color: #1c1917; }
+    .stat-value { font-size: 17px; font-weight: bold; color: #1c1917; }
     .section-title {
       font-size: 15px;
       font-weight: bold;
@@ -185,8 +325,8 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
       width: 90px;
       height: 90px;
       border-radius: 50%;
-      border: 4px double #8E5364;
-      color: #8E5364;
+      border: 4px double ${customPrimaryColor};
+      color: ${customPrimaryColor};
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -198,64 +338,81 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
     @media print {
       body { background: white; padding: 0; }
       .cert-card { box-shadow: none; border-width: 2px; }
-      .no-print-btn { display: none !important; }
+      .no-print { display: none !important; }
+      @page {
+        size: A4 landscape;
+        margin: 10mm;
+      }
     }
   </style>
 </head>
 <body>
-  <div style="text-align: center; margin-bottom: 20px;" class="no-print-btn">
-    <button onclick="window.print()" style="padding: 10px 24px; background: #8E5364; color: white; border: none; border-radius: 12px; font-size: 14px; font-weight: bold; cursor: pointer;">
-      🖨️ طباعة الشهادة أو حفظ كـ PDF الآن
-    </button>
-  </div>
   <div class="cert-card">
     <div class="header">
-      <div>
-        <h1>مقرأة ${settings.name}</h1>
-        <p style="font-size: 13px; color: #78716c;">${settings.subtitle} • ${track.name}</p>
-        <p style="font-size: 12px; color: #a8a29e;">إشراف قائدة المقرأة: <strong>${settings.leaderName}</strong></p>
+      <div style="display: flex; align-items: center; gap: 16px;">
+        ${settings.logoUrl ? `
+          <img src="${settings.logoUrl}" alt="شعار مقرأة ${settings.name}" style="height: 65px; max-width: 130px; object-fit: contain; border-radius: 12px; background: white; padding: 2px; border: 1px solid #E8DFD8;" />
+        ` : `
+          <div style="width: 58px; height: 58px; border-radius: 16px; background: ${customPrimaryColor}15; border: 1.5px solid ${customPrimaryColor}35; display: flex; align-items: center; justify-content: center; font-size: 28px;">
+            🪴
+          </div>
+        `}
+        <div>
+          <h1>مقرأة ${settings.name}</h1>
+          <p style="font-size: 13px; color: #78716c;">${settings.subtitle} • ${track.name}</p>
+          <p style="font-size: 12px; color: #a8a29e;">إشراف قائدة المقرأة: <strong>${settings.leaderName}</strong></p>
+        </div>
       </div>
       <div style="text-align: left;">
         <span class="badge-top">تقرير إنجاز شهري معتمد</span>
-        <p style="font-size: 11px; color: #a8a29e; margin-top: 5px;">${settings.currentHijriMonth} - ${settings.academicYear}</p>
+        <p style="font-size: 11px; color: #78716c; margin-top: 6px; font-weight: bold;">${customCertDate}</p>
       </div>
     </div>
 
     <div class="student-banner">
       <div>
-        <div style="font-size: 12px; color: #78716c; margin-bottom: 2px;">اسم الطالبة:</div>
+        <div style="font-size: 12px; color: #78716c; margin-bottom: 2px;">اسم الطالبة المتميزة:</div>
         <div class="student-name">${student.name}</div>
         <div style="font-size: 12px; color: #78716c; margin-top: 4px;">
           الكود: <strong>${student.code}</strong> • حلقة: <strong>${circle?.name}</strong> • المعلمة: <strong>${circle?.teacherName}</strong>
         </div>
       </div>
-      <div style="text-align: center; background: white; padding: 12px 20px; border-radius: 14px; border: 1px solid #E5D5D9;">
+      <div style="text-align: center; background: white; padding: 12px 24px; border-radius: 14px; border: 1px solid #E5D5D9;">
         <div style="font-size: 11px; color: #78716c;">النسبة المئوية والتقدير</div>
-        <div style="font-size: 26px; font-weight: 900; color: #8E5364;">${score?.finalPercentage || 0}%</div>
-        <div style="font-size: 12px; font-weight: bold; color: ${score?.gradeColor || '#2D5A43'};">${score?.gradeLabel || 'ممتاز'}</div>
+        <div style="font-size: 28px; font-weight: 900; color: ${customPrimaryColor};">${score?.finalPercentage || 0}%</div>
+        <div style="font-size: 12px; font-weight: bold; color: ${score?.gradeColor || customSecondaryColor};">${score?.gradeLabel || 'ممتاز مرتفع'}</div>
       </div>
     </div>
 
     <div class="stat-grid">
       <div class="stat-box">
         <div class="stat-label">نسبة الحضور</div>
-        <div class="stat-value" style="color: #2D5A43;">${score?.attendanceRate || 0}%</div>
+        <div class="stat-value" style="color: ${customSecondaryColor};">${score?.attendanceRate || 0}%</div>
+        <div style="font-size: 9px; color: #78716c; margin-top: 2px;">${score?.presentCount || 0} جلسات</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">أيام الغياب</div>
+        <div class="stat-value" style="color: ${totalAbsentDays > 0 ? '#b91c1c' : customSecondaryColor};">${totalAbsentDays} أيام</div>
+        <div style="font-size: 9px; color: #a8a29e; margin-top: 2px;">${score?.absentExcusedCount || 0} بعذر • ${score?.absentUnexcusedCount || 0} دون عذر</div>
       </div>
       <div class="stat-box">
         <div class="stat-label">الحفظ الجديد المنجز</div>
-        <div class="stat-value">${score?.newMemorizationPagesDone || 0} ص</div>
+        <div class="stat-value">${doneNewPages} ص</div>
+        <div style="font-size: 9px; color: #78716c; margin-top: 2px;">المستهدف: ${targetNewPages} ص</div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">المراجعة والتمكين</div>
-        <div class="stat-value">${score?.revisionPagesDone || 0} ص</div>
+        <div class="stat-label">مراجعة التمكين</div>
+        <div class="stat-value">${doneRevPages} ص</div>
+        <div style="font-size: 9px; color: #78716c; margin-top: 2px;">المستهدف: ${targetRevPages} ص</div>
       </div>
       <div class="stat-box">
         <div class="stat-label">الترتيب في الحلقة</div>
-        <div class="stat-value" style="color: #8E5364;">المركز ${score?.rankInCircle || 1}</div>
+        <div class="stat-value" style="color: ${customPrimaryColor};">المركز ${score?.rankInCircle || 1}</div>
+        <div style="font-size: 9px; color: #78716c; margin-top: 2px;">في حلقة ${circle?.name || ''}</div>
       </div>
     </div>
 
-    <div class="section-title">تفاصيل الأداء التراكمي:</div>
+    <div class="section-title">تفاصيل الأداء التراكمي المعتمد:</div>
     <table class="table-custom">
       <thead>
         <tr>
@@ -267,27 +424,33 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
       </thead>
       <tbody>
         <tr>
+          <td><strong>الحضور والانضباط</strong></td>
+          <td>حضور جلسات التسميع المقررة</td>
+          <td>نسبة ${score?.attendanceRate || 0}% • غياب: ${totalAbsentDays} أيام (${score?.absentExcusedCount || 0} بعذر • ${score?.absentUnexcusedCount || 0} دون عذر)</td>
+          <td>${score?.attendanceScore || 10} / 10</td>
+        </tr>
+        <tr>
           <td><strong>الحفظ الجديد</strong></td>
-          <td>${plan?.newMemorization.targetPages || 8} صفحات</td>
-          <td>${score?.newMemorizationPagesDone || 8} صفحات</td>
+          <td>${targetNewPages} صفحات</td>
+          <td>${doneNewPages} صفحات</td>
           <td>${score?.memorizationScore || 10} / 10</td>
         </tr>
         <tr>
-          <td><strong>المراجعة اليومية والتمكين</strong></td>
-          <td>${plan?.revision.targetPages || 4} صفحات</td>
-          <td>${score?.revisionPagesDone || 4} صفحات</td>
+          <td><strong>مراجعة التمكين</strong></td>
+          <td>${targetRevPages} صفحات</td>
+          <td>${doneRevPages} صفحات</td>
           <td>متقن بالشروط ✅</td>
         </tr>
         <tr>
           <td><strong>واجبات «أتقني» للتجويد</strong></td>
-          <td>تطبيق أحكام التجويد</td>
-          <td>${score?.atqiniCompletedCount || 1} واجب</td>
+          <td>تطبيق أحكام التجويد واستخراج الأمثلة</td>
+          <td>${score?.atqiniCompletedCount || 1} واجب منجز</td>
           <td>${score?.atqiniScore || 10} / 10</td>
         </tr>
         <tr>
           <td><strong>التحديات والمراجعة الثنائية</strong></td>
           <td>مع الرفيقة: ${student.partnerStudentName || 'الرفيقة المعتمدة'}</td>
-          <td>منجز بتميز ⭐</td>
+          <td>منجز بتميز وتعاون مثمر ⭐</td>
           <td>${score?.challengesScore || 10} / 10</td>
         </tr>
         <tr>
@@ -299,10 +462,10 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
       </tbody>
     </table>
 
-    <div style="background: #FCFAF8; padding: 14px; border-radius: 12px; border: 1px solid #EFE8E2; margin-bottom: 20px;">
-      <div style="font-size: 11px; font-weight: bold; color: #78716c; margin-bottom: 4px;">توصيات وملاحظات المعلمة:</div>
-      <div style="font-size: 13px; font-style: italic; color: #44403c;">
-        "${student.notes || 'طالبة متميزة أظهرت التزاماً راسخاً في الحفظ والتجويد والمراجعة الثنائية. نبارك لها هذا الرسوخ والإنجاز.'}"
+    <div style="background: #FCFAF8; padding: 14px 18px; border-radius: 12px; border: 1px solid #EFE8E2; margin-bottom: 20px;">
+      <div style="font-size: 11px; font-weight: bold; color: #78716c; margin-bottom: 4px;">توصيات وملاحظات المعلمة والمشرفة:</div>
+      <div style="font-size: 13px; font-style: italic; color: #44403c; line-height: 1.6;">
+        "${student.notes || 'طالبة متميزة أظهرت التزاماً راسخاً في الحفظ والتجويد والمراجعة الثنائية. نبارك لها هذا الرسوخ والإنجاز المبارك.'}"
       </div>
     </div>
 
@@ -310,11 +473,11 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
       <div style="text-align: center; min-width: 130px;">
         <div style="font-size: 12px; color: #78716c;">معلمة الحلقة</div>
         <div style="font-size: 15px; font-weight: bold; margin-top: 4px;">أ. ${circle?.teacherName || 'معلمة الحلقة'}</div>
-        ${teacherSig ? `<img src="${teacherSig}" alt="توقيع المعلمة" style="height: 38px; max-width: 110px; object-fit: contain; margin: 4px auto; display: block;" />` : `<div style="font-size: 10px; color: #a8a29e; margin-top: 6px;">(التوقيع معتمد بالنظام)</div>`}
+        ${showTeacherSig && teacherSig ? `<img src="${teacherSig}" alt="توقيع المعلمة" style="height: 38px; max-width: 110px; object-fit: contain; margin: 4px auto; display: block;" />` : showTeacherSig ? `<div style="font-size: 10px; color: #a8a29e; margin-top: 6px;">(التوقيع معتمد بالنظام)</div>` : ''}
       </div>
 
-      <div style="text-align: center;">
-        ${settings.sealImageUrl ? `
+      <div style="text-align: center; min-width: 100px;">
+        ${showSeal ? (settings.sealImageUrl ? `
           <img src="${settings.sealImageUrl}" alt="الختم الرسمي" style="width: 82px; height: 82px; object-fit: contain; transform: rotate(-5deg); filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));" />
         ` : `
           <div class="seal">
@@ -322,13 +485,13 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             <span style="font-size: 13px; font-family: 'Amiri';">${settings.name || 'غيث الغيم'}</span>
             <span style="font-size: 8px;">${settings.sealText || 'ختم الاعتماد الرسمي'}</span>
           </div>
-        `}
+        `) : ''}
       </div>
 
       <div style="text-align: center; min-width: 130px;">
         <div style="font-size: 12px; color: #78716c;">قائدة مقرأة ${settings.name || 'غيث الغيم'}</div>
         <div style="font-size: 15px; font-weight: bold; margin-top: 4px;">${settings.leaderName || 'ريفة المنصوري'}</div>
-        ${leaderSig ? `<img src="${leaderSig}" alt="توقيع القائدة" style="height: 38px; max-width: 110px; object-fit: contain; margin: 4px auto; display: block;" />` : `<div style="font-size: 10px; color: #a8a29e; margin-top: 6px;">(الاعتماد النهائي)</div>`}
+        ${showLeaderSig && leaderSig ? `<img src="${leaderSig}" alt="توقيع القائدة" style="height: 38px; max-width: 110px; object-fit: contain; margin: 4px auto; display: block;" />` : showLeaderSig ? `<div style="font-size: 10px; color: #a8a29e; margin-top: 6px;">(الاعتماد النهائي)</div>` : ''}
       </div>
     </div>
     <div style="margin-top: 14px; text-align: center; font-size: 10px; color: #a8a29e; font-family: sans-serif;">
@@ -337,16 +500,50 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   </div>
 </body>
 </html>`;
+  };
 
+  // Export 1: HTML Download
+  const handleDownloadHtml = () => {
+    if (!student) return;
+    const certHtml = buildCertificateHtmlString();
     const blob = new Blob([certHtml], { type: 'text/html;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `شهادة_إنجاز_${student.name.replace(/\s+/g, '_')}_غيث_الغيم.html`;
+    a.download = `شهادة_إنجاز_${student.name.replace(/\s+/g, '_')}_${customCertDate.replace(/\s+/g, '_')}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    showToast('تم تنزيل شهادة الإنجاز بصيغة HTML بنجاح 🌐');
+  };
+
+  // Export 2: PDF Export (Triggers formatted print-to-pdf)
+  const handleDownloadPdf = () => {
+    if (!student) return;
+    try {
+      const certHtml = buildCertificateHtmlString();
+      const printWindow = window.open('', '_blank', 'width=950,height=750');
+      if (printWindow) {
+        printWindow.document.write(certHtml);
+        printWindow.document.close();
+        printWindow.focus();
+        showToast('جاري فتح نافذة حفظ وتصدير الشهادة كـ PDF... اختر "حفظ بتنسيق PDF" (Save as PDF) 📄', 'success');
+        setTimeout(() => {
+          try {
+            printWindow.print();
+          } catch (e) {
+            console.log('PDF window print handled', e);
+          }
+        }, 400);
+      } else {
+        // Fallback: download HTML so user has the certified document
+        handleDownloadHtml();
+        showToast('تم حفظ الشهادة بصيغة ويب يمكن حفظها مباشرة كـ PDF 📄');
+      }
+    } catch (err) {
+      handleDownloadHtml();
+    }
   };
 
   if (!student) {
@@ -356,8 +553,8 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   return (
     <div className="space-y-6">
 
-      {/* Selector & Actions Bar (Hidden when printing) */}
-      <div className="no-print flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
+      {/* Selector & Actions Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div className="flex items-center gap-3">
           <span className="text-xl">📜</span>
           <div>
@@ -381,35 +578,73 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           </div>
         </div>
 
+        {/* Clean top action buttons (No direct print button, preview modal is the centerpiece) */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Quick Edit Target & Done Pages Button */}
           <button
-            onClick={handleDownloadHtmlCertificate}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-[#FAF0F3] hover:bg-[#F2DFE5] text-[#8E5364] border border-[#E2CBD2] rounded-xl text-xs font-bold transition shadow-xs cursor-pointer active:scale-95"
-            title="تنزيل ملف شهادة الإنجاز بصيغة مستقلة يمكن فتحها وطباعتها أو حفظها كـ PDF مباشرة على أي جهاز"
+            onClick={() => setShowQuickEditModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-xl text-xs font-bold text-stone-700 transition cursor-pointer active:scale-95"
+            title="تعديل خطة وإنجاز الطالبة وملاحظاتها وتحديث الصفحات المنجزة"
           >
-            <Download className="w-4 h-4" />
-            <span>حفظ وتنزيل الشهادة (HTML / PDF)</span>
+            <Edit3 className="w-3.5 h-3.5 text-stone-500" />
+            <span>تعديل خطة وإنجاز الطالبة</span>
           </button>
 
+          {/* Quick PDF Export */}
           <button
-            onClick={handlePrint}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs transition cursor-pointer active:scale-95"
+            onClick={handleDownloadPdf}
+            className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl text-xs font-bold text-rose-700 transition cursor-pointer active:scale-95"
+            title="تنزيل الشهادة بصيغة PDF"
           >
-            <Printer className="w-4 h-4" />
-            <span>طباعة الشهادة مباشرة</span>
+            <FileText className="w-3.5 h-3.5 text-rose-600" />
+            <span>تنزيل PDF</span>
+          </button>
+
+          {/* Quick HTML Export */}
+          <button
+            onClick={handleDownloadHtml}
+            className="flex items-center gap-1.5 px-3 py-2 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-xl text-xs font-bold text-stone-700 transition cursor-pointer active:scale-95"
+            title="تنزيل الشهادة بصيغة HTML مستقلة"
+          >
+            <Download className="w-3.5 h-3.5 text-stone-500" />
+            <span>تنزيل HTML</span>
+          </button>
+
+          {/* Dedicated Preview Modal Button */}
+          <button
+            onClick={() => setShowPreviewModal(true)}
+            style={{ backgroundColor: customPrimaryColor }}
+            className="flex items-center gap-1.5 px-4 py-2 hover:brightness-105 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs transition cursor-pointer active:scale-95"
+          >
+            <Eye className="w-4 h-4" />
+            <span>معاينة الشهادة وتنسيقها 👁️</span>
           </button>
         </div>
       </div>
 
-      {/* Official Certificate & Portfolio Document Card (Printable Area) */}
-      <div className="bg-white rounded-3xl border-2 border-[#E8DFD8] p-6 sm:p-10 shadow-sm space-y-8 relative overflow-hidden print:border-none print:shadow-none print:p-0">
+      {/* Official Certificate & Portfolio Document Card (On-Screen View) */}
+      <div
+        className="bg-white rounded-3xl border-2 p-6 sm:p-10 shadow-sm space-y-8 relative overflow-hidden"
+        style={{ borderColor: customPrimaryColor }}
+      >
         
         {/* Certificate Frame Pattern Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-[#E8DFD8] pb-6 text-center sm:text-right">
           <div className="flex items-center justify-center sm:justify-start gap-3">
-            <div className="w-14 h-14 rounded-2xl bg-[#F6EEF1] border border-[#E0D0D4] flex items-center justify-center text-3xl">
-              🪴
-            </div>
+            {settings.logoUrl ? (
+              <img
+                src={settings.logoUrl}
+                alt="شعار المقرأة"
+                className="w-16 h-16 object-contain rounded-2xl border border-stone-200 p-1 bg-white shadow-2xs"
+              />
+            ) : (
+              <div
+                className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shadow-2xs"
+                style={{ backgroundColor: `${customPrimaryColor}15`, border: `1.5px solid ${customPrimaryColor}30` }}
+              >
+                🪴
+              </div>
+            )}
             <div>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-900 font-quran">
                 مقرأة {settings.name}
@@ -425,20 +660,20 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
 
           <div className="text-center sm:text-left bg-[#FCFAF8] p-3 rounded-2xl border border-[#EFE8E2]">
             <span className="text-[11px] font-bold text-stone-400 block uppercase">ملف الإنجاز والتقرير الشهري</span>
-            <div className="text-sm font-extrabold text-[#8E5364]">
+            <div className="text-sm font-extrabold" style={{ color: customPrimaryColor }}>
               {currentPlan?.title || 'خطة شهر ربيع الآخر وجمادى الأولى ١٤٤٦هـ'}
             </div>
-            <div className="text-[10px] text-stone-400 mt-0.5">
-              تاريخ الاعتماد: {currentPlan?.examDateHijri || '٢٥ جمادى الأولى'}
+            <div className="text-[11px] text-stone-500 font-bold mt-1">
+              تاريخ الاعتماد: {customCertDate}
             </div>
           </div>
         </div>
 
         {/* Student Metadata Header */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-[#FCFAF8] p-4 rounded-2xl border border-[#EFE8E2] text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-[#FCFAF8] p-4 rounded-2xl border border-[#EFE8E2] text-xs">
           <div>
             <span className="text-stone-400 block text-[10px]">اسم الطالبة:</span>
-            <strong className="text-stone-900 text-sm font-quran">{student.name}</strong>
+            <strong className="text-sm font-quran" style={{ color: customPrimaryColor }}>{student.name}</strong>
           </div>
           <div>
             <span className="text-stone-400 block text-[10px]">كود الطالبة والحلقة:</span>
@@ -452,11 +687,19 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             <span className="text-stone-400 block text-[10px]">الرفيقة القرآنية 🤝:</span>
             <strong className="text-[#7A4B37]">{student.partnerStudentName || 'لم تعين'}</strong>
           </div>
+          <div>
+            <span className="text-stone-400 block text-[10px]">الحضور والغياب:</span>
+            <strong className={totalAbsentDays > 0 ? "text-rose-700 font-bold" : "text-emerald-700 font-bold"}>
+              حضور {score?.attendanceRate || 0}% • غياب {totalAbsentDays} أيام
+            </strong>
+          </div>
         </div>
 
-        {/* Big Achievement Honor Badge Banner */}
-        <div className="rounded-3xl p-6 text-white text-center sm:text-right relative overflow-hidden shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-             style={{ backgroundColor: score?.gradeColor || '#2D5A43' }}>
+        {/* Honor Badge Banner */}
+        <div
+          className="rounded-3xl p-6 text-white text-center sm:text-right relative overflow-hidden shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+          style={{ backgroundColor: score?.gradeColor || customSecondaryColor }}
+        >
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 text-xs font-semibold mb-2">
               <Award className="w-3.5 h-3.5" />
@@ -484,30 +727,39 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           
           {/* Section 1: Memorization & Revision Plan */}
           <div className="p-4 rounded-2xl border border-[#E8DFD8] bg-white space-y-2.5">
-            <h4 className="font-bold text-stone-900 text-sm flex items-center gap-2 border-b border-stone-100 pb-2">
-              <BookOpen className="w-4 h-4 text-[#8E5364]" />
-              <span>إنجاز خطة الحفظ والمراجعة</span>
-            </h4>
+            <div className="flex items-center justify-between border-b border-stone-100 pb-2">
+              <h4 className="font-bold text-stone-900 text-sm flex items-center gap-2">
+                <BookOpen className="w-4 h-4" style={{ color: customPrimaryColor }} />
+                <span>إنجاز خطة الحفظ والمراجعة</span>
+              </h4>
+              <button
+                onClick={() => setShowQuickEditModal(true)}
+                className="text-[11px] text-[#8E5364] hover:underline font-bold flex items-center gap-1"
+              >
+                <Edit3 className="w-3 h-3" />
+                تعديل الصفحات
+              </button>
+            </div>
             <div className="space-y-1.5 text-stone-600">
               <div className="flex justify-between">
                 <span>الحفظ الجديد المنجز:</span>
-                <strong className="text-stone-900">{score?.newMemorizationPagesDone} من {score?.newMemorizationPagesTarget} صفحات</strong>
+                <strong className="text-stone-900">{doneNewPages} من {targetNewPages} صفحات</strong>
               </div>
               <div className="flex justify-between">
-                <span>المراجعة اليومية والتمكين:</span>
-                <strong className="text-stone-900">{score?.revisionPagesDone} صفحات ({plan?.revision?.revisionType || 'تمكين'})</strong>
+                <span>المراجعة والتمكين:</span>
+                <strong className="text-stone-900">{doneRevPages} من {targetRevPages} صفحات ({(activeStudentPlan as any)?.revision?.revisionType || 'تمكين'})</strong>
               </div>
               <div className="flex justify-between">
                 <span>أخطاء الحفظ المرصودة:</span>
-                <strong className="text-rose-700">{score?.memorizationMistakesTotal} أخطاء</strong>
+                <strong className="text-rose-700">{score?.memorizationMistakesTotal || 0} أخطاء</strong>
               </div>
               <div className="flex justify-between">
                 <span>التنبيهات والأخطاء التجويدية:</span>
-                <strong className="text-stone-900">{score?.hintsTotal} تنبيه • {score?.tajweedErrorsTotal} تجويد</strong>
+                <strong className="text-stone-900">{score?.hintsTotal || 0} تنبيه • {score?.tajweedErrorsTotal || 0} تجويد</strong>
               </div>
               <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900">
-                <span>درجة الحفظ والتمكين:</span>
-                <span className="text-[#8E5364]">{score?.memorizationScore} / {score?.memorizationMax} نقطة</span>
+                <span>درجة الحفظ والمراجعة:</span>
+                <span style={{ color: customPrimaryColor }}>{score?.memorizationScore} / {score?.memorizationMax} نقطة</span>
               </div>
             </div>
           </div>
@@ -515,21 +767,23 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           {/* Section 2: Attendance & Early Prep */}
           <div className="p-4 rounded-2xl border border-[#E8DFD8] bg-white space-y-2.5">
             <h4 className="font-bold text-stone-900 text-sm flex items-center gap-2 border-b border-stone-100 pb-2">
-              <Clock className="w-4 h-4 text-[#2D5A43]" />
+              <Clock className="w-4 h-4" style={{ color: customSecondaryColor }} />
               <span>الحضور والانضباط والتحضير المبكر</span>
             </h4>
             <div className="space-y-1.5 text-stone-600">
               <div className="flex justify-between">
                 <span>نسبة الحضور التراكمية:</span>
-                <strong className="text-[#2D5A43]">{score?.attendanceRate}%</strong>
+                <strong style={{ color: customSecondaryColor }}>{score?.attendanceRate}%</strong>
               </div>
               <div className="flex justify-between">
                 <span>عدد أيام الحضور الفعلي:</span>
                 <strong className="text-stone-900">{score?.presentCount} جلسات</strong>
               </div>
               <div className="flex justify-between">
-                <span>الغياب (دون عذر / بعذر):</span>
-                <strong className="text-stone-900">{score?.absentUnexcusedCount} دون عذر • {score?.absentExcusedCount} بعذر</strong>
+                <span>إجمالي أيام الغياب:</span>
+                <strong className={totalAbsentDays > 0 ? "text-rose-700 font-bold" : "text-emerald-700 font-bold"}>
+                  {totalAbsentDays} أيام ({score?.absentExcusedCount || 0} بعذر • {score?.absentUnexcusedCount || 0} دون عذر)
+                </strong>
               </div>
               <div className="flex justify-between">
                 <span>بطاقات التحضير المبكر ⭐:</span>
@@ -537,7 +791,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               </div>
               <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900">
                 <span>درجة الحضور والانضباط:</span>
-                <span className="text-[#2D5A43]">{score?.attendanceScore} / {score?.attendanceMax} نقطة</span>
+                <span style={{ color: customSecondaryColor }}>{score?.attendanceScore} / {score?.attendanceMax} نقطة</span>
               </div>
             </div>
           </div>
@@ -545,7 +799,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           {/* Section 3: Atqini (Tajweed) */}
           <div className="p-4 rounded-2xl border border-[#E8DFD8] bg-white space-y-2.5">
             <h4 className="font-bold text-stone-900 text-sm flex items-center gap-2 border-b border-stone-100 pb-2">
-              <Sparkles className="w-4 h-4 text-[#8E5364]" />
+              <Sparkles className="w-4 h-4" style={{ color: customPrimaryColor }} />
               <span>واجبات «أتقني» للتجويد</span>
             </h4>
             <div className="space-y-1.5 text-stone-600">
@@ -563,7 +817,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               </div>
               <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900">
                 <span>درجة التجويد «أتقني»:</span>
-                <span className="text-[#8E5364]">{score?.atqiniScore} / {score?.atqiniMax} نقطة</span>
+                <span style={{ color: customPrimaryColor }}>{score?.atqiniScore} / {score?.atqiniMax} نقطة</span>
               </div>
             </div>
           </div>
@@ -577,15 +831,15 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             <div className="space-y-1.5 text-stone-600">
               <div className="flex justify-between">
                 <span>المراجعة المشتركة مع الرفيقة:</span>
-                <strong className="text-stone-900">إنجاز تام وتعاون مثمر</strong>
+                <strong className="text-stone-900">{student.partnerStudentName ? `مع ${student.partnerStudentName}` : 'إنجاز تام وتعاون مثمر'}</strong>
               </div>
               <div className="flex justify-between">
-                <span>اكتشاف وتصحيح الأخطاء:</span>
+                <span>الالتزام التام بالمطلوب:</span>
                 <strong className="text-stone-900">متقن وفق الضوابط</strong>
               </div>
               <div className="flex justify-between">
-                <span>نقاط المراجعة الثنائية:</span>
-                <strong className="text-[#7A4B37]">+{score?.peerReviewScore} نقاط</strong>
+                <span>نقاط المراجعة:</span>
+                <strong className="text-[#7A4B37]">+{score?.peerReviewScore || 0} نقاط</strong>
               </div>
               <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900">
                 <span>مجموع درجات التحديات:</span>
@@ -630,29 +884,31 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             <div className="text-sm font-bold text-stone-900 font-quran mt-1">
               أ. {circle?.teacherName || 'معلمة الحلقة'}
             </div>
-            {teacherSig ? (
-              <div className="mt-1 flex flex-col items-center sm:items-start">
-                <img
-                  src={teacherSig}
-                  alt="توقيع المعلمة"
-                  className="h-9 max-w-[110px] object-contain drop-shadow-2xs"
-                />
-                <span className="text-[9px] text-emerald-700 font-semibold">توقيع معتمد ✅</span>
-              </div>
-            ) : (
-              <div className="text-[10px] text-stone-400 mt-1">التوقيع المعتمد</div>
+            {showTeacherSig && (
+              teacherSig ? (
+                <div className="mt-1 flex flex-col items-center sm:items-start">
+                  <img
+                    src={teacherSig}
+                    alt="توقيع المعلمة"
+                    className="h-9 max-w-[110px] object-contain drop-shadow-2xs"
+                  />
+                  <span className="text-[9px] text-emerald-700 font-semibold">توقيع معتمد ✅</span>
+                </div>
+              ) : (
+                <div className="text-[10px] text-stone-400 mt-1">التوقيع المعتمد</div>
+              )
             )}
           </div>
 
-          {/* Official Seal - Dynamic or Custom Uploaded from Device */}
-          {settings.showOfficialSeal !== false && (
+          {/* Official Seal */}
+          {showSeal && settings.showOfficialSeal !== false && (
             <OfficialSeal
               institutionName={settings.name}
               sealText={settings.sealText}
               sealSubtitle={settings.sealSubtitle}
               sealImageUrl={settings.sealImageUrl}
               leaderName={settings.leaderName}
-              color={settings.primaryColor || '#8E5364'}
+              color={customPrimaryColor}
               size="md"
             />
           )}
@@ -662,17 +918,19 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             <div className="text-sm font-bold text-stone-900 font-quran mt-1">
               {settings.leaderName || 'ريفة المنصوري'}
             </div>
-            {leaderSig ? (
-              <div className="mt-1 flex flex-col items-center sm:items-end">
-                <img
-                  src={leaderSig}
-                  alt="توقيع القائدة"
-                  className="h-9 max-w-[110px] object-contain drop-shadow-2xs"
-                />
-                <span className="text-[9px] text-emerald-700 font-semibold">الاعتماد النهائي ✅</span>
-              </div>
-            ) : (
-              <div className="text-[10px] text-stone-400 mt-1">الاعتماد النهائي</div>
+            {showLeaderSig && (
+              leaderSig ? (
+                <div className="mt-1 flex flex-col items-center sm:items-end">
+                  <img
+                    src={leaderSig}
+                    alt="توقيع القائدة"
+                    className="h-9 max-w-[110px] object-contain drop-shadow-2xs"
+                  />
+                  <span className="text-[9px] text-emerald-700 font-semibold">الاعتماد النهائي ✅</span>
+                </div>
+              ) : (
+                <div className="text-[10px] text-stone-400 mt-1">الاعتماد النهائي</div>
+              )
             )}
           </div>
         </div>
@@ -690,6 +948,554 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         </div>
 
       </div>
+
+      {/* ========================================================================= */}
+      {/* 1. DEDICATED CERTIFICATE PREVIEW MODAL (نافذة معاينة الشهادة قبل التصدير) */}
+      {/* ========================================================================= */}
+      {showPreviewModal && (
+        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex flex-col items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-5xl w-full max-h-[95vh] flex flex-col shadow-2xl border border-stone-200 overflow-hidden">
+            
+            {/* Modal Top Header */}
+            <div className="px-6 py-4 bg-[#FAF7F5] border-b border-[#E8DFD8] flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📜</span>
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-stone-900 font-quran">
+                    معاينة واعتماد شهادة إنجاز: {student.name}
+                  </h3>
+                  <p className="text-xs text-stone-500">
+                    يمكنك تعديل الألوان بحرية، تغيير التاريخ يدوياً، وتحديد الأختام والتواقيع قبل الحفظ
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                className="w-8 h-8 rounded-full bg-stone-200 hover:bg-stone-300 flex items-center justify-center text-stone-700 transition cursor-pointer"
+                title="إغلاق المعاينة"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Controls Toolbar (Free Color Picker + Editable Date + Seal/Signature Options + Export Buttons) */}
+            <div className="p-4 sm:p-5 bg-white border-b border-[#E8DFD8] space-y-4 shrink-0 overflow-y-auto max-h-[40vh]">
+              
+              {/* Row 1: Free Color Picker & Editable Date */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+                
+                {/* Editable Date Input */}
+                <div className="lg:col-span-5 bg-[#FAF6F2] p-3 rounded-2xl border border-[#E8DFD8]">
+                  <label className="block text-xs font-bold text-stone-700 mb-1 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-[#8E5364]" />
+                    <span>تاريخ الشهادة والاعتماد (قابل للتعديل يدوي):</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={customCertDate}
+                    onChange={e => setCustomCertDate(e.target.value)}
+                    placeholder="مثال: ربيع الآخر - جمادى الأولى ١٤٤٦هـ"
+                    className="w-full px-3 py-1.5 bg-white border border-stone-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-[#8E5364]"
+                  />
+                  <span className="text-[10px] text-stone-400 mt-1 block">
+                    يمكنك كتابة أي تاريخ هجري أو عبارة تريدين ظهورها على الشهادة
+                  </span>
+                </div>
+
+                {/* Free Color Picker Tool */}
+                <div className="lg:col-span-7 bg-[#FAF6F2] p-3 rounded-2xl border border-[#E8DFD8] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-stone-700 flex items-center gap-1.5">
+                      <Palette className="w-3.5 h-3.5 text-[#8E5364]" />
+                      <span>اختيار اللون الحر للشهادة:</span>
+                    </label>
+                    <button
+                      onClick={handleSaveColorsToSettings}
+                      className="text-[10px] text-[#8E5364] hover:underline font-bold"
+                      title="حفظ اللون الحالي للمقرأة بالكامل"
+                    >
+                      حفظ كهوية افتراضية 💾
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    {/* Primary Color Picker */}
+                    <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-stone-200">
+                      <span className="text-[11px] font-bold text-stone-600">الأساسي:</span>
+                      <input
+                        type="color"
+                        value={customPrimaryColor}
+                        onChange={e => setCustomPrimaryColor(e.target.value)}
+                        className="w-7 h-7 rounded-lg cursor-pointer border-0 bg-transparent p-0"
+                        title="اختيار اللون الأساسي بحرية"
+                      />
+                      <span className="text-[10px] font-mono text-stone-500 uppercase">{customPrimaryColor}</span>
+                    </div>
+
+                    {/* Secondary Color Picker */}
+                    <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-stone-200">
+                      <span className="text-[11px] font-bold text-stone-600">الفرعي:</span>
+                      <input
+                        type="color"
+                        value={customSecondaryColor}
+                        onChange={e => setCustomSecondaryColor(e.target.value)}
+                        className="w-7 h-7 rounded-lg cursor-pointer border-0 bg-transparent p-0"
+                        title="اختيار اللون الفرعي بحرية"
+                      />
+                      <span className="text-[10px] font-mono text-stone-500 uppercase">{customSecondaryColor}</span>
+                    </div>
+
+                    {/* Quick Preset Palette Swatches */}
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {presetPalettes.map(palette => (
+                        <button
+                          key={palette.name}
+                          onClick={() => {
+                            setCustomPrimaryColor(palette.primary);
+                            setCustomSecondaryColor(palette.secondary);
+                          }}
+                          className={`w-6 h-6 rounded-full border-2 transition transform active:scale-90 ${
+                            customPrimaryColor === palette.primary ? 'ring-2 ring-stone-800 scale-110' : 'border-white'
+                          }`}
+                          style={{ backgroundColor: palette.primary }}
+                          title={palette.name}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Row 2: Seal and Signature Toggles + Upload + EXPORT BUTTONS ONLY (PDF & HTML) */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 border-t border-stone-100">
+                {/* Toggles */}
+                <div className="flex items-center gap-2 sm:gap-3 flex-wrap text-xs">
+                  <label className="flex items-center gap-1.5 cursor-pointer font-bold text-stone-700 bg-white px-2.5 py-1.5 rounded-xl border border-stone-200 hover:bg-stone-50">
+                    <input
+                      type="checkbox"
+                      checked={showSeal}
+                      onChange={e => setShowSeal(e.target.checked)}
+                      className="rounded text-[#8E5364] focus:ring-[#8E5364] w-4 h-4 cursor-pointer"
+                    />
+                    <span>الختم الرسمي</span>
+                  </label>
+
+                  <label className="flex items-center gap-1.5 cursor-pointer font-bold text-stone-700 bg-white px-2.5 py-1.5 rounded-xl border border-stone-200 hover:bg-stone-50">
+                    <input
+                      type="checkbox"
+                      checked={showTeacherSig}
+                      onChange={e => setShowTeacherSig(e.target.checked)}
+                      className="rounded text-[#8E5364] focus:ring-[#8E5364] w-4 h-4 cursor-pointer"
+                    />
+                    <span>توقيع المعلمة</span>
+                  </label>
+
+                  <label className="flex items-center gap-1.5 cursor-pointer font-bold text-stone-700 bg-white px-2.5 py-1.5 rounded-xl border border-stone-200 hover:bg-stone-50">
+                    <input
+                      type="checkbox"
+                      checked={showLeaderSig}
+                      onChange={e => setShowLeaderSig(e.target.checked)}
+                      className="rounded text-[#8E5364] focus:ring-[#8E5364] w-4 h-4 cursor-pointer"
+                    />
+                    <span>توقيع القائدة</span>
+                  </label>
+
+                  <label
+                    style={{ backgroundColor: customPrimaryColor }}
+                    className="px-2.5 py-1.5 hover:brightness-105 text-white rounded-xl cursor-pointer text-[11px] font-bold transition shadow-xs flex items-center gap-1"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>رفع صورة ختم</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleCustomSealUpload}
+                    />
+                  </label>
+
+                  {settings.sealImageUrl && (
+                    <button
+                      onClick={handleRemoveCustomSeal}
+                      className="px-2.5 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-xl cursor-pointer text-[11px] font-bold transition flex items-center gap-1"
+                      title="حذف صورة الختم والرجوع للختم الافتراضي"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>حذف الختم</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* The Two Export Buttons (PDF & HTML only, No print button) */}
+                <div className="flex items-center gap-2 self-stretch sm:self-auto">
+                  <button
+                    onClick={handleDownloadPdf}
+                    className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs transition cursor-pointer active:scale-95"
+                    title="حفظ الشهادة بتنسيق PDF رسمي قابل للمشاركة والطباعة"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>تنزيل بصيغة PDF 📄</span>
+                  </button>
+
+                  <button
+                    onClick={handleDownloadHtml}
+                    style={{ color: customPrimaryColor }}
+                    className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 bg-stone-100 hover:bg-stone-200 border border-stone-300 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer active:scale-95"
+                    title="تنزيل الشهادة كملف HTML مستقل كامل التنسيقات"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>تنزيل كـ HTML 🌐</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Body: High Resolution Live Preview */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-[#FAF7F5] flex justify-center">
+              <div
+                className="bg-white rounded-3xl border-2 p-6 sm:p-8 shadow-sm space-y-6 max-w-3xl w-full transition-colors duration-200"
+                style={{ borderColor: customPrimaryColor }}
+              >
+                
+                {/* Header with Logo and editable Date */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-[#E8DFD8] pb-5 text-center sm:text-right">
+                  <div className="flex items-center justify-center sm:justify-start gap-3">
+                    {settings.logoUrl ? (
+                      <img
+                        src={settings.logoUrl}
+                        alt="شعار المقرأة"
+                        className="w-14 h-14 object-contain rounded-2xl border border-stone-200 p-1 bg-white shadow-2xs"
+                      />
+                    ) : (
+                      <div
+                        className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-2xs"
+                        style={{ backgroundColor: `${customPrimaryColor}15`, border: `1.5px solid ${customPrimaryColor}30` }}
+                      >
+                        🪴
+                      </div>
+                    )}
+                    <div>
+                      <h2 className="text-xl sm:text-2xl font-extrabold text-stone-900 font-quran">
+                        مقرأة {settings.name}
+                      </h2>
+                      <p className="text-xs text-stone-500 font-medium">
+                        {settings.subtitle} • {track.name}
+                      </p>
+                      <p className="text-[11px] text-stone-400">
+                        إشراف قائدة المقرأة: <strong>{settings.leaderName}</strong>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-center sm:text-left bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
+                    <span className="text-[10px] font-bold text-stone-400 block uppercase">تقرير إنجاز شهري معتمد</span>
+                    <div className="text-xs font-bold text-stone-700 mt-0.5">
+                      {customCertDate}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Student Banner */}
+                <div
+                  className="rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border"
+                  style={{
+                    backgroundColor: `${customPrimaryColor}08`,
+                    borderColor: `${customPrimaryColor}25`
+                  }}
+                >
+                  <div>
+                    <span className="text-[11px] text-stone-500 block">اسم الطالبة المتميزة:</span>
+                    <h3 className="text-2xl font-bold font-quran" style={{ color: customPrimaryColor }}>
+                      {student.name}
+                    </h3>
+                    <p className="text-xs text-stone-500 mt-0.5">
+                      الكود: <strong>{student.code}</strong> • حلقة: <strong>{circle?.name}</strong> • المعلمة: <strong>{circle?.teacherName}</strong>
+                    </p>
+                  </div>
+                  <div className="bg-white px-5 py-2.5 rounded-xl border border-stone-200 text-center shrink-0">
+                    <span className="text-[10px] text-stone-500 block">النسبة التراكمية</span>
+                    <span className="text-2xl font-black" style={{ color: customPrimaryColor }}>{score?.finalPercentage || 0}%</span>
+                    <span className="text-[11px] font-bold block" style={{ color: score?.gradeColor || customSecondaryColor }}>
+                      {score?.gradeLabel || 'ممتاز'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Key Stats Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs">
+                  <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
+                    <span className="text-[10px] text-stone-500 block">نسبة الحضور</span>
+                    <strong className="text-sm font-bold" style={{ color: customSecondaryColor }}>{score?.attendanceRate || 0}%</strong>
+                    <span className="text-[9px] text-stone-400 block mt-0.5">{score?.presentCount || 0} جلسات</span>
+                  </div>
+                  <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
+                    <span className="text-[10px] text-stone-500 block">أيام الغياب</span>
+                    <strong className="text-sm font-bold" style={{ color: totalAbsentDays > 0 ? '#b91c1c' : customSecondaryColor }}>
+                      {totalAbsentDays} أيام
+                    </strong>
+                    <span className="text-[9px] text-stone-400 block mt-0.5">{score?.absentExcusedCount || 0} بعذر</span>
+                  </div>
+                  <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
+                    <span className="text-[10px] text-stone-500 block">الحفظ الجديد</span>
+                    <strong className="text-sm font-bold text-stone-900">{doneNewPages} ص</strong>
+                    <span className="text-[9px] text-stone-400 block mt-0.5">المستهدف: {targetNewPages} ص</span>
+                  </div>
+                  <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
+                    <span className="text-[10px] text-stone-500 block">مراجعة التمكين</span>
+                    <strong className="text-sm font-bold text-stone-900">{doneRevPages} ص</strong>
+                    <span className="text-[9px] text-stone-400 block mt-0.5">المستهدف: {targetRevPages} ص</span>
+                  </div>
+                  <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
+                    <span className="text-[10px] text-stone-500 block">الترتيب في الحلقة</span>
+                    <strong className="text-sm font-bold" style={{ color: customPrimaryColor }}>المركز #{score?.rankInCircle || 1}</strong>
+                    <span className="text-[9px] text-stone-400 block mt-0.5">حلقة {circle?.name}</span>
+                  </div>
+                </div>
+
+                {/* Table Overview */}
+                <div className="border border-stone-200 rounded-xl overflow-hidden text-xs">
+                  <table className="w-full text-right border-collapse">
+                    <thead>
+                      <tr className="bg-[#FAF7F5] border-b border-stone-200 font-bold text-stone-700">
+                        <th className="p-2.5">المعيار</th>
+                        <th className="p-2.5">المقرر المستهدف</th>
+                        <th className="p-2.5">المنجز الفعلي</th>
+                        <th className="p-2.5">الدرجة</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100 text-stone-600">
+                      <tr>
+                        <td className="p-2.5 font-bold text-stone-900">الحضور والانضباط</td>
+                        <td className="p-2.5">حضور الجلسات المقررة</td>
+                        <td className="p-2.5">حضور {score?.attendanceRate || 0}% • غياب {totalAbsentDays} أيام</td>
+                        <td className="p-2.5 font-bold" style={{ color: customSecondaryColor }}>{score?.attendanceScore || 10} / 10</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2.5 font-bold text-stone-900">الحفظ الجديد</td>
+                        <td className="p-2.5">{targetNewPages} صفحات</td>
+                        <td className="p-2.5">{doneNewPages} صفحات</td>
+                        <td className="p-2.5 font-bold" style={{ color: customPrimaryColor }}>{score?.memorizationScore || 10} / 10</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2.5 font-bold text-stone-900">مراجعة التمكين</td>
+                        <td className="p-2.5">{targetRevPages} صفحات</td>
+                        <td className="p-2.5">{doneRevPages} صفحات</td>
+                        <td className="p-2.5 text-emerald-700 font-bold">متقن بالشروط ✅</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2.5 font-bold text-stone-900">واجبات التجويد «أتقني»</td>
+                        <td className="p-2.5">استخراج وتطبيق الأحكام</td>
+                        <td className="p-2.5">{score?.atqiniCompletedCount || 1} واجب منجز</td>
+                        <td className="p-2.5 font-bold" style={{ color: customPrimaryColor }}>{score?.atqiniScore || 10} / 10</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2.5 font-bold text-stone-900">التحديات والمراجعة الثنائية</td>
+                        <td className="p-2.5">مع الرفيقة القرآنية</td>
+                        <td className="p-2.5">منجز بتميز ⭐</td>
+                        <td className="p-2.5 font-bold text-amber-800">{score?.challengesScore || 10} / 10</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2.5 font-bold text-stone-900">الاختبار الشهري</td>
+                        <td className="p-2.5">اختبار تمكيني شامل</td>
+                        <td className="p-2.5">{studentExam ? studentExam.score : 95} درجة</td>
+                        <td className="p-2.5 font-bold text-emerald-800">{studentExam ? studentExam.score : 95} / 100</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Footer with Signatures and Seal */}
+                <div className="pt-4 border-t-2 border-[#E8DFD8] flex items-center justify-between text-center">
+                  <div className="min-w-[100px]">
+                    <div className="text-[11px] text-stone-500">معلمة الحلقة</div>
+                    <div className="text-xs font-bold text-stone-900 font-quran mt-0.5">
+                      أ. {circle?.teacherName || 'معلمة الحلقة'}
+                    </div>
+                    {showTeacherSig && (
+                      teacherSig ? (
+                        <img
+                          src={teacherSig}
+                          alt="توقيع المعلمة"
+                          className="h-8 max-w-[90px] object-contain mx-auto mt-1"
+                        />
+                      ) : (
+                        <span className="text-[9px] text-stone-400 block mt-1">(التوقيع معتمد)</span>
+                      )
+                    )}
+                  </div>
+
+                  {showSeal && settings.showOfficialSeal !== false && (
+                    <OfficialSeal
+                      institutionName={settings.name}
+                      sealText={settings.sealText}
+                      sealSubtitle={settings.sealSubtitle}
+                      sealImageUrl={settings.sealImageUrl}
+                      leaderName={settings.leaderName}
+                      color={customPrimaryColor}
+                      size="sm"
+                    />
+                  )}
+
+                  <div className="min-w-[100px]">
+                    <div className="text-[11px] text-stone-500">قائدة المقرأة</div>
+                    <div className="text-xs font-bold text-stone-900 font-quran mt-0.5">
+                      {settings.leaderName || 'ريفة المنصوري'}
+                    </div>
+                    {showLeaderSig && (
+                      leaderSig ? (
+                        <img
+                          src={leaderSig}
+                          alt="توقيع القائدة"
+                          className="h-8 max-w-[90px] object-contain mx-auto mt-1"
+                        />
+                      ) : (
+                        <span className="text-[9px] text-stone-400 block mt-1">(الاعتماد النهائي)</span>
+                      )
+                    )}
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Modal Bottom Close Bar */}
+            <div className="px-6 py-3 bg-stone-100 border-t border-stone-200 flex items-center justify-between shrink-0">
+              <span className="text-xs text-stone-500 font-medium">
+                تطوير النظام: ياسر التاج · yr_alhosine • مقرأة {settings.name}
+              </span>
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                className="px-4 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                إغلاق المعاينة
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 2. QUICK EDIT STUDENT PLAN & ACHIEVEMENT MODAL (تعديل الخطة والصفحات) */}
+      {/* ========================================================================= */}
+      {showQuickEditModal && (
+        <div className="fixed inset-0 z-50 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-xl border border-stone-200 space-y-4">
+            
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-[#8E5364]" />
+                <h3 className="text-base font-bold text-stone-900 font-quran">
+                  تعديل خطة وإنجاز الطالبة: {student.name}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowQuickEditModal(false)}
+                className="w-7 h-7 rounded-full bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-600 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              
+              {/* Target & Done Pages for New Memorization */}
+              <div className="grid grid-cols-2 gap-3 bg-[#FCFAF8] p-3 rounded-2xl border border-stone-200">
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">صفحات الحفظ المستهدفة:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={quickEditForm.targetPages}
+                    onChange={e => setQuickEditForm({ ...quickEditForm, targetPages: Number(e.target.value) })}
+                    className="w-full px-3 py-1.5 border border-stone-300 rounded-xl bg-white font-bold text-stone-900"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">صفحات الحفظ المنجزة فعلياً:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={quickEditForm.actualPages}
+                    onChange={e => setQuickEditForm({ ...quickEditForm, actualPages: Number(e.target.value) })}
+                    className="w-full px-3 py-1.5 border border-stone-300 rounded-xl bg-white font-bold text-[#8E5364]"
+                  />
+                </div>
+              </div>
+
+              {/* Target & Done Pages for Revision */}
+              <div className="grid grid-cols-2 gap-3 bg-[#FCFAF8] p-3 rounded-2xl border border-stone-200">
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">صفحات المراجعة المستهدفة:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={quickEditForm.revisionTargetPages}
+                    onChange={e => setQuickEditForm({ ...quickEditForm, revisionTargetPages: Number(e.target.value) })}
+                    className="w-full px-3 py-1.5 border border-stone-300 rounded-xl bg-white font-bold text-stone-900"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">صفحات المراجعة المنجزة فعلياً:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={quickEditForm.revisionActualPages}
+                    onChange={e => setQuickEditForm({ ...quickEditForm, revisionActualPages: Number(e.target.value) })}
+                    className="w-full px-3 py-1.5 border border-stone-300 rounded-xl bg-white font-bold text-[#2D5A43]"
+                  />
+                </div>
+              </div>
+
+              {/* Monthly Exam Score */}
+              <div>
+                <label className="block font-bold text-stone-700 mb-1">درجة الاختبار الشهري التمكيني (من ١٠٠):</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={quickEditForm.examScore}
+                  onChange={e => setQuickEditForm({ ...quickEditForm, examScore: Number(e.target.value) })}
+                  className="w-full px-3 py-1.5 border border-stone-300 rounded-xl bg-white font-bold text-stone-900"
+                />
+              </div>
+
+              {/* Teacher Remarks & Recommendations */}
+              <div>
+                <label className="block font-bold text-stone-700 mb-1">توصيات وملاحظات المعلمة والمشرفة:</label>
+                <textarea
+                  rows={3}
+                  value={quickEditForm.notes}
+                  onChange={e => setQuickEditForm({ ...quickEditForm, notes: e.target.value })}
+                  placeholder="اكتبي توصياتك للطالبة..."
+                  className="w-full px-3 py-2 border border-stone-300 rounded-xl bg-white text-xs leading-relaxed"
+                />
+              </div>
+
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setShowQuickEditModal(false)}
+                className="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold transition"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveQuickEdit}
+                className="px-4 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold shadow-xs transition"
+              >
+                حفظ التعديلات والتحديث الفوري ✅
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
     </div>
   );
