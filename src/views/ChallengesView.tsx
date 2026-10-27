@@ -1033,7 +1033,7 @@ export const ChallengesView: React.FC = () => {
                     onChange={e => setChallengeForm({ ...challengeForm, type: e.target.value as any })}
                     className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white"
                   >
-                    <option value="thursday_challenge">تحدي الخميس الأسبوعي</option>
+                    <option value="thursday_challenge">التحديات </option>
                     <option value="grand_revision">تحدي المراجعة الكبرى</option>
                     <option value="custom">تحدٍ مخصص</option>
                   </select>
