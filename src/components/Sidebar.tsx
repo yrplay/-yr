@@ -43,7 +43,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
   const rawMenuItems: { id: ViewType; label: string; icon: any; badge?: string | number; accent?: string; adminOnly?: boolean }[] = [
     { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
     { id: 'tracks_circles', label: 'المسارات والحلقات', icon: Layers, badge: circles.length },
-    { id: 'subscriptions', label: 'الاشتراكات والمالية', icon: CreditCard },
+    { id: 'subscriptions', label: 'الاشتراكات والمالية', icon: CreditCard, adminOnly: true },
     { id: 'students', label: 'شؤون الطالبات', icon: Users, badge: students.length },
     { id: 'monthly_plans', label: 'الخطط الشهرية والمقرر', icon: Calendar },
     { id: 'attendance', label: 'الحضور والتحضير المبكر', icon: CheckSquare },
@@ -58,8 +58,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
     { id: 'settings', label: 'الإعدادات والنسخ الاحتياطي', icon: Settings, adminOnly: true },
   ];
 
-  // تخصيص قسم المعلمات والمشرفات والإعدادات للإدارة فقط
-  const menuItems = rawMenuItems.filter(item => !item.adminOnly || isLeader);
+  // تخصيص الأقسام الإدارية والمالية للإدارة العليا فقط
+  const canAccessFinances = isLeader || !!currentUser?.permissions?.canManageFinances;
+  const menuItems = rawMenuItems.filter(item => {
+    if (item.id === 'subscriptions') return canAccessFinances;
+    if (item.adminOnly) return isLeader;
+    return true;
+  });
 
   return (
     <>

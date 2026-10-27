@@ -27,6 +27,9 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
   const [showEditModal, setShowEditModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'mastery' | 'rules' | 'circles' | 'students'>('mastery');
 
+  // صلاحية تعديل معايير المسار
+  const canEditCriteria = currentUser?.role === 'leader' || !!currentUser?.permissions?.canEditTrackCriteria;
+
   // حالة إضافة معيار جديد مخصص داخل النافذة
   const [newCriterionTitle, setNewCriterionTitle] = useState('');
   const [newCriterionCount, setNewCriterionCount] = useState<number>(3);
@@ -240,14 +243,16 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleOpenEditModal}
-          className="px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer active:scale-95"
-        >
-          <Settings className="w-4 h-4" />
-          <span>تعديل معايير دليل الإتقان</span>
-        </button>
+        {canEditCriteria && (
+          <button
+            type="button"
+            onClick={handleOpenEditModal}
+            className="px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer active:scale-95"
+          >
+            <Settings className="w-4 h-4" />
+            <span>تعديل معايير دليل الإتقان</span>
+          </button>
+        )}
       </div>
 
       {/* المؤشرات التعليمية والتربوية للمسار */}
@@ -363,16 +368,18 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleOpenEditModal}
-                  className="px-3.5 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>إضافة أو تعديل معيار</span>
-                </button>
-              </div>
+              {canEditCriteria && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleOpenEditModal}
+                    className="px-3.5 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>إضافة أو تعديل معيار</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* شبكة بطاقات المعايير الموحدة */}
@@ -388,14 +395,16 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
                         #{idx + 1}
                       </div>
                       
-                      <button
-                        type="button"
-                        onClick={() => handleDirectDeleteCriterion(crit.id)}
-                        className="opacity-0 group-hover:opacity-100 p-1.5 text-stone-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
-                        title="حذف هذا المعيار من المسار"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {canEditCriteria && (
+                        <button
+                          type="button"
+                          onClick={() => handleDirectDeleteCriterion(crit.id)}
+                          className="opacity-0 group-hover:opacity-100 p-1.5 text-stone-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
+                          title="حذف هذا المعيار من المسار"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
 
                     <h4 className="text-xs font-bold text-stone-800 dark:text-stone-200 block mb-1">
@@ -416,13 +425,15 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
 
                   <div className="pt-3 mt-3 border-t border-stone-100 dark:border-stone-800 flex items-center justify-between text-[11px]">
                     <span className="text-stone-400 font-bold">معيار إتقان</span>
-                    <button
-                      type="button"
-                      onClick={handleOpenEditModal}
-                      className="text-[#8E5364] dark:text-[#E8BDC8] font-bold hover:underline cursor-pointer"
-                    >
-                      تعديل
-                    </button>
+                    {canEditCriteria && (
+                      <button
+                        type="button"
+                        onClick={handleOpenEditModal}
+                        className="text-[#8E5364] dark:text-[#E8BDC8] font-bold hover:underline cursor-pointer"
+                      >
+                        تعديل
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

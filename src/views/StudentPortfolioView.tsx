@@ -645,15 +645,17 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           </div>
 
           {/* Official Seal - Dynamic or Custom Uploaded from Device */}
-          <OfficialSeal
-            institutionName={settings.name}
-            sealText={settings.sealText}
-            sealSubtitle={settings.sealSubtitle}
-            sealImageUrl={settings.sealImageUrl}
-            leaderName={settings.leaderName}
-            color={settings.primaryColor || '#8E5364'}
-            size="md"
-          />
+          {settings.showOfficialSeal !== false && (
+            <OfficialSeal
+              institutionName={settings.name}
+              sealText={settings.sealText}
+              sealSubtitle={settings.sealSubtitle}
+              sealImageUrl={settings.sealImageUrl}
+              leaderName={settings.leaderName}
+              color={settings.primaryColor || '#8E5364'}
+              size="md"
+            />
+          )}
 
           <div className="flex flex-col items-center sm:items-end min-w-[130px] text-center sm:text-left">
             <div className="text-xs text-stone-500">قائدة مقرأة {settings.name || 'غيث الغيم'}</div>

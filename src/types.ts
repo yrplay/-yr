@@ -11,11 +11,12 @@ export interface UserPermissions {
   canEditStudents?: boolean;
   canViewReports?: boolean;
   canManagePlans?: boolean;
+  canManageFinances?: boolean;
+  canEditTrackCriteria?: boolean;
   canManageSettings?: boolean;
   canManageUsers?: boolean;
   canManageTracks?: boolean;
   canManageCircles?: boolean;
-  canManageFinances?: boolean;
   canEditScores?: boolean;
   canExportReports?: boolean;
   [key: string]: boolean | undefined;
@@ -451,6 +452,7 @@ export interface InstitutionSettings {
   sealText?: string;
   sealSubtitle?: string;
   sealImageUrl?: string;
+  showOfficialSeal?: boolean; // خيار تفعيل أو إخفاء الختم بالكامل من الشهادات والتقارير
   leaderSignatureUrl?: string;
   defaultMasteryGuide?: MasteryGuideConfig;
   defaultSubscriptionFee?: number;
@@ -488,28 +490,58 @@ export const defaultMasteryGuideConfig: MasteryGuideConfig = {
 };
 
 // صلاحيات الأدوار الافتراضية
-export const defaultPermissionsByRole: Record<string, any> = {
+export const defaultPermissionsByRole: Record<string, UserPermissions> = {
   leader: {
+    canRecordAttendance: true,
+    canRecordRecitation: true,
+    canGradeAtqini: true,
+    canManageChallenges: true,
+    canGradeExams: true,
+    canEditStudents: true,
+    canViewReports: true,
+    canManagePlans: true,
+    canManageFinances: true,
+    canEditTrackCriteria: true,
+    canManageSettings: true,
     canManageUsers: true,
     canManageTracks: true,
     canManageCircles: true,
-    canManageFinances: true,
     canEditScores: true,
     canExportReports: true
   },
   supervisor: {
+    canRecordAttendance: true,
+    canRecordRecitation: true,
+    canGradeAtqini: true,
+    canManageChallenges: true,
+    canGradeExams: true,
+    canEditStudents: true,
+    canViewReports: true,
+    canManagePlans: true,
+    canManageFinances: false, // محصورة على الإدارة العليا فقط
+    canEditTrackCriteria: false, // محصورة على الإدارة العليا فقط ما لم تمنح يدوياً
+    canManageSettings: false,
     canManageUsers: false,
     canManageTracks: false,
     canManageCircles: true,
-    canManageFinances: true,
     canEditScores: true,
     canExportReports: true
   },
   teacher: {
+    canRecordAttendance: true,
+    canRecordRecitation: true,
+    canGradeAtqini: true,
+    canManageChallenges: true,
+    canGradeExams: true,
+    canEditStudents: false,
+    canViewReports: false,
+    canManagePlans: false,
+    canManageFinances: false, // محصورة على الإدارة العليا فقط
+    canEditTrackCriteria: false, // محصورة على الإدارة العليا فقط
+    canManageSettings: false,
     canManageUsers: false,
     canManageTracks: false,
     canManageCircles: false,
-    canManageFinances: false,
     canEditScores: true,
     canExportReports: false
   }

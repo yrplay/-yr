@@ -74,6 +74,20 @@ const PERMISSION_ITEMS: {
     icon: '📅'
   },
   {
+    key: 'canManageFinances',
+    title: 'إدارة قسم الاشتراكات والمالية',
+    description: 'الاطلاع على كشوفات سداد الطالبات، وتوثيق سندات الدفع، وإدارة رسوم المقرأة ودورات التحصيل.',
+    category: 'المالية والاشتراكات',
+    icon: '💳'
+  },
+  {
+    key: 'canEditTrackCriteria',
+    title: 'تعديل معايير المسار ودليل الإتقان',
+    description: 'تخصيص وتعديل معايير دليل الإتقان وشروط التسميع والمراجعة التابعة لكل مسار.',
+    category: 'الشؤون الأكاديمية',
+    icon: '🎯'
+  },
+  {
     key: 'canManageSettings',
     title: 'الوصول لإعدادات وهوية المقرأة العامة',
     description: 'تغيير الشعار والهوية البصرية والألوان وإدارة نصوص المنظومة.',
@@ -171,6 +185,8 @@ export const StaffView: React.FC = () => {
       canEditStudents: true,
       canViewReports: true,
       canManagePlans: true,
+      canManageFinances: true,
+      canEditTrackCriteria: true,
       canManageSettings: true,
     });
   };
@@ -185,6 +201,8 @@ export const StaffView: React.FC = () => {
       canEditStudents: false,
       canViewReports: false,
       canManagePlans: false,
+      canManageFinances: false,
+      canEditTrackCriteria: false,
       canManageSettings: false,
     });
   };
@@ -1237,7 +1255,7 @@ export const StaffView: React.FC = () => {
             {/* Quick Action Presets Toolbar */}
             <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-[#FAF6F2] rounded-2xl border border-[#EFE8E2]">
               <div className="text-xs text-stone-600 font-medium">
-                الصلاحيات المفعلة حالياً: <strong className="text-[#8E5364] text-sm">{Object.values(userPermissionsState).filter(Boolean).length}</strong> من <strong className="text-stone-800">9</strong>
+                الصلاحيات المفعلة حالياً: <strong className="text-[#8E5364] text-sm">{Object.values(userPermissionsState).filter(Boolean).length}</strong> من <strong className="text-stone-800">{PERMISSION_ITEMS.length}</strong>
               </div>
               <div className="flex items-center gap-1.5">
                 <button

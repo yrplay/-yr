@@ -71,18 +71,19 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
     return list;
   }, [currentCycle, studentSubscriptions]);
 
-  // قفل أمني: حصر قسم الاشتراكات والمالية على الإدارة العليا فقط
-  if (!isLeader) {
+  // قفل أمني: حصر قسم الاشتراكات والمالية على الإدارة العليا أو من يملك صلاحية إدارة المالية
+  const canAccessFinances = isLeader || !!currentUser?.permissions?.canManageFinances;
+  if (!canAccessFinances) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center" dir="rtl">
         <div className="w-16 h-16 rounded-3xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-center text-3xl shadow-xs mb-4">
           <ShieldAlert className="w-8 h-8 text-rose-600" />
         </div>
         <h2 className="text-xl font-bold font-quran text-stone-900 mb-2">
-          قسم الاشتراكات والمالية خاص بإدارة المقرأة فقط
+          قسم الاشتراكات والمالية خاص بالإدارة العليا
         </h2>
         <p className="text-xs sm:text-sm text-stone-500 max-w-md mb-6 leading-relaxed">
-          عذراً، هذا القسم يشتمل على الرسوم والاشتراكات وسندات التحصيل والمبالغ المالية، وتقتصر صلاحية الاطلاع عليه وإدارته على قائدة المقرأة فقط.
+          عذراً، هذا القسم يشتمل على الرسوم والاشتراكات وسندات التحصيل والمبالغ المالية، وتقتصر صلاحية الاطلاع عليه وإدارته على الإدارة العليا أو المفوّضين بصلاحية المالية فقط.
         </p>
         <button
           type="button"

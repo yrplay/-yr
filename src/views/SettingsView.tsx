@@ -41,6 +41,7 @@ export const SettingsView: React.FC = () => {
     sealText: settings.sealText || 'ختم الاعتماد الرسمي',
     sealSubtitle: settings.sealSubtitle || 'معتمد للعام ١٤٤٦هـ',
     sealImageUrl: settings.sealImageUrl || '',
+    showOfficialSeal: settings.showOfficialSeal ?? true,
     leaderSignatureUrl: settings.leaderSignatureUrl || '',
     securityEnabled: settings.securityEnabled ?? true,
     leaderPasscode: settings.leaderPasscode || '5522',
@@ -722,49 +723,101 @@ export const SettingsView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Upload custom seal image option */}
-              <div className="pt-2 border-t border-stone-200">
-                <div className="flex items-center justify-between mb-2">
+              {/* Seal Visibility Toggle & Status */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-white border border-stone-200">
+                <div>
+                  <span className="text-xs font-bold text-stone-800 block">إظهار الختم في الشهادات والتقارير:</span>
+                  <span className="text-[10px] text-stone-500">تفعيل ظهور الختم الرسمي أو حذفه/إخفاؤه بالكامل من وثائق الطالبات</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextVal = !(form.showOfficialSeal ?? true);
+                    setForm(prev => ({ ...prev, showOfficialSeal: nextVal }));
+                    updateSettings({ showOfficialSeal: nextVal });
+                    showToast(nextVal ? 'تم تفعيل إظهار الختم في الشهادات والتقارير ✅' : 'تم إخفاء الختم بالكامل من الشهادات والتقارير 🚫');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                    (form.showOfficialSeal ?? true)
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                      : 'bg-stone-100 text-stone-600 border-stone-300 hover:bg-stone-200'
+                  }`}
+                >
+                  {(form.showOfficialSeal ?? true) ? 'الختم مُفعّل وظاهر ✅' : 'الختم مخفي / محذوف ❌'}
+                </button>
+              </div>
+
+              {/* Upload or Delete custom seal image */}
+              <div className="pt-2 border-t border-stone-200 space-y-2">
+                <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold text-stone-700">
-                    أو ارفعي صورة ختمكِ الخاص المعتمد (اختياري):
+                    صورة الختم المعتمد (إضافة أو حذف):
                   </span>
+                  {form.sealImageUrl ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+                      ختم مخصص مرفوع 💮
+                    </span>
+                  ) : (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-medium">
+                      الختم الملكي التلقائي 🏛️
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="px-3.5 py-2 bg-white hover:bg-stone-50 border border-stone-300 hover:border-[#8E5364] rounded-xl text-xs font-bold text-stone-700 cursor-pointer inline-flex items-center gap-1.5 shadow-2xs transition">
+                    <Upload className="w-3.5 h-3.5 text-[#8E5364]" />
+                    <span>{form.sealImageUrl ? 'تغيير صورة الختم المرفوعة' : 'رفع ختم جديد من الجهاز (PNG شفاف)'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleSealImageUpload}
+                      className="hidden"
+                    />
+                  </label>
+
                   {form.sealImageUrl && (
                     <button
                       type="button"
-                      onClick={() => setForm(prev => ({ ...prev, sealImageUrl: '' }))}
-                      className="text-[10px] text-rose-600 hover:underline flex items-center gap-1 cursor-pointer"
+                      onClick={() => {
+                        setForm(prev => ({ ...prev, sealImageUrl: '' }));
+                        updateSettings({ sealImageUrl: '' });
+                        showToast('تم حذف صورة الختم المرفوعة والعودة للختم الملكي الافتراضي 🗑️');
+                      }}
+                      className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
                     >
-                      <Trash2 className="w-3 h-3" />
-                      <span>إلغاء صورة الختم والعودة للختم الملكي</span>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>حذف الختم المرفوع والعودة للختم الملكي</span>
                     </button>
                   )}
                 </div>
-                <label className="px-3 py-2 bg-white hover:bg-stone-50 border border-stone-300 rounded-xl text-xs font-bold text-stone-700 cursor-pointer inline-flex items-center gap-1.5 shadow-2xs transition">
-                  <Upload className="w-3.5 h-3.5 text-[#8E5364]" />
-                  <span>رفع صورة ختم جاهزة (PNG شفاف)</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleSealImageUpload}
-                    className="hidden"
-                  />
-                </label>
               </div>
 
               {/* Live Seal Preview */}
               <div className="p-3 bg-white rounded-xl border border-stone-200 flex items-center justify-center gap-4 text-center">
-                <OfficialSeal
-                  institutionName={form.name}
-                  sealText={form.sealText}
-                  sealSubtitle={form.sealSubtitle}
-                  sealImageUrl={form.sealImageUrl}
-                  leaderName={form.leaderName}
-                  color={form.primaryColor}
-                  size="md"
-                />
+                {form.showOfficialSeal !== false ? (
+                  <OfficialSeal
+                    institutionName={form.name}
+                    sealText={form.sealText}
+                    sealSubtitle={form.sealSubtitle}
+                    sealImageUrl={form.sealImageUrl}
+                    leaderName={form.leaderName}
+                    color={form.primaryColor}
+                    size="md"
+                  />
+                ) : (
+                  <div className="w-28 h-28 rounded-full border-2 border-dashed border-stone-300 flex flex-col items-center justify-center p-2 text-stone-400 text-[10px]">
+                    <span className="text-xl mb-1">🚫</span>
+                    <span>الختم مخفي</span>
+                  </div>
+                )}
                 <div className="text-right text-[11px] text-stone-500">
                   <span className="font-bold text-stone-800 block mb-0.5">معاينة الختم المباشرة:</span>
-                  <span>هكذا سيظهر الختم في أسفل شهادة إنجاز الطالبة وخطابات التكريم.</span>
+                  {form.showOfficialSeal !== false ? (
+                    <span>هكذا سيظهر الختم في أسفل شهادة إنجاز الطالبة وخطابات التكريم.</span>
+                  ) : (
+                    <span className="text-amber-700">الختم معطّل ومخفي حالياً، ولن يظهر على الشهادات حتى تقومي بإعادة تفعيله.</span>
+                  )}
                 </div>
               </div>
             </div>
