@@ -115,6 +115,7 @@ export interface Circle {
   earlyPrepCutoffTime: string;
   isArchived: boolean;
   createdAt: string;
+  updatedAt?: string;
 }
 
 // 5. الطالبات
@@ -132,6 +133,7 @@ export interface Student {
   partnerStudentName?: string;
   notes?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 // 6. سجلات اشتراكات ودفع الطالبات
@@ -168,6 +170,7 @@ export interface MonthlyPlan {
   thursdayFocus: string;
   status: 'active' | 'archived';
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface StudentMonthlyPlan {
@@ -275,6 +278,8 @@ export interface AtqiniAssignment {
   examplesRequirement: string;
   recitationRuleApplication: string;
   maxScore: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface StudentAtqiniSubmission {
@@ -326,6 +331,7 @@ export interface Challenge {
   tasks: ChallengeTask[] | any[];
   status: 'active' | 'completed';
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface StudentChallengeSubmission {
@@ -357,6 +363,7 @@ export interface MonthlyExam {
   maxScore: number;
   notes?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface StudentExamResult {

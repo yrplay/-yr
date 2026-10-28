@@ -260,6 +260,7 @@ const AppContent: React.FC = () => {
             <StudentPortfolioView
               initialStudentId={selectedStudentId}
               onSelectStudent={setSelectedStudentId}
+              onNavigateToSection={(s) => setCurrentView(s as ViewType)}
             />
           )}
 

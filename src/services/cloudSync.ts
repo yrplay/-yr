@@ -92,6 +92,13 @@ export const pushStateToCloud = async (statePayload: any): Promise<void> => {
         ...remoteData,
         ...statePayload,
         // دمج السجلات الحيوية دون إقصاء أي تسجيل متزامن
+        tracks: mergeArrayByKey(remoteData.tracks, statePayload.tracks, 'id'),
+        circles: mergeArrayByKey(remoteData.circles, statePayload.circles, 'id'),
+        students: mergeArrayByKey(remoteData.students, statePayload.students, 'id'),
+        monthlyPlans: mergeArrayByKey(remoteData.monthlyPlans, statePayload.monthlyPlans, 'id'),
+        atqiniAssignments: mergeArrayByKey(remoteData.atqiniAssignments, statePayload.atqiniAssignments, 'id'),
+        challenges: mergeArrayByKey(remoteData.challenges, statePayload.challenges, 'id'),
+        monthlyExams: mergeArrayByKey(remoteData.monthlyExams, statePayload.monthlyExams, 'id'),
         dailyRecords: mergeArrayByKey(remoteData.dailyRecords, statePayload.dailyRecords, 'id'),
         attendanceRecords: mergeArrayByKey(remoteData.attendanceRecords, statePayload.attendanceRecords, 'id'),
         studentPlans: mergeArrayByKey(remoteData.studentPlans, statePayload.studentPlans, 'id'),

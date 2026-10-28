@@ -11,10 +11,12 @@ import { OfficialSeal } from '../components/OfficialSeal';
 interface StudentPortfolioViewProps {
   initialStudentId?: string;
   onSelectStudent?: (studentId: string) => void;
+  onNavigateToSection?: (section: string) => void;
 }
 
 export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
-  initialStudentId
+  initialStudentId,
+  onNavigateToSection
 }) => {
   const {
     students, circles, tracks, users, monthlyPlans, studentPlans,
@@ -221,16 +223,16 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
       font-family: 'Tajawal', sans-serif;
       background: #FAF7F5;
       color: #2D2426;
-      padding: 30px 15px;
+      padding: 24px 15px;
       direction: rtl;
     }
     .cert-card {
-      max-width: 860px;
+      max-width: 900px;
       margin: 0 auto;
       background: white;
       border: 3px solid ${customPrimaryColor};
-      border-radius: 24px;
-      padding: 40px;
+      border-radius: 20px;
+      padding: 26px 32px;
       box-shadow: 0 10px 30px rgba(0,0,0,0.06);
       position: relative;
     }
@@ -239,21 +241,21 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
       justify-content: space-between;
       align-items: center;
       border-bottom: 2px solid #E8DFD8;
-      padding-bottom: 20px;
-      margin-bottom: 25px;
+      padding-bottom: 14px;
+      margin-bottom: 14px;
     }
     .header h1 {
       font-family: 'Amiri', serif;
-      font-size: 32px;
+      font-size: 28px;
       color: #1c1917;
-      margin-bottom: 4px;
+      margin-bottom: 2px;
     }
     .badge-top {
       background: ${customPrimaryColor}15;
       color: ${customPrimaryColor};
-      padding: 6px 14px;
+      padding: 5px 12px;
       border-radius: 20px;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: bold;
       border: 1px solid ${customPrimaryColor}35;
       display: inline-block;
@@ -261,15 +263,15 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
     .student-banner {
       background: linear-gradient(135deg, ${customPrimaryColor}0d, ${customSecondaryColor}0d);
       border: 1px solid ${customPrimaryColor}30;
-      border-radius: 18px;
-      padding: 20px 24px;
+      border-radius: 14px;
+      padding: 12px 20px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 25px;
+      margin-bottom: 14px;
     }
     .student-name {
-      font-size: 26px;
+      font-size: 23px;
       font-weight: 800;
       color: ${customPrimaryColor};
       font-family: 'Amiri', serif;
@@ -277,23 +279,23 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
     .stat-grid {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
-      gap: 10px;
-      margin-bottom: 25px;
+      gap: 8px;
+      margin-bottom: 14px;
     }
     .stat-box {
       background: #FCFAF8;
       border: 1px solid #EFE8E2;
-      border-radius: 14px;
-      padding: 12px 8px;
+      border-radius: 12px;
+      padding: 8px 6px;
       text-align: center;
     }
-    .stat-label { font-size: 11px; color: #78716c; margin-bottom: 4px; }
-    .stat-value { font-size: 17px; font-weight: bold; color: #1c1917; }
+    .stat-label { font-size: 10.5px; color: #78716c; margin-bottom: 2px; }
+    .stat-value { font-size: 15px; font-weight: bold; color: #1c1917; }
     .section-title {
-      font-size: 15px;
+      font-size: 13px;
       font-weight: bold;
       color: #1c1917;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
       display: flex;
       align-items: center;
       gap: 6px;
@@ -301,52 +303,180 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
     .table-custom {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 25px;
-      font-size: 12px;
+      margin-bottom: 14px;
+      font-size: 11px;
     }
     .table-custom th, .table-custom td {
       border: 1px solid #EAE2DB;
-      padding: 10px;
+      padding: 6px 8px;
       text-align: right;
     }
     .table-custom th {
       background: #F7EFE9;
       font-weight: bold;
     }
+    .remarks-box {
+      background: #FCFAF8;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid #EFE8E2;
+      margin-bottom: 12px;
+      font-size: 11.5px;
+    }
     .footer {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-top: 35px;
+      margin-top: 14px;
       border-top: 2px solid #E8DFD8;
-      padding-top: 25px;
+      padding-top: 12px;
     }
     .seal {
-      width: 90px;
-      height: 90px;
+      width: 78px;
+      height: 78px;
       border-radius: 50%;
-      border: 4px double ${customPrimaryColor};
+      border: 3.5px double ${customPrimaryColor};
       color: ${customPrimaryColor};
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: bold;
       transform: rotate(-6deg);
     }
+    .seal-img {
+      width: 76px;
+      height: 76px;
+      object-fit: contain;
+      transform: rotate(-5deg);
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+    }
+    .dev-credit {
+      margin-top: 10px;
+      text-align: center;
+      font-size: 9.5px;
+      color: #a8a29e;
+      font-family: sans-serif;
+    }
+    @page {
+      size: A4 landscape;
+      margin: 5mm;
+    }
     @media print {
-      body { background: white; padding: 0; }
-      .cert-card { box-shadow: none; border-width: 2px; }
+      html, body {
+        width: 100% !important;
+        height: 100% !important;
+        max-height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: white !important;
+        overflow: hidden !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        page-break-inside: avoid !important;
+        page-break-after: avoid !important;
+        break-inside: avoid !important;
+      }
       .no-print { display: none !important; }
-      @page {
-        size: A4 landscape;
-        margin: 10mm;
+      .cert-card {
+        box-shadow: none !important;
+        border-width: 2.5px !important;
+        border-radius: 16px !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        height: calc(100vh - 10mm) !important;
+        max-height: calc(100vh - 10mm) !important;
+        padding: 12px 20px !important;
+        margin: 0 auto !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: space-between !important;
+      }
+      .header {
+        padding-bottom: 6px !important;
+        margin-bottom: 6px !important;
+      }
+      .header h1 {
+        font-size: 21px !important;
+      }
+      .header p {
+        font-size: 10.5px !important;
+      }
+      .badge-top {
+        font-size: 10px !important;
+        padding: 3px 8px !important;
+      }
+      .student-banner {
+        padding: 6px 12px !important;
+        margin-bottom: 6px !important;
+        border-radius: 10px !important;
+      }
+      .student-name {
+        font-size: 18px !important;
+      }
+      .stat-grid {
+        gap: 5px !important;
+        margin-bottom: 6px !important;
+      }
+      .stat-box {
+        padding: 4px 3px !important;
+        border-radius: 6px !important;
+      }
+      .stat-label {
+        font-size: 9px !important;
+      }
+      .stat-value {
+        font-size: 12.5px !important;
+      }
+      .section-title {
+        font-size: 11px !important;
+        margin-bottom: 3px !important;
+      }
+      .table-custom {
+        margin-bottom: 6px !important;
+        font-size: 9.5px !important;
+      }
+      .table-custom th, .table-custom td {
+        padding: 3px 5px !important;
+      }
+      .remarks-box {
+        padding: 5px 8px !important;
+        margin-bottom: 5px !important;
+        font-size: 10px !important;
+      }
+      .footer {
+        margin-top: 5px !important;
+        padding-top: 5px !important;
+      }
+      .seal {
+        width: 58px !important;
+        height: 58px !important;
+        font-size: 8px !important;
+      }
+      .seal-img {
+        width: 56px !important;
+        height: 56px !important;
+      }
+      .dev-credit {
+        margin-top: 2px !important;
+        font-size: 7.5px !important;
       }
     }
   </style>
 </head>
 <body>
+  <!-- Print and Save PDF button visible on browser, hidden in print -->
+  <div class="no-print" style="text-align: center; margin: 0 auto 16px auto; max-width: 900px;">
+    <button onclick="window.print()" style="padding: 10px 26px; background: ${customPrimaryColor}; color: white; border: none; border-radius: 14px; font-family: 'Tajawal', sans-serif; font-size: 14px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,0.15); display: inline-flex; align-items: center; gap: 8px; transition: transform 0.1s;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
+      <span style="font-size: 16px;">🖨️</span>
+      <span>طباعة الشهادة أو حفظ كـ PDF الآن</span>
+    </button>
+  </div>
   <div class="cert-card">
     <div class="header">
       <div style="display: flex; align-items: center; gap: 16px;">
@@ -462,9 +592,9 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
       </tbody>
     </table>
 
-    <div style="background: #FCFAF8; padding: 14px 18px; border-radius: 12px; border: 1px solid #EFE8E2; margin-bottom: 20px;">
+    <div class="remarks-box" style="background: #FCFAF8; padding: 12px 16px; border-radius: 12px; border: 1px solid #EFE8E2; margin-bottom: 14px;">
       <div style="font-size: 11px; font-weight: bold; color: #78716c; margin-bottom: 4px;">توصيات وملاحظات المعلمة والمشرفة:</div>
-      <div style="font-size: 13px; font-style: italic; color: #44403c; line-height: 1.6;">
+      <div style="font-size: 12.5px; font-style: italic; color: #44403c; line-height: 1.5;">
         "${student.notes || 'طالبة متميزة أظهرت التزاماً راسخاً في الحفظ والتجويد والمراجعة الثنائية. نبارك لها هذا الرسوخ والإنجاز المبارك.'}"
       </div>
     </div>
@@ -472,17 +602,17 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
     <div class="footer">
       <div style="text-align: center; min-width: 130px;">
         <div style="font-size: 12px; color: #78716c;">معلمة الحلقة</div>
-        <div style="font-size: 15px; font-weight: bold; margin-top: 4px;">أ. ${circle?.teacherName || 'معلمة الحلقة'}</div>
-        ${showTeacherSig && teacherSig ? `<img src="${teacherSig}" alt="توقيع المعلمة" style="height: 38px; max-width: 110px; object-fit: contain; margin: 4px auto; display: block;" />` : showTeacherSig ? `<div style="font-size: 10px; color: #a8a29e; margin-top: 6px;">(التوقيع معتمد بالنظام)</div>` : ''}
+        <div style="font-size: 14px; font-weight: bold; margin-top: 3px;">أ. ${circle?.teacherName || 'معلمة الحلقة'}</div>
+        ${showTeacherSig && teacherSig ? `<img src="${teacherSig}" alt="توقيع المعلمة" style="height: 36px; max-width: 100px; object-fit: contain; margin: 3px auto; display: block;" />` : showTeacherSig ? `<div style="font-size: 10px; color: #a8a29e; margin-top: 4px;">(التوقيع معتمد بالنظام)</div>` : ''}
       </div>
 
-      <div style="text-align: center; min-width: 100px;">
+      <div style="text-align: center; min-width: 90px;">
         ${showSeal ? (settings.sealImageUrl ? `
-          <img src="${settings.sealImageUrl}" alt="الختم الرسمي" style="width: 82px; height: 82px; object-fit: contain; transform: rotate(-5deg); filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));" />
+          <img class="seal-img" src="${settings.sealImageUrl}" alt="الختم الرسمي" style="width: 76px; height: 76px; object-fit: contain; transform: rotate(-5deg); filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));" />
         ` : `
           <div class="seal">
             <span>مقرأة</span>
-            <span style="font-size: 13px; font-family: 'Amiri';">${settings.name || 'غيث الغيم'}</span>
+            <span style="font-size: 12px; font-family: 'Amiri';">${settings.name || 'غيث الغيم'}</span>
             <span style="font-size: 8px;">${settings.sealText || 'ختم الاعتماد الرسمي'}</span>
           </div>
         `) : ''}
@@ -490,11 +620,11 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
 
       <div style="text-align: center; min-width: 130px;">
         <div style="font-size: 12px; color: #78716c;">قائدة مقرأة ${settings.name || 'غيث الغيم'}</div>
-        <div style="font-size: 15px; font-weight: bold; margin-top: 4px;">${settings.leaderName || 'ريفة المنصوري'}</div>
-        ${showLeaderSig && leaderSig ? `<img src="${leaderSig}" alt="توقيع القائدة" style="height: 38px; max-width: 110px; object-fit: contain; margin: 4px auto; display: block;" />` : showLeaderSig ? `<div style="font-size: 10px; color: #a8a29e; margin-top: 6px;">(الاعتماد النهائي)</div>` : ''}
+        <div style="font-size: 14px; font-weight: bold; margin-top: 3px;">${settings.leaderName || 'ريفة المنصوري'}</div>
+        ${showLeaderSig && leaderSig ? `<img src="${leaderSig}" alt="توقيع القائدة" style="height: 36px; max-width: 100px; object-fit: contain; margin: 3px auto; display: block;" />` : showLeaderSig ? `<div style="font-size: 10px; color: #a8a29e; margin-top: 4px;">(الاعتماد النهائي)</div>` : ''}
       </div>
     </div>
-    <div style="margin-top: 14px; text-align: center; font-size: 10px; color: #a8a29e; font-family: sans-serif;">
+    <div class="dev-credit" style="margin-top: 10px; text-align: center; font-size: 9.5px; color: #a8a29e; font-family: sans-serif;">
       تم الإصدار والتوثيق عبر منصة غيث الغيم الإدارية • تطوير: ياسر التاج · yr_alhosine
     </div>
   </div>
@@ -578,18 +708,8 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           </div>
         </div>
 
-        {/* Clean top action buttons (No direct print button, preview modal is the centerpiece) */}
+        {/* Clean top action buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Quick Edit Target & Done Pages Button */}
-          <button
-            onClick={() => setShowQuickEditModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-xl text-xs font-bold text-stone-700 transition cursor-pointer active:scale-95"
-            title="تعديل خطة وإنجاز الطالبة وملاحظاتها وتحديث الصفحات المنجزة"
-          >
-            <Edit3 className="w-3.5 h-3.5 text-stone-500" />
-            <span>تعديل خطة وإنجاز الطالبة</span>
-          </button>
-
           {/* Quick PDF Export */}
           <button
             onClick={handleDownloadPdf}
@@ -726,38 +846,52 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
           
           {/* Section 1: Memorization & Revision Plan */}
-          <div className="p-4 rounded-2xl border border-[#E8DFD8] bg-white space-y-2.5">
+          <div
+            onClick={() => onNavigateToSection?.('recitation')}
+            className="group p-4 rounded-2xl border border-[#E8DFD8] bg-white space-y-2.5 hover:border-[#8E5364] hover:shadow-md transition-all duration-200 cursor-pointer relative"
+            title="انقر للانتقال مباشرة إلى قسم التسميع اليومي ومتابعة درجات الحفظ"
+          >
             <div className="flex items-center justify-between border-b border-stone-100 pb-2">
               <h4 className="font-bold text-stone-900 text-sm flex items-center gap-2">
                 <BookOpen className="w-4 h-4" style={{ color: customPrimaryColor }} />
                 <span>إنجاز خطة الحفظ والمراجعة</span>
               </h4>
-              <button
-                onClick={() => setShowQuickEditModal(true)}
-                className="text-[11px] text-[#8E5364] hover:underline font-bold flex items-center gap-1"
-              >
-                <Edit3 className="w-3 h-3" />
-                تعديل الصفحات
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigateToSection?.('monthly_plans');
+                  }}
+                  className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-[#FAF6F2] hover:bg-[#8E5364] text-[#8E5364] hover:text-white border border-[#E8DFD8] transition"
+                  title="فتح الخطة الشهرية المعتمدة"
+                >
+                  الخطة ↗
+                </button>
+                <span className="text-[10px] font-bold text-[#8E5364] group-hover:underline flex items-center gap-0.5 bg-[#FAF2F4] px-2 py-0.5 rounded-lg">
+                  فتح التسميع ↗
+                </span>
+              </div>
             </div>
+
             <div className="space-y-1.5 text-stone-600">
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>الحفظ الجديد المنجز:</span>
                 <strong className="text-stone-900">{doneNewPages} من {targetNewPages} صفحات</strong>
               </div>
-              <div className="flex justify-between">
-                <span>المراجعة والتمكين:</span>
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
+                <span>مراجعة التمكين:</span>
                 <strong className="text-stone-900">{doneRevPages} من {targetRevPages} صفحات ({(activeStudentPlan as any)?.revision?.revisionType || 'تمكين'})</strong>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>أخطاء الحفظ المرصودة:</span>
                 <strong className="text-rose-700">{score?.memorizationMistakesTotal || 0} أخطاء</strong>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>التنبيهات والأخطاء التجويدية:</span>
                 <strong className="text-stone-900">{score?.hintsTotal || 0} تنبيه • {score?.tajweedErrorsTotal || 0} تجويد</strong>
               </div>
-              <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900">
+              <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900 items-center">
                 <span>درجة الحفظ والمراجعة:</span>
                 <span style={{ color: customPrimaryColor }}>{score?.memorizationScore} / {score?.memorizationMax} نقطة</span>
               </div>
@@ -765,31 +899,41 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           </div>
 
           {/* Section 2: Attendance & Early Prep */}
-          <div className="p-4 rounded-2xl border border-[#E8DFD8] bg-white space-y-2.5">
-            <h4 className="font-bold text-stone-900 text-sm flex items-center gap-2 border-b border-stone-100 pb-2">
-              <Clock className="w-4 h-4" style={{ color: customSecondaryColor }} />
-              <span>الحضور والانضباط والتحضير المبكر</span>
-            </h4>
+          <div
+            onClick={() => onNavigateToSection?.('attendance')}
+            className="group p-4 rounded-2xl border border-[#E8DFD8] bg-white space-y-2.5 hover:border-[#2D5A43] hover:shadow-md transition-all duration-200 cursor-pointer relative"
+            title="انقر للانتقال مباشرة إلى كشف وسجل الحضور والتحضير المبكر"
+          >
+            <div className="flex items-center justify-between border-b border-stone-100 pb-2">
+              <h4 className="font-bold text-stone-900 text-sm flex items-center gap-2">
+                <Clock className="w-4 h-4" style={{ color: customSecondaryColor }} />
+                <span>الحضور والانضباط والتحضير المبكر</span>
+              </h4>
+              <span className="text-[10px] font-bold text-[#2D5A43] group-hover:underline flex items-center gap-0.5 bg-[#EDF3EF] px-2 py-0.5 rounded-lg">
+                فتح سجل الحضور ↗
+              </span>
+            </div>
+
             <div className="space-y-1.5 text-stone-600">
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>نسبة الحضور التراكمية:</span>
                 <strong style={{ color: customSecondaryColor }}>{score?.attendanceRate}%</strong>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>عدد أيام الحضور الفعلي:</span>
                 <strong className="text-stone-900">{score?.presentCount} جلسات</strong>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>إجمالي أيام الغياب:</span>
                 <strong className={totalAbsentDays > 0 ? "text-rose-700 font-bold" : "text-emerald-700 font-bold"}>
                   {totalAbsentDays} أيام ({score?.absentExcusedCount || 0} بعذر • {score?.absentUnexcusedCount || 0} دون عذر)
                 </strong>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>بطاقات التحضير المبكر ⭐:</span>
                 <strong className="text-amber-800">{score?.earlyPrepCount} بطاقات في الموعد</strong>
               </div>
-              <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900">
+              <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900 items-center">
                 <span>درجة الحضور والانضباط:</span>
                 <span style={{ color: customSecondaryColor }}>{score?.attendanceScore} / {score?.attendanceMax} نقطة</span>
               </div>
@@ -797,25 +941,35 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           </div>
 
           {/* Section 3: Atqini (Tajweed) */}
-          <div className="p-4 rounded-2xl border border-[#E8DFD8] bg-white space-y-2.5">
-            <h4 className="font-bold text-stone-900 text-sm flex items-center gap-2 border-b border-stone-100 pb-2">
-              <Sparkles className="w-4 h-4" style={{ color: customPrimaryColor }} />
-              <span>واجبات «أتقني» للتجويد</span>
-            </h4>
+          <div
+            onClick={() => onNavigateToSection?.('atqini')}
+            className="group p-4 rounded-2xl border border-[#E8DFD8] bg-white space-y-2.5 hover:border-[#8E5364] hover:shadow-md transition-all duration-200 cursor-pointer relative"
+            title="انقر للانتقال مباشرة إلى منصة واجبات أتقني للتجويد"
+          >
+            <div className="flex items-center justify-between border-b border-stone-100 pb-2">
+              <h4 className="font-bold text-stone-900 text-sm flex items-center gap-2">
+                <Sparkles className="w-4 h-4" style={{ color: customPrimaryColor }} />
+                <span>واجبات «أتقني» للتجويد</span>
+              </h4>
+              <span className="text-[10px] font-bold text-[#8E5364] group-hover:underline flex items-center gap-0.5 bg-[#FAF2F4] px-2 py-0.5 rounded-lg">
+                فتح واجبات أتقني ↗
+              </span>
+            </div>
+
             <div className="space-y-1.5 text-stone-600">
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>الواجبات المنجزة:</span>
                 <strong className="text-stone-900">{score?.atqiniCompletedCount} واجبات مكتملة</strong>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>استخراج الأمثلة من المحفوظ:</span>
                 <strong className="text-emerald-700">متقن ✅</strong>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>تطبيق الأحكام أثناء التسميع:</span>
                 <strong className="text-emerald-700">ممتاز ✅</strong>
               </div>
-              <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900">
+              <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900 items-center">
                 <span>درجة التجويد «أتقني»:</span>
                 <span style={{ color: customPrimaryColor }}>{score?.atqiniScore} / {score?.atqiniMax} نقطة</span>
               </div>
@@ -823,25 +977,35 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           </div>
 
           {/* Section 4: Challenges & Peer Review */}
-          <div className="p-4 rounded-2xl border border-[#E8DFD8] bg-white space-y-2.5">
-            <h4 className="font-bold text-stone-900 text-sm flex items-center gap-2 border-b border-stone-100 pb-2">
-              <Trophy className="w-4 h-4 text-amber-600" />
-              <span>تحدي الخميس والمراجعة الثنائية 🤝</span>
-            </h4>
+          <div
+            onClick={() => onNavigateToSection?.('challenges')}
+            className="group p-4 rounded-2xl border border-[#E8DFD8] bg-white space-y-2.5 hover:border-amber-600 hover:shadow-md transition-all duration-200 cursor-pointer relative"
+            title="انقر للانتقال مباشرة إلى تحدي الخميس والمراجعة الثنائية"
+          >
+            <div className="flex items-center justify-between border-b border-stone-100 pb-2">
+              <h4 className="font-bold text-stone-900 text-sm flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-amber-600" />
+                <span>تحدي الخميس والمراجعة الثنائية 🤝</span>
+              </h4>
+              <span className="text-[10px] font-bold text-amber-800 group-hover:underline flex items-center gap-0.5 bg-amber-50 px-2 py-0.5 rounded-lg">
+                فتح قسم التحديات ↗
+              </span>
+            </div>
+
             <div className="space-y-1.5 text-stone-600">
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>المراجعة المشتركة مع الرفيقة:</span>
                 <strong className="text-stone-900">{student.partnerStudentName ? `مع ${student.partnerStudentName}` : 'إنجاز تام وتعاون مثمر'}</strong>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>الالتزام التام بالمطلوب:</span>
                 <strong className="text-stone-900">متقن وفق الضوابط</strong>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>نقاط المراجعة:</span>
                 <strong className="text-[#7A4B37]">+{score?.peerReviewScore || 0} نقاط</strong>
               </div>
-              <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900">
+              <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900 items-center">
                 <span>مجموع درجات التحديات:</span>
                 <span className="text-amber-800">{score?.challengesScore} / {score?.challengesMax} نقطة</span>
               </div>
@@ -851,7 +1015,11 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         </div>
 
         {/* Section 5: Monthly Exam & Teacher Remark */}
-        <div className="p-4 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2] space-y-3 text-xs">
+        <div
+          onClick={() => onNavigateToSection?.('exams')}
+          className="group p-4 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2] hover:border-[#2D5A43] hover:shadow-md transition-all duration-200 cursor-pointer space-y-3 text-xs relative"
+          title="انقر للانتقال مباشرة إلى كشف وجدول الاختبارات الشهرية"
+        >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-200 pb-2">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-[#2D5A43]" />
@@ -864,8 +1032,13 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                 )}
               </div>
             </div>
-            <div className="text-sm font-extrabold text-[#2D5A43]">
-              {studentExam ? `${studentExam.score} من ١٠٠ درجة` : 'بانتظار الرصد في الموعد المحدد'}
+            <div className="flex items-center gap-3">
+              <div className="text-sm font-extrabold text-[#2D5A43]">
+                {studentExam ? `${studentExam.score} من ١٠٠ درجة` : 'بانتظار الرصد في الموعد المحدد'}
+              </div>
+              <span className="text-[10px] font-bold text-[#2D5A43] group-hover:underline flex items-center gap-0.5 bg-[#EDF3EF] px-2 py-0.5 rounded-lg">
+                فتح كشف الاختبارات ↗
+              </span>
             </div>
           </div>
 

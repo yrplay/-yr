@@ -193,7 +193,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
   const { 
     students, circles, tracks, currentUser, 
     dailyRecords, saveDailyRecord, settings,
-    studentPlans, updateTrack, showToast, allStudentScores
+    studentPlans, updateTrack, updateTrackSystemRules, showToast, allStudentScores
   } = useApp();
 
   const [selectedCircleId, setSelectedCircleId] = useState<string>(circles[0]?.id || '');
@@ -304,18 +304,17 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       const reciteItem = editingCriteriaList.find(c => c.id === 'crit-recite' || c.title.includes('نظراً'));
       const repeatItem = editingCriteriaList.find(c => c.id === 'crit-repeat' || c.title.includes('تكرار'));
 
-      await updateTrack(modalTrack.id, {
-        systemRules: {
-          ...currentRules,
-          masteryGuide: {
-            ...currentRules.masteryGuide,
-            unifiedCriteria: editingCriteriaList,
-            listenToReciterTimes: listenItem?.count || 3,
-            reciteLookingTimes: reciteItem?.count || 5,
-            masteryRepetitionTimes: repeatItem?.count || 20,
-            customCriteria: editingCriteriaList.filter(c => c.id !== 'crit-listen' && c.id !== 'crit-recite' && c.id !== 'crit-repeat')
-          }
-        }
+      const updatedGuide = {
+        ...currentRules.masteryGuide,
+        unifiedCriteria: editingCriteriaList,
+        listenToReciterTimes: listenItem?.count || 3,
+        reciteLookingTimes: reciteItem?.count || 5,
+        masteryRepetitionTimes: repeatItem?.count || 20,
+        customCriteria: editingCriteriaList.filter(c => c.id !== 'crit-listen' && c.id !== 'crit-recite' && c.id !== 'crit-repeat')
+      };
+
+      await updateTrackSystemRules(modalTrack.id, {
+        masteryGuide: updatedGuide
       });
       setIsEditingMastery(false);
       showToast?.('تم حفظ وتحديث معايير دليل الإتقان بنجاح ✨');

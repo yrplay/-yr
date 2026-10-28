@@ -178,46 +178,80 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     createdAt: new Date().toISOString()
   };
 
+  const getCachedDb = () => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('ghaith_alghaym_db_v1');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') return parsed;
+        }
+      } catch {}
+    }
+    return null;
+  };
+
+  const initialCached = getCachedDb();
+
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     if (typeof window !== 'undefined') {
       try {
         const savedId = localStorage.getItem('ghaith_current_user_id') || sessionStorage.getItem('ghaith_current_user_id');
-        if (savedId && Array.isArray(initialData.users)) {
-          const found = (initialData.users as unknown as User[]).find(u => u.id === savedId);
+        const userPool = initialCached?.users?.length ? initialCached.users : initialData.users;
+        if (savedId && Array.isArray(userPool)) {
+          const found = (userPool as unknown as User[]).find(u => u.id === savedId);
           if (found) return found;
         }
       } catch {}
     }
-    return defaultLeader;
+    return (initialCached?.currentUser as User) || defaultLeader;
   });
-  const [users, setUsers] = useState<User[]>([]);
-  const [tracks, setTracks] = useState<Track[]>([]);
-  const [circles, setCircles] = useState<Circle[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
-  const [monthlyPlans, setMonthlyPlans] = useState<MonthlyPlan[]>([]);
-  const [studentPlans, setStudentPlans] = useState<StudentMonthlyPlan[]>([]);
-  const [dailyRecords, setDailyRecords] = useState<DailyRecord[]>([]);
-  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+
+  const [users, setUsers] = useState<User[]>(() => {
+    return (initialCached?.users?.length ? initialCached.users : (initialData.users as unknown as User[])) || [];
+  });
+  const [tracks, setTracks] = useState<Track[]>(() => {
+    return (initialCached?.tracks?.length ? initialCached.tracks : (initialData.tracks as unknown as Track[])) || [];
+  });
+  const [circles, setCircles] = useState<Circle[]>(() => {
+    return (initialCached?.circles?.length ? initialCached.circles : (initialData.circles as unknown as Circle[])) || [];
+  });
+  const [students, setStudents] = useState<Student[]>(() => {
+    return (initialCached?.students?.length ? initialCached.students : (initialData.students as unknown as Student[])) || [];
+  });
+  const [monthlyPlans, setMonthlyPlans] = useState<MonthlyPlan[]>(() => {
+    return (initialCached?.monthlyPlans?.length ? initialCached.monthlyPlans : (initialData.monthlyPlans as unknown as MonthlyPlan[])) || [];
+  });
+  const [studentPlans, setStudentPlans] = useState<StudentMonthlyPlan[]>(() => {
+    return (initialCached?.studentPlans?.length ? initialCached.studentPlans : (initialData.studentPlans as unknown as StudentMonthlyPlan[])) || [];
+  });
+  const [dailyRecords, setDailyRecords] = useState<DailyRecord[]>(() => {
+    return (initialCached?.dailyRecords?.length ? initialCached.dailyRecords : (initialData.dailyRecords as unknown as DailyRecord[])) || [];
+  });
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => {
+    return (initialCached?.attendanceRecords?.length ? initialCached.attendanceRecords : (initialData.attendanceRecords as unknown as AttendanceRecord[])) || [];
+  });
   const [atqiniAssignments, setAtqiniAssignments] = useState<AtqiniAssignment[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const cached = localStorage.getItem('ghaith_alghaym_db_v1');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed.atqiniAssignments) && parsed.atqiniAssignments.length > 0) {
-            return parsed.atqiniAssignments;
-          }
-        }
-      } catch {}
-    }
-    return (initialData.atqiniAssignments as unknown as AtqiniAssignment[]) || [];
+    return (initialCached?.atqiniAssignments?.length ? initialCached.atqiniAssignments : (initialData.atqiniAssignments as unknown as AtqiniAssignment[])) || [];
   });
-  const [studentAtqiniSubmissions, setStudentAtqiniSubmissions] = useState<StudentAtqiniSubmission[]>([]);
-  const [challenges, setChallenges] = useState<Challenge[]>([]);
-  const [studentChallengeSubmissions, setStudentChallengeSubmissions] = useState<StudentChallengeSubmission[]>([]);
-  const [monthlyExams, setMonthlyExams] = useState<MonthlyExam[]>([]);
-  const [studentExamResults, setStudentExamResults] = useState<StudentExamResult[]>([]);
-  const [studentSubscriptions, setStudentSubscriptions] = useState<StudentSubscription[]>([]);
+  const [studentAtqiniSubmissions, setStudentAtqiniSubmissions] = useState<StudentAtqiniSubmission[]>(() => {
+    return (initialCached?.studentAtqiniSubmissions?.length ? initialCached.studentAtqiniSubmissions : (initialData.studentAtqiniSubmissions as unknown as StudentAtqiniSubmission[])) || [];
+  });
+  const [challenges, setChallenges] = useState<Challenge[]>(() => {
+    return (initialCached?.challenges?.length ? initialCached.challenges : (initialData.challenges as unknown as Challenge[])) || [];
+  });
+  const [studentChallengeSubmissions, setStudentChallengeSubmissions] = useState<StudentChallengeSubmission[]>(() => {
+    return (initialCached?.studentChallengeSubmissions?.length ? initialCached.studentChallengeSubmissions : (initialData.studentChallengeSubmissions as unknown as StudentChallengeSubmission[])) || [];
+  });
+  const [monthlyExams, setMonthlyExams] = useState<MonthlyExam[]>(() => {
+    return (initialCached?.monthlyExams?.length ? initialCached.monthlyExams : (initialData.monthlyExams as unknown as MonthlyExam[])) || [];
+  });
+  const [studentExamResults, setStudentExamResults] = useState<StudentExamResult[]>(() => {
+    return (initialCached?.studentExamResults?.length ? initialCached.studentExamResults : (initialData.studentExamResults as unknown as StudentExamResult[])) || [];
+  });
+  const [studentSubscriptions, setStudentSubscriptions] = useState<StudentSubscription[]>(() => {
+    return initialCached?.studentSubscriptions || [];
+  });
   const [gradingConfigs, setGradingConfigs] = useState<TrackGradingConfig[]>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -228,27 +262,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       } catch {}
     }
-    return (initialData.gradingConfigs as unknown as TrackGradingConfig[]) || [];
+    return (initialCached?.gradingConfigs?.length ? initialCached.gradingConfigs : (initialData.gradingConfigs as unknown as TrackGradingConfig[])) || [];
   });
-  const [settings, setSettings] = useState<InstitutionSettings>({
-    name: "غيث الغيم",
-    leaderName: "ريفة المنصوري",
-    subtitle: "المقرأة القرآنية النموذجية",
-    motto: "غيثٌ يهمي على القلوب ليحيي بها معالم الوحي والرسوخ",
-    academicYear: "١٤٤٦ - ١٤٤٧ هـ",
-    currentHijriMonth: "ربيع الآخر - جمادى الأولى",
-    supportEmail: "info@ghaym.org",
-    supportPhone: "0500000001",
-    securityEnabled: true,
-    leaderPasscode: "1234"
+  const [settings, setSettings] = useState<InstitutionSettings>(() => {
+    const baseSettings: InstitutionSettings = {
+      name: "غيث الغيم",
+      leaderName: "ريفة المنصوري",
+      subtitle: "المقرأة القرآنية النموذجية",
+      motto: "غيثٌ يهمي على القلوب ليحيي بها معالم الوحي والرسوخ",
+      academicYear: "١٤٤٦ - ١٤٤٧ هـ",
+      currentHijriMonth: "ربيع الآخر - جمادى الأولى",
+      supportEmail: "info@ghaym.org",
+      supportPhone: "0500000001",
+      securityEnabled: true,
+      leaderPasscode: "1234"
+    };
+    return initialCached?.settings ? { ...baseSettings, ...initialCached.settings } : baseSettings;
   });
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
+    return initialCached?.auditLogs || initialData.auditLogs || [];
+  });
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [lastSynced, setLastSynced] = useState<Date>(new Date());
-  const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>('syncing');
+  const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>('connected');
   const [quickModalAction, setQuickModalAction] = useState<{ type: string; timestamp: number } | null>(null);
 
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -293,24 +332,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const STORAGE_KEY = 'ghaith_alghaym_db_v1';
 
   const masterStateRef = useRef<any>({
-    currentUser: null,
-    users: initialData.users || [],
-    tracks: initialData.tracks || [],
-    circles: initialData.circles || [],
-    students: initialData.students || [],
-    monthlyPlans: initialData.monthlyPlans || [],
-    studentPlans: initialData.studentPlans || [],
-    dailyRecords: initialData.dailyRecords || [],
-    attendanceRecords: initialData.attendanceRecords || [],
-    atqiniAssignments: initialData.atqiniAssignments || [],
-    studentAtqiniSubmissions: initialData.studentAtqiniSubmissions || [],
-    challenges: initialData.challenges || [],
-    studentChallengeSubmissions: initialData.studentChallengeSubmissions || [],
-    monthlyExams: initialData.monthlyExams || [],
-    studentExamResults: initialData.studentExamResults || [],
-    studentSubscriptions: [],
-    gradingConfigs: initialData.gradingConfigs || [],
-    settings: {
+    currentUser: initialCached?.currentUser || defaultLeader,
+    users: initialCached?.users?.length ? initialCached.users : (initialData.users || []),
+    tracks: initialCached?.tracks?.length ? initialCached.tracks : (initialData.tracks || []),
+    circles: initialCached?.circles?.length ? initialCached.circles : (initialData.circles || []),
+    students: initialCached?.students?.length ? initialCached.students : (initialData.students || []),
+    monthlyPlans: initialCached?.monthlyPlans?.length ? initialCached.monthlyPlans : (initialData.monthlyPlans || []),
+    studentPlans: initialCached?.studentPlans?.length ? initialCached.studentPlans : (initialData.studentPlans || []),
+    dailyRecords: initialCached?.dailyRecords?.length ? initialCached.dailyRecords : (initialData.dailyRecords || []),
+    attendanceRecords: initialCached?.attendanceRecords?.length ? initialCached.attendanceRecords : (initialData.attendanceRecords || []),
+    atqiniAssignments: initialCached?.atqiniAssignments?.length ? initialCached.atqiniAssignments : (initialData.atqiniAssignments || []),
+    studentAtqiniSubmissions: initialCached?.studentAtqiniSubmissions?.length ? initialCached.studentAtqiniSubmissions : (initialData.studentAtqiniSubmissions || []),
+    challenges: initialCached?.challenges?.length ? initialCached.challenges : (initialData.challenges || []),
+    studentChallengeSubmissions: initialCached?.studentChallengeSubmissions?.length ? initialCached.studentChallengeSubmissions : (initialData.studentChallengeSubmissions || []),
+    monthlyExams: initialCached?.monthlyExams?.length ? initialCached.monthlyExams : (initialData.monthlyExams || []),
+    studentExamResults: initialCached?.studentExamResults?.length ? initialCached.studentExamResults : (initialData.studentExamResults || []),
+    studentSubscriptions: initialCached?.studentSubscriptions || [],
+    gradingConfigs: initialCached?.gradingConfigs?.length ? initialCached.gradingConfigs : (initialData.gradingConfigs || []),
+    settings: initialCached?.settings ? {
+      name: "غيث الغيم",
+      leaderName: "ريفة المنصوري",
+      subtitle: "المقرأة القرآنية النموذجية",
+      motto: "غيثٌ يهمي على القلوب ليحيي بها معالم الوحي والرسوخ",
+      academicYear: "١٤٤٦ - ١٤٤٧ هـ",
+      currentHijriMonth: "ربيع الآخر - جمادى الأولى",
+      supportEmail: "info@ghaym.org",
+      supportPhone: "0500000001",
+      securityEnabled: true,
+      leaderPasscode: "1234",
+      ...initialCached.settings
+    } : {
       name: "غيث الغيم",
       leaderName: "ريفة المنصوري",
       subtitle: "المقرأة القرآنية النموذجية",
@@ -322,8 +373,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       securityEnabled: true,
       leaderPasscode: "1234"
     },
-    auditLogs: initialData.auditLogs || []
+    auditLogs: initialCached?.auditLogs || initialData.auditLogs || []
   });
+
+  const mergeEntities = <T extends Record<string, any>>(
+    localList: T[] = [],
+    incomingList: T[] = [],
+    idKey: string = 'id'
+  ): T[] => {
+    const map = new Map<string, T>();
+    for (const inc of incomingList) {
+      if (inc && inc[idKey] !== undefined) map.set(String(inc[idKey]), inc);
+    }
+    for (const loc of localList) {
+      if (!loc || loc[idKey] === undefined) continue;
+      const key = String(loc[idKey]);
+      const inc = map.get(key);
+      if (!inc) {
+        map.set(key, loc);
+      } else {
+        const locTime = (loc.updatedAt || loc.recordedAt || loc.createdAt)
+          ? new Date(loc.updatedAt || loc.recordedAt || loc.createdAt).getTime()
+          : 0;
+        const incTime = (inc.updatedAt || inc.recordedAt || inc.createdAt)
+          ? new Date(inc.updatedAt || inc.recordedAt || inc.createdAt).getTime()
+          : 0;
+        map.set(key, locTime >= incTime ? { ...inc, ...loc } : { ...loc, ...inc });
+      }
+    }
+    return Array.from(map.values());
+  };
 
   const mergeDailyRecords = (localRecs: DailyRecord[] = [], incomingRecs: DailyRecord[] = []): DailyRecord[] => {
     const map = new Map<string, DailyRecord>();
@@ -396,6 +475,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       studentPlans: incomingPlans,
       attendanceRecords: incomingAtt,
       studentSubscriptions: incomingSubs,
+      tracks: incomingTracks,
+      circles: incomingCircles,
+      students: incomingStudents,
+      monthlyPlans: incomingMonthlyPlans,
+      atqiniAssignments: incomingAtqini,
+      challenges: incomingChallenges,
+      monthlyExams: incomingExams,
+      studentAtqiniSubmissions: incomingAtqSubmissions,
+      studentChallengeSubmissions: incomingChSubmissions,
+      studentExamResults: incomingExamResults,
+      gradingConfigs: incomingGrading,
       ...restData
     } = data;
 
@@ -408,7 +498,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ? (localStorage.getItem('ghaith_current_user_id') || sessionStorage.getItem('ghaith_current_user_id'))
       : null;
 
-    const userList: User[] = Array.isArray(data.users) && data.users.length > 0 ? data.users : masterStateRef.current.users;
+    const userList: User[] = Array.isArray(data.users) && data.users.length > 0
+      ? mergeEntities(masterStateRef.current.users, data.users)
+      : masterStateRef.current.users;
     
     if (activeUserId) {
       const found = userList.find(u => u.id === activeUserId);
@@ -422,18 +514,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     if (Array.isArray(data.users) && data.users.length > 0) {
-      setUsers(data.users);
+      masterStateRef.current.users = userList;
+      setUsers(userList);
       if (typeof window !== 'undefined') {
-        localStorage.setItem('ghaith_staff_users', JSON.stringify(data.users));
+        localStorage.setItem('ghaith_staff_users', JSON.stringify(userList));
       }
     }
 
-    if (Array.isArray(data.tracks) && data.tracks.length > 0) {
-      masterStateRef.current.tracks = data.tracks;
-      setTracks(data.tracks);
+    if (Array.isArray(incomingTracks)) {
+      const mergedTracks = mergeEntities(masterStateRef.current.tracks, incomingTracks);
+      masterStateRef.current.tracks = mergedTracks;
+      setTracks(mergedTracks);
     }
-    if (Array.isArray(data.circles) && data.circles.length > 0) {
-      const normalizedCircles = data.circles.map((c: any) => {
+
+    if (Array.isArray(incomingCircles)) {
+      const normalizedCircles = incomingCircles.map((c: any) => {
         const t = userList.find(u => u.id === c.teacherId);
         const s = userList.find(u => u.id === c.supervisorId);
         return {
@@ -442,11 +537,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           supervisorName: s ? s.name : (c.supervisorName || 'غير محدد')
         };
       });
-      masterStateRef.current.circles = normalizedCircles;
-      setCircles(normalizedCircles);
+      const mergedCircles = mergeEntities(masterStateRef.current.circles, normalizedCircles);
+      masterStateRef.current.circles = mergedCircles;
+      setCircles(mergedCircles);
     }
-    if (Array.isArray(data.students) && data.students.length > 0) setStudents(data.students);
-    if (Array.isArray(data.monthlyPlans) && data.monthlyPlans.length > 0) setMonthlyPlans(data.monthlyPlans);
+
+    if (Array.isArray(incomingStudents)) {
+      const mergedStudents = mergeEntities(masterStateRef.current.students, incomingStudents);
+      masterStateRef.current.students = mergedStudents;
+      setStudents(mergedStudents);
+    }
+
+    if (Array.isArray(incomingMonthlyPlans)) {
+      const mergedPlans = mergeEntities(masterStateRef.current.monthlyPlans, incomingMonthlyPlans);
+      masterStateRef.current.monthlyPlans = mergedPlans;
+      setMonthlyPlans(mergedPlans);
+    }
 
     if (Array.isArray(incomingPlans)) {
       const mergedPlans = mergeStudentPlans(masterStateRef.current.studentPlans, incomingPlans);
@@ -472,27 +578,54 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setStudentSubscriptions(merged);
     }
 
-    if (Array.isArray(data.atqiniAssignments) && data.atqiniAssignments.length > 0) {
-      masterStateRef.current.atqiniAssignments = data.atqiniAssignments;
-      setAtqiniAssignments(data.atqiniAssignments);
-    } else if (masterStateRef.current.atqiniAssignments && masterStateRef.current.atqiniAssignments.length > 0) {
-      setAtqiniAssignments(masterStateRef.current.atqiniAssignments);
-    } else if (Array.isArray(initialData.atqiniAssignments) && initialData.atqiniAssignments.length > 0) {
-      const fallbackAtq = initialData.atqiniAssignments as unknown as AtqiniAssignment[];
-      masterStateRef.current.atqiniAssignments = fallbackAtq;
-      setAtqiniAssignments(fallbackAtq);
+    if (Array.isArray(incomingAtqini)) {
+      const mergedAtq = mergeEntities(masterStateRef.current.atqiniAssignments, incomingAtqini);
+      masterStateRef.current.atqiniAssignments = mergedAtq;
+      setAtqiniAssignments(mergedAtq);
     }
-    if (Array.isArray(data.studentAtqiniSubmissions)) setStudentAtqiniSubmissions(data.studentAtqiniSubmissions);
-    if (Array.isArray(data.challenges)) setChallenges(data.challenges);
-    if (Array.isArray(data.studentChallengeSubmissions)) setStudentChallengeSubmissions(data.studentChallengeSubmissions);
-    if (Array.isArray(data.monthlyExams)) setMonthlyExams(data.monthlyExams);
-    if (Array.isArray(data.studentExamResults)) setStudentExamResults(data.studentExamResults);
-    if (Array.isArray(data.gradingConfigs)) setGradingConfigs(data.gradingConfigs);
+
+    if (Array.isArray(incomingAtqSubmissions)) {
+      const mergedAtqSubs = mergeEntities(masterStateRef.current.studentAtqiniSubmissions, incomingAtqSubmissions);
+      masterStateRef.current.studentAtqiniSubmissions = mergedAtqSubs;
+      setStudentAtqiniSubmissions(mergedAtqSubs);
+    }
+
+    if (Array.isArray(incomingChallenges)) {
+      const mergedChallenges = mergeEntities(masterStateRef.current.challenges, incomingChallenges);
+      masterStateRef.current.challenges = mergedChallenges;
+      setChallenges(mergedChallenges);
+    }
+
+    if (Array.isArray(incomingChSubmissions)) {
+      const mergedChSubs = mergeEntities(masterStateRef.current.studentChallengeSubmissions, incomingChSubmissions);
+      masterStateRef.current.studentChallengeSubmissions = mergedChSubs;
+      setStudentChallengeSubmissions(mergedChSubs);
+    }
+
+    if (Array.isArray(incomingExams)) {
+      const mergedExams = mergeEntities(masterStateRef.current.monthlyExams, incomingExams);
+      masterStateRef.current.monthlyExams = mergedExams;
+      setMonthlyExams(mergedExams);
+    }
+
+    if (Array.isArray(incomingExamResults)) {
+      const mergedExamResults = mergeEntities(masterStateRef.current.studentExamResults, incomingExamResults);
+      masterStateRef.current.studentExamResults = mergedExamResults;
+      setStudentExamResults(mergedExamResults);
+    }
+
+    if (Array.isArray(incomingGrading)) {
+      const mergedGrading = mergeEntities(masterStateRef.current.gradingConfigs, incomingGrading, 'trackId');
+      masterStateRef.current.gradingConfigs = mergedGrading;
+      setGradingConfigs(mergedGrading);
+    }
+
     if (data.settings) {
       const mergedSettings = { ...masterStateRef.current.settings, ...data.settings };
       masterStateRef.current.settings = mergedSettings;
       setSettings(mergedSettings);
     }
+
     if (Array.isArray(data.auditLogs)) setAuditLogs(data.auditLogs);
     setLastSynced(new Date());
   };
@@ -689,7 +822,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       updatedAt: new Date().toISOString(),
       ...track
     };
-    const next = [...tracks, newTrack];
+    const currentTracks = masterStateRef.current.tracks?.length ? masterStateRef.current.tracks : tracks;
+    const next = [...currentTracks.filter((t: Track) => t.id !== newTrack.id), newTrack];
+    masterStateRef.current.tracks = next;
     setTracks(next);
     persistState({ tracks: next });
     showToast(`تمت إضافة المسار "${newTrack.name}" بنجاح`);
@@ -697,7 +832,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateTrack = async (id: string, track: Partial<Track>) => {
-    const next = tracks.map(t => t.id === id ? { ...t, ...track, updatedAt: new Date().toISOString() } : t);
+    const currentTracks = masterStateRef.current.tracks?.length ? masterStateRef.current.tracks : tracks;
+    const next = currentTracks.map((t: Track) => t.id === id ? { ...t, ...track, updatedAt: new Date().toISOString() } : t);
     masterStateRef.current.tracks = next;
     setTracks(next);
     persistState({ tracks: next });
@@ -705,7 +841,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateTrackSystemRules = async (trackId: string, rules: Partial<TrackSystemRules>) => {
-    const next = tracks.map(t => {
+    const currentTracks = masterStateRef.current.tracks?.length ? masterStateRef.current.tracks : tracks;
+    const next = currentTracks.map((t: Track) => {
       if (t.id !== trackId) return t;
       const currentRules = t.systemRules || {
         earlyPreparation: true,
@@ -742,22 +879,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const archiveTrack = async (id: string) => {
-    const next = tracks.map(t => t.id === id ? { ...t, isArchived: true } : t);
+    const currentTracks = masterStateRef.current.tracks?.length ? masterStateRef.current.tracks : tracks;
+    const next = currentTracks.map((t: Track) => t.id === id ? { ...t, isArchived: true, updatedAt: new Date().toISOString() } : t);
+    masterStateRef.current.tracks = next;
     setTracks(next);
     persistState({ tracks: next });
     showToast('تمت أرشفة المسار بنجاح');
   };
 
   const restoreTrack = async (id: string) => {
-    const next = tracks.map(t => t.id === id ? { ...t, isArchived: false } : t);
+    const currentTracks = masterStateRef.current.tracks?.length ? masterStateRef.current.tracks : tracks;
+    const next = currentTracks.map((t: Track) => t.id === id ? { ...t, isArchived: false, updatedAt: new Date().toISOString() } : t);
+    masterStateRef.current.tracks = next;
     setTracks(next);
     persistState({ tracks: next });
     showToast('تمت استعادة المسار بنجاح');
   };
 
   const createCircle = async (circle: Partial<Circle>) => {
-    const teacherObj = users.find(u => u.id === circle.teacherId);
-    const supervisorObj = users.find(u => u.id === circle.supervisorId);
+    const currentUsers = masterStateRef.current.users?.length ? masterStateRef.current.users : users;
+    const teacherObj = currentUsers.find((u: User) => u.id === circle.teacherId);
+    const supervisorObj = currentUsers.find((u: User) => u.id === circle.supervisorId);
     const newCircle: Circle = {
       id: circle.id || `c-${Date.now()}`,
       trackId: circle.trackId || (tracks[0]?.id ?? 't-1'),
@@ -774,9 +916,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       earlyPrepCutoffTime: circle.earlyPrepCutoffTime || '15:45',
       isArchived: false,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       ...circle
     };
-    const next = [...circles, newCircle];
+    const currentCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
+    const next = [...currentCircles.filter((c: Circle) => c.id !== newCircle.id), newCircle];
+    masterStateRef.current.circles = next;
     setCircles(next);
     persistState({ circles: next });
     showToast(`تمت إضافة الحلقة "${newCircle.name}" بنجاح`);
@@ -784,38 +929,47 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateCircle = async (id: string, circle: Partial<Circle>) => {
-    const teacherObj = users.find(u => u.id === circle.teacherId);
-    const supervisorObj = users.find(u => u.id === circle.supervisorId);
-    const next = circles.map(c => {
+    const currentUsers = masterStateRef.current.users?.length ? masterStateRef.current.users : users;
+    const teacherObj = currentUsers.find((u: User) => u.id === circle.teacherId);
+    const supervisorObj = currentUsers.find((u: User) => u.id === circle.supervisorId);
+    const currentCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
+    const next = currentCircles.map((c: Circle) => {
       if (c.id !== id) return c;
       return {
         ...c,
         ...circle,
         teacherName: teacherObj ? teacherObj.name : (circle.teacherName || c.teacherName),
-        supervisorName: supervisorObj ? supervisorObj.name : (circle.supervisorName || c.supervisorName)
+        supervisorName: supervisorObj ? supervisorObj.name : (circle.supervisorName || c.supervisorName),
+        updatedAt: new Date().toISOString()
       };
     });
+    masterStateRef.current.circles = next;
     setCircles(next);
     persistState({ circles: next });
     showToast('تم تحديث بيانات الحلقة بنجاح');
   };
 
   const archiveCircle = async (id: string) => {
-    const next = circles.map(c => c.id === id ? { ...c, isArchived: true } : c);
+    const currentCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
+    const next = currentCircles.map((c: Circle) => c.id === id ? { ...c, isArchived: true, updatedAt: new Date().toISOString() } : c);
+    masterStateRef.current.circles = next;
     setCircles(next);
     persistState({ circles: next });
     showToast('تمت أرشفة الحلقة');
   };
 
   const restoreCircle = async (id: string) => {
-    const next = circles.map(c => c.id === id ? { ...c, isArchived: false } : c);
+    const currentCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
+    const next = currentCircles.map((c: Circle) => c.id === id ? { ...c, isArchived: false, updatedAt: new Date().toISOString() } : c);
+    masterStateRef.current.circles = next;
     setCircles(next);
     persistState({ circles: next });
     showToast('تمت استعادة الحلقة');
   };
 
   const createStudent = async (student: Partial<Student>) => {
-    const circle = circles.find(c => c.id === student.circleId);
+    const currentCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
+    const circle = currentCircles.find((c: Circle) => c.id === student.circleId);
     const newStudent: Student = {
       id: student.id || `s-${Date.now()}`,
       code: student.code || `GH-${Math.floor(100 + Math.random() * 900)}`,
@@ -830,9 +984,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       partnerStudentName: student.partnerStudentName,
       notes: student.notes || '',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       ...student
     };
-    const next = [...students, newStudent];
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const next = [...currentStudents.filter((s: Student) => s.id !== newStudent.id), newStudent];
+    masterStateRef.current.students = next;
     setStudents(next);
     persistState({ students: next });
     showToast(`تم تسجيل الطالبة "${newStudent.name}" بنجاح`);
@@ -840,22 +997,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateStudent = async (id: string, student: Partial<Student>) => {
-    const next = students.map(s => s.id === id ? { ...s, ...student } : s);
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const next = currentStudents.map((s: Student) => s.id === id ? { ...s, ...student, updatedAt: new Date().toISOString() } : s);
+    masterStateRef.current.students = next;
     setStudents(next);
     persistState({ students: next });
     showToast('تم تحديث ملف الطالبة بنجاح');
   };
 
   const archiveStudent = async (id: string) => {
-    const next = students.map(s => s.id === id ? { ...s, status: 'archived' as const } : s);
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const next = currentStudents.map((s: Student) => s.id === id ? { ...s, status: 'archived' as const, updatedAt: new Date().toISOString() } : s);
+    masterStateRef.current.students = next;
     setStudents(next);
     persistState({ students: next });
     showToast('تمت أرشفة سجل الطالبة بنجاح');
   };
 
   const deleteStudent = async (id: string) => {
-    const studentToDelete = students.find(s => s.id === id);
-    const next = students.filter(s => s.id !== id);
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentToDelete = currentStudents.find((s: Student) => s.id === id);
+    const next = currentStudents.filter((s: Student) => s.id !== id);
     masterStateRef.current.students = next;
     setStudents(next);
     persistState({ students: next });
@@ -863,17 +1025,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const assignPartner = async (studentId: string, partnerId: string | null) => {
-    const s1 = students.find(s => s.id === studentId);
-    const s2 = partnerId ? students.find(s => s.id === partnerId) : null;
-    const next = students.map(s => {
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const s1 = currentStudents.find((s: Student) => s.id === studentId);
+    const s2 = partnerId ? currentStudents.find((s: Student) => s.id === partnerId) : null;
+    const next = currentStudents.map((s: Student) => {
       if (s.id === studentId) {
-        return { ...s, partnerStudentId: partnerId || undefined, partnerStudentName: s2 ? s2.name : undefined };
+        return { ...s, partnerStudentId: partnerId || undefined, partnerStudentName: s2 ? s2.name : undefined, updatedAt: new Date().toISOString() };
       }
       if (partnerId && s.id === partnerId) {
-        return { ...s, partnerStudentId: studentId, partnerStudentName: s1 ? s1.name : undefined };
+        return { ...s, partnerStudentId: studentId, partnerStudentName: s1 ? s1.name : undefined, updatedAt: new Date().toISOString() };
       }
       return s;
     });
+    masterStateRef.current.students = next;
     setStudents(next);
     persistState({ students: next });
     showToast(partnerId ? `تم تعيين الثنائي: ${s1?.name || ''} ↔ ${s2?.name || ''}` : 'تم إلغاء اقتران الثنائي');
@@ -932,9 +1096,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       thursdayFocus: plan.thursdayFocus || 'مخصص للتحديات والمراجعة الثنائية',
       status: plan.status || 'active',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       ...plan
     };
-    const next = [...monthlyPlans, newPlan];
+    const currentPlans = masterStateRef.current.monthlyPlans?.length ? masterStateRef.current.monthlyPlans : monthlyPlans;
+    const next = [...currentPlans.filter((p: MonthlyPlan) => p.id !== newPlan.id), newPlan];
+    masterStateRef.current.monthlyPlans = next;
     setMonthlyPlans(next);
     persistState({ monthlyPlans: next });
     showToast(`تم إنشاء الخطة الشهرية: ${newPlan.title}`);
@@ -942,22 +1109,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateMonthlyPlan = async (id: string, plan: Partial<MonthlyPlan>) => {
-    const next = monthlyPlans.map(p => p.id === id ? { ...p, ...plan } : p);
+    const currentPlans = masterStateRef.current.monthlyPlans?.length ? masterStateRef.current.monthlyPlans : monthlyPlans;
+    const next = currentPlans.map((p: MonthlyPlan) => p.id === id ? { ...p, ...plan, updatedAt: new Date().toISOString() } : p);
+    masterStateRef.current.monthlyPlans = next;
     setMonthlyPlans(next);
     persistState({ monthlyPlans: next });
     showToast('تم تعديل الخطة الشهرية');
   };
 
   const duplicateMonthlyPlan = async (id: string) => {
-    const orig = monthlyPlans.find(p => p.id === id);
+    const currentPlans = masterStateRef.current.monthlyPlans?.length ? masterStateRef.current.monthlyPlans : monthlyPlans;
+    const orig = currentPlans.find((p: MonthlyPlan) => p.id === id);
     if (!orig) return;
     const duplicated: MonthlyPlan = {
       ...orig,
       id: `mp-${Date.now()}`,
       title: `نسخة من: ${orig.title}`,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
-    const next = [...monthlyPlans, duplicated];
+    const next = [...currentPlans, duplicated];
+    masterStateRef.current.monthlyPlans = next;
     setMonthlyPlans(next);
     persistState({ monthlyPlans: next });
     showToast('تم نسخ الخطة الشهرية بنجاح');
@@ -1147,9 +1319,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       examplesRequirement: assignment.examplesRequirement || '',
       recitationRuleApplication: assignment.recitationRuleApplication || '',
       maxScore: assignment.maxScore || 10,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       ...assignment
     };
-    const next = [...atqiniAssignments, newAss];
+    const currentAtq = masterStateRef.current.atqiniAssignments?.length ? masterStateRef.current.atqiniAssignments : atqiniAssignments;
+    const next = [...currentAtq.filter((a: AtqiniAssignment) => a.id !== newAss.id), newAss];
     masterStateRef.current.atqiniAssignments = next;
     setAtqiniAssignments(next);
     persistState({ atqiniAssignments: next });
@@ -1158,7 +1333,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateAtqiniAssignment = async (id: string, assignment: Partial<AtqiniAssignment>) => {
-    const next = atqiniAssignments.map(a => a.id === id ? { ...a, ...assignment } : a);
+    const currentAtq = masterStateRef.current.atqiniAssignments?.length ? masterStateRef.current.atqiniAssignments : atqiniAssignments;
+    const next = currentAtq.map((a: AtqiniAssignment) => a.id === id ? { ...a, ...assignment, updatedAt: new Date().toISOString() } : a);
     masterStateRef.current.atqiniAssignments = next;
     setAtqiniAssignments(next);
     persistState({ atqiniAssignments: next });
@@ -1166,7 +1342,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const deleteAtqiniAssignment = async (id: string) => {
-    const next = atqiniAssignments.filter(a => a.id !== id);
+    const currentAtq = masterStateRef.current.atqiniAssignments?.length ? masterStateRef.current.atqiniAssignments : atqiniAssignments;
+    const next = currentAtq.filter((a: AtqiniAssignment) => a.id !== id);
     masterStateRef.current.atqiniAssignments = next;
     setAtqiniAssignments(next);
     persistState({ atqiniAssignments: next });
@@ -1190,16 +1367,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       evaluatedBy: currentUser?.name || 'معلمة الحلقة',
       ...sub
     };
-    const existingIdx = studentAtqiniSubmissions.findIndex(
-      s => s.id === cleanId || (s.assignmentId === newSub.assignmentId && s.studentId === newSub.studentId)
+    const currentSubs = masterStateRef.current.studentAtqiniSubmissions || studentAtqiniSubmissions;
+    const existingIdx = currentSubs.findIndex(
+      (s: StudentAtqiniSubmission) => s.id === cleanId || (s.assignmentId === newSub.assignmentId && s.studentId === newSub.studentId)
     );
     let next: StudentAtqiniSubmission[];
     if (existingIdx >= 0) {
-      next = [...studentAtqiniSubmissions];
+      next = [...currentSubs];
       next[existingIdx] = { ...next[existingIdx], ...newSub };
     } else {
-      next = [...studentAtqiniSubmissions, newSub];
+      next = [...currentSubs, newSub];
     }
+    masterStateRef.current.studentAtqiniSubmissions = next;
     setStudentAtqiniSubmissions(next);
     persistState({ studentAtqiniSubmissions: next });
     showToast('تم رصد تقييم واجب «أتقني» للتجويد');
@@ -1225,9 +1404,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       tasks: challenge.tasks || [],
       status: challenge.status || 'active',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       ...challenge
     };
-    const next = [...challenges, newCh];
+    const currentCh = masterStateRef.current.challenges?.length ? masterStateRef.current.challenges : challenges;
+    const next = [...currentCh.filter((c: Challenge) => c.id !== newCh.id), newCh];
+    masterStateRef.current.challenges = next;
     setChallenges(next);
     persistState({ challenges: next });
     showToast(`تم إطلاق التحدي القرآني: ${newCh.title}`);
@@ -1235,14 +1417,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateChallenge = async (id: string, challenge: Partial<Challenge>) => {
-    const next = challenges.map(c => c.id === id ? { ...c, ...challenge } : c);
+    const currentCh = masterStateRef.current.challenges?.length ? masterStateRef.current.challenges : challenges;
+    const next = currentCh.map((c: Challenge) => c.id === id ? { ...c, ...challenge, updatedAt: new Date().toISOString() } : c);
+    masterStateRef.current.challenges = next;
     setChallenges(next);
     persistState({ challenges: next });
     showToast('تم تحديث التحدي القرآني');
   };
 
   const deleteChallenge = async (id: string) => {
-    const next = challenges.filter(c => c.id !== id);
+    const currentCh = masterStateRef.current.challenges?.length ? masterStateRef.current.challenges : challenges;
+    const next = currentCh.filter((c: Challenge) => c.id !== id);
+    masterStateRef.current.challenges = next;
     setChallenges(next);
     persistState({ challenges: next });
     showToast('تم حذف التحدي');
@@ -1264,16 +1450,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       evaluatedAt: new Date().toISOString(),
       ...sub
     };
-    const existingIdx = studentChallengeSubmissions.findIndex(
-      s => s.id === cleanId || (s.challengeId === newSub.challengeId && s.studentId === newSub.studentId)
+    const currentSubs = masterStateRef.current.studentChallengeSubmissions || studentChallengeSubmissions;
+    const existingIdx = currentSubs.findIndex(
+      (s: StudentChallengeSubmission) => s.id === cleanId || (s.challengeId === newSub.challengeId && s.studentId === newSub.studentId)
     );
     let next: StudentChallengeSubmission[];
     if (existingIdx >= 0) {
-      next = [...studentChallengeSubmissions];
+      next = [...currentSubs];
       next[existingIdx] = { ...next[existingIdx], ...newSub };
     } else {
-      next = [...studentChallengeSubmissions, newSub];
+      next = [...currentSubs, newSub];
     }
+    masterStateRef.current.studentChallengeSubmissions = next;
     setStudentChallengeSubmissions(next);
     persistState({ studentChallengeSubmissions: next });
     showToast('تم رصد نتيجة التحدي والمراجعة الثنائية');
@@ -1292,9 +1480,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       maxScore: exam.maxScore || 100,
       notes: exam.notes || '',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       ...exam
     };
-    const next = [...monthlyExams, newExam];
+    const currentExams = masterStateRef.current.monthlyExams?.length ? masterStateRef.current.monthlyExams : monthlyExams;
+    const next = [...currentExams.filter((e: MonthlyExam) => e.id !== newExam.id), newExam];
+    masterStateRef.current.monthlyExams = next;
     setMonthlyExams(next);
     persistState({ monthlyExams: next });
     showToast(`تمت جدولة الاختبار الشهري: ${newExam.title}`);
@@ -1302,15 +1493,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateMonthlyExam = async (id: string, exam: Partial<MonthlyExam>) => {
-    const next = monthlyExams.map(e => e.id === id ? { ...e, ...exam } : e);
+    const currentExams = masterStateRef.current.monthlyExams?.length ? masterStateRef.current.monthlyExams : monthlyExams;
+    const next = currentExams.map((e: MonthlyExam) => e.id === id ? { ...e, ...exam, updatedAt: new Date().toISOString() } : e);
+    masterStateRef.current.monthlyExams = next;
     setMonthlyExams(next);
     persistState({ monthlyExams: next });
     showToast('تم تعديل بيانات الاختبار الشهري');
   };
 
   const deleteMonthlyExam = async (id: string) => {
-    const nextExams = monthlyExams.filter(e => e.id !== id);
-    const nextResults = studentExamResults.filter(r => r.examId !== id);
+    const currentExams = masterStateRef.current.monthlyExams?.length ? masterStateRef.current.monthlyExams : monthlyExams;
+    const nextExams = currentExams.filter((e: MonthlyExam) => e.id !== id);
+    const currentResults = masterStateRef.current.studentExamResults || studentExamResults;
+    const nextResults = currentResults.filter((r: StudentExamResult) => r.examId !== id);
+    masterStateRef.current.monthlyExams = nextExams;
+    masterStateRef.current.studentExamResults = nextResults;
     setMonthlyExams(nextExams);
     setStudentExamResults(nextResults);
     persistState({ monthlyExams: nextExams, studentExamResults: nextResults });
@@ -1319,12 +1516,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const saveExamResult = async (result: Partial<StudentExamResult>) => {
     const cleanId = result.id || `er_${result.examId}_${result.studentId}`;
-    const existingIdx = studentExamResults.findIndex(
-      r => r.id === cleanId || (r.examId === result.examId && r.studentId === result.studentId)
+    const currentResults = masterStateRef.current.studentExamResults || studentExamResults;
+    const existingIdx = currentResults.findIndex(
+      (r: StudentExamResult) => r.id === cleanId || (r.examId === result.examId && r.studentId === result.studentId)
     );
     let next: StudentExamResult[];
     if (existingIdx >= 0) {
-      next = [...studentExamResults];
+      next = [...currentResults];
       next[existingIdx] = {
         ...next[existingIdx],
         ...result,
@@ -1352,8 +1550,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         signatureUrl: result.signatureUrl,
         ...result
       };
-      next = [...studentExamResults, newResult];
+      next = [...currentResults, newResult];
     }
+    masterStateRef.current.studentExamResults = next;
     setStudentExamResults(next);
     persistState({ studentExamResults: next });
     showToast('تم رصد درجة ومقرر الاختبار الشهري بنجاح');
@@ -1558,11 +1757,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const absentExcusedCount = sAttendance.filter(a => a.status === 'absent_excused').length;
     const earlyPrepCount = sAttendance.filter(a => a.earlyPrepCardSent).length;
     const totalRecordedDays = presentCount + absentUnexcusedCount + absentExcusedCount;
-    const attendanceRate = totalRecordedDays > 0 ? (presentCount / totalRecordedDays) * 100 : 100;
+    const rules = gradingConfig?.attendanceRules || {
+      presentScore: 5,
+      absentUnexcusedScore: 0,
+      absentExcusedScore: 2.5
+    };
+    const maxDayPoints = rules.presentScore || 5;
+    const earnedDayPoints = (presentCount * maxDayPoints) + (absentExcusedCount * (rules.absentExcusedScore ?? 2.5));
+    const totalPossibleDayPoints = totalRecordedDays * maxDayPoints;
+    const attendanceRatio = totalPossibleDayPoints > 0 ? Math.min(1, earnedDayPoints / totalPossibleDayPoints) : 1;
+    const attendanceRate = totalRecordedDays > 0 ? Math.min(100, Math.round(((presentCount + absentExcusedCount * 0.5) / totalRecordedDays) * 1000) / 10) : 100;
     
     const maxAttendanceItem = gradingConfig?.items.find(i => i.category === 'attendance');
     const attendanceMax = maxAttendanceItem?.maxScore || 10;
-    const attendanceScore = totalRecordedDays > 0 ? Math.min(attendanceMax, (attendanceRate / 100) * attendanceMax) : attendanceMax;
+    const attendanceScore = totalRecordedDays > 0 ? Math.min(attendanceMax, Math.round(attendanceRatio * attendanceMax * 10) / 10) : attendanceMax;
 
     let memorizationScoreSum = 0;
     let memorizationMistakesTotal = 0;
@@ -1614,12 +1822,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const avgConditionsOutOf10 = sDaily.length > 0 ? (conditionsSum / sDaily.length) : 10;
     const conditionsFulfilledScore = (avgConditionsOutOf10 / 10) * conditionsMax;
 
-    const newMemorizationPagesTarget = (typeof sPlan?.newMemorization?.targetPages === 'number') ? sPlan.newMemorization.targetPages : 8;
-    const revisionPagesTarget = (typeof sPlan?.revision?.targetPages === 'number') ? sPlan.revision.targetPages : 6;
+    const newMemorizationPagesTarget = (typeof sPlan?.newMemorization?.targetPages === 'number' && sPlan.newMemorization.targetPages > 0) ? sPlan.newMemorization.targetPages : 8;
+    const revisionPagesTarget = (typeof sPlan?.revision?.targetPages === 'number' && sPlan.revision.targetPages > 0) ? sPlan.revision.targetPages : 4;
 
     const atqiniItem = gradingConfig?.items.find(i => i.category === 'atqini');
     const atqiniMax = atqiniItem?.maxScore || 10;
-    const atqiniCompletedCount = sAtqini.filter(a => a.status === 'completed').length;
+    const atqiniCompletedCount = sAtqini.filter(a => a.status === 'completed' || a.isCompletedCorrectly).length;
     let atqiniTotalScore = 0;
     for (let i = 0; i < sAtqini.length; i++) {
       atqiniTotalScore += (sAtqini[i].score || 0);
