@@ -233,16 +233,39 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     return allStudentScores ? allStudentScores[viewingStudentRecord.id] : null;
   }, [viewingStudentRecord, allStudentScores]);
 
+  // التحقق مما إذا كان سجل الحفظ الجديد مسجلاً ومستوفياً لشروط الإتقان
+  const isRecordWithConditions = (r: any): boolean => {
+    if (r.newMemorizationWithConditions !== undefined) {
+      return Boolean(r.newMemorizationWithConditions);
+    }
+    return Boolean(
+      r.newMemorizationCompleted !== false && (
+        r.conditions?.masteryRepetition ||
+        r.conditions?.listenedToReader ||
+        r.conditions?.recitedLooking ||
+        (r.criteriaRepeatCount && r.criteriaRepeatCount > 0) ||
+        (r.recitationScore !== undefined && r.recitationScore >= 8)
+      )
+    );
+  };
+
   const studentStats = useMemo(() => {
     if (!studentRecords.length) {
-      return { totalPages: 0, avgScore: 10, totalSessions: 0, totalMistakes: 0 };
+      return { totalPages: 0, totalUnconditionedPages: 0, avgScore: 10, totalSessions: 0, totalMistakes: 0 };
     }
-    const totalPages = studentRecords.reduce((acc, r) => acc + (r.newMemorizationPages || 0), 0);
+    // فقط ما يُرصد كمنجز بشروط على مدار الشهر يُحسب في مجموع الأوجه المعتمدة
+    const totalPages = studentRecords
+      .filter(r => isRecordWithConditions(r))
+      .reduce((acc, r) => acc + (r.newMemorizationPages || 0), 0);
+    const totalUnconditionedPages = studentRecords
+      .filter(r => !isRecordWithConditions(r))
+      .reduce((acc, r) => acc + (r.newMemorizationPages || 0), 0);
     const totalScore = studentRecords.reduce((acc, r) => acc + (r.recitationScore || 0), 0);
     const avgScore = Math.round((totalScore / studentRecords.length) * 10) / 10;
     const totalMistakes = studentRecords.reduce((acc, r) => acc + (r.memorizationMistakes || 0), 0);
     return {
       totalPages,
+      totalUnconditionedPages,
       avgScore,
       totalSessions: studentRecords.length,
       totalMistakes
@@ -331,6 +354,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     newToSurah: 2,
     newToAyah: 15,
     newPages: 1,
+    newWithConditions: true, // رصد كمنجز بشروط
     recitedPortion: 'سورة البقرة (من آية 1 إلى آية 15)',
     hifzErrors: 0,
     alerts: 0,
@@ -425,6 +449,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         newToSurah: existing.newToSurah ?? 2,
         newToAyah: existing.newToAyah ?? 15,
         newPages: existing.newMemorizationPages ?? existing.newPages ?? 1,
+        newWithConditions: isRecordWithConditions(existing),
         recitedPortion: existing.requiredPortionText ?? existing.recitedPortion ?? '',
         hifzErrors: existing.memorizationMistakes ?? existing.hifzErrors ?? 0,
         alerts: existing.hintsCount ?? existing.alerts ?? 0,
@@ -464,6 +489,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         newToSurah: defToS,
         newToAyah: defToA,
         newPages: initialPages,
+        newWithConditions: true,
         recitedPortion: formatPortionText(defFromS, defFromA, defToS, defToA),
         hifzErrors: 0,
         alerts: 0,
@@ -551,6 +577,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       tajweedErrorsCount: form.tajweedErrors,
       newMemorizationPages: form.newPages,
       newMemorizationCompleted: true,
+      newMemorizationWithConditions: form.newWithConditions,
       requiredPortionText: form.recitedPortion,
       revisionCompleted: form.minorDone || form.majorDone,
       revisionPages: form.minorPages + form.majorPages,
@@ -841,6 +868,43 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                     placeholder="مثال: من سورة البقرة آية ١ إلى ٢٥"
                     className="w-full px-3.5 py-2.5 bg-[#FAF7F5] dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 rounded-xl text-xs text-stone-800 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-[#8E5364]"
                   />
+                </div>
+
+                {/* حالة رصد الحفظ الجديد: منجز بشروط أو غير مستوفٍ للشروط */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-[#FAF7F5] dark:bg-stone-800/80 border border-[#E2D5CC] dark:border-stone-700">
+                  <div>
+                    <span className="block text-[11px] font-bold text-stone-800 dark:text-stone-200">
+                      حالة رصد واعتماد الحفظ الجديد:
+                    </span>
+                    <span className="text-[10px] text-stone-500 dark:text-stone-400">
+                      (فقط ما يُرصد كـ "منجز بشروط" يُحتسب ويُجمع في كشف الشهر وملف الإنجاز)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, newWithConditions: true }))}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                        form.newWithConditions
+                          ? 'bg-emerald-700 text-white shadow-xs'
+                          : 'bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700 hover:bg-stone-100'
+                      }`}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>منجز بشروط ✅</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, newWithConditions: false }))}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                        !form.newWithConditions
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700 hover:bg-stone-100'
+                      }`}
+                    >
+                      <span>غير مستوفٍ للشروط ⚠️</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1324,10 +1388,15 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
               {/* بطاقات المؤشرات السريعة لكشف الطالبة */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 <div className="bg-[#FAF7F5] dark:bg-stone-800/60 p-3.5 rounded-2xl border border-[#E2D5CC] dark:border-stone-700/60">
-                  <span className="text-[10px] text-stone-500 font-bold block">إجمالي الأوجه المرصودة</span>
+                  <span className="text-[10px] text-stone-500 font-bold block">الحفظ الجديد المنجز بشروط</span>
                   <p className="text-base sm:text-lg font-bold text-[#8E5364] dark:text-[#E8BDC8] mt-0.5">
-                    {studentStats.totalPages} <span className="text-xs font-normal">أوجه</span>
+                    {studentStats.totalPages} <span className="text-xs font-normal">أوجه معتمدة</span>
                   </p>
+                  {studentStats.totalUnconditionedPages > 0 && (
+                    <span className="text-[9.5px] text-amber-600 block mt-0.5">
+                      ({studentStats.totalUnconditionedPages} أوجه غير مشروطة مستبعدة)
+                    </span>
+                  )}
                 </div>
                 <div className="bg-[#FAF7F5] dark:bg-stone-800/60 p-3.5 rounded-2xl border border-[#E2D5CC] dark:border-stone-700/60">
                   <span className="text-[10px] text-stone-500 font-bold block">متوسط درجات التسميع</span>
@@ -1377,7 +1446,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                           <tr>
                             <th className="p-2.5">التاريخ واليوم</th>
                             <th className="p-2.5">المقرر المطلوب</th>
-                            <th className="p-2.5 text-center">أوجه الجديد</th>
+                            <th className="p-2.5 text-center">أوجه الجديد (المشروطة)</th>
                             <th className="p-2.5 text-center">أخطاء / تنبيهات</th>
                             <th className="p-2.5 text-center">الدرجة</th>
                             <th className="p-2.5">المراجعة والتمكين</th>
@@ -1385,40 +1454,62 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                          {studentRecords.map(r => (
-                            <tr key={r.id || r.date} className="hover:bg-stone-50/60 dark:hover:bg-stone-800/40">
-                              <td className="p-2.5 font-bold whitespace-nowrap">
-                                <div>{r.date}</div>
-                                <span className="text-[10px] text-stone-400 font-normal">{r.dayName || ''}</span>
-                              </td>
-                              <td className="p-2.5 font-bold text-stone-800 dark:text-stone-200">
-                                {r.requiredPortionText || 'مقرر الحفظ اليومي'}
-                              </td>
-                              <td className="p-2.5 text-center font-mono font-bold text-[#8E5364] dark:text-[#E8BDC8]">
-                                {r.newMemorizationPages ?? 1} ص
-                              </td>
-                              <td className="p-2.5 text-center whitespace-nowrap">
-                                <span className="text-rose-600 font-mono font-bold">{r.memorizationMistakes ?? 0}</span>
-                                <span className="text-stone-400 mx-1">/</span>
-                                <span className="text-amber-600 font-mono">{r.hintsCount ?? 0}</span>
-                              </td>
-                              <td className="p-2.5 text-center whitespace-nowrap">
-                                <span className={`px-2 py-0.5 rounded-lg font-bold text-[10px] ${
-                                  (r.recitationScore ?? 10) >= 9 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
-                                  (r.recitationScore ?? 10) >= 7 ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
-                                  'bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300'
-                                }`}>
-                                  {r.recitationScore ?? 10} / 10
-                                </span>
-                              </td>
-                              <td className="p-2.5 text-[10px] text-stone-600 dark:text-stone-400 max-w-[150px] truncate">
-                                {r.revisionCompleted ? 'منجزة بالشروط ✅' : 'لم تُسرد بعد'}
-                              </td>
-                              <td className="p-2.5 text-[10px] text-stone-500 italic max-w-[140px] truncate">
-                                {r.notes || '—'}
-                              </td>
-                            </tr>
-                          ))}
+                          {studentRecords.map(r => {
+                            const withCond = isRecordWithConditions(r);
+                            return (
+                              <tr key={r.id || r.date} className="hover:bg-stone-50/60 dark:hover:bg-stone-800/40">
+                                <td className="p-2.5 font-bold whitespace-nowrap">
+                                  <div>{r.date}</div>
+                                  <span className="text-[10px] text-stone-400 font-normal">{r.dayName || ''}</span>
+                                </td>
+                                <td className="p-2.5 font-bold text-stone-800 dark:text-stone-200">
+                                  {r.requiredPortionText || 'مقرر الحفظ اليومي'}
+                                </td>
+                                <td className="p-2.5 text-center font-mono font-bold">
+                                  <div className="flex flex-col items-center justify-center gap-0.5">
+                                    <span className={withCond ? "text-[#8E5364] dark:text-[#E8BDC8]" : "text-stone-400 line-through"}>
+                                      {r.newMemorizationPages ?? 1} ص
+                                    </span>
+                                    {withCond ? (
+                                      <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-300 px-1.5 py-0.5 rounded-md inline-flex items-center gap-0.5">
+                                        منجز بشروط ✅
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-bold text-amber-700 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 px-1.5 py-0.5 rounded-md inline-flex items-center gap-0.5" title="لم يستوفِ الشروط ولن يُحتسب في كشف الإنجاز">
+                                        بدون شروط ⚠️
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="p-2.5 text-center whitespace-nowrap">
+                                  <span className="text-rose-600 font-mono font-bold">{r.memorizationMistakes ?? 0}</span>
+                                  <span className="text-stone-400 mx-1">/</span>
+                                  <span className="text-amber-600 font-mono">{r.hintsCount ?? 0}</span>
+                                </td>
+                                <td className="p-2.5 text-center whitespace-nowrap">
+                                  <span className={`px-2 py-0.5 rounded-lg font-bold text-[10px] ${
+                                    (r.recitationScore ?? 10) >= 9 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
+                                    (r.recitationScore ?? 10) >= 7 ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
+                                    'bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300'
+                                  }`}>
+                                    {r.recitationScore ?? 10} / 10
+                                  </span>
+                                </td>
+                                <td className="p-2.5 text-[10px] text-stone-600 dark:text-stone-400 max-w-[150px]">
+                                  <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] inline-flex items-center gap-1 ${
+                                    r.revisionCompleted
+                                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                      : 'bg-stone-100 text-stone-500 dark:bg-stone-800 dark:text-stone-400'
+                                  }`}>
+                                    {r.revisionCompleted ? 'منجزة بالشروط ✅' : 'لم تُسرد بعد'}
+                                  </span>
+                                </td>
+                                <td className="p-2.5 text-[10px] text-stone-500 italic max-w-[140px] truncate">
+                                  {r.notes || '—'}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

@@ -217,6 +217,7 @@ export interface DailyRecord {
   dayName: string;
   requiredPortionText?: string;
   newMemorizationCompleted: boolean;
+  newMemorizationWithConditions?: boolean; // هل رُصد كمنجز بشروط
   newMemorizationPages: number;
   revisionCompleted: boolean;
   revisionPages: number;

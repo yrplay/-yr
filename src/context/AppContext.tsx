@@ -1786,7 +1786,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       memorizationMistakesTotal += (dr.memorizationMistakes || 0);
       hintsTotal += (dr.hintsCount || 0);
       tajweedErrorsTotal += (dr.tajweedErrorsCount || 0);
-      newPagesDone += (dr.newMemorizationPages || 0);
+
+      // فقط ما يُرصد كمنجز بشروط على مدار الشهر يُعتمد ويُضاف في الحفظ الجديد المنجز
+      const isNewWithConditions = dr.newMemorizationWithConditions !== undefined
+        ? Boolean(dr.newMemorizationWithConditions)
+        : (dr.newMemorizationCompleted !== false && (
+            Boolean(dr.conditions?.masteryRepetition) || 
+            Boolean(dr.conditions?.listenedToReader) || 
+            Boolean(dr.conditions?.recitedLooking) ||
+            Boolean(dr.criteriaRepeatCount && dr.criteriaRepeatCount > 0) ||
+            (dr.recitationScore !== undefined && dr.recitationScore >= 8)
+          ));
+
+      if (isNewWithConditions) {
+        newPagesDone += (dr.newMemorizationPages || 0);
+      }
       revisionPagesDone += (dr.revisionPages || 0);
       memorizationScoreSum += (dr.recitationScore || 0);
       

@@ -58,13 +58,14 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   const targetNewPages = (activeStudentPlan as any)?.newMemorization?.targetPages ?? score?.newMemorizationPagesTarget ?? 8;
   const targetRevPages = (activeStudentPlan as any)?.revision?.targetPages ?? score?.revisionPagesTarget ?? 4;
   
-  const doneNewPages = (score?.newMemorizationPagesDone !== undefined && score?.newMemorizationPagesDone !== null && score.newMemorizationPagesDone > 0)
+  // فقط ما يُرصد كمنجز بشروط على مدار الشهر يُعتمد
+  const doneNewPages = (score?.newMemorizationPagesDone !== undefined && score?.newMemorizationPagesDone !== null)
     ? score.newMemorizationPagesDone
-    : ((activeStudentPlan as any)?.newMemorization?.actualPages ?? score?.newMemorizationPagesDone ?? 0);
+    : ((activeStudentPlan as any)?.newMemorization?.actualPages ?? 0);
 
-  const doneRevPages = (score?.revisionPagesDone !== undefined && score?.revisionPagesDone !== null && score.revisionPagesDone > 0)
+  const doneRevPages = (score?.revisionPagesDone !== undefined && score?.revisionPagesDone !== null)
     ? score.revisionPagesDone
-    : ((activeStudentPlan as any)?.revision?.actualPages ?? score?.revisionPagesDone ?? 0);
+    : ((activeStudentPlan as any)?.revision?.actualPages ?? 0);
 
   const totalAbsentDays = (score?.absentUnexcusedCount || 0) + (score?.absentExcusedCount || 0);
 
@@ -180,6 +181,9 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         circleId: student.circleId,
         date: today,
         newMemorizationPages: Number(quickEditForm.actualPages),
+        newMemorizationCompleted: true,
+        newMemorizationWithConditions: true,
+        revisionCompleted: true,
         revisionPages: Number(quickEditForm.revisionActualPages),
         status: 'completed'
       });
@@ -876,7 +880,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
 
             <div className="space-y-1.5 text-stone-600">
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
-                <span>الحفظ الجديد المنجز:</span>
+                <span>الحفظ الجديد المنجز (بشروط):</span>
                 <strong className="text-stone-900">{doneNewPages} من {targetNewPages} صفحات</strong>
               </div>
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
@@ -1587,7 +1591,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-stone-700 mb-1">صفحات الحفظ المنجزة فعلياً:</label>
+                  <label className="block font-bold text-stone-700 mb-1">صفحات الحفظ المنجزة بشروط:</label>
                   <input
                     type="number"
                     min="0"
