@@ -1,4 +1,4 @@
-export type UserRole = 'leader' | 'supervisor' | 'teacher';
+export type UserRole = 'developer' | 'leader' | 'supervisor' | 'teacher';
 
 export type StudentStatus = 'active' | 'archived' | 'suspended';
 
@@ -36,6 +36,9 @@ export interface User {
   permissions?: UserPermissions;
   signatureUrl?: string;
 }
+
+export const hasFullAccess = (user: Pick<User, 'role'> | null | undefined): boolean =>
+  user?.role === 'developer' || user?.role === 'leader';
 
 // 1. معايير دليل الإتقان (مشكاة الغيم) الموحدة القابلة للتعديل
 export interface CriterionItem {
@@ -497,6 +500,24 @@ export const defaultMasteryGuideConfig: MasteryGuideConfig = {
 
 // صلاحيات الأدوار الافتراضية
 export const defaultPermissionsByRole: Record<string, UserPermissions> = {
+  developer: {
+    canRecordAttendance: true,
+    canRecordRecitation: true,
+    canGradeAtqini: true,
+    canManageChallenges: true,
+    canGradeExams: true,
+    canEditStudents: true,
+    canViewReports: true,
+    canManagePlans: true,
+    canManageFinances: true,
+    canEditTrackCriteria: true,
+    canManageSettings: true,
+    canManageUsers: true,
+    canManageTracks: true,
+    canManageCircles: true,
+    canEditScores: true,
+    canExportReports: true
+  },
   leader: {
     canRecordAttendance: true,
     canRecordRecitation: true,

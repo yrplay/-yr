@@ -4,7 +4,7 @@ import {
   AlertCircle, Search, ArrowRight, ShieldAlert, Check, Edit3, Settings, Calendar, Filter
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { StudentSubscription } from '../types';
+import { hasFullAccess, StudentSubscription } from '../types';
 import { calculateSubscriptionStats, deduplicateSubscriptionsByCycle } from '../services/subscriptionMath';
 
 const HIJRI_MONTHS = [
@@ -46,7 +46,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
   const [applyToExisting, setApplyToExisting] = useState(false);
   const [isSavingFeeSettings, setIsSavingFeeSettings] = useState(false);
 
-  const isLeader = currentUser?.role === 'leader';
+  const isLeader = hasFullAccess(currentUser);
 
   const defaultFee = settings?.defaultSubscriptionFee ?? 150;
   const currency = settings?.currency || 'ر.س';

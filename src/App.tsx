@@ -26,6 +26,7 @@ import { Footer } from './components/Footer';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 import { UpdateNotification } from './components/UpdateNotification';
 import { isLocalDemoMode } from './demoMode';
+import { hasFullAccess } from './types';
 
 const VIEW_TYPES: ViewType[] = [
   'dashboard', 'tracks_circles', 'track_detail', 'students', 'subscriptions',
@@ -45,7 +46,7 @@ const readNavigationFromUrl = () => {
 };
 
 const AppContent: React.FC = () => {
-  const { loading, error, toast, triggerQuickModal, settings, currentUser, users, switchUser, showToast } = useApp();
+  const { loading, error, toast, triggerQuickModal, settings, currentUser, users, switchUser, showToast, cloudDataReady, cloudStatus } = useApp();
   const [initialNavigation] = useState(readNavigationFromUrl);
   const [currentView, setCurrentView] = useState<ViewType>(initialNavigation.view);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -103,6 +104,15 @@ const AppContent: React.FC = () => {
         return;
       }
       setAuthChecking(true);
+      if (!cloudDataReady) {
+        if (cloudStatus === 'error') {
+          setIsAuthenticated(false);
+          setAuthError('تعذر تحميل بيانات المستخدمين من Firestore. تحققي من صلاحية الحساب وقواعد القاعدة ثم أعيدي المحاولة.');
+          setAuthChecking(false);
+          try { await signOut(auth); } catch { /* Keep the cloud access error visible. */ }
+        }
+        return;
+      }
       try {
         const accessSnapshot = await getDoc(doc(db, 'staff_access', firebaseUser.uid));
         if (!accessSnapshot.exists()) throw new Error('missing-access');
@@ -144,7 +154,7 @@ const AppContent: React.FC = () => {
       }
     });
     return () => { active = false; unsubscribe(); };
-  }, [users]);
+  }, [users, cloudDataReady, cloudStatus]);
 
   // تطبيق الهوية البصرية ونوع الخط تلقائياً
   React.useEffect(() => {
@@ -387,7 +397,7 @@ const AppContent: React.FC = () => {
           )}
 
           {currentView === 'staff' && (
-            currentUser?.role === 'leader' ? (
+            hasFullAccess(currentUser) ? (
               <StaffView />
             ) : (
               <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center" dir="rtl">
@@ -412,7 +422,7 @@ const AppContent: React.FC = () => {
           )}
 
           {currentView === 'settings' && (
-            currentUser?.role === 'leader' ? (
+            hasFullAccess(currentUser) ? (
               <SettingsView />
             ) : (
               <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center" dir="rtl">

@@ -5,7 +5,7 @@ import {
   Calendar, Clock, Star, Users, Award, Shield, FileText, ChevronLeft,
   Printer, X
 } from 'lucide-react';
-import { Challenge, ChallengeType, StudentChallengeSubmission } from '../types';
+import { Challenge, ChallengeType, hasFullAccess, StudentChallengeSubmission } from '../types';
 
 export const ChallengesView: React.FC = () => {
   const {
@@ -323,7 +323,7 @@ export const ChallengesView: React.FC = () => {
               </span>
             </div>
 
-            {currentUser?.role === 'leader' && (
+            {hasFullAccess(currentUser) && (
               <button
                 type="button"
                 onClick={() => handleOpenChallengeModal()}
@@ -377,7 +377,7 @@ export const ChallengesView: React.FC = () => {
                       {isSelected ? 'المحدد والمعروض حالياً ✅' : 'انقري لاختياره 👈'}
                     </span>
 
-                    {currentUser?.role === 'leader' && (
+                    {hasFullAccess(currentUser) && (
                       <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                         <button
                           type="button"
@@ -425,7 +425,7 @@ export const ChallengesView: React.FC = () => {
               </p>
             </div>
 
-            {currentUser?.role === 'leader' && (
+            {hasFullAccess(currentUser) && (
               <div className="flex items-center gap-2 self-start sm:self-auto">
                 <button
                   type="button"
@@ -469,7 +469,7 @@ export const ChallengesView: React.FC = () => {
             <div className="pt-2 border-t border-stone-100">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-stone-700">مهام ونقاط هذا التحدي ({currentChallenge.tasks.length}):</span>
-                {currentUser?.role === 'leader' && (
+                {hasFullAccess(currentUser) && (
                   <button
                     type="button"
                     onClick={() => handleOpenChallengeModal(currentChallenge)}

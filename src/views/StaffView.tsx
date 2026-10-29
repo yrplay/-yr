@@ -8,7 +8,7 @@ import {
   Mail, Phone, Layers, Award, X, Upload, Trash2, Sparkles, FileSignature,
   Copy, KeyRound, Check, Table, LayoutGrid, Lock
 } from 'lucide-react';
-import { User, UserRole, UserPermissions, defaultPermissionsByRole } from '../types';
+import { User, UserRole, UserPermissions, defaultPermissionsByRole, hasFullAccess } from '../types';
 import { IslamicIconPicker, renderUserAvatarBadge, getAvatarLabel } from '../components/IslamicIconLibrary';
 
 const PERMISSION_ITEMS: {
@@ -101,7 +101,7 @@ export const StaffView: React.FC = () => {
   const { users, circles, currentUser, createUser, updateUser, showToast } = useApp();
 
   // تخصيص القسم بالكامل لإدارة المقرأة فقط (القائدة)
-  if (currentUser?.role !== 'leader') {
+  if (!hasFullAccess(currentUser)) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center" dir="rtl">
         <div className="w-16 h-16 rounded-3xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-center text-3xl shadow-xs mb-4">
@@ -277,12 +277,38 @@ export const StaffView: React.FC = () => {
       localStorage.removeItem(`ghaith_pin_${editingStaff.id}`);
       showToast(`تم حفظ وتحديث بيانات ${staffForm.name} بنجاح ✨`);
     } else {
-      const created = await createUser(staffForm);
-      if (created) {
-        showToast(`تم إنشاء الملف الشخصي لـ ${staffForm.name}. لا ينشئ ذلك حساب Firebase Auth؛ يجب على الإدارة تهيئة الحساب ووثيقة staff_access قبل تمكين تسجيل الدخول.`, 'info');
+      if (isLocalDemoMode) {
+        showToast('إنشاء حسابات الدخول متاح بعد نشر المنصة وربط إعدادات Firebase الخادمية.', 'info');
+        return;
+      }
+      try {
+        const firebaseUser = auth.currentUser;
+        if (!firebaseUser) throw new Error('انتهت جلسة الدخول. سجّلي الدخول مجددًا.');
+        const response = await fetch('/api/admin/accounts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${await firebaseUser.getIdToken()}`,
+          },
+          body: JSON.stringify(staffForm),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.user) {
+          throw new Error(result.error || 'تعذر إنشاء حساب الدخول. تحققي من إعداد الخدمة الخادمية.');
+        }
+        const created = await createUser(result.user as User);
+        setStaffModalOpen(false);
+        try {
+          await sendPasswordResetEmail(auth, created.email || staffForm.email.trim());
+          showToast(`تم إنشاء الحساب وإرسال رابط تعيين كلمة المرور إلى ${created.email}.`);
+        } catch {
+          showToast(`تم إنشاء الحساب، لكن تعذر إرسال الرابط الآن. استخدمي زر إعادة التعيين في ملف ${created.name}.`, 'info');
+        }
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'تعذر إنشاء الحساب. أعيدي المحاولة.', 'error');
       }
     }
-    setStaffModalOpen(false);
+    if (editingStaff) setStaffModalOpen(false);
   };
   const handleSendPasswordReset = async (user: User) => {
     if (isLocalDemoMode) {
@@ -316,6 +342,7 @@ export const StaffView: React.FC = () => {
   };
 
   const roleLabels = {
+    developer: { label: 'مطوّر المنصة', bg: 'bg-violet-100 text-violet-800 border-violet-300' },
     leader: { label: 'قائدة المقرأة', bg: 'bg-rose-100 text-rose-800 border-rose-300' },
     supervisor: { label: 'مشرفة مسار / حلقات', bg: 'bg-amber-100 text-amber-800 border-amber-300' },
     teacher: { label: 'معلمة حلقة', bg: 'bg-emerald-100 text-emerald-800 border-emerald-300' }
@@ -518,7 +545,7 @@ export const StaffView: React.FC = () => {
                       </td>
                       {/* Circles */}
                       <td className="py-3 px-4">
-                        {user.role === 'leader' ? (
+                        {hasFullAccess(user) ? (
                           <span className="text-[#8E5364] font-bold text-[10px]">كافة الحلقات والمسارات</span>
                         ) : assignedCount > 0 ? (
                           <span className="font-bold text-stone-800 text-xs">
@@ -668,7 +695,7 @@ export const StaffView: React.FC = () => {
                 {/* Circles info */}
                 <div className="pt-2 border-t border-stone-100 text-xs">
                   <span className="text-stone-400 block text-[10px] mb-1">الحلقات المسندة:</span>
-                  {user.role === 'leader' ? (
+                  {hasFullAccess(user) ? (
                     <span className="text-[#8E5364] font-bold text-[11px]">صلاحية شاملة على كافة الحلقات والمسارات</span>
                   ) : user.role === 'supervisor' ? (
                     <div className="flex flex-wrap gap-1">
@@ -815,6 +842,7 @@ export const StaffView: React.FC = () => {
                     <option value="teacher">معلمة حلقة قرآنية</option>
                     <option value="supervisor">مشرفة مسار / حلقات</option>
                     <option value="leader">قائدة المقرأة</option>
+                    {currentUser?.role === 'developer' && <option value="developer">مطوّر المنصة</option>}
                   </select>
                   {editingStaff && <p className="mt-1 text-[10px] text-amber-700">تغيير دور الحساب يتطلب تحديث staff_access إدارياً في Firebase.</p>}
                 </div>
@@ -860,7 +888,7 @@ export const StaffView: React.FC = () => {
 
               {!editingStaff && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 leading-relaxed">
-                  إنشاء ملف المعلمة هنا لا ينشئ حساب Firebase Auth. يجب على الإدارة تهيئة حساب Firebase Auth ووثيقة staff_access قبل أن تتمكن المعلمة من تسجيل الدخول.
+                  سيُنشأ حساب دخول فعلي ويُرسل إلى البريد رابط آمن لتعيين كلمة المرور. لا تُحفظ كلمات المرور في ملف الموظفة ولا يمكن عرضها لاحقًا؛ يمكن إرسال رابط إعادة تعيين جديد عند الحاجة.
                 </div>
               )}
               {/* Islamic Symbolic Icon Selector */}

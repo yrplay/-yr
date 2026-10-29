@@ -7,6 +7,7 @@ import { EditTeacherProfileModal } from './EditTeacherProfileModal';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../firebase';
 import { isLocalDemoMode } from '../demoMode';
+import { hasFullAccess } from '../types';
 
 interface HeaderProps {
   onToggleSidebar?: () => void;
@@ -68,6 +69,7 @@ export const Header: React.FC<HeaderProps> = ({
 
 
   const isLeader = currentUser?.role === 'leader';
+  const canOpenAdminSettings = hasFullAccess(currentUser);
   const userCircle = circles.find((c) => c.teacherId === currentUser?.id);
   const subtitle = currentUser?.title || (userCircle ? userCircle.name : 'معلمة حلقة');
 
@@ -104,13 +106,13 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={() => {
-              if (isLeader) {
+              if (canOpenAdminSettings) {
                 onNavigateToSettings?.();
               } else {
                 showToast('قسم الإعدادات والنسخ الاحتياطي مخصص لإدارة المقرأة فقط 🔒', 'info');
               }
             }}
-            title={isLeader ? "الانتقال إلى الإعدادات والنسخ الاحتياطي" : (settings?.name || 'مقرأة غيث الغيم')}
+            title={canOpenAdminSettings ? "الانتقال إلى الإعدادات والنسخ الاحتياطي" : (settings?.name || 'مقرأة غيث الغيم')}
             aria-label="الانتقال إلى الإعدادات"
             className="flex items-center gap-2.5 text-right p-1.5 -m-1.5 rounded-2xl hover:bg-[#722F37]/5 active:scale-98 transition group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#722F37]/30"
           >
@@ -206,7 +208,7 @@ export const Header: React.FC<HeaderProps> = ({
                       متصلة الآن
                     </span>
                     <span className="text-[11px] text-stone-500 font-semibold">
-                      {isLeader ? 'مشرفة المقرأة' : 'معلمة حلقة'}
+                      {currentUser?.role === 'developer' ? 'مطوّر المنصة' : isLeader ? 'قائدة المقرأة' : currentUser?.role === 'supervisor' ? 'مشرفة المقرأة' : 'معلمة حلقة'}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">

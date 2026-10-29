@@ -9,7 +9,8 @@ import {
 import { OfficialSeal } from '../components/OfficialSeal';
 import { PWAInstallButton } from '../components/PWAInstallButton';
 import { AuditLogModal } from '../components/AuditLogModal';
-import { defaultMasteryGuideConfig } from '../types';
+import { DeveloperDeploymentPanel } from '../components/DeveloperDeploymentPanel';
+import { defaultMasteryGuideConfig, hasFullAccess } from '../types';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -289,7 +290,7 @@ export const SettingsView: React.FC = () => {
   };
 
   // تخصيص قسم الإعدادات للإدارة العليا فقط
-  if (currentUser?.role !== 'leader') {
+  if (!hasFullAccess(currentUser)) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center" dir="rtl">
         <div className="w-16 h-16 rounded-3xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-center text-3xl shadow-xs mb-4">
@@ -338,6 +339,8 @@ export const SettingsView: React.FC = () => {
           )}
         </button>
       </div>
+
+      {currentUser?.role === 'developer' && <DeveloperDeploymentPanel />}
 
       <form onSubmit={handleSaveSettings} className="space-y-6">
 
@@ -1130,7 +1133,7 @@ export const SettingsView: React.FC = () => {
           </div>
 
           <p className="text-xs text-stone-600 leading-relaxed">
-            تُحمى المنصة بتسجيل الدخول عبر Firebase Authentication. هذا الإعداد إلزامي ولا يمكن تعطيله من الواجهة؛ أضيفي حسابات الكادر ووثائق staff_access إداريًا قبل تمكين دخولهم.
+            تُحمى المنصة عبر Firebase Authentication. بعد إعداد الخدمة الخادمية الآمنة وتأسيس حساب المطور الأول، تُنشأ بقية الحسابات من سجل الكادر داخل المنصة وتُرسل روابط تعيين كلمة المرور إلى البريد.
           </p>
 
           <div className="p-4 bg-[#FCFAF8] rounded-2xl border border-stone-200 space-y-4">
@@ -1177,7 +1180,7 @@ export const SettingsView: React.FC = () => {
                   </button>
                 </div>
                 <span className="text-[10px] text-stone-400 mt-1 block">
-                  شاركي الرابط بعد تهيئة حساب Firebase Auth ووثيقة staff_access لكل معلمة
+                  شاركي الرابط بعد إعداد حساب المطور الأول؛ تُدار الحسابات اللاحقة من سجل الكادر داخل المنصة.
                 </span>
               </div>
             </div>

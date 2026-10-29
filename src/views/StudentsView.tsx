@@ -5,7 +5,7 @@ import {
   UserCheck, Shield, Phone, Mail, Award, ArrowUpDown, ChevronLeft,
   Calendar, CheckCircle2, AlertCircle, Trash2
 } from 'lucide-react';
-import { StudentStatus } from '../types';
+import { hasFullAccess, StudentStatus } from '../types';
 
 interface StudentsViewProps {
   onSelectStudent: (studentId: string) => void;
@@ -365,7 +365,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                         >
                           <Edit className="w-3.5 h-3.5" />
                         </button>
-                        {currentUser?.role === 'leader' && (
+                        {hasFullAccess(currentUser) && (
                           <button
                             onClick={() => {
                               if (window.confirm(`هل أنتِ متأكدة من حذف الطالبة "${student.name}" نهائياً من المقرأة بدون أرشفة؟ سيتم حذف كافة بياناتها وسجلاتها بشكل نهائي.`)) {

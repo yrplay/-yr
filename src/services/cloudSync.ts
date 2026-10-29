@@ -16,11 +16,12 @@ export const subscribeToCloudDatabase = (
       docRef,
       snapshot => {
         if (snapshot.exists()) onData(sanitizeCloudState(snapshot.data()));
+        else onData(null);
         onStatusChange?.('connected');
       },
       error => {
         console.warn('Firebase sync listener error:', error);
-        onStatusChange?.('offline');
+        onStatusChange?.('error');
       }
     );
   } catch (error) {

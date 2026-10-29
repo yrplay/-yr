@@ -6,7 +6,7 @@ import {
   Sliders, UserCheck, Shield, AlertCircle, Trash2, RotateCcw,
   Eye, EyeOff, AlertTriangle, X, ExternalLink
 } from 'lucide-react';
-import { Circle, Track } from '../types';
+import { Circle, hasFullAccess, Track } from '../types';
 import { CircleIconPicker } from '../components/CircleIconLibrary';
 import { TrackDetailView } from './TrackDetailView';
 
@@ -279,7 +279,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
             </button>
           )}
 
-          {currentUser?.role === 'leader' && (
+          {hasFullAccess(currentUser) && (
             <button
               onClick={() => handleOpenTrackModal()}
               className="flex items-center gap-1.5 px-3 py-2 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#744251] border border-[#E2D5CC] rounded-xl text-xs font-bold transition"
@@ -364,7 +364,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 <span>دليل الإتقان والمعايير</span>
               </button>
 
-              {currentUser?.role === 'leader' && (
+              {hasFullAccess(currentUser) && (
                 <>
                   <button
                     onClick={() => handleOpenTrackModal(currentTrack)}

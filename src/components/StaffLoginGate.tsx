@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { AlertCircle, Eye, EyeOff, Lock, LogIn, Mail, Moon, Sun, X } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, KeyRound, Lock, LogIn, Mail, Moon, Sun, UserPlus, X } from 'lucide-react';
 import { auth, db } from '../firebase';
 import { useApp } from '../context/AppContext';
+import type { User } from '../types';
 
 interface StaffLoginGateProps {
   onSuccess?: () => void;
@@ -27,12 +28,30 @@ const loginErrorMessage = (error: unknown) => {
 };
 
 export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClose, initialError = '' }) => {
-  const { users, switchUser, showToast, settings, isDarkMode, toggleTheme } = useApp();
+  const { users, switchUser, createUser, showToast, settings, isDarkMode, toggleTheme } = useApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(initialError);
+  const [bootstrapAvailable, setBootstrapAvailable] = useState(false);
+  const [showBootstrap, setShowBootstrap] = useState(false);
+  const [bootstrapName, setBootstrapName] = useState('');
+  const [bootstrapEmail, setBootstrapEmail] = useState('');
+  const [bootstrapSecret, setBootstrapSecret] = useState('');
+  const [bootstrapLoading, setBootstrapLoading] = useState(false);
+  const [bootstrapError, setBootstrapError] = useState('');
+  const allowBootstrap = !onClose;
+
+  useEffect(() => {
+    if (!allowBootstrap) return;
+    let active = true;
+    fetch('/api/admin/bootstrap', { method: 'GET' })
+      .then(response => response.json())
+      .then(result => { if (active) setBootstrapAvailable(result.available === true); })
+      .catch(() => { if (active) setBootstrapAvailable(false); });
+    return () => { active = false; };
+  }, [allowBootstrap]);
 
   useEffect(() => {
     if (initialError) setError(initialError);
@@ -68,17 +87,17 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
 
       const switched = await switchUser(linkedUser.id);
       if (!switched) throw new Error('bootstrap-user-missing');
-      showToast(`مرحباً بكِ أ. ${linkedUser.name} (${linkedUser.title})`, 'success');
+      showToast(`مرحباً بكِ ${linkedUser.name} (${linkedUser.title})`, 'success');
       onSuccess?.();
       onClose?.();
     } catch (loginError) {
       const reason = (loginError as Error)?.message;
       const bootstrapMessages: Record<string, string> = {
-        'bootstrap-missing': 'تم التحقق من كلمة المرور، لكن لا توجد وثيقة staff_access لهذا الحساب. يلزم إنشاء staff_access/{uid} وتفعيلها قبل الدخول.',
-        'bootstrap-inactive': 'وثيقة staff_access موجودة لكنها غير مفعّلة أو ينقصها staffId/role. راجعي إدارة النظام قبل الدخول.',
-        'bootstrap-user-missing': 'لا يوجد سجل موظفة مطابق في بيانات المستخدمين. راجعي staffId والبريد في users ووثيقة staff_access.',
-        'bootstrap-email-mismatch': 'البريد في حساب Firebase لا يطابق البريد المسجل للموظفة. راجعي الربط الإداري قبل الدخول.',
-        'bootstrap-role-mismatch': 'الدور في staff_access لا يطابق دور سجل الموظفة. صححي الربط الإداري قبل الدخول.'
+        'bootstrap-missing': 'تم التحقق من كلمة المرور، لكن لا توجد وثيقة staff_access لهذا الحساب. يلزم إعداد صلاحية الحساب أولاً.',
+        'bootstrap-inactive': 'صلاحية الحساب غير مفعّلة أو ينقصها staffId/role. راجعي إدارة النظام.',
+        'bootstrap-user-missing': 'لا يوجد ملف موظفة مطابق لهذا الحساب في بيانات المنصة. راجعي ربط staffId والبريد.',
+        'bootstrap-email-mismatch': 'البريد في حساب Firebase لا يطابق البريد المسجل للموظفة.',
+        'bootstrap-role-mismatch': 'الدور في staff_access لا يطابق دور ملف الموظفة.'
       };
       const message = bootstrapMessages[reason] || loginErrorMessage(loginError);
       setError(message);
@@ -88,6 +107,58 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    const cleanEmail = normalizeEmail(email);
+    if (!cleanEmail) {
+      setError('أدخلي البريد الإلكتروني أولاً لإرسال رابط إعادة التعيين.');
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, cleanEmail);
+      showToast('إذا كان البريد مرتبطًا بحساب، فسيصل إليه رابط إعادة تعيين كلمة المرور.', 'info');
+      setError('');
+    } catch {
+      showToast('تعذر إرسال الرابط الآن. تحققي من البريد وإعداد Firebase Auth.', 'error');
+    }
+  };
+
+  const handleBootstrap = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBootstrapLoading(true);
+    setBootstrapError('');
+    try {
+      const response = await fetch('/api/admin/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: bootstrapName.trim(),
+          email: normalizeEmail(bootstrapEmail),
+          secret: bootstrapSecret,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.user) {
+        throw new Error(result.error || 'تعذر إنشاء حساب المطور الأول.');
+      }
+
+      await createUser(result.user as User);
+      setEmail(normalizeEmail(bootstrapEmail));
+      setShowBootstrap(false);
+      setBootstrapAvailable(false);
+      setBootstrapSecret('');
+      try {
+        await sendPasswordResetEmail(auth, normalizeEmail(bootstrapEmail));
+        showToast('تم إنشاء حساب المطور وإرسال رابط آمن لتعيين كلمة المرور إلى البريد.', 'success');
+      } catch {
+        showToast('تم إنشاء الحساب. استخدمي «نسيت كلمة المرور؟» لإعادة إرسال رابط التعيين.', 'info');
+      }
+    } catch (bootstrapFailure) {
+      setBootstrapError(bootstrapFailure instanceof Error ? bootstrapFailure.message : 'تعذر إكمال الإعداد الأولي.');
+    } finally {
+      setBootstrapLoading(false);
     }
   };
 
@@ -106,25 +177,58 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
           <div className="inline-flex items-center gap-1.5 px-3 py-1 mt-2.5 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-[11px] font-semibold"><Lock className="w-3 h-3 shrink-0" /><span>يلزم حساب Firebase مفعّل وصلاحية موظفة معتمدة</span></div>
         </div>
 
-        {error && <div role="alert" className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-800 dark:text-rose-200 p-3.5 rounded-2xl mb-5 text-xs text-right font-bold flex items-start gap-2"><AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" /><span className="leading-relaxed">{error}</span></div>}
-
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label htmlFor="staff-email" className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-[#8E5364]" /><span>البريد الإلكتروني:</span></label>
-            <input id="staff-email" type="email" autoComplete="username" value={email} onChange={(event) => { setEmail(event.target.value); setError(''); }} placeholder="teacher@example.org" required autoFocus dir="ltr" className="w-full bg-white dark:bg-stone-900 border border-[#E2D5CC] dark:border-stone-700 rounded-2xl px-4 py-2.5 text-stone-900 dark:text-stone-100 text-sm font-medium focus:border-[#8E5364] focus:outline-hidden" />
-          </div>
-          <div>
-            <label htmlFor="staff-password" className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5">كلمة المرور:</label>
-            <div className="relative">
-              <input id="staff-password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => { setPassword(event.target.value); setError(''); }} required dir="ltr" className="w-full bg-white dark:bg-stone-900 border border-[#E2D5CC] dark:border-stone-700 rounded-2xl px-4 py-2.5 text-stone-900 dark:text-stone-100 text-sm font-medium focus:border-[#8E5364] focus:outline-hidden" />
-              <button type="button" onClick={() => setShowPassword((shown) => !shown)} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 p-1" title={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}>{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+        {showBootstrap ? (
+          <>
+            {bootstrapError && <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded-xl mb-4 text-xs font-bold">{bootstrapError}</div>}
+            <form onSubmit={handleBootstrap} className="space-y-3">
+              <div className="text-xs text-stone-600 bg-violet-50 border border-violet-200 rounded-xl p-3 leading-relaxed">
+                هذه خطوة تأسيسية لمرة واحدة فقط. يلزم إدخال مفتاح التهيئة الذي أُضيف إلى متغيرات Vercel؛ لا تشاركيه مع أحد.
+              </div>
+              <label className="block text-xs font-bold text-stone-700">اسم المطور
+                <input value={bootstrapName} onChange={event => setBootstrapName(event.target.value)} required maxLength={100} className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm" />
+              </label>
+              <label className="block text-xs font-bold text-stone-700">البريد الإلكتروني
+                <input type="email" value={bootstrapEmail} onChange={event => setBootstrapEmail(event.target.value)} required autoComplete="email" dir="ltr" className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm" />
+              </label>
+              <label className="block text-xs font-bold text-stone-700">مفتاح التهيئة لمرة واحدة
+                <input type="password" value={bootstrapSecret} onChange={event => setBootstrapSecret(event.target.value)} required minLength={32} autoComplete="off" dir="ltr" className="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm font-mono" />
+              </label>
+              <button type="submit" disabled={bootstrapLoading} className="w-full bg-violet-700 hover:bg-violet-800 text-white text-sm font-bold py-3 rounded-2xl transition disabled:opacity-50 flex items-center justify-center gap-2">
+                {bootstrapLoading ? 'جارٍ إعداد الحساب…' : <><UserPlus className="w-4 h-4" /> إعداد حساب المطور وإرسال رابط التعيين</>}
+              </button>
+              <button type="button" onClick={() => { setShowBootstrap(false); setBootstrapError(''); setBootstrapSecret(''); }} className="w-full text-xs text-stone-500 hover:text-stone-800 py-2">العودة لتسجيل الدخول</button>
+            </form>
+          </>
+        ) : (
+          <>
+            {error && <div role="alert" className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-800 dark:text-rose-200 p-3.5 rounded-2xl mb-5 text-xs text-right font-bold flex items-start gap-2"><AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" /><span className="leading-relaxed">{error}</span></div>}
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label htmlFor="staff-email" className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-[#8E5364]" /><span>البريد الإلكتروني:</span></label>
+                <input id="staff-email" type="email" autoComplete="username" value={email} onChange={(event) => { setEmail(event.target.value); setError(''); }} placeholder="developer@example.org" required autoFocus dir="ltr" className="w-full bg-white dark:bg-stone-900 border border-[#E2D5CC] dark:border-stone-700 rounded-2xl px-4 py-2.5 text-stone-900 dark:text-stone-100 text-sm font-medium focus:border-[#8E5364] focus:outline-hidden" />
+              </div>
+              <div>
+                <label htmlFor="staff-password" className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5">كلمة المرور:</label>
+                <div className="relative">
+                  <input id="staff-password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => { setPassword(event.target.value); setError(''); }} required dir="ltr" className="w-full bg-white dark:bg-stone-900 border border-[#E2D5CC] dark:border-stone-700 rounded-2xl px-4 py-2.5 text-stone-900 dark:text-stone-100 text-sm font-medium focus:border-[#8E5364] focus:outline-hidden" />
+                  <button type="button" onClick={() => setShowPassword((shown) => !shown)} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 p-1" title={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}>{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+                </div>
+              </div>
+              <button type="submit" disabled={loading} className="w-full bg-[#8E5364] hover:bg-[#744251] text-white text-sm font-bold py-3 rounded-2xl transition disabled:opacity-50 flex items-center justify-center gap-2">
+                {loading ? <><span className="animate-spin">⏳</span><span>جارٍ التحقق من الحساب والصلاحية...</span></> : <><LogIn className="w-4 h-4" /><span>تسجيل الدخول للمنصة</span></>}
+              </button>
+            </form>
+            <div className="mt-4 flex flex-col items-center gap-2">
+              <button type="button" onClick={() => void handlePasswordReset()} className="text-xs font-semibold text-[#8E5364] hover:underline">نسيت كلمة المرور؟ أرسل رابط إعادة التعيين</button>
+              {allowBootstrap && bootstrapAvailable && (
+                <button type="button" onClick={() => { setShowBootstrap(true); setBootstrapError(''); }} className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-violet-700 hover:underline">
+                  <KeyRound className="w-3.5 h-3.5" /> إعداد حساب المطور الأول (مرة واحدة)
+                </button>
+              )}
             </div>
-          </div>
-          <button type="submit" disabled={loading} className="w-full bg-[#8E5364] hover:bg-[#744251] text-white text-sm font-bold py-3 rounded-2xl transition disabled:opacity-50 flex items-center justify-center gap-2">
-            {loading ? <><span className="animate-spin">⏳</span><span>جارٍ التحقق من الحساب والصلاحية...</span></> : <><LogIn className="w-4 h-4" /><span>تسجيل الدخول للمنصة</span></>}
-          </button>
-        </form>
-        <p className="mt-4 text-center text-[10px] text-stone-400 leading-relaxed">لا يوجد دخول تجريبي أو PIN محلي. إذا لم يتم إعداد الحساب، تواصلي مع الإدارة.</p>
+            <p className="mt-3 text-center text-[10px] text-stone-400 leading-relaxed">لا يوجد دخول تجريبي أو PIN محلي. كلمات المرور لا تُعرض ولا تُخزّن داخل ملفات الحسابات.</p>
+          </>
+        )}
       </div>
     </div>
   );

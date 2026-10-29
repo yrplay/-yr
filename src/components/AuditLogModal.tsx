@@ -229,13 +229,15 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
                         <td className="p-3 whitespace-nowrap">
                           <div className="font-bold text-stone-900">{log.userName}</div>
                           <span className={`inline-block text-[10px] px-1.5 py-0.2 rounded font-medium ${
-                            log.userRole === 'leader'
+                            log.userRole === 'developer'
+                              ? 'bg-violet-100 text-violet-800'
+                              : log.userRole === 'leader'
                               ? 'bg-rose-100 text-rose-800'
                               : log.userRole === 'supervisor'
                               ? 'bg-amber-100 text-amber-800'
                               : 'bg-emerald-100 text-emerald-800'
                           }`}>
-                            {log.userRole === 'leader' ? 'قائدة' : log.userRole === 'supervisor' ? 'مشرفة' : 'معلمة'}
+                            {log.userRole === 'developer' ? 'مطوّر' : log.userRole === 'leader' ? 'قائدة' : log.userRole === 'supervisor' ? 'مشرفة' : 'معلمة'}
                           </span>
                         </td>
 

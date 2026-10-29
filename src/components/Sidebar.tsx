@@ -7,6 +7,7 @@ import {
   CreditCard
 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
+import { hasFullAccess } from '../types';
 
 export type ViewType =
   | 'dashboard'
@@ -38,7 +39,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isOpen, onClose, onLockSession, onOpenAuditLog }) => {
   const { circles, students, settings, isDarkMode, currentUser } = useApp();
   const primaryColor = settings?.primaryColor || '#8E5364';
-  const isLeader = currentUser?.role === 'leader';
+  const hasAdminAccess = hasFullAccess(currentUser);
 
   const rawMenuItems: { id: ViewType; label: string; icon: any; badge?: string | number; accent?: string; adminOnly?: boolean }[] = [
     { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
@@ -59,10 +60,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
   ];
 
   // تخصيص الأقسام الإدارية والمالية للإدارة العليا فقط
-  const canAccessFinances = isLeader || !!currentUser?.permissions?.canManageFinances;
+  const canAccessFinances = hasAdminAccess || !!currentUser?.permissions?.canManageFinances;
   const menuItems = rawMenuItems.filter(item => {
     if (item.id === 'subscriptions') return canAccessFinances;
-    if (item.adminOnly) return isLeader;
+    if (item.adminOnly) return hasAdminAccess;
     return true;
   });
 

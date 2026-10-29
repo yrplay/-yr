@@ -6,7 +6,7 @@ import {
   Award, Calendar, MessageSquareQuote
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { Track, CustomMasteryCriterion } from '../types';
+import { hasFullAccess, Track, CustomMasteryCriterion } from '../types';
 
 interface TrackDetailViewProps {
   trackId: string;
@@ -28,7 +28,7 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
   const [activeTab, setActiveTab] = useState<'mastery' | 'rules' | 'circles' | 'students'>('mastery');
 
   // صلاحية تعديل معايير المسار
-  const canEditCriteria = currentUser?.role === 'leader' || !!currentUser?.permissions?.canEditTrackCriteria;
+  const canEditCriteria = hasFullAccess(currentUser) || !!currentUser?.permissions?.canEditTrackCriteria;
 
   // حالة إضافة معيار جديد مخصص داخل النافذة
   const [newCriterionTitle, setNewCriterionTitle] = useState('');

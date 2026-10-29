@@ -1,4 +1,4 @@
-export type UserRole = 'leader' | 'supervisor' | 'teacher';
+export type UserRole = 'developer' | 'leader' | 'supervisor' | 'teacher';
 
 export interface UserPermissions {
   canRecordAttendance: boolean;      // رصد الحضور والغياب اليومي
@@ -13,6 +13,17 @@ export interface UserPermissions {
 }
 
 export const defaultPermissionsByRole: Record<UserRole, UserPermissions> = {
+  developer: {
+    canRecordAttendance: true,
+    canRecordRecitation: true,
+    canGradeAtqini: true,
+    canManageChallenges: true,
+    canGradeExams: true,
+    canEditStudents: true,
+    canViewReports: true,
+    canManagePlans: true,
+    canManageSettings: true,
+  },
   leader: {
     canRecordAttendance: true,
     canRecordRecitation: true,

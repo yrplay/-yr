@@ -10,7 +10,7 @@ import initialData from '../data/initialData';
 import { subscribeToCloudDatabase, pushStateToCloud, CloudSyncStatus } from '../services/cloudSync';
 import { summarizeDailyPageProgress } from '../services/recitationProgress';
 import { doc, getDoc } from 'firebase/firestore';
-import { sendPasswordResetEmail } from 'firebase/auth';
+import { onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { isLocalDemoMode } from '../demoMode';
 
@@ -156,6 +156,7 @@ interface AppContextType {
 
   lastSynced: Date;
   cloudStatus: CloudSyncStatus;
+  cloudDataReady: boolean;
   syncNow: () => Promise<void>;
   switchToLeader: () => Promise<void>;
 
@@ -323,7 +324,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [lastSynced, setLastSynced] = useState<Date>(new Date());
-  const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>(isLocalDemoMode ? 'offline' : 'connected');
+  const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>('offline');
+  const [cloudDataReady, setCloudDataReady] = useState(isLocalDemoMode);
   const [quickModalAction, setQuickModalAction] = useState<{ type: string; timestamp: number } | null>(null);
 
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -828,20 +830,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
       };
     }
-    const unsubscribeCloud = subscribeToCloudDatabase(
-      (cloudData) => {
-        if (cloudData && typeof cloudData === 'object' && (Array.isArray(cloudData.tracks) || Array.isArray(cloudData.students))) {
-          applyState(cloudData);
-          setCloudStatus('connected');
-          setLastSynced(new Date());
-        } else {
-          persistState();
-          setCloudStatus('connected');
+    let unsubscribeCloud: (() => void) | null = null;
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      if (unsubscribeCloud) {
+        unsubscribeCloud();
+        unsubscribeCloud = null;
+      }
+      if (!firebaseUser) {
+        setCloudDataReady(false);
+        setCloudStatus('offline');
+        return;
+      }
+      setCloudDataReady(false);
+      unsubscribeCloud = subscribeToCloudDatabase(
+        (cloudData) => {
+          if (cloudData && typeof cloudData === 'object') {
+            applyState(cloudData);
+            setCloudStatus('connected');
+            setLastSynced(new Date());
+          } else {
+            persistState();
+            setCloudStatus('connected');
+          }
+          setCloudDataReady(true);
+        },
+        (status) => {
+          setCloudStatus(status);
+          if (status === 'error') setCloudDataReady(false);
         }
-      },
-      (status) => setCloudStatus(status)
-    );
+      );
+    });
     return () => {
+      unsubscribeAuth();
       if (unsubscribeCloud) unsubscribeCloud();
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     };
@@ -865,7 +885,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (!access || access.active !== true || !matchesStaff) {
         throw new Error('هذا الحساب غير مرتبط بملف موظفة فعال');
       }
-      if (!['leader', 'supervisor', 'teacher'].includes(access.role)) {
+      if (!['developer', 'leader', 'supervisor', 'teacher'].includes(access.role)) {
         throw new Error('دور الحساب غير صالح؛ راجعي إعداد staff_access');
       }
       const targetUser = { ...storedUser, role: access.role as User['role'] };
@@ -1792,7 +1812,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...safeUser
     } as User;
 
-    const next = [...users, newUser];
+    const next = [...users.filter(existing => existing.id !== newUser.id), newUser];
     setUsers(next);
     persistState({ users: next });
     showToast(`تمت إضافة ${newUser.name} إلى الكادر بنجاح`);
@@ -2311,6 +2331,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         showToast,
         lastSynced,
         cloudStatus,
+        cloudDataReady,
         syncNow,
         switchToLeader,
         quickModalAction,
