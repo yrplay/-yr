@@ -1,129 +1,55 @@
-import React, { useState, useEffect } from 'react';
-import initialDatabase from '../../data/database.json';
-
-interface User {
-  id: string;
-  name: string;
-  role: string;
-  title: string;
-  email: string;
-  pin?: string;
-}
+import React, { useEffect, useRef, useState } from 'react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
+import { useApp } from '../context/AppContext';
+import { StaffLoginGate } from './StaffLoginGate';
 
 interface SecurityGateProps {
   children: React.ReactNode;
 }
 
 export const SecurityGate: React.FC<SecurityGateProps> = ({ children }) => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState<string>('');
-  const [pin, setPin] = useState('');
-  const [error, setError] = useState('');
-  const [isAuthorized, setIsAuthorized] = useState(() => {
-    return sessionStorage.getItem('ghaith_gate_authorized') === 'true';
-  });
+  const { users, switchUser } = useApp();
+  const [authorized, setAuthorized] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const appDataRef = useRef({ users, switchUser });
+  appDataRef.current = { users, switchUser };
 
   useEffect(() => {
-    // جلب المستخدمين من التخزين المحلي أو من قاعدة البيانات الأولية
-    const savedUsers = localStorage.getItem('ghaith_staff_users');
-    if (savedUsers) {
-      try {
-        setUsers(JSON.parse(savedUsers));
-      } catch {
-        setUsers(initialDatabase.users || []);
+    let active = true;
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        if (active) { setAuthorized(false); setChecking(false); }
+        return;
       }
-    } else {
-      setUsers(initialDatabase.users || []);
-    }
-  }, []);
+      if (active) setChecking(true);
+      try {
+        const accessSnapshot = await getDoc(doc(db, 'staff_access', firebaseUser.uid));
+        if (!accessSnapshot.exists()) throw new Error('missing-access');
+        const access = accessSnapshot.data();
+        const staffId = typeof access.staffId === 'string' ? access.staffId.trim() : '';
+        const role = typeof access.role === 'string' ? access.role.trim() : '';
+        if (access.active !== true || !staffId || !role) throw new Error('invalid-access');
+        const authEmail = firebaseUser.email?.trim().toLowerCase() || '';
+        const linkedUser = appDataRef.current.users.find((user) => {
+          const userEmail = user.email?.trim().toLowerCase() || '';
+          return staffId === user.id || staffId.toLowerCase() === userEmail || (Boolean(authEmail) && userEmail === authEmail);
+        });
+        if (!linkedUser || (linkedUser.email && authEmail && linkedUser.email.trim().toLowerCase() !== authEmail) || linkedUser.role !== role) {
+          throw new Error('missing-user-link');
+        }
+        if (!(await appDataRef.current.switchUser(linkedUser.id))) throw new Error('missing-user-link');
+        if (active) { setAuthorized(true); setChecking(false); }
+      } catch {
+        if (active) { setAuthorized(false); setChecking(false); }
+        try { await signOut(auth); } catch { /* Deny access regardless. */ }
+      }
+    });
+    return () => { active = false; unsubscribe(); };
+  }, [users]);
 
-  useEffect(() => {
-    if (users.length > 0 && !selectedUserId) {
-      setSelectedUserId(users[0].id);
-    }
-  }, [users, selectedUserId]);
-
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    const currentUser = users.find((u) => u.id === selectedUserId);
-    if (!currentUser) {
-      setError('يرجى اختيار الحساب');
-      return;
-    }
-
-    // جلب الرمز السري المخزن للمعلمة (أو الافتراضي 1234)
-    const savedPin = localStorage.getItem(`ghaith_pin_${currentUser.id}`) || currentUser.pin || '1234';
-
-    if (pin.trim() === savedPin) {
-      sessionStorage.setItem('ghaith_gate_authorized', 'true');
-      sessionStorage.setItem('ghaith_current_user_id', currentUser.id);
-      setIsAuthorized(true);
-      setError('');
-    } else {
-      setError('الرمز السري غير صحيح، يرجى المحاولة مرة أخرى');
-    }
-  };
-
-  if (isAuthorized) {
-    return <>{children}</>;
-  }
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4" dir="rtl">
-      <div className="max-w-md w-full bg-slate-800 rounded-2xl p-8 border border-slate-700 shadow-2xl">
-        <div className="text-center mb-6">
-          <span className="text-4xl">🪴</span>
-          <h2 className="text-2xl font-bold text-white mt-2">مقرأة غيث الغيم</h2>
-          <p className="text-slate-400 text-sm mt-1">تسجيل دخول المعلمات والإدارة</p>
-        </div>
-
-        {error && (
-          <div className="bg-red-500/20 border border-red-500 text-red-300 p-3 rounded-lg mb-4 text-sm text-center">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-slate-300 text-sm mb-1.5 font-medium">اسم المعلمة / المشرفة</label>
-            <select
-              value={selectedUserId}
-              onChange={(e) => {
-                setSelectedUserId(e.target.value);
-                setError('');
-                setPin('');
-              }}
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500"
-            >
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name} ({user.title})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-slate-300 text-sm mb-1.5 font-medium">الرمز السري الخاص بك</label>
-            <input
-              type="password"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              placeholder="••••"
-              maxLength={6}
-              required
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-white text-center text-xl tracking-widest focus:outline-none focus:border-emerald-500"
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-lg transition duration-200 mt-2"
-          >
-            دخول للنظام
-          </button>
-        </form>
-      </div>
-    </div>
-  );
+  if (checking) return <div className="min-h-screen flex items-center justify-center" role="status">جارٍ التحقق من هوية الموظفة...</div>;
+  if (authorized) return <>{children}</>;
+  return <StaffLoginGate />;
 };

@@ -1000,15 +1000,30 @@ function addAudit(db: any, userName: any, userRole: any, actionType: any, entity
 }
 
 async function startServer() {
+  if (process.env.ENABLE_LEGACY_LOCAL_API !== '1') {
+    throw new Error('Legacy JSON API is disabled. The application now uses Firebase; set ENABLE_LEGACY_LOCAL_API=1 only for trusted local testing.');
+  }
   const app = express();
   app.use(express.json({ limit: '25mb' }));
 
-  // CORS Middleware for seamless operation in preview iframe and deployment
-  app.use((_req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
+  // This legacy API is local-only; never grant cross-origin access to arbitrary sites.
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin) {
+      try {
+        const originHost = new URL(origin).hostname;
+        if (!['localhost', '127.0.0.1', '::1'].includes(originHost)) {
+          return res.status(403).json({ error: 'Origin not allowed' });
+        }
+        res.header('Access-Control-Allow-Origin', origin);
+        res.header('Vary', 'Origin');
+      } catch {
+        return res.status(403).json({ error: 'Invalid origin' });
+      }
+    }
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-    if (_req.method === 'OPTIONS') {
+    if (req.method === 'OPTIONS') {
       return res.sendStatus(200);
     }
     next();
@@ -1805,7 +1820,7 @@ async function startServer() {
     }
   }
 
-  httpServer.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '127.0.0.1', () => {
     console.log(`🌸 Ghaith Al-Ghaym Platform running on port ${PORT}`);
   });
 }

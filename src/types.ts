@@ -30,7 +30,6 @@ export interface User {
   email?: string;
   phone?: string;
   circleIds: string[];
-  passcode?: string;
   avatarIcon?: string;
   avatarColor?: string;
   isActive?: boolean;
@@ -448,7 +447,6 @@ export interface InstitutionSettings {
   supportEmail: string;
   supportPhone: string;
   securityEnabled: boolean;
-  leaderPasscode: string;
   logoUrl?: string;
   primaryColor?: string;
   secondaryColor?: string;

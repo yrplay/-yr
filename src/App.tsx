@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from './firebase';
 import { AppProvider, useApp } from './context/AppContext';
 import { Header } from './components/Header';
-import { Sidebar, ViewType } from './components/Sidebar';
+import { Sidebar, type ViewType } from './components/Sidebar';
 import { DashboardView } from './views/DashboardView';
 import { TracksCirclesView } from './views/TracksCirclesView';
 import { StudentsView } from './views/StudentsView';
@@ -22,22 +25,126 @@ import { StaffLoginGate } from './components/StaffLoginGate';
 import { Footer } from './components/Footer';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 import { UpdateNotification } from './components/UpdateNotification';
+import { isLocalDemoMode } from './demoMode';
+
+const VIEW_TYPES: ViewType[] = [
+  'dashboard', 'tracks_circles', 'track_detail', 'students', 'subscriptions',
+  'monthly_plans', 'attendance', 'recitation', 'atqini', 'challenges',
+  'exams', 'grading', 'portfolio', 'reports', 'staff', 'settings'
+];
+
+const readNavigationFromUrl = () => {
+  if (typeof window === 'undefined') return { view: 'dashboard' as ViewType, studentId: '', trackId: '' };
+  const params = new URLSearchParams(window.location.search);
+  const requestedView = params.get('view') as ViewType | null;
+  return {
+    view: requestedView && VIEW_TYPES.includes(requestedView) ? requestedView : 'dashboard',
+    studentId: params.get('studentId') || '',
+    trackId: params.get('trackId') || ''
+  };
+};
 
 const AppContent: React.FC = () => {
-  const { loading, error, toast, triggerQuickModal, settings, currentUser } = useApp();
-  const [currentView, setCurrentView] = useState<ViewType>('dashboard');
+  const { loading, error, toast, triggerQuickModal, settings, currentUser, users, switchUser, showToast } = useApp();
+  const [initialNavigation] = useState(readNavigationFromUrl);
+  const [currentView, setCurrentView] = useState<ViewType>(initialNavigation.view);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+  const [selectedStudentId, setSelectedStudentId] = useState<string>(initialNavigation.studentId);
+  const [selectedTrackId, setSelectedTrackId] = useState<string>(initialNavigation.trackId);
   
-  // الدخول مفعل تلقائياً لضمان عمل كافة الأزرار والصلاحيات فور النشر، مع إمكانية القفل اليدوي
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    // إذا قام المستخدم بالقفل الصريح فقط نطلب الرمز
-    if (localStorage.getItem('ghaith_authenticated') === 'false') {
-      return false;
+  const [isAuthenticated, setIsAuthenticated] = useState(isLocalDemoMode);
+  const [authChecking, setAuthChecking] = useState(!isLocalDemoMode);
+  const [authError, setAuthError] = useState('');
+  const authDataRef = React.useRef({ users, switchUser });
+  authDataRef.current = { users, switchUser };
+
+  React.useEffect(() => {
+    const url = new URL(window.location.href);
+    const currentUrlView = url.searchParams.get('view');
+    const currentUrlStudentId = url.searchParams.get('studentId') || '';
+    const currentUrlTrackId = url.searchParams.get('trackId') || '';
+    if (currentUrlView === currentView && currentUrlStudentId === (currentView === 'portfolio' ? selectedStudentId : '')
+      && currentUrlTrackId === (currentView === 'track_detail' ? selectedTrackId : '')) return;
+
+    url.searchParams.set('view', currentView);
+    if (currentView === 'portfolio' && selectedStudentId) url.searchParams.set('studentId', selectedStudentId);
+    else url.searchParams.delete('studentId');
+    if (currentView === 'track_detail' && selectedTrackId) url.searchParams.set('trackId', selectedTrackId);
+    else url.searchParams.delete('trackId');
+
+    const requestedView = new URLSearchParams(window.location.search).get('view');
+    const invalidInitialView = requestedView !== null && !VIEW_TYPES.includes(requestedView as ViewType);
+    window.history[invalidInitialView ? 'replaceState' : 'pushState']({ view: currentView }, '', url);
+  }, [currentView, selectedStudentId, selectedTrackId]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const navigation = readNavigationFromUrl();
+      setCurrentView(navigation.view);
+      setSelectedStudentId(navigation.studentId);
+      setSelectedTrackId(navigation.trackId);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (isLocalDemoMode) {
+      setIsAuthenticated(true);
+      setAuthChecking(false);
+      return;
     }
-    return true;
-  });
+    let active = true;
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!active) return;
+      if (!firebaseUser) {
+        setIsAuthenticated(false);
+        setAuthChecking(false);
+        return;
+      }
+      setAuthChecking(true);
+      try {
+        const accessSnapshot = await getDoc(doc(db, 'staff_access', firebaseUser.uid));
+        if (!accessSnapshot.exists()) throw new Error('missing-access');
+        const access = accessSnapshot.data();
+        const staffId = typeof access.staffId === 'string' ? access.staffId.trim() : '';
+        const role = typeof access.role === 'string' ? access.role.trim() : '';
+        if (access.active !== true || !staffId || !role) throw new Error('invalid-access');
+        const authEmail = firebaseUser.email?.trim().toLowerCase() || '';
+        const linkedUser = authDataRef.current.users.find((user) => {
+          const userEmail = user.email?.trim().toLowerCase() || '';
+          return staffId === user.id || staffId.toLowerCase() === userEmail || (Boolean(authEmail) && userEmail === authEmail);
+        });
+        if (!linkedUser) throw new Error('missing-user');
+        if (linkedUser.email && authEmail && linkedUser.email.trim().toLowerCase() !== authEmail) throw new Error('email-mismatch');
+        if (linkedUser.role !== role) throw new Error('role-mismatch');
+        const switched = await authDataRef.current.switchUser(linkedUser.id);
+        if (!switched) throw new Error('missing-user');
+        if (active) {
+          setAuthError('');
+          setIsAuthenticated(true);
+          setAuthChecking(false);
+        }
+      } catch (verificationError) {
+        const reason = (verificationError as Error)?.message;
+        const messages: Record<string, string> = {
+          'missing-access': 'لا توجد وثيقة staff_access/{uid} لهذا الحساب. يلزم إعدادها إدارياً قبل الدخول.',
+          'invalid-access': 'وثيقة staff_access غير مفعّلة أو ينقصها staffId/role. راجعي إدارة النظام.',
+          'missing-user': 'لم يُعثر على سجل موظفة مطابق في users. راجعي staffId والبريد في إعداد الوصول.',
+          'email-mismatch': 'البريد في Firebase لا يطابق بريد سجل الموظفة.',
+          'role-mismatch': 'دور staff_access لا يطابق دور سجل الموظفة.',
+          'permission-denied': 'تعذرت قراءة staff_access؛ تحققي من نشر قواعد Firestore.'
+        };
+        if (active) {
+          setIsAuthenticated(false);
+          setAuthError(messages[reason] || 'تعذر التحقق من صلاحية الموظفة. تحققي من اتصال Firestore وإعداد الحساب.');
+          setAuthChecking(false);
+        }
+        try { await signOut(auth); } catch { /* Fail closed even if the sign-out request is unavailable. */ }
+      }
+    });
+    return () => { active = false; unsubscribe(); };
+  }, [users]);
 
   // تطبيق الهوية البصرية ونوع الخط تلقائياً
   React.useEffect(() => {
@@ -86,12 +193,13 @@ const AppContent: React.FC = () => {
   }, [settings?.primaryColor, settings?.secondaryColor, settings?.buttonRadius, settings?.fontFamily]);
 
   const handleLockSession = () => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('ghaith_authenticated', 'false');
-      localStorage.removeItem('ghaith_current_user_id');
-      sessionStorage.clear();
+    if (isLocalDemoMode) {
+      showToast('وضع معاينة محلي: لا يوجد تسجيل دخول للخروج منه', 'info');
+      return;
     }
     setIsAuthenticated(false);
+    setAuthError('');
+    void signOut(auth);
   };
 
   const handleSelectStudentForPortfolio = (studentId: string) => {
@@ -121,6 +229,17 @@ const AppContent: React.FC = () => {
     }
   };
 
+  if (authChecking) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#F9F7F5] text-stone-700" dir="rtl">
+        <div className="w-12 h-12 rounded-2xl border-4 border-[#E8D5D8] border-t-[#8E5364] animate-spin mb-4" />
+        <p className="text-sm">جارٍ التحقق من جلسة Firebase وصلاحية الموظفة...</p>
+      </div>
+    );
+  }
+  if (!isAuthenticated) {
+    return <StaffLoginGate initialError={authError} onSuccess={() => { setAuthError(''); setIsAuthenticated(true); }} />;
+  }
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#F9F7F5] text-stone-700">
@@ -151,21 +270,15 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // التحقق من صلاحية الدخول الإلزامي (لا يمكن إغلاقه أو تجاوزه)
-  const securityActive = settings?.securityEnabled ?? true;
-  if (securityActive && !isAuthenticated) {
-    return (
-      <StaffLoginGate
-        onSuccess={() => {
-          setIsAuthenticated(true);
-        }}
-      />
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#F9F7F5] dark:bg-[#0E0E11] text-stone-900 dark:text-stone-100 flex flex-col antialiased selection:bg-[#E8D5D8] dark:selection:bg-[#5B3946] selection:text-[#5B3946] dark:selection:text-white transition-colors duration-200">
       {/* تنبيه التحديث التلقائي للتطبيق */}
+      {isLocalDemoMode && (
+        <div className="bg-amber-100 text-amber-950 border-b border-amber-300 px-4 py-2 text-center text-xs font-bold" role="status">
+          وضع اختبار محلي — بيانات تجريبية؛ التغييرات تُحفظ في هذا المتصفح فقط ولا تتصل بـ Firebase.
+        </div>
+      )}
       <UpdateNotification />
 
       {/* الشريط العلوي */}
@@ -203,11 +316,16 @@ const AppContent: React.FC = () => {
             <TracksCirclesView
               onSelectStudent={handleSelectStudentForPortfolio}
               onNavigateToSection={(s) => setCurrentView(s as ViewType)}
+              onNavigateToTrackDetail={(trackId) => {
+                setSelectedTrackId(trackId);
+                setCurrentView('track_detail');
+              }}
             />
           )}
 
           {currentView === 'track_detail' && (
             <TrackDetailPage
+              trackId={selectedTrackId || undefined}
               onNavigateBack={() => setCurrentView('tracks_circles')}
               onNavigateToStudent={handleSelectStudentForPortfolio}
             />

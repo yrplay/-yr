@@ -4,8 +4,9 @@ import { Menu, ChevronDown, Lock, KeyRound, Cloud, RefreshCw, UserCheck, Sparkle
 import { StaffLoginGate } from './StaffLoginGate';
 import { renderUserAvatarBadge } from './IslamicIconLibrary';
 import { EditTeacherProfileModal } from './EditTeacherProfileModal';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '../firebase';
+import { isLocalDemoMode } from '../demoMode';
 
 interface HeaderProps {
   onToggleSidebar?: () => void;
@@ -22,11 +23,13 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const { currentUser, circles, settings, showToast, cloudStatus, syncNow, lastSynced, isDarkMode, toggleTheme } = useApp();
   const [showSwitchModal, setShowSwitchModal] = useState(false);
-  const [showPinModal, setShowPinModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (currentUser?.id) localStorage.removeItem(`ghaith_pin_${currentUser.id}`);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -63,75 +66,27 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
-  // حقول تغيير الرمز
-  const [oldPin, setOldPin] = useState('');
-  const [newPin, setNewPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
-  const [pinLoading, setPinLoading] = useState(false);
-  const [pinMsg, setPinMsg] = useState({ text: '', isError: false });
 
   const isLeader = currentUser?.role === 'leader';
   const userCircle = circles.find((c) => c.teacherId === currentUser?.id);
   const subtitle = currentUser?.title || (userCircle ? userCircle.name : 'معلمة حلقة');
 
-  const handleChangePin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentUser) return;
-    setPinLoading(true);
-    setPinMsg({ text: '', isError: false });
-
+  const handlePasswordReset = async () => {
+    if (isLocalDemoMode) {
+      showToast('إعادة تعيين كلمة المرور غير متاحة في وضع المعاينة المحلي', 'info');
+      return;
+    }
+    if (!currentUser?.email) {
+      showToast('لا يوجد بريد إلكتروني مسجل لهذا الحساب', 'error');
+      return;
+    }
     try {
-      const pinDocRef = doc(db, 'staff_pins', currentUser.id);
-      const pinSnap = await getDoc(pinDocRef);
-      const activePin = pinSnap.exists()
-        ? pinSnap.data().pin.toString().trim()
-        : (localStorage.getItem(`ghaith_pin_${currentUser.id}`) || currentUser.passcode || '').toString().trim();
-
-      if (!activePin || oldPin.trim() !== activePin) {
-        setPinMsg({ text: 'الرمز الحالي غير صحيح', isError: true });
-        setPinLoading(false);
-        return;
-      }
-
-      if (newPin.trim().length < 4) {
-        setPinMsg({ text: 'يجب أن يكون الرمز 4 أرقام على الأقل', isError: true });
-        setPinLoading(false);
-        return;
-      }
-
-      if (newPin.trim() !== confirmPin.trim()) {
-        setPinMsg({ text: 'الرمز وتأكيده غير متطابقين', isError: true });
-        setPinLoading(false);
-        return;
-      }
-
-      // حفظ سحابياً ومحلياً
-      await setDoc(pinDocRef, {
-        userId: currentUser.id,
-        pin: newPin.trim(),
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
-
-      localStorage.setItem(`ghaith_pin_${currentUser.id}`, newPin.trim());
-      setPinMsg({ text: 'تم تغيير رمزك بنجاح!', isError: false });
-      showToast('تم تحديث الرمز السري ومزامنته سحابياً بنجاح', 'success');
-
-      setTimeout(() => {
-        setShowPinModal(false);
-        setOldPin('');
-        setNewPin('');
-        setConfirmPin('');
-        setPinMsg({ text: '', isError: false });
-      }, 1000);
+      await sendPasswordResetEmail(auth, currentUser.email);
+      showToast(`تم إرسال رابط إعادة تعيين كلمة المرور إلى ${currentUser.email}`, 'success');
     } catch {
-      localStorage.setItem(`ghaith_pin_${currentUser.id}`, newPin.trim());
-      setPinMsg({ text: 'تم الحفظ محلياً', isError: false });
-      setTimeout(() => setShowPinModal(false), 1000);
-    } finally {
-      setPinLoading(false);
+      showToast('تعذر إرسال رابط إعادة التعيين. تحققي من إعداد Firebase Auth والبريد المسجل.', 'error');
     }
   };
-
   return (
     <>
       <header className="sticky top-0 z-30 bg-[#FCFAF8]/95 backdrop-blur-md border-b border-[#EBE3DC] px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between shadow-2xs" dir="rtl">
@@ -319,23 +274,23 @@ export const Header: React.FC<HeaderProps> = ({
                     </button>
                   </div>
 
-                  {/* تغيير الرمز السري */}
-                  <button
+                  {/* إعادة تعيين كلمة المرور عبر البريد */}
+                  {!isLocalDemoMode && <button
                     type="button"
                     onClick={() => {
                       setShowProfileMenu(false);
-                      setShowPinModal(true);
+                      void handlePasswordReset();
                     }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-stone-700 hover:bg-[#FAF5F2] hover:text-[#8E5364] text-xs font-bold transition text-right cursor-pointer"
                   >
                     <div className="w-6 h-6 rounded-lg bg-[#FAF0F3] flex items-center justify-center text-[#8E5364]">
                       <KeyRound className="w-3.5 h-3.5" />
                     </div>
-                    <span>تغيير الرمز السري الخاص بي</span>
-                  </button>
+                    <span>إرسال رابط إعادة تعيين كلمة المرور</span>
+                  </button>}
 
                   {/* إذا كانت مشرفة / قائدة: تبديل الحساب أو تسجيل معلمة أخرى */}
-                  {isLeader && (
+                  {!isLocalDemoMode && isLeader && (
                     <button
                       type="button"
                       onClick={() => {
@@ -392,95 +347,8 @@ export const Header: React.FC<HeaderProps> = ({
       </header>
 
       {/* نافذة تبديل الحساب (للقائدة فقط) */}
-      {showSwitchModal && isLeader && (
+      {showSwitchModal && isLeader && !isLocalDemoMode && (
         <StaffLoginGate onClose={() => setShowSwitchModal(false)} />
-      )}
-
-      {/* نافذة تغيير الرمز السري المستقل لكل معلمة */}
-      {showPinModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" dir="rtl">
-          <div className="bg-white border border-[#EBE3DC] rounded-3xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="text-base font-bold text-stone-900 mb-1 flex items-center gap-2">
-              <span>🔑</span> تغيير الرمز السري الخاص بك
-            </h3>
-            <p className="text-xs text-stone-500 mb-4">
-              خاص بحساب: <span className="font-bold text-[#8E5364]">{currentUser?.name}</span>
-            </p>
-
-            {pinMsg.text && (
-              <div
-                className={`p-2.5 rounded-xl text-xs mb-3 text-center font-bold ${
-                  pinMsg.isError
-                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                }`}
-              >
-                {pinMsg.text}
-              </div>
-            )}
-
-            <form onSubmit={handleChangePin} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">الرمز السري الحالي</label>
-                <input
-                  type="password"
-                  value={oldPin}
-                  onChange={(e) => setOldPin(e.target.value)}
-                  placeholder="••••"
-                  maxLength={6}
-                  required
-                  className="w-full bg-[#FAF7F5] border border-[#E2D5CC] rounded-xl px-3 py-2 text-stone-800 text-center tracking-widest focus:outline-hidden focus:border-[#8E5364]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">الرمز الجديد</label>
-                <input
-                  type="password"
-                  value={newPin}
-                  onChange={(e) => setNewPin(e.target.value)}
-                  placeholder="••••"
-                  maxLength={6}
-                  required
-                  className="w-full bg-[#FAF7F5] border border-[#E2D5CC] rounded-xl px-3 py-2 text-stone-800 text-center tracking-widest focus:outline-hidden focus:border-[#8E5364]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">تأكيد الرمز الجديد</label>
-                <input
-                  type="password"
-                  value={confirmPin}
-                  onChange={(e) => setConfirmPin(e.target.value)}
-                  placeholder="••••"
-                  maxLength={6}
-                  required
-                  className="w-full bg-[#FAF7F5] border border-[#E2D5CC] rounded-xl px-3 py-2 text-stone-800 text-center tracking-widest focus:outline-hidden focus:border-[#8E5364]"
-                />
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="submit"
-                  disabled={pinLoading}
-                  className="flex-1 bg-[#8E5364] hover:bg-[#744251] text-white text-xs font-bold py-2.5 rounded-xl transition shadow-xs disabled:opacity-50"
-                >
-                  {pinLoading ? 'جاري الحفظ...' : 'حفظ الرمز'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPinModal(false);
-                    setPinMsg({ text: '', isError: false });
-                  }}
-                  className="flex-1 bg-[#F2ECE6] hover:bg-[#EAE2D8] text-stone-700 text-xs font-bold py-2.5 rounded-xl transition"
-                >
-                  إلغاء
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
       )}
 
       {/* نافذة تعديل بيانات وشعار وتوقيع المعلمة */}

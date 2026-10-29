@@ -1,6 +1,7 @@
 {
   "framework": "vite",
-  "buildCommand": "vite build",
+  "installCommand": "npm ci --no-audit --no-fund",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
     {

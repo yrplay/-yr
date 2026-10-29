@@ -4,7 +4,7 @@ import {
   Settings, Download, Upload, RotateCcw, ShieldAlert,
   Save, CheckCircle2, History, Database, Cloud, AlertCircle,
   Palette, Lock, Sparkles, Check, Share2, Copy, FileSignature,
-  Stamp, Trash2, Eye, EyeOff, Type, Image as ImageIcon
+  Stamp, Trash2, Type, Image as ImageIcon
 } from 'lucide-react';
 import { OfficialSeal } from '../components/OfficialSeal';
 import { PWAInstallButton } from '../components/PWAInstallButton';
@@ -43,8 +43,7 @@ export const SettingsView: React.FC = () => {
     sealImageUrl: settings.sealImageUrl || '',
     showOfficialSeal: settings.showOfficialSeal ?? true,
     leaderSignatureUrl: settings.leaderSignatureUrl || '',
-    securityEnabled: settings.securityEnabled ?? true,
-    leaderPasscode: settings.leaderPasscode || '5522',
+    securityEnabled: true,
     // معايير دليل مشكاة الغيم للإتقان
     listenToReciterTimes: settings.defaultMasteryGuide?.listenToReciterTimes ?? defaultMasteryGuideConfig.listenToReciterTimes,
     reciteLookingTimes: settings.defaultMasteryGuide?.reciteLookingTimes ?? defaultMasteryGuideConfig.reciteLookingTimes,
@@ -79,8 +78,7 @@ export const SettingsView: React.FC = () => {
         sealImageUrl: settings.sealImageUrl || prev.sealImageUrl,
         showOfficialSeal: settings.showOfficialSeal ?? prev.showOfficialSeal,
         leaderSignatureUrl: settings.leaderSignatureUrl || prev.leaderSignatureUrl,
-        securityEnabled: settings.securityEnabled ?? prev.securityEnabled,
-        leaderPasscode: settings.leaderPasscode || prev.leaderPasscode,
+        securityEnabled: true,
         listenToReciterTimes: settings.defaultMasteryGuide?.listenToReciterTimes ?? prev.listenToReciterTimes,
         reciteLookingTimes: settings.defaultMasteryGuide?.reciteLookingTimes ?? prev.reciteLookingTimes,
         masteryRepetitionTimes: settings.defaultMasteryGuide?.masteryRepetitionTimes ?? prev.masteryRepetitionTimes,
@@ -95,7 +93,6 @@ export const SettingsView: React.FC = () => {
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [showLeaderPasscode, setShowLeaderPasscode] = useState(false);
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -212,6 +209,7 @@ export const SettingsView: React.FC = () => {
 
       await updateSettings({
         ...form,
+        securityEnabled: true,
         defaultMasteryGuide: masteryData
       });
 
@@ -1044,7 +1042,7 @@ export const SettingsView: React.FC = () => {
           </div>
 
           {/* Custom Hex Inputs */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-stone-200">
+          <div className="grid grid-cols-1 gap-4 pt-2 border-t border-stone-200">
             <div>
               <label className="block text-xs font-bold text-stone-700 mb-1">
                 اللون الأساسي للأزرار والعناوين (Primary Hex):
@@ -1121,71 +1119,43 @@ export const SettingsView: React.FC = () => {
         {/* 6. PWA Progressive Web App Installation Card */}
         <PWAInstallButton variant="settings" />
 
-        {/* 6. Security, Staff Access Gate & Passcode */}
+        {/* 6. Security and Staff Access */}
         <div className="bg-white p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4">
           <div className="flex items-center justify-between border-b border-stone-100 pb-3">
             <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
               <Lock className="w-4 h-4 text-[#8E5364]" />
-              <span>٦. الأمان وبوابة الدخول ورمز القائدة:</span>
+              <span>٦. أمان الدخول عبر Firebase Auth:</span>
             </h3>
             <span className="text-[11px] text-stone-400">حماية المنصة والبيانات</span>
           </div>
 
           <p className="text-xs text-stone-600 leading-relaxed">
-            لحماية بيانات الطالبات ومنع فتح الواجهة إلا للأشخاص المضافين رسمياً: عند تفعيل بوابة الأمان، تظهر شاشة تسجيل دخول ولا تفتح المنصة إلا بعد إدخال المعلمة لرمزها السري (PIN) أو إدخالكِ لرمز القائدة الرئيسي.
+            تُحمى المنصة بتسجيل الدخول عبر Firebase Authentication. هذا الإعداد إلزامي ولا يمكن تعطيله من الواجهة؛ أضيفي حسابات الكادر ووثائق staff_access إداريًا قبل تمكين دخولهم.
           </p>
 
           <div className="p-4 bg-[#FCFAF8] rounded-2xl border border-stone-200 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <strong className="block text-xs text-stone-900 font-bold">
-                  تفعيل بوابة التحقق ورمز الدخول للكادر
+                  مصادقة Firebase إلزامية
                 </strong>
                 <span className="text-[11px] text-stone-500">
-                  {form.securityEnabled
-                    ? 'بوابة الأمان مُفعلة حالياً ✅ لا يدخل إلا من تملكين رمزه السري'
-                    : 'بوابة الأمان متوقفة مؤقتاً (مفتوح للجميع)'}
+                  مصادقة Firebase مفعّلة دائمًا؛ لا يتاح تعطيلها من الإعدادات.
                 </span>
               </div>
 
               <label className="relative inline-flex items-center cursor-pointer self-start sm:self-auto">
                 <input
                   type="checkbox"
-                  checked={form.securityEnabled}
-                  onChange={e => setForm({ ...form, securityEnabled: e.target.checked })}
+                  checked
+                  disabled
                   className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-stone-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#8E5364]"></div>
               </label>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-stone-200">
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">
-                  رمز القائدة السري الرئيسي (Leader Master PIN):
-                </label>
-                <div className="relative">
-                  <input
-                    type={showLeaderPasscode ? 'text' : 'password'}
-                    required
-                    value={form.leaderPasscode}
-                    onChange={e => setForm({ ...form, leaderPasscode: e.target.value })}
-                    placeholder="1234"
-                    className="w-full pl-9 pr-3 py-2 border border-stone-200 rounded-xl text-xs font-mono font-bold tracking-widest text-[#8E5364]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowLeaderPasscode(!showLeaderPasscode)}
-                    className="absolute left-2.5 top-2.5 text-stone-400 hover:text-stone-600 cursor-pointer"
-                  >
-                    {showLeaderPasscode ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-                <span className="text-[10px] text-stone-400 mt-1 block">
-                  يتزامن هذا الرمز مباشرة مع حسابكِ في الخادم ويسمح لكِ بالدخول المباشر
-                </span>
-              </div>
-
+            <div className="grid grid-cols-1 gap-4 pt-2 border-t border-stone-200">
               <div>
                 <label className="block text-xs font-bold text-stone-700 mb-1">
                   رابط مشاركة المنصة مع المعلمات:
@@ -1207,7 +1177,7 @@ export const SettingsView: React.FC = () => {
                   </button>
                 </div>
                 <span className="text-[10px] text-stone-400 mt-1 block">
-                  شاركي هذا الرابط مع معلماتك، وكل معلمة تختار اسمها وتدخل رمزها السري للدخول لحلقتها
+                  شاركي الرابط بعد تهيئة حساب Firebase Auth ووثيقة staff_access لكل معلمة
                 </span>
               </div>
             </div>

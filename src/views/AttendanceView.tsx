@@ -297,7 +297,7 @@ export const AttendanceView: React.FC = () => {
                 <th className="p-3.5 text-center">التحضير المبكر ⭐</th>
                 <th className="p-3.5 text-center">حالة الحضور</th>
                 <th className="p-3.5">سبب الغياب (إن وُجد)</th>
-                <th className="p-3.5">إحصائية الشهر</th>
+                <th className="p-3.5">الإحصائية التراكمية</th>
                 <th className="p-3.5">المسؤول ووقت الرصد</th>
               </tr>
             </thead>

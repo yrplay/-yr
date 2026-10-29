@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '../firebase';
+import { isLocalDemoMode } from '../demoMode';
 import {
   UserCog, Plus, Edit, Shield, CheckCircle2, UserCheck,
-  Mail, Phone, Layers, Award, X, Eye, EyeOff, Upload, Trash2, Sparkles, FileSignature,
-  Copy, KeyRound, Check, Table, LayoutGrid, Share2, Lock
+  Mail, Phone, Layers, Award, X, Upload, Trash2, Sparkles, FileSignature,
+  Copy, KeyRound, Check, Table, LayoutGrid, Lock
 } from 'lucide-react';
 import { User, UserRole, UserPermissions, defaultPermissionsByRole } from '../types';
-import { getIslamicIcon, IslamicIconPicker, renderUserAvatarBadge, getAvatarLabel } from '../components/IslamicIconLibrary';
+import { IslamicIconPicker, renderUserAvatarBadge, getAvatarLabel } from '../components/IslamicIconLibrary';
 
 const PERMISSION_ITEMS: {
   key: keyof UserPermissions;
@@ -97,7 +98,7 @@ const PERMISSION_ITEMS: {
 ];
 
 export const StaffView: React.FC = () => {
-  const { users, circles, currentUser, createUser, updateUser, showToast, settings } = useApp();
+  const { users, circles, currentUser, createUser, updateUser, showToast } = useApp();
 
   // تخصيص القسم بالكامل لإدارة المقرأة فقط (القائدة)
   if (currentUser?.role !== 'leader') {
@@ -110,7 +111,7 @@ export const StaffView: React.FC = () => {
           قسم المعلمات والمشرفات خاص بإدارة المقرأة فقط
         </h2>
         <p className="text-xs sm:text-sm text-stone-500 max-w-md leading-relaxed">
-          عذراً أ. {currentUser?.name || 'المعلمة'}، سجلات الكادر التعليمي، والتواقيع المعتمدة، والصلاحيات، والرموز السرية مخصصة ومحفوظة لإدارة المقرأة العليا فقط.
+          عذراً أ. {currentUser?.name || 'المعلمة'}، سجلات الكادر التعليمي، والتواقيع المعتمدة، والصلاحيات، وإعدادات الدخول مخصصة ومحفوظة لإدارة المقرأة العليا فقط.
         </p>
       </div>
     );
@@ -119,17 +120,10 @@ export const StaffView: React.FC = () => {
   // وضع العرض: جدول بيانات الكادر أو بطاقات تفصيلية
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   
-  // التحكم بظهور جميع الرموز السرية (تكون ظاهرة افتراضياً للإدارة كما طُلب)
-  const [showAllPins, setShowAllPins] = useState(true);
-  const [revealedPins, setRevealedPins] = useState<Record<string, boolean>>({});
 
   const [staffModalOpen, setStaffModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<User | null>(null);
 
-  // نافذة التعديل السريع للرمز السري
-  const [quickPinModalUser, setQuickPinModalUser] = useState<User | null>(null);
-  const [newPinValue, setNewPinValue] = useState('');
-  const [pinSaving, setPinSaving] = useState(false);
 
   // Manual permissions modal state
   const [permissionsModalUser, setPermissionsModalUser] = useState<User | null>(null);
@@ -151,7 +145,6 @@ export const StaffView: React.FC = () => {
     title: 'معلمة حلقة',
     email: '',
     phone: '05',
-    passcode: String(Math.floor(1000 + Math.random() * 9000)),
     avatarIcon: 'mushaf',
     avatarColor: '#8E5364',
     signatureUrl: '',
@@ -222,17 +215,6 @@ export const StaffView: React.FC = () => {
     setPermissionsModalUser(null);
   };
 
-  const togglePinReveal = (userId: string) => {
-    setRevealedPins(prev => ({ ...prev, [userId]: !prev[userId] }));
-  };
-
-  const isUserPinRevealed = (userId: string) => {
-    if (showAllPins) {
-      return revealedPins[userId] !== false;
-    }
-    return !!revealedPins[userId];
-  };
-
   const handleOpenStaffModal = (user?: User) => {
     if (user) {
       setEditingStaff(user);
@@ -242,7 +224,6 @@ export const StaffView: React.FC = () => {
         title: user.title,
         email: user.email || '',
         phone: user.phone || '05',
-        passcode: user.passcode || localStorage.getItem(`ghaith_pin_${user.id}`) || '',
         avatarIcon: user.avatarIcon || 'mushaf',
         avatarColor: user.avatarColor || '#8E5364',
         signatureUrl: user.signatureUrl || '',
@@ -256,7 +237,6 @@ export const StaffView: React.FC = () => {
         title: 'معلمة حلقة قرآنية',
         email: '',
         phone: '05',
-        passcode: String(Math.floor(1000 + Math.random() * 9000)),
         avatarIcon: 'mushaf',
         avatarColor: '#8E5364',
         signatureUrl: '',
@@ -292,95 +272,34 @@ export const StaffView: React.FC = () => {
       showToast('يرجى إدخال اسم المعلمة والبريد الإلكتروني', 'error');
       return;
     }
-
-    const cleanPasscode = staffForm.passcode.trim();
-
     if (editingStaff) {
       await updateUser(editingStaff.id, staffForm);
-      if (cleanPasscode) {
-        try {
-          await setDoc(doc(db, 'staff_pins', editingStaff.id), {
-            userId: editingStaff.id,
-            pin: cleanPasscode,
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
-        } catch {}
-        localStorage.setItem(`ghaith_pin_${editingStaff.id}`, cleanPasscode);
-      }
+      localStorage.removeItem(`ghaith_pin_${editingStaff.id}`);
       showToast(`تم حفظ وتحديث بيانات ${staffForm.name} بنجاح ✨`);
     } else {
       const created = await createUser(staffForm);
-      if (created && cleanPasscode) {
-        try {
-          await setDoc(doc(db, 'staff_pins', created.id), {
-            userId: created.id,
-            pin: cleanPasscode,
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
-        } catch {}
-        localStorage.setItem(`ghaith_pin_${created.id}`, cleanPasscode);
+      if (created) {
+        showToast(`تم إنشاء الملف الشخصي لـ ${staffForm.name}. لا ينشئ ذلك حساب Firebase Auth؛ يجب على الإدارة تهيئة الحساب ووثيقة staff_access قبل تمكين تسجيل الدخول.`, 'info');
       }
-      showToast(`تمت إضافة ${staffForm.name} إلى الكادر بنجاح ✨`);
     }
     setStaffModalOpen(false);
   };
-
-  // فتح نافذة التعديل السريع للرمز السري
-  const handleOpenQuickPinModal = (user: User) => {
-    setQuickPinModalUser(user);
-    setNewPinValue(user.passcode || localStorage.getItem(`ghaith_pin_${user.id}`) || '');
-  };
-
-  const handleSaveQuickPin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!quickPinModalUser || !newPinValue.trim()) return;
-
-    setPinSaving(true);
-    const cleanPin = newPinValue.trim();
-
+  const handleSendPasswordReset = async (user: User) => {
+    if (isLocalDemoMode) {
+      showToast('إعادة تعيين كلمة المرور غير متاحة في وضع المعاينة المحلي', 'info');
+      return;
+    }
+    if (!user.email) {
+      showToast('لا يوجد بريد إلكتروني مسجل لهذا الحساب', 'error');
+      return;
+    }
     try {
-      // 1. التحديث في السحابة في Firestore
-      await setDoc(doc(db, 'staff_pins', quickPinModalUser.id), {
-        userId: quickPinModalUser.id,
-        pin: cleanPin,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
-
-      // 2. التحديث في التخزين المحلي
-      localStorage.setItem(`ghaith_pin_${quickPinModalUser.id}`, cleanPin);
-
-      // 3. التحديث في حالة المستخدمين في السياق
-      await updateUser(quickPinModalUser.id, { passcode: cleanPin });
-
-      showToast(`تم تحديث الرمز السري لـ ${quickPinModalUser.name} بنجاح 🔑`, 'success');
-      setQuickPinModalUser(null);
+      await sendPasswordResetEmail(auth, user.email);
+      showToast(`تم إرسال رابط إعادة تعيين كلمة المرور إلى ${user.email}`, 'success');
     } catch {
-      localStorage.setItem(`ghaith_pin_${quickPinModalUser.id}`, cleanPin);
-      await updateUser(quickPinModalUser.id, { passcode: cleanPin });
-      showToast(`تم حفظ الرمز السري محلياً لـ ${quickPinModalUser.name}`, 'info');
-      setQuickPinModalUser(null);
-    } finally {
-      setPinSaving(false);
+      showToast('تعذر إرسال رابط إعادة التعيين. تحققي من إعداد Firebase Auth والبريد المسجل.', 'error');
     }
   };
-
-  // نسخ الرمز السري فقط
-  const handleCopyPinOnly = (user: User) => {
-    const pin = user.passcode || localStorage.getItem(`ghaith_pin_${user.id}`) || '----';
-    navigator.clipboard.writeText(pin);
-    showToast(`تم نسخ الرمز السري لـ (${user.name}) بنجاح 🔑`, 'success');
-  };
-
-  // نسخ رسالة بيانات الدخول الكاملة لإرسالها للمعلمة
-  const handleCopyLoginMessage = (user: User) => {
-    const pin = user.passcode || localStorage.getItem(`ghaith_pin_${user.id}`) || '----';
-    const siteUrl = window.location.origin;
-    const msg = `السلام عليكم ورحمة الله وبركاته أ. ${user.name} 🌸\n\nإليكِ بيانات اعتماد الدخول الرسمية لمنصة ${settings?.name || 'مقرأة غيث الغيم'}:\n• البريد الإلكتروني: ${user.email}\n• الرمز السري (PIN): ${pin}\n\nرابط المنصة المباشر:\n${siteUrl}\n\nنسأل الله لكِ التوفيق والسداد 🌿`;
-    
-    navigator.clipboard.writeText(msg);
-    showToast(`تم نسخ رسالة بيانات الدخول المكتملة لـ ${user.name} 📋`, 'success');
-  };
-
   const handleToggleCircle = (circleId: string) => {
     const exists = staffForm.circleIds.includes(circleId);
     if (exists) {
@@ -417,31 +336,18 @@ export const StaffView: React.FC = () => {
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xl">👩‍🏫</span>
             <h2 className="text-xl font-bold text-stone-900 font-quran">
-              سجل المعلمات والمشرفات والرموز السرية
+              سجل المعلمات والمشرفات
             </h2>
             <span className="text-[11px] font-sans px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold border border-rose-300">
               خاص بالإدارة العليا 🔒
             </span>
           </div>
           <p className="text-xs text-stone-500">
-            إدارة حسابات الكادر، استعراض وتعيين الرموز السرية (PIN)، مشاركة بيانات الدخول، واعتماد التواقيع والصلاحيات
+            إدارة ملفات الكادر وإرسال روابط إعادة تعيين كلمات المرور واعتماد التواقيع والصلاحيات
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
-          {/* تبديل إظهار / إخفاء كافة الرموز */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowAllPins(!showAllPins);
-              setRevealedPins({});
-            }}
-            className="flex items-center gap-1.5 px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer active:scale-95 border border-stone-200"
-            title={showAllPins ? 'إخفاء كافة الرموز السرية' : 'إظهار كافة الرموز السرية'}
-          >
-            {showAllPins ? <EyeOff className="w-4 h-4 text-stone-600" /> : <Eye className="w-4 h-4 text-amber-600" />}
-            <span>{showAllPins ? 'إخفاء الرموز' : 'إظهار كافة الرموز'}</span>
-          </button>
 
           {/* التبديل بين عرض الجدول وعرض البطاقات */}
           <div className="flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200">
@@ -455,7 +361,7 @@ export const StaffView: React.FC = () => {
               }`}
             >
               <Table className="w-3.5 h-3.5" />
-              <span>جدول الرموز</span>
+              <span>جدول الكادر</span>
             </button>
             <button
               type="button"
@@ -522,10 +428,10 @@ export const StaffView: React.FC = () => {
           <div className="p-4 border-b border-stone-100 flex items-center justify-between">
             <h3 className="text-sm font-bold text-stone-900 flex items-center gap-2">
               <KeyRound className="w-4 h-4 text-[#8E5364]" />
-              <span>دليل بيانات الدخول والرموز السرية للكادر التعليمي والإداري</span>
+              <span>بيانات الكادر التعليمي والإداري</span>
             </h3>
             <span className="text-[11px] text-stone-400">
-              جميع الرموز ظاهرة للإدارة ويمكن نسخها أو تعديلها فوراً
+              أرسلي رابط إعادة التعيين إلى البريد المسجل عند الحاجة
             </span>
           </div>
 
@@ -537,7 +443,7 @@ export const StaffView: React.FC = () => {
                   <th className="py-3 px-4 font-bold">الصفة والدور</th>
                   <th className="py-3 px-4 font-bold">البريد الإلكتروني (اسم المستخدم)</th>
                   <th className="py-3 px-4 font-bold">الجوال</th>
-                  <th className="py-3 px-4 font-bold bg-amber-50/50">الرمز السري (PIN)</th>
+                  <th className="py-3 px-4 font-bold">إعداد الدخول</th>
                   <th className="py-3 px-4 font-bold">الحلقات المسندة</th>
                   <th className="py-3 px-4 font-bold">التوقيع</th>
                   <th className="py-3 px-4 font-bold text-center">إجراءات الإدارة</th>
@@ -547,8 +453,6 @@ export const StaffView: React.FC = () => {
                 {users.map(user => {
                   const roleConfig = roleLabels[user.role] || roleLabels.teacher;
                   const iconColor = user.avatarColor || '#8E5364';
-                  const isRevealed = isUserPinRevealed(user.id);
-                  const userPin = user.passcode || localStorage.getItem(`ghaith_pin_${user.id}`) || '----';
                   
                   const supervisedCircles = circles.filter(c => c.supervisorId === user.id);
                   const taughtCircles = circles.filter(c => c.teacherId === user.id);
@@ -606,42 +510,12 @@ export const StaffView: React.FC = () => {
                         {user.phone || '—'}
                       </td>
 
-                      {/* PIN & Actions */}
-                      <td className="py-3 px-4 bg-amber-50/30">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono bg-white border border-amber-300 px-2.5 py-1 rounded-lg text-stone-900 font-bold text-xs tracking-widest shadow-2xs">
-                            {isRevealed ? userPin : '••••'}
-                          </span>
-                          
-                          <button
-                            type="button"
-                            onClick={() => togglePinReveal(user.id)}
-                            className="p-1 text-stone-400 hover:text-stone-700 transition cursor-pointer"
-                            title={isRevealed ? 'إخفاء' : 'إظهار'}
-                          >
-                            {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleCopyPinOnly(user)}
-                            className="p-1 text-stone-400 hover:text-[#8E5364] transition cursor-pointer"
-                            title="نسخ الرمز السري"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleOpenQuickPinModal(user)}
-                            className="px-2 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold text-[10px] transition cursor-pointer"
-                            title="تعديل الرمز السري فورياً"
-                          >
-                            تعديل الرمز
-                          </button>
-                        </div>
+                      {/* إعداد الدخول */}
+                      <td className="py-3 px-4">
+                        <button type="button" onClick={() => void handleSendPasswordReset(user)} className="px-2.5 py-1.5 rounded-lg bg-[#FAF0F3] text-[#8E5364] hover:bg-[#8E5364] hover:text-white font-bold text-[10px] transition">
+                          إرسال رابط إعادة التعيين
+                        </button>
                       </td>
-
                       {/* Circles */}
                       <td className="py-3 px-4">
                         {user.role === 'leader' ? (
@@ -679,11 +553,11 @@ export const StaffView: React.FC = () => {
                           {/* نسخ رسالة الدخول المنسقة */}
                           <button
                             type="button"
-                            onClick={() => handleCopyLoginMessage(user)}
+                            onClick={() => void handleSendPasswordReset(user)}
                             className="p-1.5 rounded-lg bg-[#FAF0F3] hover:bg-[#8E5364] text-[#8E5364] hover:text-white transition cursor-pointer shadow-2xs"
-                            title="نسخ رسالة بيانات الدخول (البريد + الرمز + الرابط) لمشاركتها"
+                            title="إرسال رابط إعادة تعيين كلمة المرور إلى البريد المسجل"
                           >
-                            <Share2 className="w-3.5 h-3.5" />
+                            <Mail className="w-3.5 h-3.5" />
                           </button>
 
                           {/* الصلاحيات */}
@@ -720,8 +594,6 @@ export const StaffView: React.FC = () => {
           {users.map(user => {
             const roleConfig = roleLabels[user.role] || roleLabels.teacher;
             const iconColor = user.avatarColor || '#8E5364';
-            const isRevealed = isUserPinRevealed(user.id);
-            const userPin = user.passcode || localStorage.getItem(`ghaith_pin_${user.id}`) || '----';
 
             const supervisedCircles = circles.filter(c => c.supervisorId === user.id);
             const taughtCircles = circles.filter(c => c.teacherId === user.id);
@@ -787,44 +659,12 @@ export const StaffView: React.FC = () => {
                   )}
                 </div>
 
-                {/* الرمز السري (PIN) - بارز وظاهر للإدارة */}
-                <div className="p-3 bg-amber-50/40 rounded-2xl border border-amber-200/80 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <KeyRound className="w-3.5 h-3.5 text-amber-700" />
-                    <span className="font-bold text-stone-800 text-[11px]">الرمز السري (PIN):</span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono bg-white border border-amber-300 px-2.5 py-0.5 rounded-lg text-stone-900 font-bold text-xs tracking-wider shadow-2xs">
-                      {isRevealed ? userPin : '••••'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => togglePinReveal(user.id)}
-                      className="p-1 text-stone-400 hover:text-stone-700 transition cursor-pointer"
-                      title={isRevealed ? 'إخفاء الرمز' : 'إظهار الرمز'}
-                    >
-                      {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyPinOnly(user)}
-                      className="p-1 text-stone-400 hover:text-[#8E5364] transition cursor-pointer"
-                      title="نسخ الرمز السري"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenQuickPinModal(user)}
-                      className="px-2 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-[10px] transition cursor-pointer"
-                      title="تعديل الرمز"
-                    >
-                      تعديل
-                    </button>
-                  </div>
+                <div className="p-3 bg-[#FAF7F5] rounded-2xl border border-stone-200 flex items-center justify-between gap-2">
+                  <span className="font-bold text-stone-700 text-[11px]">إعداد كلمة المرور عبر البريد</span>
+                  <button type="button" onClick={() => void handleSendPasswordReset(user)} className="px-2.5 py-1.5 rounded-lg bg-[#8E5364] text-white hover:bg-[#744251] font-bold text-[10px] transition">
+                    إرسال رابط إعادة التعيين
+                  </button>
                 </div>
-
                 {/* Circles info */}
                 <div className="pt-2 border-t border-stone-100 text-xs">
                   <span className="text-stone-400 block text-[10px] mb-1">الحلقات المسندة:</span>
@@ -894,12 +734,12 @@ export const StaffView: React.FC = () => {
                 <div className="pt-2 border-t border-stone-100 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => handleCopyLoginMessage(user)}
+                    onClick={() => void handleSendPasswordReset(user)}
                     className="flex-1 py-2 px-2.5 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border border-stone-200 cursor-pointer shadow-2xs active:scale-95"
-                    title="نسخ رسالة بيانات الدخول للمشاركة"
+                    title="إرسال رابط إعادة تعيين كلمة المرور"
                   >
-                    <Share2 className="w-3.5 h-3.5 text-[#8E5364]" />
-                    <span>مشاركة الدخول</span>
+                    <Mail className="w-3.5 h-3.5 text-[#8E5364]" />
+                    <span>إعادة تعيين كلمة المرور</span>
                   </button>
 
                   <button
@@ -925,78 +765,6 @@ export const StaffView: React.FC = () => {
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* نافذة التعديل السريع للرمز السري (Quick PIN Change Modal) */}
-      {quickPinModalUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150" dir="rtl">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-stone-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
-                  <KeyRound className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-stone-900 text-sm">تعديل الرمز السري</h3>
-                  <p className="text-[11px] text-stone-500">أ. {quickPinModalUser.name}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setQuickPinModalUser(null)}
-                className="text-stone-400 hover:text-stone-600 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveQuickPin} className="space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-stone-700">الرمز السري الجديد (PIN):</label>
-                  <button
-                    type="button"
-                    onClick={() => setNewPinValue(String(Math.floor(1000 + Math.random() * 9000)))}
-                    className="text-[11px] text-[#8E5364] hover:underline font-bold cursor-pointer"
-                  >
-                    توليد عشوائي 🎲
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  required
-                  value={newPinValue}
-                  onChange={e => setNewPinValue(e.target.value)}
-                  placeholder="مثال: 4589"
-                  maxLength={8}
-                  autoFocus
-                  dir="ltr"
-                  className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2.5 text-center font-mono font-bold text-lg tracking-widest text-stone-900 focus:bg-white focus:border-[#8E5364] focus:outline-hidden"
-                />
-                <span className="text-[10px] text-stone-400 block mt-1">
-                  يحفظ سحابياً ومحلياً فورياً وستتمكن المعلمة من الدخول به مباشرة.
-                </span>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
-                <button
-                  type="button"
-                  onClick={() => setQuickPinModalUser(null)}
-                  className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100 cursor-pointer"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  disabled={pinSaving}
-                  className="px-5 py-2 bg-[#8E5364] hover:bg-[#744251] text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer active:scale-95 disabled:opacity-50"
-                >
-                  {pinSaving ? 'جاري الحفظ...' : 'حفظ الرمز السري'}
-                </button>
-              </div>
-            </form>
-          </div>
         </div>
       )}
 
@@ -1041,12 +809,14 @@ export const StaffView: React.FC = () => {
                   <select
                     value={staffForm.role}
                     onChange={e => setStaffForm({ ...staffForm, role: e.target.value as UserRole })}
+                    disabled={!!editingStaff}
                     className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white font-bold"
                   >
                     <option value="teacher">معلمة حلقة قرآنية</option>
                     <option value="supervisor">مشرفة مسار / حلقات</option>
                     <option value="leader">قائدة المقرأة</option>
                   </select>
+                  {editingStaff && <p className="mt-1 text-[10px] text-amber-700">تغيير دور الحساب يتطلب تحديث staff_access إدارياً في Firebase.</p>}
                 </div>
               </div>
 
@@ -1088,35 +858,11 @@ export const StaffView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Passcode (PIN) */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-bold text-stone-700">
-                    رمز الدخول السري (PIN Code) *
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setStaffForm({ ...staffForm, passcode: String(Math.floor(1000 + Math.random() * 9000)) })}
-                    className="text-[11px] text-[#8E5364] hover:underline font-semibold cursor-pointer"
-                  >
-                    توليد رمز عشوائي 🎲
-                  </button>
+              {!editingStaff && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 leading-relaxed">
+                  إنشاء ملف المعلمة هنا لا ينشئ حساب Firebase Auth. يجب على الإدارة تهيئة حساب Firebase Auth ووثيقة staff_access قبل أن تتمكن المعلمة من تسجيل الدخول.
                 </div>
-                <input
-                  type="text"
-                  required
-                  value={staffForm.passcode}
-                  onChange={e => setStaffForm({ ...staffForm, passcode: e.target.value })}
-                  placeholder="مثال: 5432"
-                  dir="ltr"
-                  maxLength={8}
-                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs font-mono font-bold tracking-wider"
-                />
-                <span className="text-[10px] text-stone-400 mt-1 block">
-                  الرمز السري المخصص لهذه المعلمة للدخول لحسابها وإنجاز التسميع وإدارة طالباتها.
-                </span>
-              </div>
-
+              )}
               {/* Islamic Symbolic Icon Selector */}
               <div>
                 <IslamicIconPicker

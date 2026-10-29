@@ -60,7 +60,6 @@ export interface User {
   avatarColor?: string;   // لون الأيقونة المختار
   signatureUrl?: string; // توقيع المعلمة أو المشرفة المعتمد
   circleIds: string[]; // circles supervised or taught
-  passcode?: string;   // رمز الدخول السري
   permissions?: Partial<UserPermissions>; // الصلاحيات المخصصة يدوياً
 }
 
@@ -489,9 +488,8 @@ export interface InstitutionSettings {
   sealImageUrl?: string; // صورة الختم المرفوعة
   leaderSignatureUrl?: string; // توقيع قائدة المقرأة المرفوع
   
-  // Security & PIN Gate
+  // Security controls
   securityEnabled?: boolean;
-  leaderPasscode?: string;
   
   // معايير دليل الإتقان الافتراضية للمقرأة (مشكاة الغيم)
   defaultMasteryGuide?: MasteryGuideConfig;
