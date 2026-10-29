@@ -1,120 +1,82 @@
-import { doc, onSnapshot, setDoc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { doc, onSnapshot, runTransaction } from 'firebase/firestore';
+import { db, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID } from '../firebase';
+import { mergeArrayByKey, mergeDeletedEntities, sanitizeCloudState, type DeletedEntities } from './cloudSyncHelpers';
 
 export type CloudSyncStatus = 'connected' | 'syncing' | 'offline' | 'error';
 
-const CLOUD_DOC_PATH = {
-  collection: 'institution_database',
-  id: 'master_state'
-};
+const CLOUD_DOC_PATH = { collection: FIRESTORE_COLLECTION, id: FIRESTORE_DOC_ID };
 
-// دمج السجلات مع تفادي مسح مدخلات المعلمات المتزامنة
-const mergeArrayByKey = (existingList: any[] = [], incomingList: any[] = [], key: string = 'id') => {
-  const map = new Map<string, any>();
-  
-  for (const item of existingList) {
-    if (item && item[key]) {
-      map.set(item[key], item);
-    }
-  }
-
-  for (const item of incomingList) {
-    if (!item || !item[key]) continue;
-    const existing = map.get(item[key]);
-    if (!existing) {
-      map.set(item[key], item);
-    } else {
-      // تفضيل السجل الأحدث زمنياً إذا توفر الطابع الزمني
-      const existingTime = existing.recordedAt || existing.updatedAt || existing.evaluatedAt || 0;
-      const incomingTime = item.recordedAt || item.updatedAt || item.evaluatedAt || 0;
-      
-      const t1 = typeof existingTime === 'string' ? new Date(existingTime).getTime() : 0;
-      const t2 = typeof incomingTime === 'string' ? new Date(incomingTime).getTime() : 0;
-      
-      map.set(item[key], t2 >= t1 ? { ...existing, ...item } : { ...item, ...existing });
-    }
-  }
-
-  return Array.from(map.values());
-};
-
-/**
- * الاشتراك في تحديثات قاعدة البيانات السحابية لحظياً
- */
 export const subscribeToCloudDatabase = (
   onData: (data: any) => void,
   onStatusChange?: (status: CloudSyncStatus) => void
 ) => {
   try {
     const docRef = doc(db, CLOUD_DOC_PATH.collection, CLOUD_DOC_PATH.id);
-
-    const unsubscribe = onSnapshot(
+    return onSnapshot(
       docRef,
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const cloudData = snapshot.data();
-          onData(cloudData);
-          if (onStatusChange) onStatusChange('connected');
-        } else {
-          // الوثيقة غير موجودة في السحابة
-          if (onStatusChange) onStatusChange('connected');
-        }
+      snapshot => {
+        if (snapshot.exists()) onData(sanitizeCloudState(snapshot.data()));
+        else onData(null);
+        onStatusChange?.('connected');
       },
-      (error) => {
+      error => {
         console.warn('Firebase sync listener error:', error);
-        if (onStatusChange) onStatusChange('offline');
+        onStatusChange?.('error');
       }
     );
-
-    return unsubscribe;
-  } catch (err) {
-    console.warn('Failed to subscribe to cloud database:', err);
-    if (onStatusChange) onStatusChange('offline');
+  } catch (error) {
+    console.warn('Failed to subscribe to cloud database:', error);
+    onStatusChange?.('offline');
     return () => {};
   }
 };
 
 /**
- * رفع الحالة وتحديث السجلات في Firestore بأمان ودون محو سجلات الآخرين
+ * Atomically merge app state and deletion tombstones. Transactions prevent two
+ * clients from both reading the same old document and silently overwriting one
+ * another's merge. Tombstones remain until all clients can safely be reconciled.
  */
 export const pushStateToCloud = async (statePayload: any): Promise<void> => {
-  try {
-    const docRef = doc(db, CLOUD_DOC_PATH.collection, CLOUD_DOC_PATH.id);
-    
-    // جلب أحدث نسخة موجودة بالسحابة لدمجها بدلاً من استبدالها
-    const currentSnap = await getDoc(docRef);
-    let finalPayload = { ...statePayload };
+  const docRef = doc(db, CLOUD_DOC_PATH.collection, CLOUD_DOC_PATH.id);
+  const arrayCollections: Array<[string, string]> = [
+    ['users', 'id'], ['tracks', 'id'], ['circles', 'id'], ['students', 'id'],
+    ['monthlyPlans', 'id'], ['studentPlans', 'id'], ['dailyRecords', 'id'],
+    ['attendanceRecords', 'id'], ['atqiniAssignments', 'id'],
+    ['studentAtqiniSubmissions', 'id'], ['challenges', 'id'],
+    ['studentChallengeSubmissions', 'id'], ['monthlyExams', 'id'],
+    ['studentExamResults', 'id'], ['studentSubscriptions', 'id'],
+    ['gradingConfigs', 'trackId'], ['auditLogs', 'id']
+  ];
 
-    if (currentSnap.exists()) {
-      const remoteData = currentSnap.data();
-
-      finalPayload = {
-        ...remoteData,
-        ...statePayload,
-        // دمج السجلات الحيوية دون إقصاء أي تسجيل متزامن
-        tracks: mergeArrayByKey(remoteData.tracks, statePayload.tracks, 'id'),
-        circles: mergeArrayByKey(remoteData.circles, statePayload.circles, 'id'),
-        students: mergeArrayByKey(remoteData.students, statePayload.students, 'id'),
-        monthlyPlans: mergeArrayByKey(remoteData.monthlyPlans, statePayload.monthlyPlans, 'id'),
-        atqiniAssignments: mergeArrayByKey(remoteData.atqiniAssignments, statePayload.atqiniAssignments, 'id'),
-        challenges: mergeArrayByKey(remoteData.challenges, statePayload.challenges, 'id'),
-        monthlyExams: mergeArrayByKey(remoteData.monthlyExams, statePayload.monthlyExams, 'id'),
-        dailyRecords: mergeArrayByKey(remoteData.dailyRecords, statePayload.dailyRecords, 'id'),
-        attendanceRecords: mergeArrayByKey(remoteData.attendanceRecords, statePayload.attendanceRecords, 'id'),
-        studentPlans: mergeArrayByKey(remoteData.studentPlans, statePayload.studentPlans, 'id'),
-        studentExamResults: mergeArrayByKey(remoteData.studentExamResults, statePayload.studentExamResults, 'id'),
-        studentAtqiniSubmissions: mergeArrayByKey(remoteData.studentAtqiniSubmissions, statePayload.studentAtqiniSubmissions, 'id'),
-        studentChallengeSubmissions: mergeArrayByKey(remoteData.studentChallengeSubmissions, statePayload.studentChallengeSubmissions, 'id'),
-        studentSubscriptions: mergeArrayByKey(remoteData.studentSubscriptions, statePayload.studentSubscriptions, 'id'),
-        gradingConfigs: mergeArrayByKey(remoteData.gradingConfigs, statePayload.gradingConfigs, 'trackId'),
-        settings: { ...(remoteData.settings || {}), ...(statePayload.settings || {}) },
-        lastSyncedAt: new Date().toISOString()
-      };
+  await runTransaction(db, async transaction => {
+    const currentSnap = await transaction.get(docRef);
+    const remoteData = sanitizeCloudState(currentSnap.exists() ? currentSnap.data() : {});
+    const incomingState = sanitizeCloudState(statePayload);
+    if (incomingState._replaceState === true) {
+      const replacement = { ...incomingState };
+      delete replacement._replaceState;
+      transaction.set(docRef, { ...replacement, lastSyncedAt: new Date().toISOString() });
+      return;
     }
 
-    await setDoc(docRef, finalPayload, { merge: true });
-  } catch (error) {
-    console.warn('Failed to push state to Firestore cloud:', error);
-    throw error;
-  }
+    const deletedEntities = mergeDeletedEntities(remoteData._deletedEntities, incomingState._deletedEntities);
+    const finalPayload: Record<string, any> = {
+      ...remoteData,
+      ...incomingState,
+      _deletedEntities: deletedEntities,
+      settings: { ...(remoteData.settings || {}), ...(incomingState.settings || {}) },
+      lastSyncedAt: new Date().toISOString()
+    };
+
+    for (const [collection, key] of arrayCollections) {
+      finalPayload[collection] = mergeArrayByKey(
+        remoteData[collection] || [],
+        incomingState[collection] || [],
+        key,
+        deletedEntities[collection] || []
+      );
+    }
+
+    transaction.set(docRef, finalPayload);
+  });
 };

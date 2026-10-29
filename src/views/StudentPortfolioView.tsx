@@ -54,18 +54,14 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
 
   const currentPlan = monthlyPlans.find(p => p.id === (activeStudentPlan as any)?.monthlyPlanId) || monthlyPlans[0];
 
-  // Target and actual pages calculations (reactive and never overriding 0 to arbitrary defaults)
+  // الخطة تحدد المستهدف، وملخص السجلات اليومية هو المصدر الوحيد للمنجز.
   const targetNewPages = (activeStudentPlan as any)?.newMemorization?.targetPages ?? score?.newMemorizationPagesTarget ?? 8;
   const targetRevPages = (activeStudentPlan as any)?.revision?.targetPages ?? score?.revisionPagesTarget ?? 4;
-  
-  // فقط ما يُرصد كمنجز بشروط على مدار الشهر يُعتمد
-  const doneNewPages = (score?.newMemorizationPagesDone !== undefined && score?.newMemorizationPagesDone !== null)
-    ? score.newMemorizationPagesDone
-    : ((activeStudentPlan as any)?.newMemorization?.actualPages ?? 0);
-
-  const doneRevPages = (score?.revisionPagesDone !== undefined && score?.revisionPagesDone !== null)
-    ? score.revisionPagesDone
-    : ((activeStudentPlan as any)?.revision?.actualPages ?? 0);
+  const doneNewPages = score?.newMemorizationPagesDone ?? 0;
+  const doneRevPages = score?.revisionPagesDone ?? 0;
+  const doneMinorRevisionPages = score?.minorRevisionPagesDone ?? 0;
+  const doneTamkeenPages = score?.tamkeenRevisionPagesDone ?? 0;
+  const doneUnclassifiedRevisionPages = score?.unclassifiedRevisionPagesDone ?? 0;
 
   const totalAbsentDays = (score?.absentUnexcusedCount || 0) + (score?.absentExcusedCount || 0);
 
@@ -535,8 +531,12 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         <div style="font-size: 9px; color: #78716c; margin-top: 2px;">المستهدف: ${targetNewPages} ص</div>
       </div>
       <div class="stat-box">
+        <div class="stat-label">المراجعة الصغرى</div>
+        <div class="stat-value">${doneMinorRevisionPages} ص</div>
+      </div>
+      <div class="stat-box">
         <div class="stat-label">مراجعة التمكين</div>
-        <div class="stat-value">${doneRevPages} ص</div>
+        <div class="stat-value">${doneTamkeenPages} ص</div>
         <div style="font-size: 9px; color: #78716c; margin-top: 2px;">المستهدف: ${targetRevPages} ص</div>
       </div>
       <div class="stat-box">
@@ -570,11 +570,18 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           <td>${score?.memorizationScore || 10} / 10</td>
         </tr>
         <tr>
+          <td><strong>المراجعة الصغرى</strong></td>
+          <td>حسب خطة المراجعة</td>
+          <td>${doneMinorRevisionPages} صفحات</td>
+          <td>—</td>
+        </tr>
+        <tr>
           <td><strong>مراجعة التمكين</strong></td>
           <td>${targetRevPages} صفحات</td>
-          <td>${doneRevPages} صفحات</td>
+          <td>${doneTamkeenPages} صفحات</td>
           <td>متقن بالشروط ✅</td>
         </tr>
+        ${doneUnclassifiedRevisionPages > 0 ? `<tr><td><strong>مراجعة مسجلة دون تفصيل (سجلات سابقة)</strong></td><td>—</td><td>${doneUnclassifiedRevisionPages} صفحات</td><td>غير مصنفة</td></tr>` : ''}
         <tr>
           <td><strong>واجبات «أتقني» للتجويد</strong></td>
           <td>تطبيق أحكام التجويد واستخراج الأمثلة</td>
@@ -884,9 +891,19 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                 <strong className="text-stone-900">{doneNewPages} من {targetNewPages} صفحات</strong>
               </div>
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
-                <span>مراجعة التمكين:</span>
-                <strong className="text-stone-900">{doneRevPages} من {targetRevPages} صفحات ({(activeStudentPlan as any)?.revision?.revisionType || 'تمكين'})</strong>
+                <span>المراجعة الصغرى المنجزة:</span>
+                <strong className="text-stone-900">{doneMinorRevisionPages} صفحات</strong>
               </div>
+              <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
+                <span>مراجعة التمكين:</span>
+                <strong className="text-stone-900">{doneTamkeenPages} من {targetRevPages} صفحات</strong>
+              </div>
+              {doneUnclassifiedRevisionPages > 0 && (
+                <div className="flex justify-between items-center py-0.5 px-1 text-amber-700" title="سجلات قديمة لم تكن تميّز بين أنواع المراجعة">
+                  <span>مراجعة مسجلة دون تفصيل:</span>
+                  <strong>{doneUnclassifiedRevisionPages} صفحات</strong>
+                </div>
+              )}
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>أخطاء الحفظ المرصودة:</span>
                 <strong className="text-rose-700">{score?.memorizationMistakesTotal || 0} أخطاء</strong>
@@ -1420,8 +1437,12 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                     <span className="text-[9px] text-stone-400 block mt-0.5">المستهدف: {targetNewPages} ص</span>
                   </div>
                   <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
+                    <span className="text-[10px] text-stone-500 block">المراجعة الصغرى</span>
+                    <strong className="text-sm font-bold text-stone-900">{doneMinorRevisionPages} ص</strong>
+                  </div>
+                  <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
                     <span className="text-[10px] text-stone-500 block">مراجعة التمكين</span>
-                    <strong className="text-sm font-bold text-stone-900">{doneRevPages} ص</strong>
+                    <strong className="text-sm font-bold text-stone-900">{doneTamkeenPages} ص</strong>
                     <span className="text-[9px] text-stone-400 block mt-0.5">المستهدف: {targetRevPages} ص</span>
                   </div>
                   <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
@@ -1456,11 +1477,25 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                         <td className="p-2.5 font-bold" style={{ color: customPrimaryColor }}>{score?.memorizationScore || 10} / 10</td>
                       </tr>
                       <tr>
+                        <td className="p-2.5 font-bold text-stone-900">المراجعة الصغرى</td>
+                        <td className="p-2.5">حسب برنامج اليوم</td>
+                        <td className="p-2.5">{doneMinorRevisionPages} صفحات</td>
+                        <td className="p-2.5">—</td>
+                      </tr>
+                      <tr>
                         <td className="p-2.5 font-bold text-stone-900">مراجعة التمكين</td>
                         <td className="p-2.5">{targetRevPages} صفحات</td>
-                        <td className="p-2.5">{doneRevPages} صفحات</td>
+                        <td className="p-2.5">{doneTamkeenPages} صفحات</td>
                         <td className="p-2.5 text-emerald-700 font-bold">متقن بالشروط ✅</td>
                       </tr>
+                      {doneUnclassifiedRevisionPages > 0 && (
+                        <tr>
+                          <td className="p-2.5 font-bold text-amber-700">مراجعة مسجلة دون تفصيل</td>
+                          <td className="p-2.5">—</td>
+                          <td className="p-2.5">{doneUnclassifiedRevisionPages} صفحات</td>
+                          <td className="p-2.5">سجلات سابقة</td>
+                        </tr>
+                      )}
                       <tr>
                         <td className="p-2.5 font-bold text-stone-900">واجبات التجويد «أتقني»</td>
                         <td className="p-2.5">استخراج وتطبيق الأحكام</td>
@@ -1615,7 +1650,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-stone-700 mb-1">صفحات المراجعة المنجزة فعلياً:</label>
+                  <label className="block font-bold text-stone-700 mb-1">إجمالي صفحات المراجعة المنجزة:</label>
                   <input
                     type="number"
                     min="0"
@@ -1623,6 +1658,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                     onChange={e => setQuickEditForm({ ...quickEditForm, revisionActualPages: Number(e.target.value) })}
                     className="w-full px-3 py-1.5 border border-stone-300 rounded-xl bg-white font-bold text-[#2D5A43]"
                   />
+                  <p className="text-[9px] text-stone-500 mt-1">للفصل بين الصغرى والتمكين، استخدمي سجل التسميع اليومي.</p>
                 </div>
               </div>
 

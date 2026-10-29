@@ -6,7 +6,6 @@
     "title": "قائدة مقرأة غيث الغيم",
     "email": "rifa@ghaym.org",
     "phone": "+966500000001",
-    "passcode": "5522",
     "circleIds": [
       "c-1",
       "c-2",
@@ -21,7 +20,6 @@
       "title": "قائدة مقرأة غيث الغيم",
       "email": "rifa@ghaym.org",
       "phone": "+966500000001",
-      "passcode": "5522",
       "circleIds": [
         "c-1",
         "c-2",
@@ -35,7 +33,6 @@
       "title": "مشرفة مسار مشكاة الغيم",
       "email": "khadija@ghaym.org",
       "phone": "+966500000002",
-      "passcode": "3344",
       "circleIds": [
         "c-1",
         "c-2",
@@ -49,7 +46,6 @@
       "title": "معلمة حلقة راسخات (١)",
       "email": "maryam@ghaym.org",
       "phone": "+966500000003",
-      "passcode": "7788",
       "circleIds": [
         "c-1"
       ]
@@ -61,7 +57,6 @@
       "title": "معلمة حلقة راسخات (٢)",
       "email": "fatima@ghaym.org",
       "phone": "+966500000004",
-      "passcode": "6655",
       "circleIds": [
         "c-2"
       ]
@@ -73,7 +68,6 @@
       "title": "معلمة حلقة راسخات (٣)",
       "email": "hind@ghaym.org",
       "phone": "+966500000005",
-      "passcode": "4433",
       "circleIds": [
         "c-3"
       ]
@@ -1095,8 +1089,7 @@
     "supportEmail": "info@ghaym.org",
     "supportPhone": "0500000001",
     "notificationBanner": "مرحباً بكم في منصة غيث الغيم الإدارية المتكاملة 🪴 مرحلة انطلاق الخطة الأولى لمسار مشكاة الغيم للحفظ",
-    "securityEnabled": true,
-    "leaderPasscode": "1234"
+    "securityEnabled": true
   },
   "auditLogs": [
     {

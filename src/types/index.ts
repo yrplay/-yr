@@ -1,4 +1,4 @@
-export type UserRole = 'leader' | 'supervisor' | 'teacher';
+export type UserRole = 'developer' | 'leader' | 'supervisor' | 'teacher';
 
 export interface UserPermissions {
   canRecordAttendance: boolean;      // رصد الحضور والغياب اليومي
@@ -13,6 +13,17 @@ export interface UserPermissions {
 }
 
 export const defaultPermissionsByRole: Record<UserRole, UserPermissions> = {
+  developer: {
+    canRecordAttendance: true,
+    canRecordRecitation: true,
+    canGradeAtqini: true,
+    canManageChallenges: true,
+    canGradeExams: true,
+    canEditStudents: true,
+    canViewReports: true,
+    canManagePlans: true,
+    canManageSettings: true,
+  },
   leader: {
     canRecordAttendance: true,
     canRecordRecitation: true,
@@ -60,7 +71,6 @@ export interface User {
   avatarColor?: string;   // لون الأيقونة المختار
   signatureUrl?: string; // توقيع المعلمة أو المشرفة المعتمد
   circleIds: string[]; // circles supervised or taught
-  passcode?: string;   // رمز الدخول السري
   permissions?: Partial<UserPermissions>; // الصلاحيات المخصصة يدوياً
 }
 
@@ -489,9 +499,8 @@ export interface InstitutionSettings {
   sealImageUrl?: string; // صورة الختم المرفوعة
   leaderSignatureUrl?: string; // توقيع قائدة المقرأة المرفوع
   
-  // Security & PIN Gate
+  // Security controls
   securityEnabled?: boolean;
-  leaderPasscode?: string;
   
   // معايير دليل الإتقان الافتراضية للمقرأة (مشكاة الغيم)
   defaultMasteryGuide?: MasteryGuideConfig;

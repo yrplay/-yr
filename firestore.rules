@@ -1,90 +1,39 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // قاعدة بيانات المنصة المركزية والمزامنة السحابية
-    match /institution_database/{docId} {
-      allow read, write: if true;
-    }
-
-    // الرموز السرية للمعلمات والمشرفات
-    match /staff_pins/{pinId} {
-      allow read, write: if true;
-    }
-
-    match /ghaym_institution/{docId} {
-      allow read, write: if true;
-    }
-
-    // التحقق من أن المستخدم مسجل دخول
-    function isAuthenticated() {
+    function isSignedIn() {
       return request.auth != null;
     }
 
-    // جلب بيانات الحساب للتأكد من رتبته
-    function getStaffData() {
-      return get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
+    function hasActiveStaffAccess() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/staff_access/$(request.auth.uid))
+        && get(/databases/$(database)/documents/staff_access/$(request.auth.uid)).data.active == true
+        && get(/databases/$(database)/documents/staff_access/$(request.auth.uid)).data.staffId is string
+        && get(/databases/$(database)/documents/staff_access/$(request.auth.uid)).data.staffId != ''
+        && get(/databases/$(database)/documents/staff_access/$(request.auth.uid)).data.role is string
+        && get(/databases/$(database)/documents/staff_access/$(request.auth.uid)).data.role != '';
     }
 
-    function isAdmin() {
-      return isAuthenticated() && (
-        request.auth.token.role == 'admin' ||
-        getStaffData().role == 'admin'
-      );
+    // The application currently stores its shared state as one document. Every active
+    // staff member can read/write that document; these rules do not restrict its fields.
+    match /institution_database/{docId} {
+      allow read, write: if hasActiveStaffAccess();
     }
 
-    function isTeacher() {
-      return isAuthenticated() && (
-        request.auth.token.role in ['admin', 'teacher'] ||
-        getStaffData().role in ['admin', 'teacher']
-      );
+    // The app reads its own bootstrap record during sign-in. No client can list,
+    // create, update, or delete access records; provision them administratively.
+    match /staff_access/{uid} {
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
     }
 
-    // الحلقات والمسارات
-    match /tracks/{trackId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-    match /circles/{circleId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+    // PIN storage is retired and must not be readable or writable from clients.
+    match /staff_pins/{pinId} {
+      allow read, write: if false;
     }
 
-    // بيانات الطلاب
-    match /students/{studentId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isTeacher();
-      allow delete: if isAdmin();
-    }
-
-    // الحفظ اليومي، الحضور والغياب، والاختبارات
-    match /dailyMemorization/{docId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isTeacher();
-      allow delete: if isAdmin();
-    }
-
-    match /attendance/{docId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isTeacher();
-      allow delete: if isAdmin();
-    }
-
-    match /exams/{docId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isTeacher();
-      allow delete: if isAdmin();
-    }
-
-    // حسابات الكادر والإعدادات العامة (للإدارة فقط)
-    match /staff/{staffId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-
-    match /settings/{settingId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
+    // All other collections are denied by default. Add narrowly scoped rules only
+    // when a feature demonstrably requires direct client access to a collection.
   }
 }

@@ -4,7 +4,8 @@ import {
   AlertCircle, Search, ArrowRight, ShieldAlert, Check, Edit3, Settings, Calendar, Filter
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { StudentSubscription } from '../types';
+import { hasFullAccess, StudentSubscription } from '../types';
+import { calculateSubscriptionStats, deduplicateSubscriptionsByCycle } from '../services/subscriptionMath';
 
 const HIJRI_MONTHS = [
   'محرم ١٤٤٧هـ',
@@ -29,7 +30,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
   onNavigateToStudent
 }) => {
   const { 
-    students, circles, tracks, currentUser, users, switchUser,
+    students, circles, tracks, currentUser,
     studentSubscriptions, saveStudentSubscription, settings, updateSettings 
   } = useApp();
 
@@ -45,7 +46,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
   const [applyToExisting, setApplyToExisting] = useState(false);
   const [isSavingFeeSettings, setIsSavingFeeSettings] = useState(false);
 
-  const isLeader = currentUser?.role === 'leader';
+  const isLeader = hasFullAccess(currentUser);
 
   const defaultFee = settings?.defaultSubscriptionFee ?? 150;
   const currency = settings?.currency || 'ر.س';
@@ -71,6 +72,13 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
     return list;
   }, [currentCycle, studentSubscriptions]);
 
+  const getStudentSubscriptions = (studentId: string, cycleFilter = selectedCycleFilter) =>
+    deduplicateSubscriptionsByCycle(
+      (studentSubscriptions || []).filter(subscription => subscription.studentId === studentId),
+      currentCycle,
+      cycleFilter
+    );
+
   // قفل أمني: حصر قسم الاشتراكات والمالية على الإدارة العليا أو من يملك صلاحية إدارة المالية
   const canAccessFinances = isLeader || !!currentUser?.permissions?.canManageFinances;
   if (!canAccessFinances) {
@@ -85,16 +93,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
         <p className="text-xs sm:text-sm text-stone-500 max-w-md mb-6 leading-relaxed">
           عذراً، هذا القسم يشتمل على الرسوم والاشتراكات وسندات التحصيل والمبالغ المالية، وتقتصر صلاحية الاطلاع عليه وإدارته على الإدارة العليا أو المفوّضين بصلاحية المالية فقط.
         </p>
-        <button
-          type="button"
-          onClick={async () => {
-            const leaderUser = users.find(u => u.role === 'leader') || users[0];
-            if (leaderUser) await switchUser(leaderUser.id);
-          }}
-          className="px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
-        >
-          <span>👑 الانتقال لحساب الإدارة العليا (أ. ريفة المنصوري)</span>
-        </button>
+        <p className="text-xs text-stone-500">سجّلي الخروج ثم ادخلي باستخدام حساب إداري مخوّل للوصول إلى هذا القسم.</p>
       </div>
     );
   }
@@ -112,58 +111,22 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
   }, [allStudents, searchQuery]);
 
   // الإحصاءات المالية المباشرة وفق الفلتر المحدد
-  const stats = useMemo(() => {
-    const totalExpected = allStudents.length * defaultFee;
-    let totalCollected = 0;
-    let paidCount = 0;
-    let pendingCount = 0;
-    let exemptCount = 0;
-
-    allStudents.forEach(st => {
-      const sub = (studentSubscriptions || []).find(s => {
-        if (s.studentId !== st.id) return false;
-        if (selectedCycleFilter === 'all') return true;
-        return s.cycleMonth === selectedCycleFilter || (!s.cycleMonth && selectedCycleFilter === currentCycle);
-      });
-      const paid = sub?.paidAmount ?? 0;
-      totalCollected += paid;
-
-      if (sub?.status === 'paid' || paid >= (sub?.requiredAmount ?? defaultFee)) {
-        paidCount++;
-      } else if (sub?.status === 'exempt') {
-        exemptCount++;
-      } else {
-        pendingCount++;
-      }
-    });
-
-    const totalRemaining = Math.max(0, totalExpected - totalCollected);
-    const collectionRate = totalExpected > 0 ? Math.round((totalCollected / totalExpected) * 100) : 0;
-
-    return {
-      totalExpected,
-      totalCollected,
-      totalRemaining,
-      collectionRate,
-      paidCount,
-      pendingCount,
-      exemptCount
-    };
-  }, [allStudents, studentSubscriptions, defaultFee, selectedCycleFilter, currentCycle]);
+  const stats = useMemo(
+    () => calculateSubscriptionStats(allStudents, studentSubscriptions || [], currentCycle, selectedCycleFilter, defaultFee),
+    [allStudents, studentSubscriptions, defaultFee, selectedCycleFilter, currentCycle]
+  );
 
   const handleOpenPayment = (studentId: string) => {
-    const existing = (studentSubscriptions || []).find(s => {
-      if (s.studentId !== studentId) return false;
-      if (selectedCycleFilter === 'all') return true;
-      return s.cycleMonth === selectedCycleFilter || (!s.cycleMonth && selectedCycleFilter === currentCycle);
-    });
+    // عند عرض جميع الدورات، يظل السداد موجهاً للدورة الحالية ولا يُفتح سجل قديم عشوائياً.
+    const writeCycle = selectedCycleFilter === 'all' ? currentCycle : selectedCycleFilter;
+    const existing = getStudentSubscriptions(studentId, writeCycle)[0];
     setSelectedSub(existing || {
       studentId,
       trackId: 'general',
-      cycleMonth: selectedCycleFilter === 'all' ? currentCycle : selectedCycleFilter,
+      cycleMonth: writeCycle,
       requiredAmount: defaultFee,
-      paidAmount: defaultFee,
-      status: 'paid',
+      paidAmount: 0,
+      status: 'pending',
       paymentMethod: 'bank_transfer'
     });
     setShowPaymentModal(true);
@@ -189,7 +152,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
       // إذا طلبت الإدارة تطبيق الرسم الجديد على الطالبات
       if (applyToExisting && allStudents.length > 0) {
         for (const st of allStudents) {
-          const existing = (studentSubscriptions || []).find(s => s.studentId === st.id);
+          const existing = getStudentSubscriptions(st.id, editingCycle)[0];
           const newFee = Number(editingDefaultFee) || 150;
           if (existing) {
             if (existing.status !== 'exempt') {
@@ -198,7 +161,6 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
               await saveStudentSubscription({
                 ...existing,
                 requiredAmount: newFee,
-                cycleMonth: editingCycle,
                 status: newStatus
               });
             }
@@ -369,19 +331,21 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
             <tbody className="divide-y divide-stone-100 dark:divide-stone-800 text-stone-700 dark:text-stone-200">
               {filteredStudents.map((st, idx) => {
                 const circle = circles.find(c => c.id === st.circleId);
-                const sub = (studentSubscriptions || []).find(s => {
-                  if (s.studentId !== st.id) return false;
-                  if (selectedCycleFilter === 'all') return true;
-                  return s.cycleMonth === selectedCycleFilter || (!s.cycleMonth && selectedCycleFilter === currentCycle);
-                });
-                const reqAmount = sub?.requiredAmount ?? defaultFee;
-                const paidAmount = sub?.paidAmount ?? 0;
-                const isExempt = sub?.status === 'exempt';
-                const isPaid = !isExempt && (sub?.status === 'paid' || paidAmount >= reqAmount);
+                const subscriptions = getStudentSubscriptions(st.id);
+                const reqAmount = subscriptions.length
+                  ? subscriptions.reduce((sum, subscription) => sum + (subscription.requiredAmount ?? defaultFee), 0)
+                  : defaultFee;
+                const amountDue = subscriptions.length
+                  ? subscriptions.filter(subscription => subscription.status !== 'exempt')
+                    .reduce((sum, subscription) => sum + (subscription.requiredAmount ?? defaultFee), 0)
+                  : defaultFee;
+                const paidAmount = subscriptions.reduce((sum, subscription) => sum + (subscription.paidAmount ?? 0), 0);
+                const isExempt = subscriptions.length > 0 && subscriptions.every(subscription => subscription.status === 'exempt');
+                const isPaid = !isExempt && paidAmount >= amountDue && amountDue > 0;
                 const isPartial = !isExempt && paidAmount > 0 && !isPaid;
 
                 return (
-                  <tr key={st.id} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition">
+                <tr key={st.id} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition">
                     <td className="p-3.5 text-stone-400 font-mono">{idx + 1}</td>
                     <td className="p-3.5">
                       <strong className="block text-stone-900 dark:text-stone-100 font-bold">{st.name}</strong>
@@ -471,7 +435,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                   <input
                     type="number"
                     min="0"
-                    value={selectedSub.paidAmount ?? defaultFee}
+                    value={selectedSub.paidAmount ?? 0}
                     onChange={e => {
                       const paid = Number(e.target.value) || 0;
                       const req = selectedSub.requiredAmount ?? defaultFee;

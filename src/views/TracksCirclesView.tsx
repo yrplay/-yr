@@ -6,7 +6,7 @@ import {
   Sliders, UserCheck, Shield, AlertCircle, Trash2, RotateCcw,
   Eye, EyeOff, AlertTriangle, X, ExternalLink
 } from 'lucide-react';
-import { Circle, Track } from '../types';
+import { Circle, hasFullAccess, Track } from '../types';
 import { CircleIconPicker } from '../components/CircleIconLibrary';
 import { TrackDetailView } from './TrackDetailView';
 
@@ -19,11 +19,13 @@ const TRACK_EMOJIS = [
 interface TracksCirclesViewProps {
   onSelectStudent: (studentId: string) => void;
   onNavigateToSection: (section: string) => void;
+  onNavigateToTrackDetail?: (trackId: string) => void;
 }
 
 export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
   onSelectStudent,
-  onNavigateToSection
+  onNavigateToSection,
+  onNavigateToTrackDetail
 }) => {
   const {
     tracks, circles, students, users, allStudentScores,
@@ -277,7 +279,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
             </button>
           )}
 
-          {currentUser?.role === 'leader' && (
+          {hasFullAccess(currentUser) && (
             <button
               onClick={() => handleOpenTrackModal()}
               className="flex items-center gap-1.5 px-3 py-2 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#744251] border border-[#E2D5CC] rounded-xl text-xs font-bold transition"
@@ -354,7 +356,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
             <div className="flex items-center gap-2 flex-wrap">
               {/* زر الدخول لصفحة دليل الإتقان ومعايير المسار */}
               <button
-                onClick={() => setSelectedTrackDetailId(currentTrack.id)}
+                onClick={() => onNavigateToTrackDetail ? onNavigateToTrackDetail(currentTrack.id) : setSelectedTrackDetailId(currentTrack.id)}
                 className="px-3.5 py-2 rounded-xl bg-[#FAF0F3] hover:bg-[#F2E0E6] text-[#8E5364] text-xs font-bold flex items-center gap-1.5 border border-[#E2D5CC] transition cursor-pointer active:scale-95 shadow-2xs"
                 title="عرض وإدارة معايير دليل الإتقان والمنهجية الخاصة بهذا المسار"
               >
@@ -362,7 +364,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 <span>دليل الإتقان والمعايير</span>
               </button>
 
-              {currentUser?.role === 'leader' && (
+              {hasFullAccess(currentUser) && (
                 <>
                   <button
                     onClick={() => handleOpenTrackModal(currentTrack)}

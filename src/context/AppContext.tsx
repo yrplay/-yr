@@ -8,8 +8,11 @@ import {
 } from '../types';
 import initialData from '../data/initialData';
 import { subscribeToCloudDatabase, pushStateToCloud, CloudSyncStatus } from '../services/cloudSync';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { summarizeDailyPageProgress } from '../services/recitationProgress';
+import { doc, getDoc } from 'firebase/firestore';
+import { onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
+import { auth, db } from '../firebase';
+import { isLocalDemoMode } from '../demoMode';
 
 export interface StudentScoreSummary {
   studentId: string;
@@ -17,6 +20,7 @@ export interface StudentScoreSummary {
   attendanceMax: number;
   attendanceRate: number;
   presentCount: number;
+  lateCount: number;
   absentUnexcusedCount: number;
   absentExcusedCount: number;
   earlyPrepCount: number;
@@ -28,6 +32,9 @@ export interface StudentScoreSummary {
   newMemorizationPagesTarget: number;
   revisionPagesDone: number;
   revisionPagesTarget: number;
+  minorRevisionPagesDone: number;
+  tamkeenRevisionPagesDone: number;
+  unclassifiedRevisionPagesDone: number;
   memorizationMistakesTotal: number;
   hintsTotal: number;
   tajweedErrorsTotal: number;
@@ -149,6 +156,7 @@ interface AppContextType {
 
   lastSynced: Date;
   cloudStatus: CloudSyncStatus;
+  cloudDataReady: boolean;
   syncNow: () => Promise<void>;
   switchToLeader: () => Promise<void>;
 
@@ -163,6 +171,9 @@ interface AppContextType {
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+const STORAGE_KEY = isLocalDemoMode ? 'ghaith_demo_db_v1' : 'ghaith_alghaym_db_v1';
+const CURRENT_USER_KEY = isLocalDemoMode ? 'ghaith_demo_current_user_id' : 'ghaith_current_user_id';
+const GRADING_CONFIGS_KEY = isLocalDemoMode ? 'ghaith_demo_grading_configs' : 'ghaith_grading_configs';
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const defaultLeader: User = (initialData.users?.[0] as unknown as User) || {
@@ -173,7 +184,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     phone: '0500000001',
     email: 'leader@ghaym.org',
     circleIds: [],
-    passcode: '1234',
     isArchived: false,
     createdAt: new Date().toISOString()
   };
@@ -181,10 +191,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const getCachedDb = () => {
     if (typeof window !== 'undefined') {
       try {
-        const raw = localStorage.getItem('ghaith_alghaym_db_v1');
+        for (const storage of [localStorage, sessionStorage]) {
+          const obsoleteKeys: string[] = [];
+          for (let index = 0; index < storage.length; index++) {
+            const key = storage.key(index);
+            if (key?.startsWith('ghaith_pin_') || key === 'ghaith_authenticated' || key === 'ghaith_gate_authorized') {
+              obsoleteKeys.push(key);
+            }
+          }
+          obsoleteKeys.forEach(key => storage.removeItem(key));
+        }
+        const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (parsed && typeof parsed === 'object') return parsed;
+          if (parsed && typeof parsed === 'object') {
+            if (Array.isArray(parsed.users)) {
+              parsed.users = parsed.users.map(({ passcode: _passcode, ...user }: any) => user);
+            }
+            if (parsed.currentUser && typeof parsed.currentUser === 'object') {
+              const { passcode: _passcode, ...safeCurrentUser } = parsed.currentUser;
+              parsed.currentUser = safeCurrentUser;
+            }
+            if (parsed.settings && typeof parsed.settings === 'object') delete parsed.settings.leaderPasscode;
+            localStorage.setItem('ghaith_alghaym_db_v1', JSON.stringify(parsed));
+            return parsed;
+          }
         }
       } catch {}
     }
@@ -193,11 +224,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const initialCached = getCachedDb();
 
+  const getCachedArray = <T,>(key: string, fallback: T[]): T[] =>
+    Array.isArray(initialCached?.[key]) ? initialCached[key] as T[] : fallback;
+
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    if (isLocalDemoMode) return defaultLeader;
     if (typeof window !== 'undefined') {
       try {
-        const savedId = localStorage.getItem('ghaith_current_user_id') || sessionStorage.getItem('ghaith_current_user_id');
-        const userPool = initialCached?.users?.length ? initialCached.users : initialData.users;
+        const savedId = localStorage.getItem(CURRENT_USER_KEY) || sessionStorage.getItem(CURRENT_USER_KEY);
+        const userPool = Array.isArray(initialCached?.users) ? initialCached.users : initialData.users;
         if (savedId && Array.isArray(userPool)) {
           const found = (userPool as unknown as User[]).find(u => u.id === savedId);
           if (found) return found;
@@ -208,61 +243,64 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   });
 
   const [users, setUsers] = useState<User[]>(() => {
-    return (initialCached?.users?.length ? initialCached.users : (initialData.users as unknown as User[])) || [];
+    return getCachedArray<User>('users', initialData.users as unknown as User[]);
   });
   const [tracks, setTracks] = useState<Track[]>(() => {
-    return (initialCached?.tracks?.length ? initialCached.tracks : (initialData.tracks as unknown as Track[])) || [];
+    return getCachedArray<Track>('tracks', initialData.tracks as unknown as Track[]);
   });
   const [circles, setCircles] = useState<Circle[]>(() => {
-    return (initialCached?.circles?.length ? initialCached.circles : (initialData.circles as unknown as Circle[])) || [];
+    return getCachedArray<Circle>('circles', initialData.circles as unknown as Circle[]);
   });
   const [students, setStudents] = useState<Student[]>(() => {
-    return (initialCached?.students?.length ? initialCached.students : (initialData.students as unknown as Student[])) || [];
+    return getCachedArray<Student>('students', initialData.students as unknown as Student[]);
   });
   const [monthlyPlans, setMonthlyPlans] = useState<MonthlyPlan[]>(() => {
-    return (initialCached?.monthlyPlans?.length ? initialCached.monthlyPlans : (initialData.monthlyPlans as unknown as MonthlyPlan[])) || [];
+    return getCachedArray<MonthlyPlan>('monthlyPlans', initialData.monthlyPlans as unknown as MonthlyPlan[]);
   });
   const [studentPlans, setStudentPlans] = useState<StudentMonthlyPlan[]>(() => {
-    return (initialCached?.studentPlans?.length ? initialCached.studentPlans : (initialData.studentPlans as unknown as StudentMonthlyPlan[])) || [];
+    return getCachedArray<StudentMonthlyPlan>('studentPlans', initialData.studentPlans as unknown as StudentMonthlyPlan[]);
   });
   const [dailyRecords, setDailyRecords] = useState<DailyRecord[]>(() => {
-    return (initialCached?.dailyRecords?.length ? initialCached.dailyRecords : (initialData.dailyRecords as unknown as DailyRecord[])) || [];
+    return getCachedArray<DailyRecord>('dailyRecords', initialData.dailyRecords as unknown as DailyRecord[]);
   });
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => {
-    return (initialCached?.attendanceRecords?.length ? initialCached.attendanceRecords : (initialData.attendanceRecords as unknown as AttendanceRecord[])) || [];
+    return getCachedArray<AttendanceRecord>('attendanceRecords', initialData.attendanceRecords as unknown as AttendanceRecord[]);
   });
   const [atqiniAssignments, setAtqiniAssignments] = useState<AtqiniAssignment[]>(() => {
-    return (initialCached?.atqiniAssignments?.length ? initialCached.atqiniAssignments : (initialData.atqiniAssignments as unknown as AtqiniAssignment[])) || [];
+    return getCachedArray<AtqiniAssignment>('atqiniAssignments', initialData.atqiniAssignments as unknown as AtqiniAssignment[]);
   });
   const [studentAtqiniSubmissions, setStudentAtqiniSubmissions] = useState<StudentAtqiniSubmission[]>(() => {
-    return (initialCached?.studentAtqiniSubmissions?.length ? initialCached.studentAtqiniSubmissions : (initialData.studentAtqiniSubmissions as unknown as StudentAtqiniSubmission[])) || [];
+    return getCachedArray<StudentAtqiniSubmission>('studentAtqiniSubmissions', initialData.studentAtqiniSubmissions as unknown as StudentAtqiniSubmission[]);
   });
   const [challenges, setChallenges] = useState<Challenge[]>(() => {
-    return (initialCached?.challenges?.length ? initialCached.challenges : (initialData.challenges as unknown as Challenge[])) || [];
+    return getCachedArray<Challenge>('challenges', initialData.challenges as unknown as Challenge[]);
   });
   const [studentChallengeSubmissions, setStudentChallengeSubmissions] = useState<StudentChallengeSubmission[]>(() => {
-    return (initialCached?.studentChallengeSubmissions?.length ? initialCached.studentChallengeSubmissions : (initialData.studentChallengeSubmissions as unknown as StudentChallengeSubmission[])) || [];
+    return getCachedArray<StudentChallengeSubmission>('studentChallengeSubmissions', initialData.studentChallengeSubmissions as unknown as StudentChallengeSubmission[]);
   });
   const [monthlyExams, setMonthlyExams] = useState<MonthlyExam[]>(() => {
-    return (initialCached?.monthlyExams?.length ? initialCached.monthlyExams : (initialData.monthlyExams as unknown as MonthlyExam[])) || [];
+    return getCachedArray<MonthlyExam>('monthlyExams', initialData.monthlyExams as unknown as MonthlyExam[]);
   });
   const [studentExamResults, setStudentExamResults] = useState<StudentExamResult[]>(() => {
-    return (initialCached?.studentExamResults?.length ? initialCached.studentExamResults : (initialData.studentExamResults as unknown as StudentExamResult[])) || [];
+    return getCachedArray<StudentExamResult>('studentExamResults', initialData.studentExamResults as unknown as StudentExamResult[]);
   });
   const [studentSubscriptions, setStudentSubscriptions] = useState<StudentSubscription[]>(() => {
-    return initialCached?.studentSubscriptions || [];
+    return getCachedArray<StudentSubscription>(
+      'studentSubscriptions',
+      (initialData.studentSubscriptions || []) as unknown as StudentSubscription[]
+    );
   });
   const [gradingConfigs, setGradingConfigs] = useState<TrackGradingConfig[]>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const saved = localStorage.getItem('ghaith_grading_configs');
+        const saved = localStorage.getItem(GRADING_CONFIGS_KEY);
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed)) return parsed;
         }
       } catch {}
     }
-    return (initialCached?.gradingConfigs?.length ? initialCached.gradingConfigs : (initialData.gradingConfigs as unknown as TrackGradingConfig[])) || [];
+    return getCachedArray<TrackGradingConfig>('gradingConfigs', initialData.gradingConfigs as unknown as TrackGradingConfig[]);
   });
   const [settings, setSettings] = useState<InstitutionSettings>(() => {
     const baseSettings: InstitutionSettings = {
@@ -274,8 +312,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       currentHijriMonth: "ربيع الآخر - جمادى الأولى",
       supportEmail: "info@ghaym.org",
       supportPhone: "0500000001",
-      securityEnabled: true,
-      leaderPasscode: "1234"
+      securityEnabled: true
     };
     return initialCached?.settings ? { ...baseSettings, ...initialCached.settings } : baseSettings;
   });
@@ -287,7 +324,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [lastSynced, setLastSynced] = useState<Date>(new Date());
-  const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>('connected');
+  const [cloudStatus, setCloudStatus] = useState<CloudSyncStatus>('offline');
+  const [cloudDataReady, setCloudDataReady] = useState(isLocalDemoMode);
   const [quickModalAction, setQuickModalAction] = useState<{ type: string; timestamp: number } | null>(null);
 
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -329,26 +367,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setTimeout(() => setToast(null), 4000);
   };
 
-  const STORAGE_KEY = 'ghaith_alghaym_db_v1';
-
   const masterStateRef = useRef<any>({
     currentUser: initialCached?.currentUser || defaultLeader,
-    users: initialCached?.users?.length ? initialCached.users : (initialData.users || []),
-    tracks: initialCached?.tracks?.length ? initialCached.tracks : (initialData.tracks || []),
-    circles: initialCached?.circles?.length ? initialCached.circles : (initialData.circles || []),
-    students: initialCached?.students?.length ? initialCached.students : (initialData.students || []),
-    monthlyPlans: initialCached?.monthlyPlans?.length ? initialCached.monthlyPlans : (initialData.monthlyPlans || []),
-    studentPlans: initialCached?.studentPlans?.length ? initialCached.studentPlans : (initialData.studentPlans || []),
-    dailyRecords: initialCached?.dailyRecords?.length ? initialCached.dailyRecords : (initialData.dailyRecords || []),
-    attendanceRecords: initialCached?.attendanceRecords?.length ? initialCached.attendanceRecords : (initialData.attendanceRecords || []),
-    atqiniAssignments: initialCached?.atqiniAssignments?.length ? initialCached.atqiniAssignments : (initialData.atqiniAssignments || []),
-    studentAtqiniSubmissions: initialCached?.studentAtqiniSubmissions?.length ? initialCached.studentAtqiniSubmissions : (initialData.studentAtqiniSubmissions || []),
-    challenges: initialCached?.challenges?.length ? initialCached.challenges : (initialData.challenges || []),
-    studentChallengeSubmissions: initialCached?.studentChallengeSubmissions?.length ? initialCached.studentChallengeSubmissions : (initialData.studentChallengeSubmissions || []),
-    monthlyExams: initialCached?.monthlyExams?.length ? initialCached.monthlyExams : (initialData.monthlyExams || []),
-    studentExamResults: initialCached?.studentExamResults?.length ? initialCached.studentExamResults : (initialData.studentExamResults || []),
-    studentSubscriptions: initialCached?.studentSubscriptions || [],
-    gradingConfigs: initialCached?.gradingConfigs?.length ? initialCached.gradingConfigs : (initialData.gradingConfigs || []),
+    users: getCachedArray('users', initialData.users || []),
+    tracks: getCachedArray('tracks', initialData.tracks || []),
+    circles: getCachedArray('circles', initialData.circles || []),
+    students: getCachedArray('students', initialData.students || []),
+    monthlyPlans: getCachedArray('monthlyPlans', initialData.monthlyPlans || []),
+    studentPlans: getCachedArray('studentPlans', initialData.studentPlans || []),
+    dailyRecords: getCachedArray('dailyRecords', initialData.dailyRecords || []),
+    attendanceRecords: getCachedArray('attendanceRecords', initialData.attendanceRecords || []),
+    atqiniAssignments: getCachedArray('atqiniAssignments', initialData.atqiniAssignments || []),
+    studentAtqiniSubmissions: getCachedArray('studentAtqiniSubmissions', initialData.studentAtqiniSubmissions || []),
+    challenges: getCachedArray('challenges', initialData.challenges || []),
+    studentChallengeSubmissions: getCachedArray('studentChallengeSubmissions', initialData.studentChallengeSubmissions || []),
+    monthlyExams: getCachedArray('monthlyExams', initialData.monthlyExams || []),
+    studentExamResults: getCachedArray('studentExamResults', initialData.studentExamResults || []),
+    studentSubscriptions: getCachedArray('studentSubscriptions', (initialData.studentSubscriptions || []) as unknown as StudentSubscription[]),
+    gradingConfigs: getCachedArray('gradingConfigs', initialData.gradingConfigs || []),
+    _deletedEntities: initialCached?._deletedEntities || {},
     settings: initialCached?.settings ? {
       name: "غيث الغيم",
       leaderName: "ريفة المنصوري",
@@ -359,7 +396,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       supportEmail: "info@ghaym.org",
       supportPhone: "0500000001",
       securityEnabled: true,
-      leaderPasscode: "1234",
       ...initialCached.settings
     } : {
       name: "غيث الغيم",
@@ -371,7 +407,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       supportEmail: "info@ghaym.org",
       supportPhone: "0500000001",
       securityEnabled: true,
-      leaderPasscode: "1234"
     },
     auditLogs: initialCached?.auditLogs || initialData.auditLogs || []
   });
@@ -403,6 +438,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     return Array.from(map.values());
   };
+
+  const mergeDeletedEntityMaps = (...maps: Array<Record<string, string[]> | undefined>) => {
+    const merged: Record<string, string[]> = {};
+    for (const source of maps) {
+      if (!source || typeof source !== 'object') continue;
+      for (const [collection, ids] of Object.entries(source)) {
+        if (!Array.isArray(ids)) continue;
+        merged[collection] = [...new Set([...(merged[collection] || []), ...ids.map(String)])];
+      }
+    }
+    return merged;
+  };
+
+  const addDeletedEntity = (collection: string, id: string) => mergeDeletedEntityMaps(
+    masterStateRef.current._deletedEntities,
+    { [collection]: [id] }
+  );
 
   const mergeDailyRecords = (localRecs: DailyRecord[] = [], incomingRecs: DailyRecord[] = []): DailyRecord[] => {
     const map = new Map<string, DailyRecord>();
@@ -467,8 +519,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return Array.from(map.values());
   };
 
-  const applyState = (data: any) => {
-    if (!data || typeof data !== 'object') return;
+  const applyState = (incomingData: any) => {
+    if (!incomingData || typeof incomingData !== 'object') return;
+
+    const deletedEntities = mergeDeletedEntityMaps(
+      masterStateRef.current._deletedEntities,
+      incomingData._deletedEntities
+    );
+    const data = { ...incomingData, _deletedEntities: deletedEntities };
+    const sanitizeUser = (user: any) => {
+      if (!user || typeof user !== 'object') return user;
+      const { passcode: _passcode, ...safeUser } = user;
+      return safeUser;
+    };
+    if (Array.isArray(data.users)) data.users = data.users.map(sanitizeUser);
+    if (Array.isArray(masterStateRef.current.users)) masterStateRef.current.users = masterStateRef.current.users.map(sanitizeUser);
+    if (data.currentUser) data.currentUser = sanitizeUser(data.currentUser);
+    if (masterStateRef.current.currentUser) masterStateRef.current.currentUser = sanitizeUser(masterStateRef.current.currentUser);
+    if (data.settings && typeof data.settings === 'object') delete data.settings.leaderPasscode;
+    if (masterStateRef.current.settings && typeof masterStateRef.current.settings === 'object') {
+      delete masterStateRef.current.settings.leaderPasscode;
+    }
+    for (const [collection, deletedIds] of Object.entries(deletedEntities)) {
+      const deleted = new Set(deletedIds.map(String));
+      if (Array.isArray(masterStateRef.current[collection])) {
+        masterStateRef.current[collection] = masterStateRef.current[collection].filter(
+          (item: any) => !deleted.has(String(collection === 'gradingConfigs' ? item.trackId : item.id))
+        );
+      }
+      if (Array.isArray(data[collection])) {
+        data[collection] = data[collection].filter(
+          (item: any) => !deleted.has(String(collection === 'gradingConfigs' ? item.trackId : item.id))
+        );
+      }
+    }
     
     const {
       dailyRecords: incomingDaily,
@@ -491,11 +575,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     masterStateRef.current = {
       ...masterStateRef.current,
-      ...restData
+      ...restData,
+      _deletedEntities: deletedEntities
     };
 
     const activeUserId = typeof window !== 'undefined'
-      ? (localStorage.getItem('ghaith_current_user_id') || sessionStorage.getItem('ghaith_current_user_id'))
+      ? (localStorage.getItem(CURRENT_USER_KEY) || sessionStorage.getItem(CURRENT_USER_KEY))
       : null;
 
     const userList: User[] = Array.isArray(data.users) && data.users.length > 0
@@ -632,6 +717,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const persistState = (overrides?: any) => {
     try {
+      const replaceCloudState = Boolean(overrides?._replaceState);
       const payload = {
         currentUser: masterStateRef.current.currentUser || currentUser,
         users: masterStateRef.current.users || users,
@@ -650,40 +736,48 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         studentExamResults: masterStateRef.current.studentExamResults || studentExamResults,
         studentSubscriptions: masterStateRef.current.studentSubscriptions || studentSubscriptions,
         gradingConfigs: masterStateRef.current.gradingConfigs || gradingConfigs,
+        _deletedEntities: masterStateRef.current._deletedEntities || {},
         settings: { ...(masterStateRef.current.settings || settings), ...(overrides?.settings || {}) },
         auditLogs: masterStateRef.current.auditLogs || auditLogs,
         ...overrides
       };
+      delete payload._replaceState;
 
       masterStateRef.current = payload;
 
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      try {
+        if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      } catch (storageError) {
+        console.warn('LocalStorage save failed; continuing with cloud sync:', storageError);
       }
 
       if (syncTimeoutRef.current) {
         clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = null;
+      }
+      if (isLocalDemoMode) {
+        setCloudStatus('offline');
+        return;
       }
       
       syncTimeoutRef.current = setTimeout(() => {
-        pushStateToCloud(payload)
+        pushStateToCloud(replaceCloudState ? { ...payload, _replaceState: true } : payload)
           .then(() => setCloudStatus('connected'))
-          .catch(() => setCloudStatus('offline'));
-
-        fetch('/api/state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        }).catch(() => {});
+          .catch(error => {
+            console.warn('Cloud save failed:', error);
+            setCloudStatus('offline');
+          });
       }, 1200);
 
     } catch (e) {
-      console.warn('LocalStorage save failed:', e);
+      console.error('Unable to build local/cloud state payload:', e);
+      setCloudStatus('error');
     }
   };
 
   const refreshData = async () => {
     try {
+      let loadedFromCache = false;
       if (typeof window !== 'undefined') {
         const cached = localStorage.getItem(STORAGE_KEY);
         if (cached) {
@@ -691,43 +785,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const data = JSON.parse(cached);
             if (data && (Array.isArray(data.students) || Array.isArray(data.tracks))) {
               applyState(data);
-              setLoading(false);
+              loadedFromCache = true;
             }
           } catch {}
         }
       }
-
-      const res = await fetch(`/api/state?t=${Date.now()}`, {
-        cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
-      });
-      if (res.ok) {
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          const serverData = await res.json();
-          if (serverData && (Array.isArray(serverData.students) || Array.isArray(serverData.tracks))) {
-            applyState(serverData);
-            if (typeof window !== 'undefined') {
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(serverData));
-            }
-            setError(null);
-            return;
-          }
-        }
-      }
-    } catch {
-      if (typeof window !== 'undefined') {
-        const cached = localStorage.getItem(STORAGE_KEY);
-        if (cached) {
-          try {
-            const data = JSON.parse(cached);
-            applyState(data);
-            setError(null);
-            return;
-          } catch {}
-        }
-      }
-      applyState(initialData);
+      if (!loadedFromCache) applyState(initialData);
+      setError(null);
+    } catch (error) {
+      console.warn('Failed to initialize cached state; using bundled starter data:', error);
+      try { applyState(initialData); } catch {}
       setError(null);
     } finally {
       setLoading(false);
@@ -735,51 +802,100 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const syncNow = async () => {
+    if (isLocalDemoMode) {
+      setCloudStatus('offline');
+      showToast('وضع معاينة محلي: لا توجد مزامنة مع Firebase', 'info');
+      return;
+    }
     setCloudStatus('syncing');
-    await refreshData();
-    persistState();
-    setCloudStatus('connected');
-    showToast('تمت المزامنة السحابية الفورية بنجاح ✅', 'success');
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    try {
+      const payload = { ...masterStateRef.current };
+      await pushStateToCloud(payload);
+      setCloudStatus('connected');
+      setLastSynced(new Date());
+      showToast('تمت المزامنة السحابية بنجاح', 'success');
+    } catch (error: any) {
+      console.error('Manual cloud sync failed:', error);
+      setCloudStatus('error');
+      showToast('تعذرت المزامنة السحابية: ' + (error?.message || 'تحققي من الاتصال والصلاحيات'), 'error');
+    }
   };
 
   useEffect(() => {
     refreshData();
-    const unsubscribeCloud = subscribeToCloudDatabase(
-      (cloudData) => {
-        if (cloudData && typeof cloudData === 'object' && (Array.isArray(cloudData.tracks) || Array.isArray(cloudData.students))) {
-          applyState(cloudData);
-          setCloudStatus('connected');
-          setLastSynced(new Date());
-        } else {
-          persistState();
-          setCloudStatus('connected');
+    if (isLocalDemoMode) {
+      setCloudStatus('offline');
+      return () => {
+        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+      };
+    }
+    let unsubscribeCloud: (() => void) | null = null;
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      if (unsubscribeCloud) {
+        unsubscribeCloud();
+        unsubscribeCloud = null;
+      }
+      if (!firebaseUser) {
+        setCloudDataReady(false);
+        setCloudStatus('offline');
+        return;
+      }
+      setCloudDataReady(false);
+      unsubscribeCloud = subscribeToCloudDatabase(
+        (cloudData) => {
+          if (cloudData && typeof cloudData === 'object') {
+            applyState(cloudData);
+            setCloudStatus('connected');
+            setLastSynced(new Date());
+          } else {
+            persistState();
+            setCloudStatus('connected');
+          }
+          setCloudDataReady(true);
+        },
+        (status) => {
+          setCloudStatus(status);
+          if (status === 'error') setCloudDataReady(false);
         }
-      },
-      (status) => setCloudStatus(status)
-    );
+      );
+    });
     return () => {
+      unsubscribeAuth();
       if (unsubscribeCloud) unsubscribeCloud();
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     };
   }, []);
 
   const switchToLeader = async () => {
-    const leader = users.find(u => u.role === 'leader') || users[0];
-    if (leader) await switchUser(leader.id);
+    showToast('تبديل الأدوار داخل الجلسة غير مسموح؛ سجّلي الخروج ثم ادخلي بحساب الإدارة', 'info');
   };
 
   const switchUser = async (userId: string) => {
     try {
-      const targetUser = users.find(u => u.id === userId);
-      if (targetUser) {
-        setCurrentUser(targetUser);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('ghaith_current_user_id', targetUser.id);
-          sessionStorage.setItem('ghaith_current_user_id', targetUser.id);
-        }
-        persistState({ currentUser: targetUser });
-        showToast(`مرحباً بك: ${targetUser.name} (${targetUser.title})`, 'info');
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser) throw new Error('يجب تسجيل الدخول عبر Firebase Auth أولاً');
+      const accessSnapshot = await getDoc(doc(db, 'staff_access', firebaseUser.uid));
+      const access = accessSnapshot.exists() ? accessSnapshot.data() : null;
+      const storedUser = users.find(user => user.id === userId);
+      if (!storedUser) throw new Error('ملف الموظفة غير موجود في بيانات المؤسسة');
+      const staffId = typeof access?.staffId === 'string' ? access.staffId.trim().toLowerCase() : '';
+      const matchesStaff = staffId === userId.toLowerCase()
+        || (!!storedUser.email && staffId === storedUser.email.trim().toLowerCase());
+      if (!access || access.active !== true || !matchesStaff) {
+        throw new Error('هذا الحساب غير مرتبط بملف موظفة فعال');
       }
+      if (!['developer', 'leader', 'supervisor', 'teacher'].includes(access.role)) {
+        throw new Error('دور الحساب غير صالح؛ راجعي إعداد staff_access');
+      }
+      const targetUser = { ...storedUser, role: access.role as User['role'] };
+      setCurrentUser(targetUser);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(CURRENT_USER_KEY, targetUser.id);
+        sessionStorage.setItem(CURRENT_USER_KEY, targetUser.id);
+      }
+      persistState({ currentUser: targetUser });
+      showToast(`مرحباً بك: ${targetUser.name} (${targetUser.title})`, 'info');
       return true;
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -1020,7 +1136,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = currentStudents.filter((s: Student) => s.id !== id);
     masterStateRef.current.students = next;
     setStudents(next);
-    persistState({ students: next });
+    persistState({ students: next, _deletedEntities: addDeletedEntity('students', id) });
     showToast(`تم حذف سجل الطالبة "${studentToDelete?.name || ''}" نهائياً من المقرأة بنجاح`);
   };
 
@@ -1346,7 +1462,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = currentAtq.filter((a: AtqiniAssignment) => a.id !== id);
     masterStateRef.current.atqiniAssignments = next;
     setAtqiniAssignments(next);
-    persistState({ atqiniAssignments: next });
+    persistState({ atqiniAssignments: next, _deletedEntities: addDeletedEntity('atqiniAssignments', id) });
     showToast('تم حذف واجب التجويد');
   };
 
@@ -1430,7 +1546,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = currentCh.filter((c: Challenge) => c.id !== id);
     masterStateRef.current.challenges = next;
     setChallenges(next);
-    persistState({ challenges: next });
+    persistState({ challenges: next, _deletedEntities: addDeletedEntity('challenges', id) });
     showToast('تم حذف التحدي');
   };
 
@@ -1506,11 +1622,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const nextExams = currentExams.filter((e: MonthlyExam) => e.id !== id);
     const currentResults = masterStateRef.current.studentExamResults || studentExamResults;
     const nextResults = currentResults.filter((r: StudentExamResult) => r.examId !== id);
+    const removedResults = currentResults.filter((r: StudentExamResult) => r.examId === id);
     masterStateRef.current.monthlyExams = nextExams;
     masterStateRef.current.studentExamResults = nextResults;
     setMonthlyExams(nextExams);
     setStudentExamResults(nextResults);
-    persistState({ monthlyExams: nextExams, studentExamResults: nextResults });
+    persistState({
+      monthlyExams: nextExams,
+      studentExamResults: nextResults,
+      _deletedEntities: mergeDeletedEntityMaps(
+        addDeletedEntity('monthlyExams', id),
+        { studentExamResults: removedResults.map((result: StudentExamResult) => result.id) }
+      )
+    });
     showToast('تم حذف الاختبار الشهري بنجاح 🗑️');
   };
 
@@ -1583,7 +1707,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setGradingConfigs(next);
     if (typeof window !== 'undefined') {
       try {
-        localStorage.setItem('ghaith_grading_configs', JSON.stringify(next));
+        localStorage.setItem(GRADING_CONFIGS_KEY, JSON.stringify(next));
       } catch {}
     }
     persistState({ gradingConfigs: next });
@@ -1642,8 +1766,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (!backupData || !backupData.tracks || !backupData.students) {
         throw new Error('صيغة النسخة الاحتياطية غير صالحة');
       }
-      applyState(backupData);
-      persistState(backupData);
+      const arrayFields = [
+        'users', 'tracks', 'circles', 'students', 'monthlyPlans', 'studentPlans',
+        'dailyRecords', 'attendanceRecords', 'atqiniAssignments', 'studentAtqiniSubmissions',
+        'challenges', 'studentChallengeSubmissions', 'monthlyExams', 'studentExamResults',
+        'studentSubscriptions', 'gradingConfigs', 'auditLogs'
+      ];
+      const normalizedBackup = { ...backupData, settings: backupData.settings || initialData.settings };
+      arrayFields.forEach(field => {
+        if (!Array.isArray(normalizedBackup[field])) normalizedBackup[field] = [];
+      });
+      if (!normalizedBackup._deletedEntities || typeof normalizedBackup._deletedEntities !== 'object') {
+        normalizedBackup._deletedEntities = {};
+      }
+      masterStateRef.current = {};
+      applyState(normalizedBackup);
+      persistState({ ...normalizedBackup, _replaceState: true });
       showToast('تمت استعادة قاعدة البيانات بالكامل بنجاح');
       return true;
     } catch (err: any) {
@@ -1653,12 +1791,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const resetSampleData = async () => {
-    applyState(initialData);
-    persistState(initialData);
+    masterStateRef.current = {};
+    applyState({ ...initialData, _deletedEntities: {} });
+    persistState({ ...initialData, _deletedEntities: {}, _replaceState: true });
     showToast('تمت إعادة ضبط البيانات النموذجية بنجاح');
   };
 
   const createUser = async (user: Partial<User>) => {
+    const { passcode: _passcode, ...safeUser } = user as Partial<User> & { passcode?: string };
     const newUser: User = {
       id: user.id || 'u-' + Date.now(),
       name: user.name || 'معلمة جديدة',
@@ -1667,13 +1807,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       email: user.email || '',
       phone: user.phone || '',
       circleIds: user.circleIds || [],
-      passcode: user.passcode || '1234',
       avatarIcon: user.avatarIcon || 'mushaf',
       avatarColor: user.avatarColor || '#8E5364',
-      ...user
+      ...safeUser
     } as User;
 
-    const next = [...users, newUser];
+    const next = [...users.filter(existing => existing.id !== newUser.id), newUser];
     setUsers(next);
     persistState({ users: next });
     showToast(`تمت إضافة ${newUser.name} إلى الكادر بنجاح`);
@@ -1681,24 +1820,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateUser = async (id: string, user: Partial<User>) => {
-    const nextUsers = users.map(u => u.id === id ? { ...u, ...user } : u);
+    const { passcode: _passcode, role: _role, ...safeUser } = user as Partial<User> & { passcode?: string };
+    const nextUsers = users.map(u => u.id === id ? { ...u, ...safeUser } : u);
     setUsers(nextUsers);
     if (currentUser?.id === id) {
-      setCurrentUser({ ...currentUser, ...user });
+      setCurrentUser({ ...currentUser, ...safeUser });
     }
 
     let nextCircles = circles;
-    if (user.name) {
+    if (safeUser.name) {
       nextCircles = circles.map(c => {
         let changed = false;
         let tName = c.teacherName;
         let sName = c.supervisorName;
         if (c.teacherId === id) {
-          tName = user.name!;
+          tName = safeUser.name!;
           changed = true;
         }
         if (c.supervisorId === id) {
-          sName = user.name!;
+          sName = safeUser.name!;
           changed = true;
         }
         return changed ? { ...c, teacherName: tName, supervisorName: sName } : c;
@@ -1710,31 +1850,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('تم تحديث بيانات المعلمة / المشرفة بنجاح');
   };
 
-  const changeUserPasscode = async (userId: string, newPasscode: string): Promise<boolean> => {
+  const changeUserPasscode = async (userId: string, _newPasscode: string): Promise<boolean> => {
+    if (isLocalDemoMode) {
+      showToast('روابط إعادة تعيين الدخول غير متاحة في وضع المعاينة المحلي', 'info');
+      return false;
+    }
     try {
-      const cleanPasscode = newPasscode.trim();
-      const next = users.map(u => u.id === userId ? { ...u, passcode: cleanPasscode } : u);
-      setUsers(next);
-      if (currentUser?.id === userId) {
-        setCurrentUser({ ...currentUser, passcode: cleanPasscode });
-      }
-      persistState({ users: next });
-
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(`ghaith_pin_${userId}`, cleanPasscode);
-      }
-
-      try {
-        await setDoc(doc(db, 'staff_pins', userId), {
-          userId,
-          pin: cleanPasscode,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-      } catch (e) {
-        console.warn('Firestore pin sync failed:', e);
-      }
-
-      showToast('تم تغيير رمز الدخول السري ومزامنته سحابياً بنجاح 🔒');
+      const targetUser = users.find(user => user.id === userId);
+      if (!targetUser?.email) throw new Error('لا يوجد بريد إلكتروني صالح لإرسال رابط الاستعادة');
+      await sendPasswordResetEmail(auth, targetUser.email);
+      showToast(`تم إرسال رابط إعادة تعيين كلمة المرور إلى ${targetUser.email}`);
       return true;
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -1750,59 +1875,61 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     sAtqini: StudentAtqiniSubmission[],
     sChallenges: StudentChallengeSubmission[],
     sExam: StudentExamResult | undefined,
+    examDefinition: MonthlyExam | undefined,
+    atqiniAssignmentList: AtqiniAssignment[],
     gradingConfig: TrackGradingConfig | undefined
   ): StudentScoreSummary => {
     const presentCount = sAttendance.filter(a => a.status === 'present').length;
+    const lateCount = sAttendance.filter(a => a.status === 'late').length;
     const absentUnexcusedCount = sAttendance.filter(a => a.status === 'absent_unexcused').length;
     const absentExcusedCount = sAttendance.filter(a => a.status === 'absent_excused').length;
-    const earlyPrepCount = sAttendance.filter(a => a.earlyPrepCardSent).length;
-    const totalRecordedDays = presentCount + absentUnexcusedCount + absentExcusedCount;
+    const earlyPrepCount = sAttendance.filter(a => a.earlyPrepCardSent && (a.status === 'present' || a.status === 'late')).length;
+    const totalRecordedDays = presentCount + lateCount + absentUnexcusedCount + absentExcusedCount;
     const rules = gradingConfig?.attendanceRules || {
       presentScore: 5,
       absentUnexcusedScore: 0,
       absentExcusedScore: 2.5
     };
-    const maxDayPoints = rules.presentScore || 5;
-    const earnedDayPoints = (presentCount * maxDayPoints) + (absentExcusedCount * (rules.absentExcusedScore ?? 2.5));
+    const maxDayPoints = rules.presentScore ?? rules.pointsPerPresent ?? 5;
+    const excusedDayPoints = rules.absentExcusedScore ?? rules.pointsPerExcusedAbsent ?? 2.5;
+    const unexcusedDayPoints = rules.absentUnexcusedScore ?? rules.pointsPerUnexcusedAbsent ?? 0;
+    const lateDayPoints = maxDayPoints * 0.5;
+    const earlyPrepBonus = rules.earlyPrepBonus ?? rules.earlyPrepBonusPoints ?? 0;
+    const earnedDayPoints = (presentCount * maxDayPoints) + (lateCount * lateDayPoints)
+      + (absentExcusedCount * excusedDayPoints) + (absentUnexcusedCount * unexcusedDayPoints)
+      + (earlyPrepCount * earlyPrepBonus);
     const totalPossibleDayPoints = totalRecordedDays * maxDayPoints;
     const attendanceRatio = totalPossibleDayPoints > 0 ? Math.min(1, earnedDayPoints / totalPossibleDayPoints) : 1;
-    const attendanceRate = totalRecordedDays > 0 ? Math.min(100, Math.round(((presentCount + absentExcusedCount * 0.5) / totalRecordedDays) * 1000) / 10) : 100;
+    const attendanceRate = totalRecordedDays > 0
+      ? Math.min(100, Math.round(((presentCount + lateCount * 0.5 + absentExcusedCount * 0.5) / totalRecordedDays) * 1000) / 10)
+      : 0;
     
     const maxAttendanceItem = gradingConfig?.items.find(i => i.category === 'attendance');
-    const attendanceMax = maxAttendanceItem?.maxScore || 10;
-    const attendanceScore = totalRecordedDays > 0 ? Math.min(attendanceMax, Math.round(attendanceRatio * attendanceMax * 10) / 10) : attendanceMax;
+    const attendanceMax = maxAttendanceItem?.maxScore ?? 10;
+    const attendanceScore = totalRecordedDays > 0
+      ? Math.min(attendanceMax, Math.round(attendanceRatio * attendanceMax * 10) / 10)
+      : 0;
 
     let memorizationScoreSum = 0;
     let memorizationMistakesTotal = 0;
     let hintsTotal = 0;
     let tajweedErrorsTotal = 0;
-    let newPagesDone = 0;
-    let revisionPagesDone = 0;
     let conditionsDistinctionCount = 0;
     let conditionsSum = 0;
+    const completedDailyRecords = sDaily.filter(dr => dr.status === 'completed');
+    const pageProgress = summarizeDailyPageProgress(completedDailyRecords);
+    let newPagesDone = pageProgress.newMemorizationPagesDone;
+    let revisionPagesDone = pageProgress.revisionPagesDone;
+    let unclassifiedRevisionPagesDone = pageProgress.unclassifiedRevisionPagesDone;
 
     for (let i = 0; i < sDaily.length; i++) {
       const dr = sDaily[i];
+      if (dr.status !== 'completed') continue;
       memorizationMistakesTotal += (dr.memorizationMistakes || 0);
       hintsTotal += (dr.hintsCount || 0);
       tajweedErrorsTotal += (dr.tajweedErrorsCount || 0);
 
-      // فقط ما يُرصد كمنجز بشروط على مدار الشهر يُعتمد ويُضاف في الحفظ الجديد المنجز
-      const isNewWithConditions = dr.newMemorizationWithConditions !== undefined
-        ? Boolean(dr.newMemorizationWithConditions)
-        : (dr.newMemorizationCompleted !== false && (
-            Boolean(dr.conditions?.masteryRepetition) || 
-            Boolean(dr.conditions?.listenedToReader) || 
-            Boolean(dr.conditions?.recitedLooking) ||
-            Boolean(dr.criteriaRepeatCount && dr.criteriaRepeatCount > 0) ||
-            (dr.recitationScore !== undefined && dr.recitationScore >= 8)
-          ));
-
-      if (isNewWithConditions) {
-        newPagesDone += (dr.newMemorizationPages || 0);
-      }
-      revisionPagesDone += (dr.revisionPages || 0);
-      memorizationScoreSum += (dr.recitationScore || 0);
+      memorizationScoreSum += Math.min(10, Math.max(0, dr.recitationScore || 0));
       
       const cond = dr.conditions;
       if (cond) {
@@ -1817,39 +1944,48 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    const planNewActual = sPlan?.newMemorization?.actualPages;
-    if (typeof planNewActual === 'number' && (newPagesDone === 0 || planNewActual > newPagesDone)) {
-      newPagesDone = planNewActual;
-    }
-    const planRevActual = sPlan?.revision?.actualPages;
-    if (typeof planRevActual === 'number' && (revisionPagesDone === 0 || planRevActual > revisionPagesDone)) {
-      revisionPagesDone = planRevActual;
+    // سجل اليوم هو مصدر المنجز. نستخدم الأرقام القديمة بالخطة فقط عندما لا توجد سجلات يومية.
+    if (completedDailyRecords.length === 0) {
+      const planNewActual = sPlan?.newMemorization?.actualPages;
+      if (typeof planNewActual === 'number' && Number.isFinite(planNewActual) && planNewActual > 0) {
+        newPagesDone = planNewActual;
+      }
+      const planRevActual = sPlan?.revision?.actualPages;
+      if (typeof planRevActual === 'number' && Number.isFinite(planRevActual) && planRevActual > 0) {
+        revisionPagesDone = planRevActual;
+        unclassifiedRevisionPagesDone = planRevActual;
+      }
     }
 
     const memorizationItem = gradingConfig?.items.find(i => i.category === 'memorization');
-    const memorizationMax = memorizationItem?.maxScore || 25;
-    const avgRecitationOutOf10 = sDaily.length > 0 ? (memorizationScoreSum / sDaily.length) : 10;
-    const memorizationScore = (avgRecitationOutOf10 / 10) * memorizationMax;
+    const memorizationMax = memorizationItem?.maxScore ?? 25;
+    const hasMemorizationData = completedDailyRecords.length > 0;
+    const avgRecitationOutOf10 = hasMemorizationData ? (memorizationScoreSum / completedDailyRecords.length) : 0;
+    const memorizationScore = hasMemorizationData ? (avgRecitationOutOf10 / 10) * memorizationMax : 0;
 
     const conditionsItem = gradingConfig?.items.find(i => i.category === 'conditions');
-    const conditionsMax = conditionsItem?.maxScore || 10;
-    const avgConditionsOutOf10 = sDaily.length > 0 ? (conditionsSum / sDaily.length) : 10;
-    const conditionsFulfilledScore = (avgConditionsOutOf10 / 10) * conditionsMax;
+    const conditionsMax = conditionsItem?.maxScore ?? 10;
+    const hasConditionsData = completedDailyRecords.length > 0;
+    const avgConditionsOutOf10 = hasConditionsData ? (conditionsSum / completedDailyRecords.length) : 0;
+    const conditionsFulfilledScore = hasConditionsData ? (avgConditionsOutOf10 / 10) * conditionsMax : 0;
 
     const newMemorizationPagesTarget = (typeof sPlan?.newMemorization?.targetPages === 'number' && sPlan.newMemorization.targetPages > 0) ? sPlan.newMemorization.targetPages : 8;
     const revisionPagesTarget = (typeof sPlan?.revision?.targetPages === 'number' && sPlan.revision.targetPages > 0) ? sPlan.revision.targetPages : 4;
 
     const atqiniItem = gradingConfig?.items.find(i => i.category === 'atqini');
-    const atqiniMax = atqiniItem?.maxScore || 10;
+    const atqiniMax = atqiniItem?.maxScore ?? 10;
     const atqiniCompletedCount = sAtqini.filter(a => a.status === 'completed' || a.isCompletedCorrectly).length;
-    let atqiniTotalScore = 0;
-    for (let i = 0; i < sAtqini.length; i++) {
-      atqiniTotalScore += (sAtqini[i].score || 0);
-    }
-    const atqiniScore = sAtqini.length > 0 ? (atqiniTotalScore / (sAtqini.length * 10)) * atqiniMax : atqiniMax;
+    const assignmentMaxById = new Map(atqiniAssignmentList.map(assignment => [assignment.id, assignment.maxScore ?? 10]));
+    const atqiniRatioSum = sAtqini.reduce((sum, submission) => {
+      const maxScore = assignmentMaxById.get(submission.assignmentId) ?? 10;
+      const score = Math.min(maxScore, Math.max(0, submission.score || 0));
+      return sum + (maxScore > 0 ? score / maxScore : 0);
+    }, 0);
+    const hasAtqiniData = sAtqini.length > 0;
+    const atqiniScore = hasAtqiniData ? (atqiniRatioSum / sAtqini.length) * atqiniMax : 0;
 
     const challengeItem = gradingConfig?.items.find(i => i.category === 'thursday_challenge');
-    const challengesMax = challengeItem?.maxScore || 10;
+    const challengesMax = challengeItem?.maxScore ?? 10;
     let challengeEarned = 0;
     let peerReviewEarned = 0;
     for (let i = 0; i < sChallenges.length; i++) {
@@ -1859,24 +1995,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         peerReviewEarned += (c.peerReviewEvaluation.totalEarned || 0);
       }
     }
-    const challengesScore = sChallenges.length > 0 ? Math.min(challengesMax, challengeEarned / sChallenges.length) : challengesMax;
+    const hasChallengeData = sChallenges.length > 0;
+    const challengesScore = hasChallengeData ? Math.min(challengesMax, challengeEarned / sChallenges.length) : 0;
 
     const examItem = gradingConfig?.items.find(i => i.category === 'exam');
-    const examMax = examItem?.maxScore || 15;
-    const hasExam = !!sExam && typeof sExam.score === 'number';
-    const examScore = hasExam ? Math.round(((sExam.score || 0) / 100) * examMax * 10) / 10 : 0;
+    const examMax = examItem?.maxScore ?? 15;
+    const hasExam = !!sExam && !!examDefinition && typeof sExam.score === 'number';
+    const examBaseMax = examDefinition?.maxScore ?? 100;
+    const examScore = hasExam && examBaseMax > 0
+      ? Math.round((Math.min(examBaseMax, Math.max(0, sExam?.score ?? 0)) / examBaseMax) * examMax * 10) / 10
+      : 0;
 
     const method = gradingConfig?.calculationMethod || 'weighted_percentage';
     let finalPercentage = 0;
-    let totalEarnedPoints = attendanceScore + memorizationScore + conditionsFulfilledScore + atqiniScore + challengesScore + (hasExam ? examScore : 0);
-    let totalPossiblePoints = attendanceMax + memorizationMax + conditionsMax + atqiniMax + challengesMax + (hasExam ? examMax : 0);
+    const assessedScores = [
+      ...(totalRecordedDays > 0 ? [[attendanceScore, attendanceMax]] : []),
+      ...(hasMemorizationData ? [[memorizationScore, memorizationMax]] : []),
+      ...(hasConditionsData ? [[conditionsFulfilledScore, conditionsMax]] : []),
+      ...(hasAtqiniData ? [[atqiniScore, atqiniMax]] : []),
+      ...(hasChallengeData ? [[challengesScore, challengesMax]] : []),
+      ...(hasExam ? [[examScore, examMax]] : [])
+    ];
+    const totalEarnedPoints = assessedScores.reduce((sum, [earned]) => sum + earned, 0);
+    const totalPossiblePoints = assessedScores.reduce((sum, [, possible]) => sum + possible, 0);
 
     if (method === 'weighted_percentage') {
       let earnedWeighted = 0;
       let totalWeights = 0;
       (gradingConfig?.items || []).forEach(item => {
         if (!item.includesInFinalGrade) return;
+        if (item.category === 'custom') return;
         if (item.category === 'exam' && !hasExam) return;
+        if (item.category === 'attendance' && totalRecordedDays === 0) return;
+        if ((item.category === 'memorization' || item.category === 'conditions') && !hasMemorizationData) return;
+        if (item.category === 'atqini' && !hasAtqiniData) return;
+        if (item.category === 'thursday_challenge' && !hasChallengeData) return;
         totalWeights += item.weightPercentage;
         let scoreRatio = 1;
         if (item.category === 'attendance') scoreRatio = attendanceMax > 0 ? attendanceScore / attendanceMax : 1;
@@ -1887,9 +2040,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         else if (item.category === 'exam') scoreRatio = examMax > 0 ? examScore / examMax : 1;
         earnedWeighted += scoreRatio * item.weightPercentage;
       });
-      finalPercentage = totalWeights > 0 ? Math.min(100, Math.max(0, (earnedWeighted / totalWeights) * 100)) : 100;
+      finalPercentage = totalWeights > 0 ? Math.min(100, Math.max(0, (earnedWeighted / totalWeights) * 100)) : 0;
     } else {
-      finalPercentage = totalPossiblePoints > 0 ? (totalEarnedPoints / totalPossiblePoints) * 100 : 100;
+      finalPercentage = totalPossiblePoints > 0 ? (totalEarnedPoints / totalPossiblePoints) * 100 : 0;
     }
 
     const scale = gradingConfig?.gradeScale || [
@@ -1911,16 +2064,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       attendanceMax,
       attendanceRate: Number(attendanceRate.toFixed(1)),
       presentCount,
+      lateCount,
       absentUnexcusedCount,
       absentExcusedCount,
       earlyPrepCount,
-      perfectWeeksCount: absentUnexcusedCount === 0 ? 1 : 0,
+      perfectWeeksCount: totalRecordedDays > 0 && absentUnexcusedCount === 0 ? 1 : 0,
       memorizationScore: Number(memorizationScore.toFixed(1)),
       memorizationMax,
       newMemorizationPagesDone: newPagesDone,
       newMemorizationPagesTarget,
       revisionPagesDone,
       revisionPagesTarget,
+      minorRevisionPagesDone: pageProgress.minorRevisionPagesDone,
+      tamkeenRevisionPagesDone: pageProgress.tamkeenRevisionPagesDone,
+      unclassifiedRevisionPagesDone,
       memorizationMistakesTotal,
       hintsTotal,
       tajweedErrorsTotal,
@@ -1943,7 +2100,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       gradeColor: matchedScale.color,
       rankInCircle: 1,
       rankInTrack: 1,
-      hasUnrecordedLogs: sDaily.length === 0,
+      hasUnrecordedLogs: completedDailyRecords.length === 0,
       hasFrequentAbsence: absentUnexcusedCount >= 2
     };
   };
@@ -1987,8 +2144,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       chByStudent.set(sub.studentId, arr);
     });
 
-    const examByStudent = new Map<string, StudentExamResult>();
-    studentExamResults.forEach(r => examByStudent.set(r.studentId, r));
+    const resultsByStudent = new Map<string, StudentExamResult[]>();
+    studentExamResults.forEach(result => {
+      const items = resultsByStudent.get(result.studentId) || [];
+      items.push(result);
+      resultsByStudent.set(result.studentId, items);
+    });
+    const examById = new Map(monthlyExams.map(exam => [exam.id, exam]));
 
     const gradingByTrack = new Map<string, TrackGradingConfig>();
     gradingConfigs.forEach(g => gradingByTrack.set(g.trackId, g));
@@ -1997,15 +2159,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     students.forEach(st => {
       const trackId = st.trackId || tracks[0]?.id;
       const gConfig = gradingByTrack.get(trackId) || fallbackGrading;
+      const studentPlan = plansByStudent.get(st.id);
+      const allResults = resultsByStudent.get(st.id) || [];
+      const planResults = studentPlan?.status === 'active'
+        ? allResults.filter(result => examById.get(result.examId)?.monthlyPlanId === studentPlan.monthlyPlanId)
+        : allResults;
+      const latestResult = [...planResults].sort((a, b) => {
+        const aTime = Date.parse(a.evaluatedAt || '') || 0;
+        const bTime = Date.parse(b.evaluatedAt || '') || 0;
+        return bTime - aTime;
+      })[0];
 
       scoresMap[st.id] = computeStudentScoreFast(
         st.id,
         attByStudent.get(st.id) || [],
         dailyByStudent.get(st.id) || [],
-        plansByStudent.get(st.id),
+        studentPlan,
         atqiniByStudent.get(st.id) || [],
         chByStudent.get(st.id) || [],
-        examByStudent.get(st.id),
+        latestResult,
+        latestResult ? examById.get(latestResult.examId) : undefined,
+        atqiniAssignments,
         gConfig
       );
     });
@@ -2029,45 +2203,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     return scoresMap;
-  }, [students, circles, tracks, attendanceRecords, dailyRecords, studentPlans, studentAtqiniSubmissions, studentChallengeSubmissions, studentExamResults, gradingConfigs]);
+  }, [students, circles, tracks, attendanceRecords, dailyRecords, studentPlans, studentAtqiniSubmissions, studentChallengeSubmissions, studentExamResults, monthlyExams, atqiniAssignments, gradingConfigs]);
 
   const getStudentScoreSummary = (studentId: string): StudentScoreSummary => {
     return allStudentScores[studentId] || {
       studentId,
-      attendanceScore: 10,
+      attendanceScore: 0,
       attendanceMax: 10,
-      attendanceRate: 100,
+      attendanceRate: 0,
       presentCount: 0,
+      lateCount: 0,
       absentUnexcusedCount: 0,
       absentExcusedCount: 0,
       earlyPrepCount: 0,
-      perfectWeeksCount: 1,
-      memorizationScore: 25,
+      perfectWeeksCount: 0,
+      memorizationScore: 0,
       memorizationMax: 25,
       newMemorizationPagesDone: 0,
       newMemorizationPagesTarget: 8,
       revisionPagesDone: 0,
       revisionPagesTarget: 6,
+      minorRevisionPagesDone: 0,
+      tamkeenRevisionPagesDone: 0,
+      unclassifiedRevisionPagesDone: 0,
       memorizationMistakesTotal: 0,
       hintsTotal: 0,
       tajweedErrorsTotal: 0,
-      conditionsFulfilledScore: 10,
+      conditionsFulfilledScore: 0,
       conditionsMax: 10,
       conditionsDistinctionCount: 0,
-      atqiniScore: 10,
+      atqiniScore: 0,
       atqiniMax: 10,
       atqiniCompletedCount: 0,
-      challengesScore: 10,
+      challengesScore: 0,
       challengesMax: 10,
       peerReviewScore: 0,
       examScore: 0,
       examMax: 15,
-      totalEarnedPoints: 65,
-      totalPossiblePoints: 65,
-      finalPercentage: 100,
-      gradeLabel: "ممتاز مرتفع",
-      gradeLetter: "أ+",
-      gradeColor: "#2D5A43",
+      totalEarnedPoints: 0,
+      totalPossiblePoints: 0,
+      finalPercentage: 0,
+      gradeLabel: "لا توجد سجلات",
+      gradeLetter: "—",
+      gradeColor: "#78716c",
       rankInCircle: 1,
       rankInTrack: 1,
       hasUnrecordedLogs: true,
@@ -2153,6 +2331,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         showToast,
         lastSynced,
         cloudStatus,
+        cloudDataReady,
         syncNow,
         switchToLeader,
         quickModalAction,
