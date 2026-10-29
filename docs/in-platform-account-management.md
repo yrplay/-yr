@@ -13,7 +13,7 @@
 
 من إعدادات مشروع Vercel، أضيفي المتغيرات التالية في بيئة Preview و/أو Production بحسب البيئة التي تريدين اختبارها:
 
-1. `FIREBASE_SERVICE_ACCOUNT_JSON`: محتوى ملف Service Account JSON الخاص بمشروع Firebase `peerless-reason-1f38q`. يجب أن تكون الصلاحيات كافية لإدارة مستخدمي Authentication وقراءة وكتابة قاعدة Firestore المحددة للتطبيق. خزّنيه كـ Environment Variable خادمي فقط، ولا تضيفي بادئة `VITE_` ولا ترفعيه إلى GitHub ولا ترسليه في المحادثة.
+1. `FIREBASE_SERVICE_ACCOUNT_JSON`: محتوى ملف Service Account JSON الخاص بمشروع Firebase `yr-ghaym`. يجب أن تكون الصلاحيات كافية لإدارة مستخدمي Authentication وقراءة وكتابة قاعدة Firestore الافتراضية (`(default)`). خزّنيه كـ Environment Variable خادمي فقط، ولا تضيفي بادئة `VITE_` ولا ترفعيه إلى GitHub ولا ترسليه في المحادثة.
 2. `BOOTSTRAP_DEVELOPER_SECRET`: مفتاح عشوائي طويل لا يقل عن 32 حرفًا، يستخدم مرة واحدة فقط لتأسيس أول حساب مطور. يمكن توليده محليًا بالأمر `openssl rand -hex 32`. أدخليه في Vercel ثم أعيدي نشر النسخة كي تقرأه الوظائف.
 3. `VERCEL_DEPLOY_HOOK_URL`: رابط Deploy Hook من مشروع Vercel. اربطيه بفرع GitHub المقصود للنشر. خزّني الرابط في متغير خادمي فقط؛ لا تضعينه في متغير `VITE_` أو في المستودع.
 
