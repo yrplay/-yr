@@ -208,7 +208,7 @@ export const Header: React.FC<HeaderProps> = ({
                       متصلة الآن
                     </span>
                     <span className="text-[11px] text-stone-500 font-semibold">
-                      {currentUser?.role === 'developer' ? 'مطوّر المنصة' : isLeader ? 'قائدة المقرأة' : currentUser?.role === 'supervisor' ? 'مشرفة المقرأة' : 'معلمة حلقة'}
+                      {currentUser?.role === 'owner' ? 'مالك المنصة' : currentUser?.role === 'developer' ? 'المطور التقني' : isLeader ? 'قائدة المقرأة' : currentUser?.role === 'supervisor' ? 'مشرفة المقرأة' : 'معلمة حلقة'}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -255,8 +255,14 @@ export const Header: React.FC<HeaderProps> = ({
                         <Cloud className="w-3.5 h-3.5 text-emerald-600" />
                         <span>المزامنة السحابية</span>
                       </div>
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-md">
-                        {cloudStatus === 'connected' ? 'Firebase متصل ✅' : 'جاري المزامنة...'}
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                        cloudStatus === 'connected'
+                          ? 'text-emerald-700 bg-emerald-100/90'
+                          : cloudStatus === 'error'
+                          ? 'text-rose-700 bg-rose-100/90'
+                          : 'text-amber-700 bg-amber-100/90'
+                      }`}>
+                        {cloudStatus === 'connected' ? 'Firebase متصل ✅' : cloudStatus === 'syncing' ? 'جاري المزامنة...' : cloudStatus === 'error' ? 'خطأ في المزامنة' : 'غير متصل'}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-[11px] text-stone-500 mb-2">

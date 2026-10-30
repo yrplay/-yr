@@ -79,6 +79,59 @@
       "name": "مشكاة الغيم للحفظ",
       "code": "MG-MEM",
       "description": "المسار التأسيسي والتمكيني لحفظ كتاب الله وضبطه وإتقانه وتطبيق أحكام التجويد وفق خطط مشكاة الغيم المعتمدة.",
+      "icon": "🪴",
+      "subscriptionFee": {
+        "amount": 250,
+        "currency": "ر.س",
+        "period": "monthly",
+        "notes": "شامل الحقيبة القرآنية ومقررات التجويد ومتابعة التسميع اليومي والشهادات المعتمدة"
+      },
+      "systemRules": {
+        "earlyPreparation": true,
+        "atqiniHomeworkRequired": true,
+        "thursdayChallenges": true,
+        "customPlansAllowed": true,
+        "detailedWorkflowText": "يبدأ اليوم القرآني بإرسال بطاقة التحضير المبكر قبل بدء الحلقة بربع ساعة، يليه التسميع اليومي غيباً مع تطبيق أحكام التجويد، ثم مصفوفة المراجعة الصغرى والتمكين مع الرفيقة، وتُختم بمطابقة شروط دليل مشكاة الغيم للإتقان.",
+        "masteryGuide": {
+          "listenToReciterTimes": 3,
+          "reciteLookingTimes": 5,
+          "masteryRepetitionTimes": 20,
+          "minorRevisionAmount": "آخر 3 أوجه",
+          "tamkeenRevisionAmount": "ربع حزب",
+          "pointsPerCondition": 2
+        }
+      },
+      "isArchived": false,
+      "createdAt": "2024-10-01T08:00:00Z",
+      "updatedAt": "2024-10-01T08:00:00Z"
+    },
+    {
+      "id": "t-2",
+      "name": "مسار التمكين والرسوخ",
+      "code": "MG-TAM",
+      "description": "مسار متخصص للمتقدمات وخاتمات الأجزاء لضبط الأوجه الصعبة، مراجعة ربع حزب يومياً، والتثبيت المتقن تمهيداً للإجازة بالسند.",
+      "icon": "🌸",
+      "subscriptionFee": {
+        "amount": 350,
+        "currency": "ر.س",
+        "period": "monthly",
+        "notes": "يشمل جلسات التسميع الفردية واختبارات الأجزاء التراكمية والتأهيل للإسناد"
+      },
+      "systemRules": {
+        "earlyPreparation": true,
+        "atqiniHomeworkRequired": true,
+        "thursdayChallenges": true,
+        "customPlansAllowed": false,
+        "detailedWorkflowText": "يركز المسار على الضبط الصارم والاستظهار مع التدقيق على المتشابهات اللفظية، مع إلزامية مراجعة حزب كامل أسبوعياً والمشاركة في التحدي التنافسي المباشر.",
+        "masteryGuide": {
+          "listenToReciterTimes": 5,
+          "reciteLookingTimes": 7,
+          "masteryRepetitionTimes": 30,
+          "minorRevisionAmount": "نصف حزب",
+          "tamkeenRevisionAmount": "حزب كامل",
+          "pointsPerCondition": 3
+        }
+      },
       "isArchived": false,
       "createdAt": "2024-10-01T08:00:00Z",
       "updatedAt": "2024-10-01T08:00:00Z"

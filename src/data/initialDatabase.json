@@ -1,76 +1,42 @@
 {
   "currentUser": {
-    "id": "u-1",
-    "name": "ريفة المنصوري",
-    "role": "leader",
-    "title": "قائدة مقرأة غيث الغيم",
-    "email": "rifa@ghaym.org",
-    "phone": "+966500000001",
-    "circleIds": [
-      "c-1",
-      "c-2",
-      "c-3"
-    ]
+    "id": "u-owner",
+    "name": "مالك المنصة",
+    "role": "owner",
+    "title": "مالك المنصة العام",
+    "email": "yr.play.com@gmail.com",
+    "phone": "",
+    "circleIds": []
   },
   "users": [
     {
-      "id": "u-1",
-      "name": "ريفة المنصوري",
+      "id": "u-owner",
+      "name": "مالك المنصة",
+      "role": "owner",
+      "title": "مالك المنصة العام",
+      "email": "yr.play.com@gmail.com",
+      "phone": "",
+      "circleIds": []
+    },
+    {
+      "id": "u-dev",
+      "name": "المطور التقني",
+      "role": "developer",
+      "title": "مهندس المنصة والمطور التقني",
+      "email": "dev@ghaym.org",
+      "passcode": "8899",
+      "phone": "",
+      "circleIds": []
+    },
+    {
+      "id": "u-leader",
+      "name": "أ. نورة القحطاني",
       "role": "leader",
       "title": "قائدة مقرأة غيث الغيم",
-      "email": "rifa@ghaym.org",
-      "phone": "+966500000001",
-      "circleIds": [
-        "c-1",
-        "c-2",
-        "c-3"
-      ]
-    },
-    {
-      "id": "u-2",
-      "name": "أ. خديجة العتيبي",
-      "role": "supervisor",
-      "title": "مشرفة مسار مشكاة الغيم",
-      "email": "khadija@ghaym.org",
-      "phone": "+966500000002",
-      "circleIds": [
-        "c-1",
-        "c-2",
-        "c-3"
-      ]
-    },
-    {
-      "id": "u-3",
-      "name": "أ. مريم الدوسري",
-      "role": "teacher",
-      "title": "معلمة حلقة راسخات (١)",
-      "email": "maryam@ghaym.org",
-      "phone": "+966500000003",
-      "circleIds": [
-        "c-1"
-      ]
-    },
-    {
-      "id": "u-4",
-      "name": "أ. فاطمة الشهري",
-      "role": "teacher",
-      "title": "معلمة حلقة راسخات (٢)",
-      "email": "fatima@ghaym.org",
-      "phone": "+966500000004",
-      "circleIds": [
-        "c-2"
-      ]
-    },
-    {
-      "id": "u-5",
-      "name": "أ. هند القحطاني",
-      "role": "teacher",
-      "title": "معلمة حلقة راسخات (٣)",
-      "email": "hind@ghaym.org",
-      "phone": "+966500000005",
-      "circleIds": [
-        "c-3"
-      ]
+      "email": "leader@ghaym.org",
+      "passcode": "5566",
+      "phone": "0501112233",
+      "circleIds": []
     }
   ],
   "tracks": [
@@ -143,10 +109,10 @@
       "trackId": "t-1",
       "name": "راسخات (١) 🪴🤎",
       "icon": "🪴",
-      "teacherId": "u-3",
-      "teacherName": "أ. مريم الدوسري",
-      "supervisorId": "u-2",
-      "supervisorName": "أ. خديجة العتيبي",
+      "teacherId": "",
+      "teacherName": "غير محدد",
+      "supervisorId": "",
+      "supervisorName": "غير محدد",
       "maxStudents": 15,
       "scheduleDays": [
         "الأحد",
@@ -165,10 +131,10 @@
       "trackId": "t-1",
       "name": "راسخات (٢) 🪴🤎",
       "icon": "🪴",
-      "teacherId": "u-4",
-      "teacherName": "أ. فاطمة الشهري",
-      "supervisorId": "u-2",
-      "supervisorName": "أ. خديجة العتيبي",
+      "teacherId": "",
+      "teacherName": "غير محدد",
+      "supervisorId": "",
+      "supervisorName": "غير محدد",
       "maxStudents": 15,
       "scheduleDays": [
         "الأحد",
@@ -187,10 +153,10 @@
       "trackId": "t-1",
       "name": "راسخات (٣) 🪴🤎",
       "icon": "🪴",
-      "teacherId": "u-5",
-      "teacherName": "أ. هند القحطاني",
-      "supervisorId": "u-2",
-      "supervisorName": "أ. خديجة العتيبي",
+      "teacherId": "",
+      "teacherName": "غير محدد",
+      "supervisorId": "",
+      "supervisorName": "غير محدد",
       "maxStudents": 15,
       "scheduleDays": [
         "الأحد",

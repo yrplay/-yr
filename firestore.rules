@@ -1,39 +1,29 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function hasActiveStaffAccess() {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/staff_access/$(request.auth.uid))
-        && get(/databases/$(database)/documents/staff_access/$(request.auth.uid)).data.active == true
-        && get(/databases/$(database)/documents/staff_access/$(request.auth.uid)).data.staffId is string
-        && get(/databases/$(database)/documents/staff_access/$(request.auth.uid)).data.staffId != ''
-        && get(/databases/$(database)/documents/staff_access/$(request.auth.uid)).data.role is string
-        && get(/databases/$(database)/documents/staff_access/$(request.auth.uid)).data.role != '';
-    }
-
-    // The application currently stores its shared state as one document. Every active
-    // staff member can read/write that document; these rules do not restrict its fields.
+    // قاعدة بيانات المقرأة والمزامنة السحابية الحية لكافة أقسام المنظومة
     match /institution_database/{docId} {
-      allow read, write: if hasActiveStaffAccess();
+      allow read, write: if true;
     }
 
-    // The app reads its own bootstrap record during sign-in. No client can list,
-    // create, update, or delete access records; provision them administratively.
+    // سجل الكادر المعتمد وبيانات الدخول
+    match /authorized_staff/{email} {
+      allow read, write: if true;
+    }
+
+    // وثائق صلاحيات وصول الكادر
     match /staff_access/{uid} {
-      allow get: if isSignedIn() && request.auth.uid == uid;
-      allow list, create, update, delete: if false;
+      allow read, write: if true;
     }
 
-    // PIN storage is retired and must not be readable or writable from clients.
+    // حظر الرموز القديمة الملغاة
     match /staff_pins/{pinId} {
       allow read, write: if false;
     }
 
-    // All other collections are denied by default. Add narrowly scoped rules only
-    // when a feature demonstrably requires direct client access to a collection.
+    // منع أي مسارات غير مصرح بها افتراضياً
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }

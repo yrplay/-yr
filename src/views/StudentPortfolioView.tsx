@@ -152,7 +152,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   const handleSaveQuickEdit = async () => {
     if (!student) return;
     try {
-      // 1. Update student plan
+      // 1. Update student plan directly with official accomplished targets
       await saveStudentPlan({
         id: (activeStudentPlan as any)?.id,
         studentId: student.id,
@@ -168,20 +168,6 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           actualPages: Number(quickEditForm.revisionActualPages)
         },
         status: 'active'
-      });
-
-      // 2. Also record in daily record so score calculation picks it up
-      const today = new Date().toISOString().split('T')[0];
-      await saveDailyRecord({
-        studentId: student.id,
-        circleId: student.circleId,
-        date: today,
-        newMemorizationPages: Number(quickEditForm.actualPages),
-        newMemorizationCompleted: true,
-        newMemorizationWithConditions: true,
-        revisionCompleted: true,
-        revisionPages: Number(quickEditForm.revisionActualPages),
-        status: 'completed'
       });
 
       // 3. Update student notes

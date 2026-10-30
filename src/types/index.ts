@@ -1,4 +1,4 @@
-export type UserRole = 'developer' | 'leader' | 'supervisor' | 'teacher';
+export type UserRole = 'owner' | 'developer' | 'leader' | 'supervisor' | 'teacher';
 
 export interface UserPermissions {
   canRecordAttendance: boolean;      // رصد الحضور والغياب اليومي
@@ -13,6 +13,17 @@ export interface UserPermissions {
 }
 
 export const defaultPermissionsByRole: Record<UserRole, UserPermissions> = {
+  owner: {
+    canRecordAttendance: true,
+    canRecordRecitation: true,
+    canGradeAtqini: true,
+    canManageChallenges: true,
+    canGradeExams: true,
+    canEditStudents: true,
+    canViewReports: true,
+    canManagePlans: true,
+    canManageSettings: true,
+  },
   developer: {
     canRecordAttendance: true,
     canRecordRecitation: true,
@@ -516,3 +527,13 @@ export interface AuditLog {
   entityId?: string;
   details: string;
 }
+
+export const hasFullAccess = (user: Pick<User, 'role'> | null | undefined): boolean =>
+  user?.role === 'owner' || user?.role === 'developer' || user?.role === 'leader';
+
+export const isPlatformOwner = (user: Pick<User, 'role' | 'email'> | null | undefined): boolean =>
+  user?.role === 'owner' || user?.email?.trim().toLowerCase() === 'yr.play.com@gmail.com';
+
+export const isTechnicalDeveloper = (user: Pick<User, 'role'> | null | undefined): boolean =>
+  user?.role === 'developer';
+

@@ -18,6 +18,17 @@ if (!fs.existsSync(DATA_DIR)) {
 
 // Initial seed data
 function getInitialDatabase() {
+  const seedPath = path.join(__dirname, 'src', 'data', 'initialDatabase.json');
+  if (fs.existsSync(seedPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
+      if (parsed && Array.isArray(parsed.tracks) && parsed.tracks.length > 0) {
+        return parsed;
+      }
+    } catch (err) {
+      console.warn('Could not parse initialDatabase.json seed:', err);
+    }
+  }
   return {
     currentUser: {
       id: "u-1",
@@ -951,6 +962,37 @@ function readDatabase() {
           if (!u.passcode) u.passcode = "1234";
         });
       }
+      if (Array.isArray(parsed.tracks)) {
+        parsed.tracks = parsed.tracks.map((t: any) => {
+          if (!t.systemRules) {
+            t.systemRules = {
+              earlyPreparation: true,
+              atqiniHomeworkRequired: true,
+              thursdayChallenges: true,
+              customPlansAllowed: false,
+              detailedWorkflowText: 'نظام الحفظ والتمكين اليومي مع التحضير المسبق وتسميع الواجبات.',
+              masteryGuide: {
+                listenToReciterTimes: 3,
+                reciteLookingTimes: 5,
+                masteryRepetitionTimes: 20,
+                minorRevisionAmount: 'آخر ٣ أوجه',
+                tamkeenRevisionAmount: 'ربع حزب',
+                pointsPerCondition: 2
+              }
+            };
+          } else if (!t.systemRules.masteryGuide) {
+            t.systemRules.masteryGuide = {
+              listenToReciterTimes: 3,
+              reciteLookingTimes: 5,
+              masteryRepetitionTimes: 20,
+              minorRevisionAmount: 'آخر ٣ أوجه',
+              tamkeenRevisionAmount: 'ربع حزب',
+              pointsPerCondition: 2
+            };
+          }
+          return t;
+        });
+      }
       return parsed;
     }
   } catch (err) {
@@ -1053,6 +1095,27 @@ async function startServer() {
       if (incoming && typeof incoming === 'object') {
         const db = readDatabase();
         const merged = { ...db, ...incoming };
+        if (Array.isArray(incoming.tracks) && Array.isArray(db.tracks)) {
+          merged.tracks = incoming.tracks.map((inTrk: any) => {
+            const dbTrk = db.tracks.find((t: any) => t.id === inTrk.id);
+            if (!inTrk.systemRules && dbTrk?.systemRules) {
+              return { ...inTrk, systemRules: dbTrk.systemRules };
+            }
+            if (inTrk.systemRules && dbTrk?.systemRules) {
+              return {
+                ...inTrk,
+                systemRules: {
+                  ...dbTrk.systemRules,
+                  ...inTrk.systemRules,
+                  masteryGuide: inTrk.systemRules.masteryGuide
+                    ? { ...(dbTrk.systemRules?.masteryGuide || {}), ...inTrk.systemRules.masteryGuide }
+                    : dbTrk.systemRules?.masteryGuide
+                }
+              };
+            }
+            return inTrk;
+          });
+        }
         writeDatabase(merged);
         return res.json({ success: true, savedAt: new Date().toISOString() });
       }

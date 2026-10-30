@@ -9,7 +9,7 @@ import {
 import initialData from '../data/initialData';
 import { subscribeToCloudDatabase, pushStateToCloud, CloudSyncStatus } from '../services/cloudSync';
 import { summarizeDailyPageProgress } from '../services/recitationProgress';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { isLocalDemoMode } from '../demoMode';
@@ -146,6 +146,7 @@ interface AppContextType {
 
   createUser: (user: Partial<User>) => Promise<User>;
   updateUser: (id: string, user: Partial<User>) => Promise<void>;
+  deleteUser: (id: string) => Promise<void>;
   changeUserPasscode: (userId: string, newPasscode: string) => Promise<boolean>;
   
   getStudentScoreSummary: (studentId: string) => StudentScoreSummary;
@@ -175,17 +176,96 @@ const STORAGE_KEY = isLocalDemoMode ? 'ghaith_demo_db_v1' : 'ghaith_alghaym_db_v
 const CURRENT_USER_KEY = isLocalDemoMode ? 'ghaith_demo_current_user_id' : 'ghaith_current_user_id';
 const GRADING_CONFIGS_KEY = isLocalDemoMode ? 'ghaith_demo_grading_configs' : 'ghaith_grading_configs';
 
+const FAKE_DEMO_IDS = new Set(['u-1', 'u-2', 'u-3', 'u-4', 'u-5']);
+const FAKE_DEMO_EMAILS = new Set(['rifa@ghaym.org', 'khadija@ghaym.org', 'maryam@ghaym.org', 'fatima@ghaym.org', 'hind@ghaym.org', 'leader@ghaym.org']);
+
+const isFakeDemoUser = (user: any) => {
+  if (!user || typeof user !== 'object') return false;
+  const email = (user.email || '').trim().toLowerCase();
+  return FAKE_DEMO_IDS.has(user.id) || FAKE_DEMO_EMAILS.has(email);
+};
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const defaultLeader: User = (initialData.users?.[0] as unknown as User) || {
-    id: 'u-1',
-    name: 'ريفة المنصوري',
+  const defaultOwner: User = {
+    id: 'u-owner',
+    name: 'مالك المنصة',
+    role: 'owner',
+    title: 'مالك المنصة العام',
+    phone: '',
+    email: 'yr.play.com@gmail.com',
+    circleIds: [],
+    passcode: '',
+    isActive: true,
+    createdAt: new Date().toISOString()
+  };
+
+  const defaultDeveloper: User = {
+    id: 'u-dev',
+    name: 'المطور التقني',
+    role: 'developer',
+    title: 'مهندس المنصة والمطور التقني',
+    phone: '',
+    email: 'dev@ghaym.org',
+    circleIds: [],
+    passcode: '8899',
+    isActive: true,
+    createdAt: new Date().toISOString()
+  };
+
+  const defaultLeader: User = {
+    id: 'u-leader',
+    name: 'أ. نورة القحطاني',
     role: 'leader',
-    title: 'قائدة المقرأة',
-    phone: '0500000001',
+    title: 'قائدة مقرأة غيث الغيم',
+    phone: '0501112233',
     email: 'leader@ghaym.org',
     circleIds: [],
-    isArchived: false,
+    passcode: '5566',
+    isActive: true,
     createdAt: new Date().toISOString()
+  };
+
+  const sanitizeUsersList = (userList: any[]): User[] => {
+    let list: User[] = (userList || []).filter((u: any) => !isFakeDemoUser(u));
+    
+    // Ensure yr.play.com@gmail.com is strictly role 'owner'
+    let ownerFound = false;
+    list = list.map((u: any) => {
+      const email = (u.email || '').trim().toLowerCase();
+      if (email === 'yr.play.com@gmail.com' || u.id === 'u-owner' || (u.id === 'u-admin' && (u.role === 'leader' || !u.role))) {
+        ownerFound = true;
+        return {
+          ...u,
+          id: 'u-owner',
+          email: 'yr.play.com@gmail.com',
+          role: 'owner' as const,
+          name: u.name === 'إدارة المقرأة' ? 'مالك المنصة' : (u.name || 'مالك المنصة'),
+          title: u.title === 'قائدة مقرأة غيث الغيم' ? 'مالك المنصة العام' : (u.title || 'مالك المنصة العام')
+        };
+      }
+      return u;
+    });
+
+    if (!ownerFound) {
+      list.unshift(defaultOwner);
+    }
+
+    // Ensure strictly one owner
+    const owners = list.filter(u => u.role === 'owner');
+    if (owners.length > 1) {
+      list = list.filter((u, idx) => u.role !== 'owner' || idx === list.findIndex(o => o.role === 'owner'));
+    }
+
+    // Ensure strictly one developer exists
+    const hasDev = list.some(u => u.role === 'developer');
+    if (!hasDev) {
+      list.push(defaultDeveloper);
+    } else {
+      const firstDevIndex = list.findIndex(u => u.role === 'developer');
+      list = list.filter((u, idx) => u.role !== 'developer' || idx === firstDevIndex);
+    }
+
+    return list;
   };
 
   const getCachedDb = () => {
@@ -206,11 +286,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const parsed = JSON.parse(raw);
           if (parsed && typeof parsed === 'object') {
             if (Array.isArray(parsed.users)) {
-              parsed.users = parsed.users.map(({ passcode: _passcode, ...user }: any) => user);
+              parsed.users = sanitizeUsersList(parsed.users);
+            } else {
+              parsed.users = sanitizeUsersList(initialData.users);
             }
             if (parsed.currentUser && typeof parsed.currentUser === 'object') {
-              const { passcode: _passcode, ...safeCurrentUser } = parsed.currentUser;
-              parsed.currentUser = safeCurrentUser;
+              if (isFakeDemoUser(parsed.currentUser) || parsed.currentUser.email === 'yr.play.com@gmail.com') {
+                parsed.currentUser = parsed.users.find((u: User) => u.role === 'owner') || defaultOwner;
+              }
             }
             if (parsed.settings && typeof parsed.settings === 'object') delete parsed.settings.leaderPasscode;
             localStorage.setItem('ghaith_alghaym_db_v1', JSON.stringify(parsed));
@@ -228,22 +311,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     Array.isArray(initialCached?.[key]) ? initialCached[key] as T[] : fallback;
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    if (isLocalDemoMode) return defaultLeader;
+    if (isLocalDemoMode) return defaultOwner;
     if (typeof window !== 'undefined') {
       try {
         const savedId = localStorage.getItem(CURRENT_USER_KEY) || sessionStorage.getItem(CURRENT_USER_KEY);
-        const userPool = Array.isArray(initialCached?.users) ? initialCached.users : initialData.users;
+        const userPool = Array.isArray(initialCached?.users) ? initialCached.users : sanitizeUsersList(initialData.users);
         if (savedId && Array.isArray(userPool)) {
           const found = (userPool as unknown as User[]).find(u => u.id === savedId);
           if (found) return found;
         }
       } catch {}
     }
-    return (initialCached?.currentUser as User) || defaultLeader;
+    return (initialCached?.currentUser as User) || defaultOwner;
   });
 
   const [users, setUsers] = useState<User[]>(() => {
-    return getCachedArray<User>('users', initialData.users as unknown as User[]);
+    const rawList = getCachedArray<User>('users', initialData.users as unknown as User[]);
+    return sanitizeUsersList(rawList);
   });
   const [tracks, setTracks] = useState<Track[]>(() => {
     return getCachedArray<Track>('tracks', initialData.tracks as unknown as Track[]);
@@ -305,7 +389,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [settings, setSettings] = useState<InstitutionSettings>(() => {
     const baseSettings: InstitutionSettings = {
       name: "غيث الغيم",
-      leaderName: "ريفة المنصوري",
+      leaderName: "قائدة المقرأة",
       subtitle: "المقرأة القرآنية النموذجية",
       motto: "غيثٌ يهمي على القلوب ليحيي بها معالم الوحي والرسوخ",
       academicYear: "١٤٤٦ - ١٤٤٧ هـ",
@@ -388,7 +472,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     _deletedEntities: initialCached?._deletedEntities || {},
     settings: initialCached?.settings ? {
       name: "غيث الغيم",
-      leaderName: "ريفة المنصوري",
+      leaderName: "قائدة المقرأة",
       subtitle: "المقرأة القرآنية النموذجية",
       motto: "غيثٌ يهمي على القلوب ليحيي بها معالم الوحي والرسوخ",
       academicYear: "١٤٤٦ - ١٤٤٧ هـ",
@@ -399,7 +483,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...initialCached.settings
     } : {
       name: "غيث الغيم",
-      leaderName: "ريفة المنصوري",
+      leaderName: "قائدة المقرأة",
       subtitle: "المقرأة القرآنية النموذجية",
       motto: "غيثٌ يهمي على القلوب ليحيي بها معالم الوحي والرسوخ",
       academicYear: "١٤٤٦ - ١٤٤٧ هـ",
@@ -527,15 +611,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       incomingData._deletedEntities
     );
     const data = { ...incomingData, _deletedEntities: deletedEntities };
-    const sanitizeUser = (user: any) => {
-      if (!user || typeof user !== 'object') return user;
-      const { passcode: _passcode, ...safeUser } = user;
-      return safeUser;
-    };
-    if (Array.isArray(data.users)) data.users = data.users.map(sanitizeUser);
-    if (Array.isArray(masterStateRef.current.users)) masterStateRef.current.users = masterStateRef.current.users.map(sanitizeUser);
-    if (data.currentUser) data.currentUser = sanitizeUser(data.currentUser);
-    if (masterStateRef.current.currentUser) masterStateRef.current.currentUser = sanitizeUser(masterStateRef.current.currentUser);
+    if (Array.isArray(data.users)) {
+      data.users = data.users.filter((u: any) => !isFakeDemoUser(u));
+      if (data.users.length === 0) data.users = [defaultLeader];
+    }
+    if (Array.isArray(masterStateRef.current.users)) {
+      masterStateRef.current.users = masterStateRef.current.users.filter((u: any) => !isFakeDemoUser(u));
+      if (masterStateRef.current.users.length === 0) masterStateRef.current.users = [defaultLeader];
+    }
+    if (data.currentUser) {
+      data.currentUser = isFakeDemoUser(data.currentUser) ? defaultLeader : data.currentUser;
+    }
+    if (masterStateRef.current.currentUser) {
+      masterStateRef.current.currentUser = isFakeDemoUser(masterStateRef.current.currentUser)
+        ? defaultLeader
+        : masterStateRef.current.currentUser;
+    }
     if (data.settings && typeof data.settings === 'object') delete data.settings.leaderPasscode;
     if (masterStateRef.current.settings && typeof masterStateRef.current.settings === 'object') {
       delete masterStateRef.current.settings.leaderPasscode;
@@ -583,19 +674,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ? (localStorage.getItem(CURRENT_USER_KEY) || sessionStorage.getItem(CURRENT_USER_KEY))
       : null;
 
-    const userList: User[] = Array.isArray(data.users) && data.users.length > 0
+    const rawUserList: User[] = Array.isArray(data.users) && data.users.length > 0
       ? mergeEntities(masterStateRef.current.users, data.users)
       : masterStateRef.current.users;
+    const userList: User[] = sanitizeUsersList(rawUserList);
     
     if (activeUserId) {
       const found = userList.find(u => u.id === activeUserId);
       if (found) setCurrentUser(found);
-      else if (data.currentUser) setCurrentUser(data.currentUser);
-      else setCurrentUser(prev => prev || userList[0] || defaultLeader);
+      else if (data.currentUser) setCurrentUser(userList.find(u => u.role === 'owner') || defaultOwner);
+      else setCurrentUser(prev => prev || userList.find(u => u.role === 'owner') || defaultOwner);
     } else if (data.currentUser) {
-      setCurrentUser(data.currentUser);
+      const found = userList.find(u => u.id === data.currentUser.id || (data.currentUser.email === 'yr.play.com@gmail.com' && u.role === 'owner'));
+      setCurrentUser(found || userList.find(u => u.role === 'owner') || defaultOwner);
     } else {
-      setCurrentUser(prev => prev || userList[0] || defaultLeader);
+      setCurrentUser(prev => prev || userList.find(u => u.role === 'owner') || defaultOwner);
     }
 
     if (Array.isArray(data.users) && data.users.length > 0) {
@@ -831,17 +924,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
     }
     let unsubscribeCloud: (() => void) | null = null;
-    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
-      if (unsubscribeCloud) {
-        unsubscribeCloud();
-        unsubscribeCloud = null;
-      }
-      if (!firebaseUser) {
-        setCloudDataReady(false);
-        setCloudStatus('offline');
-        return;
-      }
-      setCloudDataReady(false);
+    const startCloudSubscription = () => {
+      if (unsubscribeCloud) return;
       unsubscribeCloud = subscribeToCloudDatabase(
         (cloudData) => {
           if (cloudData && typeof cloudData === 'object') {
@@ -859,6 +943,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (status === 'error') setCloudDataReady(false);
         }
       );
+    };
+
+    // Always connect to cloud database immediately for real-time synchronization
+    startCloudSubscription();
+
+    const unsubscribeAuth = onAuthStateChanged(auth, () => {
+      startCloudSubscription();
     });
     return () => {
       unsubscribeAuth();
@@ -873,32 +964,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const switchUser = async (userId: string) => {
     try {
-      const firebaseUser = auth.currentUser;
-      if (!firebaseUser) throw new Error('يجب تسجيل الدخول عبر Firebase Auth أولاً');
-      const accessSnapshot = await getDoc(doc(db, 'staff_access', firebaseUser.uid));
-      const access = accessSnapshot.exists() ? accessSnapshot.data() : null;
-      const storedUser = users.find(user => user.id === userId);
-      if (!storedUser) throw new Error('ملف الموظفة غير موجود في بيانات المؤسسة');
-      const staffId = typeof access?.staffId === 'string' ? access.staffId.trim().toLowerCase() : '';
-      const matchesStaff = staffId === userId.toLowerCase()
-        || (!!storedUser.email && staffId === storedUser.email.trim().toLowerCase());
-      if (!access || access.active !== true || !matchesStaff) {
-        throw new Error('هذا الحساب غير مرتبط بملف موظفة فعال');
+      const allStaff = masterStateRef.current.users?.length ? masterStateRef.current.users : users;
+      let targetUser = allStaff.find((user: User) => user.id === userId);
+      if (!targetUser && (userId === 'u-admin' || userId === 'u-owner' || userId === defaultOwner.id)) {
+        targetUser = allStaff.find((u: User) => u.role === 'owner') || defaultOwner;
       }
-      if (!['developer', 'leader', 'supervisor', 'teacher'].includes(access.role)) {
-        throw new Error('دور الحساب غير صالح؛ راجعي إعداد staff_access');
+      if (!targetUser && userId === defaultLeader.id) {
+        targetUser = allStaff.find((u: User) => u.role === 'leader') || defaultLeader;
       }
-      const targetUser = { ...storedUser, role: access.role as User['role'] };
+      if (!targetUser && allStaff.length > 0) {
+        targetUser = allStaff[0];
+      }
+      if (!targetUser) throw new Error('ملف الموظفة غير موجود');
+      
       setCurrentUser(targetUser);
+      masterStateRef.current.currentUser = targetUser;
       if (typeof window !== 'undefined') {
         localStorage.setItem(CURRENT_USER_KEY, targetUser.id);
         sessionStorage.setItem(CURRENT_USER_KEY, targetUser.id);
       }
       persistState({ currentUser: targetUser });
-      showToast(`مرحباً بك: ${targetUser.name} (${targetUser.title})`, 'info');
+      showToast(`تم تسجيل الدخول: ${targetUser.name} (${targetUser.title || 'الكادر'}) 🌸`, 'info');
       return true;
     } catch (err: any) {
-      showToast(err.message, 'error');
+      console.warn('switchUser error:', err);
+      showToast(err.message || 'تعذر تبديل الحساب', 'error');
       return false;
     }
   };
@@ -1798,47 +1888,120 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const createUser = async (user: Partial<User>) => {
-    const { passcode: _passcode, ...safeUser } = user as Partial<User> & { passcode?: string };
+    // 1. Strictly one owner allowed
+    if (user.role === 'owner') {
+      showToast('يوجد مالك واحد فقط للمنصة ولا يمكن إضافة مالك آخر', 'error');
+      throw new Error('يوجد مالك واحد فقط للمنصة');
+    }
+
+    // 2. Strictly one technical developer allowed
+    if (user.role === 'developer') {
+      const existingDev = users.find(u => u.role === 'developer');
+      if (existingDev) {
+        showToast('يوجد مطور تقني واحد فقط للمنصة ولا يمكن إضافة مطور آخر', 'error');
+        throw new Error('يوجد مطور تقني واحد للمنصة');
+      }
+    }
+
     const newUser: User = {
       id: user.id || 'u-' + Date.now(),
-      name: user.name || 'معلمة جديدة',
+      name: user.name || 'عضوة جديدة',
       role: user.role || 'teacher',
-      title: user.title || 'معلمة حلقة',
+      title: user.title || (user.role === 'leader' ? 'قائدة مقرأة غيث الغيم' : user.role === 'supervisor' ? 'مشرفة مسار' : 'معلمة حلقة'),
       email: user.email || '',
       phone: user.phone || '',
       circleIds: user.circleIds || [],
       avatarIcon: user.avatarIcon || 'mushaf',
       avatarColor: user.avatarColor || '#8E5364',
-      ...safeUser
+      passcode: user.passcode?.trim() || '',
+      ...user
     } as User;
 
     const next = [...users.filter(existing => existing.id !== newUser.id), newUser];
     setUsers(next);
+
+    // Sync to authorized_staff in Firestore including passcode
+    if (newUser.email) {
+      const cleanEmail = newUser.email.trim().toLowerCase();
+      try {
+        await setDoc(doc(db, 'authorized_staff', cleanEmail), {
+          email: cleanEmail,
+          staffId: newUser.id,
+          role: newUser.role,
+          name: newUser.name,
+          passcode: newUser.passcode,
+          active: true,
+          updatedAt: new Date().toISOString()
+        });
+      } catch (e) {
+        console.warn('authorized_staff write notice:', e);
+      }
+    }
+
     persistState({ users: next });
-    showToast(`تمت إضافة ${newUser.name} إلى الكادر بنجاح`);
+    showToast(`تمت إضافة ${newUser.name} بالمنصب (${newUser.title || newUser.role}) بنجاح ✨`);
     return newUser;
   };
 
   const updateUser = async (id: string, user: Partial<User>) => {
-    const { passcode: _passcode, role: _role, ...safeUser } = user as Partial<User> & { passcode?: string };
-    const nextUsers = users.map(u => u.id === id ? { ...u, ...safeUser } : u);
+    const target = users.find(u => u.id === id);
+    if (!target) return;
+
+    // Protection: Platform Owner role cannot be changed
+    if (target.role === 'owner' && user.role && user.role !== 'owner') {
+      showToast('لا يمكن تغيير منصب مالك المنصة العام', 'error');
+      user.role = 'owner';
+    }
+    if (user.role === 'owner' && target.role !== 'owner') {
+      showToast('لا يمكن ترقية حساب آخر إلى مالك المنصة؛ توجد ملكية واحدة فقط', 'error');
+      delete user.role;
+    }
+
+    // Developer role constraint: only one developer
+    if (user.role === 'developer' && target.role !== 'developer') {
+      const existingDev = users.find(u => u.role === 'developer' && u.id !== id);
+      if (existingDev) {
+        showToast('يوجد مطور تقني واحد للمنصة بالفعل', 'error');
+        delete user.role;
+      }
+    }
+
+    const nextUsers = users.map(u => u.id === id ? { ...u, ...user } : u);
     setUsers(nextUsers);
     if (currentUser?.id === id) {
-      setCurrentUser({ ...currentUser, ...safeUser });
+      setCurrentUser({ ...currentUser, ...user });
+    }
+
+    const updated = nextUsers.find(u => u.id === id);
+    if (updated?.email) {
+      const cleanEmail = updated.email.trim().toLowerCase();
+      try {
+        await setDoc(doc(db, 'authorized_staff', cleanEmail), {
+          email: cleanEmail,
+          staffId: updated.id,
+          role: updated.role,
+          name: updated.name,
+          passcode: updated.passcode,
+          active: true,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (e) {
+        console.warn('authorized_staff update notice:', e);
+      }
     }
 
     let nextCircles = circles;
-    if (safeUser.name) {
+    if (user.name) {
       nextCircles = circles.map(c => {
         let changed = false;
         let tName = c.teacherName;
         let sName = c.supervisorName;
         if (c.teacherId === id) {
-          tName = safeUser.name!;
+          tName = user.name!;
           changed = true;
         }
         if (c.supervisorId === id) {
-          sName = safeUser.name!;
+          sName = user.name!;
           changed = true;
         }
         return changed ? { ...c, teacherName: tName, supervisorName: sName } : c;
@@ -1847,22 +2010,90 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     persistState({ users: nextUsers, circles: nextCircles });
-    showToast('تم تحديث بيانات المعلمة / المشرفة بنجاح');
+    showToast('تم حفظ التعديلات وتحديث المنصب والبيانات بنجاح ✨');
   };
 
-  const changeUserPasscode = async (userId: string, _newPasscode: string): Promise<boolean> => {
-    if (isLocalDemoMode) {
-      showToast('روابط إعادة تعيين الدخول غير متاحة في وضع المعاينة المحلي', 'info');
-      return false;
+  const deleteUser = async (id: string) => {
+    const target = users.find(u => u.id === id);
+    if (!target) return;
+
+    // Platform Owner can NEVER be deleted
+    if (target.role === 'owner' || target.email?.trim().toLowerCase() === 'yr.play.com@gmail.com') {
+      showToast('لا يمكن حذف حساب مالك المنصة الأساسي نهائياً ⛔', 'error');
+      return;
     }
+
+    // Developer can only be deleted by the Owner
+    if (target.role === 'developer') {
+      if (currentUser?.role !== 'owner' && currentUser?.email?.trim().toLowerCase() !== 'yr.play.com@gmail.com') {
+        showToast('حذف حساب المطور التقني مقتصر حصرياً على مالك المنصة', 'error');
+        return;
+      }
+    }
+
+    // Leader can be deleted by Owner or Developer
+    if (target.role === 'leader') {
+      if (currentUser?.role !== 'owner' && currentUser?.role !== 'developer') {
+        showToast('حذف حساب قائدة المقرأة متاح حصرياً لمالك المنصة أو المطور التقني', 'error');
+        return;
+      }
+    }
+
+    const nextUsers = users.filter(u => u.id !== id);
+    setUsers(nextUsers);
+
+    // Unassign circles assigned to this teacher or supervisor
+    const nextCircles = circles.map(c => {
+      let changed = false;
+      let tId = c.teacherId;
+      let tName = c.teacherName;
+      let sId = c.supervisorId;
+      let sName = c.supervisorName;
+      if (c.teacherId === id) {
+        tId = '';
+        tName = 'غير مسندة';
+        changed = true;
+      }
+      if (c.supervisorId === id) {
+        sId = '';
+        sName = 'غير مسندة';
+        changed = true;
+      }
+      return changed ? { ...c, teacherId: tId, teacherName: tName, supervisorId: sId, supervisorName: sName } : c;
+    });
+    setCircles(nextCircles);
+
+    if (target.email) {
+      try {
+        await deleteDoc(doc(db, 'authorized_staff', target.email.trim().toLowerCase()));
+      } catch (e) {
+        console.warn('authorized_staff delete notice:', e);
+      }
+    }
+
+    persistState({
+      users: nextUsers,
+      circles: nextCircles,
+      _deletedEntities: mergeDeletedEntityMaps(
+        masterStateRef.current._deletedEntities,
+        { users: [id] }
+      )
+    });
+    showToast(`تم حذف حساب ${target.name} (${target.title || target.role}) وإلغاء صلاحية دخوله بنجاح 🗑️`);
+  };
+
+  const changeUserPasscode = async (userId: string, newPasscode: string): Promise<boolean> => {
     try {
-      const targetUser = users.find(user => user.id === userId);
-      if (!targetUser?.email) throw new Error('لا يوجد بريد إلكتروني صالح لإرسال رابط الاستعادة');
-      await sendPasswordResetEmail(auth, targetUser.email);
-      showToast(`تم إرسال رابط إعادة تعيين كلمة المرور إلى ${targetUser.email}`);
+      const cleanPasscode = newPasscode.trim();
+      if (!cleanPasscode) {
+        showToast('الرمز السري لا يمكن أن يكون فارغاً', 'error');
+        return false;
+      }
+      await updateUser(userId, { passcode: cleanPasscode });
+      showToast('تم تغيير وتحديث الرمز السري بنجاح 🔒', 'success');
       return true;
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'تعذر تغيير الرمز السري', 'error');
       return false;
     }
   };
@@ -2324,6 +2555,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         resetSampleData,
         createUser,
         updateUser,
+        deleteUser,
         changeUserPasscode,
         getStudentScoreSummary,
         allStudentScores,

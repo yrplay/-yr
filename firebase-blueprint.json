@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "InstitutionDatabase": {
+      "title": "InstitutionDatabase",
+      "description": "Master synchronization document for the Quranic platform containing all academic and organizational state.",
+      "type": "object",
+      "properties": {
+        "lastSyncedAt": { "type": "string" },
+        "settings": { "type": "object" },
+        "users": { "type": "array" },
+        "tracks": { "type": "array" },
+        "circles": { "type": "array" },
+        "students": { "type": "array" },
+        "monthlyPlans": { "type": "array" },
+        "studentPlans": { "type": "array" },
+        "dailyRecords": { "type": "array" },
+        "attendanceRecords": { "type": "array" },
+        "atqiniAssignments": { "type": "array" },
+        "studentAtqiniSubmissions": { "type": "array" },
+        "challenges": { "type": "array" },
+        "studentChallengeSubmissions": { "type": "array" },
+        "monthlyExams": { "type": "array" },
+        "studentExamResults": { "type": "array" },
+        "studentSubscriptions": { "type": "array" },
+        "gradingConfigs": { "type": "array" },
+        "auditLogs": { "type": "array" },
+        "_deletedEntities": { "type": "object" }
+      }
+    },
+    "AuthorizedStaff": {
+      "title": "AuthorizedStaff",
+      "description": "Authorized staff credentials and access profiles created by the administration.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "staffId": { "type": "string" },
+        "role": { "type": "string" },
+        "name": { "type": "string" },
+        "passcode": { "type": "string" },
+        "active": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["email", "staffId", "role", "name"]
+    },
+    "StaffAccess": {
+      "title": "StaffAccess",
+      "description": "Session and role mapping for staff members.",
+      "type": "object",
+      "properties": {
+        "staffId": { "type": "string" },
+        "role": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "active": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["staffId", "role"]
+    }
+  },
+  "firestore": {
+    "/institution_database/{docId}": {
+      "schema": "InstitutionDatabase",
+      "description": "Real-time master state storage for the entire Quranic institution."
+    },
+    "/authorized_staff/{email}": {
+      "schema": "AuthorizedStaff",
+      "description": "Records of all authorized staff members added by administration."
+    },
+    "/staff_access/{uid}": {
+      "schema": "StaffAccess",
+      "description": "User access and session documents."
+    }
+  }
+}

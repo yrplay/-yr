@@ -919,6 +919,31 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 </div>
               </div>
 
+              {/* Track Mastery Guide Shortcut */}
+              {editingTrack && (
+                <div className="p-3 bg-[#FAF7F5] rounded-2xl border border-[#E2D5CC] flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                      <BookOpen className="w-4 h-4 text-[#8E5364]" />
+                      <span>معايير دليل الإتقان وضوابط التسميع</span>
+                    </div>
+                    <p className="text-[11px] text-stone-500 mt-0.5">
+                      تعديل عدد مرات التكرار والاستماع والمراجعة الصغرى والتمكين
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrackModalOpen(false);
+                      setSelectedTrackDetailId(editingTrack.id);
+                    }}
+                    className="px-3 py-1.5 bg-[#8E5364] hover:bg-[#744251] text-white text-xs font-bold rounded-xl shadow-2xs transition shrink-0 active:scale-95 cursor-pointer"
+                  >
+                    تعديل المعايير ⚙️
+                  </button>
+                </div>
+              )}
+
               <div className="flex items-center justify-between pt-2 border-t border-stone-100">
                 {editingTrack && (
                   <button

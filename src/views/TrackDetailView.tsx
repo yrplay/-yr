@@ -165,30 +165,30 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
 
   const handleSaveTrackRules = async () => {
     if (!track) return;
-    await updateTrack(track.id, {
-      name: editFormData.name,
-      description: editFormData.description
-    });
 
     const listenItem = editFormData.criteriaList.find(c => c.id === 'crit-listen' || c.title.includes('استماع'));
     const reciteItem = editFormData.criteriaList.find(c => c.id === 'crit-recite' || c.title.includes('نظراً'));
     const repeatItem = editFormData.criteriaList.find(c => c.id === 'crit-repeat' || c.title.includes('تكرار'));
 
-    await updateTrackSystemRules(track.id, {
-      earlyPreparation: editFormData.earlyPrep,
-      atqiniHomeworkRequired: editFormData.atqiniReq,
-      thursdayChallenges: editFormData.thursdayChallenges,
-      customPlansAllowed: editFormData.customPlans,
-      detailedWorkflowText: editFormData.workflowText,
-      masteryGuide: {
-        unifiedCriteria: editFormData.criteriaList,
-        listenToReciterTimes: listenItem?.count || 3,
-        reciteLookingTimes: reciteItem?.count || 5,
-        masteryRepetitionTimes: repeatItem?.count || 20,
-        minorRevisionAmount: editFormData.minorRevAmount,
-        tamkeenRevisionAmount: editFormData.tamkeenRevAmount,
-        pointsPerCondition: 2,
-        customCriteria: editFormData.criteriaList.filter(c => c.id !== 'crit-listen' && c.id !== 'crit-recite' && c.id !== 'crit-repeat')
+    await updateTrack(track.id, {
+      name: editFormData.name,
+      description: editFormData.description,
+      systemRules: {
+        earlyPreparation: editFormData.earlyPrep,
+        atqiniHomeworkRequired: editFormData.atqiniReq,
+        thursdayChallenges: editFormData.thursdayChallenges,
+        customPlansAllowed: editFormData.customPlans,
+        detailedWorkflowText: editFormData.workflowText,
+        masteryGuide: {
+          unifiedCriteria: editFormData.criteriaList,
+          listenToReciterTimes: listenItem?.count || 3,
+          reciteLookingTimes: reciteItem?.count || 5,
+          masteryRepetitionTimes: repeatItem?.count || 20,
+          minorRevisionAmount: editFormData.minorRevAmount,
+          tamkeenRevisionAmount: editFormData.tamkeenRevAmount,
+          pointsPerCondition: 2,
+          customCriteria: editFormData.criteriaList.filter(c => c.id !== 'crit-listen' && c.id !== 'crit-recite' && c.id !== 'crit-repeat')
+        }
       }
     });
 

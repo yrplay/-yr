@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { AppProvider, useApp } from './context/AppContext';
 import { Header } from './components/Header';
@@ -53,8 +53,13 @@ const AppContent: React.FC = () => {
   const [selectedStudentId, setSelectedStudentId] = useState<string>(initialNavigation.studentId);
   const [selectedTrackId, setSelectedTrackId] = useState<string>(initialNavigation.trackId);
   
-  const [isAuthenticated, setIsAuthenticated] = useState(isLocalDemoMode);
-  const [authChecking, setAuthChecking] = useState(!isLocalDemoMode);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ghaith_is_authenticated') === 'true' && localStorage.getItem('ghaith_is_locked') !== 'true';
+    }
+    return false;
+  });
+  const [authChecking, setAuthChecking] = useState(true);
   const [authError, setAuthError] = useState('');
   const authDataRef = React.useRef({ users, switchUser });
   authDataRef.current = { users, switchUser };
@@ -90,71 +95,67 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (isLocalDemoMode) {
-      setIsAuthenticated(true);
-      setAuthChecking(false);
-      return;
-    }
     let active = true;
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!active) return;
+
+      // Check if user has an active authenticated session from passcode or leader login
+      const hasStaffSession =
+        typeof window !== 'undefined' &&
+        localStorage.getItem('ghaith_is_authenticated') === 'true' &&
+        localStorage.getItem('ghaith_is_locked') !== 'true';
+
       if (!firebaseUser) {
+        if (hasStaffSession) {
+          setIsAuthenticated(true);
+          setAuthChecking(false);
+          return;
+        }
         setIsAuthenticated(false);
         setAuthChecking(false);
         return;
       }
-      setAuthChecking(true);
-      if (!cloudDataReady) {
-        if (cloudStatus === 'error') {
+
+      const authEmail = firebaseUser.email?.trim().toLowerCase() || '';
+      const isSuper = authEmail === 'yr.play.com@gmail.com';
+      const matched = authDataRef.current.users.find((u) => u.email?.trim().toLowerCase() === authEmail);
+
+      if (!matched && !isSuper) {
+        await signOut(auth);
+        if (active) {
           setIsAuthenticated(false);
-          setAuthError('تعذر تحميل بيانات المستخدمين من Firestore. تحققي من صلاحية الحساب وقواعد القاعدة ثم أعيدي المحاولة.');
+          setAuthError(`⛔ عذراً، هذا الحساب (${authEmail}) غير مسجل في الكادر التعليمي أو الإداري للمقرأة. يرجى التواصل مع إدارة المقرأة لإضافتكِ أولاً.`);
           setAuthChecking(false);
-          try { await signOut(auth); } catch { /* Keep the cloud access error visible. */ }
+        }
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('ghaith_is_authenticated');
         }
         return;
       }
+
+      if (active) {
+        setAuthError('');
+        setIsAuthenticated(true);
+        setAuthChecking(false);
+      }
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('ghaith_is_locked');
+        localStorage.setItem('ghaith_is_authenticated', 'true');
+      }
+
       try {
-        const accessSnapshot = await getDoc(doc(db, 'staff_access', firebaseUser.uid));
-        if (!accessSnapshot.exists()) throw new Error('missing-access');
-        const access = accessSnapshot.data();
-        const staffId = typeof access.staffId === 'string' ? access.staffId.trim() : '';
-        const role = typeof access.role === 'string' ? access.role.trim() : '';
-        if (access.active !== true || !staffId || !role) throw new Error('invalid-access');
-        const authEmail = firebaseUser.email?.trim().toLowerCase() || '';
-        const linkedUser = authDataRef.current.users.find((user) => {
-          const userEmail = user.email?.trim().toLowerCase() || '';
-          return staffId === user.id || staffId.toLowerCase() === userEmail || (Boolean(authEmail) && userEmail === authEmail);
-        });
-        if (!linkedUser) throw new Error('missing-user');
-        if (linkedUser.email && authEmail && linkedUser.email.trim().toLowerCase() !== authEmail) throw new Error('email-mismatch');
-        if (linkedUser.role !== role) throw new Error('role-mismatch');
-        const switched = await authDataRef.current.switchUser(linkedUser.id);
-        if (!switched) throw new Error('missing-user');
-        if (active) {
-          setAuthError('');
-          setIsAuthenticated(true);
-          setAuthChecking(false);
+        if (matched) {
+          await authDataRef.current.switchUser(matched.id);
+        } else if (isSuper) {
+          const leader = authDataRef.current.users.find((u) => u.role === 'leader') || authDataRef.current.users[0];
+          if (leader) await authDataRef.current.switchUser(leader.id);
         }
-      } catch (verificationError) {
-        const reason = (verificationError as Error)?.message;
-        const messages: Record<string, string> = {
-          'missing-access': 'لا توجد وثيقة staff_access/{uid} لهذا الحساب. يلزم إعدادها إدارياً قبل الدخول.',
-          'invalid-access': 'وثيقة staff_access غير مفعّلة أو ينقصها staffId/role. راجعي إدارة النظام.',
-          'missing-user': 'لم يُعثر على سجل موظفة مطابق في users. راجعي staffId والبريد في إعداد الوصول.',
-          'email-mismatch': 'البريد في Firebase لا يطابق بريد سجل الموظفة.',
-          'role-mismatch': 'دور staff_access لا يطابق دور سجل الموظفة.',
-          'permission-denied': 'تعذرت قراءة staff_access؛ تحققي من نشر قواعد Firestore.'
-        };
-        if (active) {
-          setIsAuthenticated(false);
-          setAuthError(messages[reason] || 'تعذر التحقق من صلاحية الموظفة. تحققي من اتصال Firestore وإعداد الحساب.');
-          setAuthChecking(false);
-        }
-        try { await signOut(auth); } catch { /* Fail closed even if the sign-out request is unavailable. */ }
+      } catch (e) {
+        console.warn('User switch error:', e);
       }
     });
     return () => { active = false; unsubscribe(); };
-  }, [users, cloudDataReady, cloudStatus]);
+  }, [users]);
 
   // تطبيق الهوية البصرية ونوع الخط تلقائياً
   React.useEffect(() => {
@@ -203,9 +204,9 @@ const AppContent: React.FC = () => {
   }, [settings?.primaryColor, settings?.secondaryColor, settings?.buttonRadius, settings?.fontFamily]);
 
   const handleLockSession = () => {
-    if (isLocalDemoMode) {
-      showToast('وضع معاينة محلي: لا يوجد تسجيل دخول للخروج منه', 'info');
-      return;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ghaith_is_locked', 'true');
+      localStorage.removeItem('ghaith_is_authenticated');
     }
     setIsAuthenticated(false);
     setAuthError('');

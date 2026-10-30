@@ -1,4 +1,4 @@
-export type UserRole = 'developer' | 'leader' | 'supervisor' | 'teacher';
+export type UserRole = 'owner' | 'developer' | 'leader' | 'supervisor' | 'teacher';
 
 export type StudentStatus = 'active' | 'archived' | 'suspended';
 
@@ -35,10 +35,18 @@ export interface User {
   isActive?: boolean;
   permissions?: UserPermissions;
   signatureUrl?: string;
+  passcode?: string;
+  createdAt?: string;
 }
 
 export const hasFullAccess = (user: Pick<User, 'role'> | null | undefined): boolean =>
-  user?.role === 'developer' || user?.role === 'leader';
+  user?.role === 'owner' || user?.role === 'developer' || user?.role === 'leader';
+
+export const isPlatformOwner = (user: Pick<User, 'role' | 'email'> | null | undefined): boolean =>
+  user?.role === 'owner' || user?.email?.trim().toLowerCase() === 'yr.play.com@gmail.com';
+
+export const isTechnicalDeveloper = (user: Pick<User, 'role'> | null | undefined): boolean =>
+  user?.role === 'developer';
 
 // 1. معايير دليل الإتقان (مشكاة الغيم) الموحدة القابلة للتعديل
 export interface CriterionItem {
@@ -180,6 +188,8 @@ export interface StudentMonthlyPlan {
   studentId: string;
   monthlyPlanId: string;
   status: 'active' | 'completed' | 'on_hold';
+  createdAt?: string;
+  updatedAt?: string;
   newMemorization: {
     fromSurah: number;
     fromAyah: number;
