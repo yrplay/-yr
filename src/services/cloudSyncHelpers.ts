@@ -14,13 +14,7 @@ export const mergeDeletedEntities = (...sources: Array<DeletedEntities | undefin
 
 export const sanitizeCloudState = (state: any) => {
   const safe = { ...(state || {}) };
-  const stripPasscode = (user: any) => {
-    if (!user || typeof user !== 'object') return user;
-    const { passcode: _passcode, ...cleanUser } = user;
-    return cleanUser;
-  };
-  if (Array.isArray(safe.users)) safe.users = safe.users.map(stripPasscode);
-  if (safe.currentUser) safe.currentUser = stripPasscode(safe.currentUser);
+  // Preserve users and their passcodes intact
   if (safe.settings && typeof safe.settings === 'object') {
     safe.settings = { ...safe.settings };
     delete safe.settings.leaderPasscode;
@@ -56,7 +50,16 @@ export const mergeArrayByKey = (
     };
     const existingTime = parseTime(existing.recordedAt || existing.updatedAt || existing.evaluatedAt || existing.createdAt);
     const incomingTime = parseTime(item.recordedAt || item.updatedAt || item.evaluatedAt || item.createdAt);
-    map.set(id, incomingTime >= existingTime ? { ...existing, ...item } : { ...item, ...existing });
+    const base = incomingTime >= existingTime ? { ...existing, ...item } : { ...item, ...existing };
+    
+    // For user items or items with passcode, never overwrite a set passcode with an empty or missing one
+    const existingPass = (existing.passcode && String(existing.passcode).trim()) || '';
+    const incomingPass = (item.passcode && String(item.passcode).trim()) || '';
+    const resolvedPasscode = incomingPass || existingPass;
+    if (resolvedPasscode) {
+      base.passcode = resolvedPasscode;
+    }
+    map.set(id, base);
   }
   return Array.from(map.values());
 };

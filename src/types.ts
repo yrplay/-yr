@@ -37,6 +37,7 @@ export interface User {
   signatureUrl?: string;
   passcode?: string;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export const hasFullAccess = (user: Pick<User, 'role'> | null | undefined): boolean =>

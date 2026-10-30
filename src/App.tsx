@@ -147,8 +147,8 @@ const AppContent: React.FC = () => {
         if (matched) {
           await authDataRef.current.switchUser(matched.id);
         } else if (isSuper) {
-          const leader = authDataRef.current.users.find((u) => u.role === 'leader') || authDataRef.current.users[0];
-          if (leader) await authDataRef.current.switchUser(leader.id);
+          const owner = authDataRef.current.users.find((u) => u.role === 'owner') || authDataRef.current.users[0];
+          if (owner) await authDataRef.current.switchUser(owner.id);
         }
       } catch (e) {
         console.warn('User switch error:', e);

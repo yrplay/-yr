@@ -194,7 +194,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     phone: '',
     email: 'yr.play.com@gmail.com',
     circleIds: [],
-    passcode: '',
+    passcode: (typeof window !== 'undefined' ? localStorage.getItem('ghaith_owner_passcode') : '') || '',
     isActive: true,
     createdAt: new Date().toISOString()
   };
@@ -234,20 +234,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const email = (u.email || '').trim().toLowerCase();
       if (email === 'yr.play.com@gmail.com' || u.id === 'u-owner' || (u.id === 'u-admin' && (u.role === 'leader' || !u.role))) {
         ownerFound = true;
+        const savedPass = typeof window !== 'undefined' ? localStorage.getItem('ghaith_owner_passcode') : '';
+        const effectivePasscode = (u.passcode && String(u.passcode).trim()) || savedPass || '';
         return {
           ...u,
           id: 'u-owner',
           email: 'yr.play.com@gmail.com',
           role: 'owner' as const,
           name: u.name === 'إدارة المقرأة' ? 'مالك المنصة' : (u.name || 'مالك المنصة'),
-          title: u.title === 'قائدة مقرأة غيث الغيم' ? 'مالك المنصة العام' : (u.title || 'مالك المنصة العام')
+          title: u.title === 'قائدة مقرأة غيث الغيم' ? 'مالك المنصة العام' : (u.title || 'مالك المنصة العام'),
+          passcode: effectivePasscode
         };
       }
       return u;
     });
 
     if (!ownerFound) {
-      list.unshift(defaultOwner);
+      const savedPass = typeof window !== 'undefined' ? localStorage.getItem('ghaith_owner_passcode') : '';
+      list.unshift({
+        ...defaultOwner,
+        passcode: savedPass || defaultOwner.passcode || ''
+      });
     }
 
     // Ensure strictly one owner
@@ -452,7 +459,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const masterStateRef = useRef<any>({
-    currentUser: initialCached?.currentUser || defaultLeader,
+    currentUser: initialCached?.currentUser || defaultOwner,
     users: getCachedArray('users', initialData.users || []),
     tracks: getCachedArray('tracks', initialData.tracks || []),
     circles: getCachedArray('circles', initialData.circles || []),
@@ -517,7 +524,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const incTime = (inc.updatedAt || inc.recordedAt || inc.createdAt)
           ? new Date(inc.updatedAt || inc.recordedAt || inc.createdAt).getTime()
           : 0;
-        map.set(key, locTime >= incTime ? { ...inc, ...loc } : { ...loc, ...inc });
+        const base = locTime >= incTime ? { ...inc, ...loc } : { ...loc, ...inc };
+        
+        // Preserve passcode on entities (users) so cloud updates never clear a set passcode
+        const locPass = ((loc as any).passcode && String((loc as any).passcode).trim()) || '';
+        const incPass = ((inc as any).passcode && String((inc as any).passcode).trim()) || '';
+        const effectivePass = incPass || locPass;
+        if (effectivePass) {
+          (base as any).passcode = effectivePass;
+        }
+        map.set(key, base);
       }
     }
     return Array.from(map.values());
@@ -1914,6 +1930,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       avatarIcon: user.avatarIcon || 'mushaf',
       avatarColor: user.avatarColor || '#8E5364',
       passcode: user.passcode?.trim() || '',
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       ...user
     } as User;
 
@@ -1966,10 +1985,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    const nextUsers = users.map(u => u.id === id ? { ...u, ...user } : u);
+    const nextUsers = users.map(u => u.id === id ? {
+      ...u,
+      ...user,
+      updatedAt: new Date().toISOString()
+    } : u);
     setUsers(nextUsers);
     if (currentUser?.id === id) {
-      setCurrentUser({ ...currentUser, ...user });
+      setCurrentUser({ ...currentUser, ...user, updatedAt: new Date().toISOString() });
+    }
+
+    if (id === 'u-owner' || target.role === 'owner' || target.email?.trim().toLowerCase() === 'yr.play.com@gmail.com') {
+      if (user.passcode && typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_owner_passcode', user.passcode.trim());
+      }
     }
 
     const updated = nextUsers.find(u => u.id === id);
@@ -1981,7 +2010,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           staffId: updated.id,
           role: updated.role,
           name: updated.name,
-          passcode: updated.passcode,
+          passcode: updated.passcode || '',
           active: true,
           updatedAt: new Date().toISOString()
         }, { merge: true });

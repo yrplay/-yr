@@ -215,12 +215,33 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
 
     const cleanPassword = password.trim();
     const isOwnerAccount = authorizedUser.role === 'owner' || normalizeEmail(authorizedUser.email) === SUPER_ADMIN_EMAIL;
-    const expectedPasscode = authorizedUser.passcode?.trim() || '';
+    let expectedPasscode = authorizedUser.passcode?.trim() || '';
+
+    // If passcode is not present in local memory, check Firestore authorized_staff document as a fallback
+    if (!expectedPasscode && authorizedUser.email) {
+      try {
+        const staffDoc = await getDoc(doc(db, 'authorized_staff', normalizeEmail(authorizedUser.email)));
+        if (staffDoc.exists() && staffDoc.data()?.passcode) {
+          expectedPasscode = String(staffDoc.data()?.passcode).trim();
+          void updateUser(authorizedUser.id, { passcode: expectedPasscode });
+        }
+      } catch (err) {
+        console.warn('authorized_staff fallback lookup notice:', err);
+      }
+    }
+
+    if (!expectedPasscode && isOwnerAccount && typeof window !== 'undefined') {
+      const savedOwnerPass = localStorage.getItem('ghaith_owner_passcode');
+      if (savedOwnerPass) expectedPasscode = savedOwnerPass.trim();
+    }
 
     // If no passcode is configured yet for this staff member
     if (!expectedPasscode) {
       if (isOwnerAccount) {
         // Set entered passcode for owner and allow entry
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('ghaith_owner_passcode', cleanPassword);
+        }
         await updateUser(authorizedUser.id, { passcode: cleanPassword });
         await switchUser(authorizedUser.id);
         if (typeof window !== 'undefined') {
@@ -241,6 +262,9 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
 
     // 1. Verify against the staff member's passcode assigned by the leader or updated by herself
     if (cleanPassword === expectedPasscode) {
+      if (isOwnerAccount && typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_owner_passcode', cleanPassword);
+      }
       try {
         if (authorizedUser.email) {
           const staffEmail = normalizeEmail(authorizedUser.email);
