@@ -1,42 +1,36 @@
 {
   "currentUser": {
-    "id": "u-owner",
-    "name": "مالك المنصة",
-    "role": "owner",
-    "title": "مالك المنصة العام",
+    "id": "u-dev",
+    "name": "مطور المنصة",
+    "role": "developer",
+    "title": "المطور التقني",
     "email": "yr.play.com@gmail.com",
     "phone": "",
-    "circleIds": []
+    "circleIds": [],
+    "passcode": "8899"
   },
   "users": [
+    {
+      "id": "u-dev",
+      "name": "مطور المنصة",
+      "role": "developer",
+      "title": "المطور التقني",
+      "email": "yr.play.com@gmail.com",
+      "phone": "",
+      "circleIds": [],
+      "passcode": "8899",
+      "isActive": true
+    },
     {
       "id": "u-owner",
       "name": "مالك المنصة",
       "role": "owner",
       "title": "مالك المنصة العام",
-      "email": "yr.play.com@gmail.com",
+      "email": "owner@ghaym.org",
       "phone": "",
-      "circleIds": []
-    },
-    {
-      "id": "u-dev",
-      "name": "المطور التقني",
-      "role": "developer",
-      "title": "مهندس المنصة والمطور التقني",
-      "email": "dev@ghaym.org",
-      "passcode": "8899",
-      "phone": "",
-      "circleIds": []
-    },
-    {
-      "id": "u-leader",
-      "name": "أ. نورة القحطاني",
-      "role": "leader",
-      "title": "قائدة مقرأة غيث الغيم",
-      "email": "leader@ghaym.org",
-      "passcode": "5566",
-      "phone": "0501112233",
-      "circleIds": []
+      "circleIds": [],
+      "passcode": "7788",
+      "isActive": true
     }
   ],
   "tracks": [

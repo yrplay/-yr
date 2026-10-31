@@ -354,6 +354,17 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
+              {/* زر الانتقال إلى قسم المعلمات والمشرفات */}
+              <button
+                type="button"
+                onClick={() => onNavigateToSection('staff')}
+                className="px-3.5 py-2 rounded-xl bg-[#FAF0F3] hover:bg-[#8E5364] text-[#8E5364] hover:text-white text-xs font-bold flex items-center gap-1.5 border border-[#8E5364]/30 transition cursor-pointer active:scale-95 shadow-2xs"
+                title="إدارة سجل المعلمات والمشرفات وتوزيع الحلقات والصلاحيات"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>المعلمات والمشرفات</span>
+              </button>
+
               {/* زر الدخول لصفحة دليل الإتقان ومعايير المسار */}
               <button
                 onClick={() => onNavigateToTrackDetail ? onNavigateToTrackDetail(currentTrack.id) : setSelectedTrackDetailId(currentTrack.id)}
@@ -390,18 +401,43 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
 
           {/* Track Summary Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-            <div className="p-3.5 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2]">
-              <div className="text-xs text-stone-600 mb-1">إجمالي الطالبات</div>
-              <div className="text-xl font-extrabold text-stone-900">{trackStudents.length}</div>
+            <div
+              onClick={() => onNavigateToSection('students')}
+              className="p-3.5 rounded-2xl bg-[#FCFAF8] hover:bg-[#FAF6F2] border border-[#EFE8E2] transition cursor-pointer group shadow-2xs"
+              title="انقري للانتقال إلى شؤون الطالبات"
+            >
+              <div className="text-xs text-stone-600 mb-1 flex items-center justify-center gap-1 group-hover:text-[#8E5364]">
+                <span>إجمالي الطالبات</span>
+                <ChevronLeft className="w-3 h-3 text-stone-400 group-hover:text-[#8E5364] group-hover:-translate-x-0.5 transition" />
+              </div>
+              <div className="text-xl font-extrabold text-stone-900 group-hover:text-[#8E5364] transition">{trackStudents.length}</div>
             </div>
-            <div className="p-3.5 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2]">
-              <div className="text-xs text-stone-600 mb-1">عدد الحلقات النشطة</div>
+            <div
+              onClick={() => setSelectedCircleId(null)}
+              className="p-3.5 rounded-2xl bg-[#FCFAF8] hover:bg-[#FAF6F2] border border-[#EFE8E2] transition cursor-pointer group shadow-2xs"
+              title="عرض كافة الحلقات النشطة"
+            >
+              <div className="text-xs text-stone-600 mb-1 flex items-center justify-center gap-1 group-hover:text-[#8E5364]">
+                <span>عدد الحلقات النشطة</span>
+                <ChevronLeft className="w-3 h-3 text-stone-400 group-hover:text-[#8E5364] group-hover:-translate-x-0.5 transition" />
+              </div>
               <div className="text-xl font-extrabold text-[#8E5364]">{trackCircles.length}</div>
             </div>
-            <div className="p-3.5 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2]">
-              <div className="text-xs text-stone-600 mb-1">الكادر التعليمي</div>
-              <div className="text-xl font-extrabold text-stone-900">
+            <div
+              onClick={() => onNavigateToSection('staff')}
+              className="p-3.5 rounded-2xl bg-[#FCFAF8] hover:bg-[#FAF0F3] border border-[#EFE8E2] hover:border-[#8E5364]/40 transition cursor-pointer group shadow-2xs"
+              title="انقري للانتقال إلى قسم وسجل المعلمات والمشرفات 👩‍🏫"
+            >
+              <div className="text-xs text-stone-600 mb-1 flex items-center justify-center gap-1 group-hover:text-[#8E5364]">
+                <span>الكادر التعليمي</span>
+                <ChevronLeft className="w-3.5 h-3.5 text-stone-400 group-hover:text-[#8E5364] group-hover:-translate-x-0.5 transition" />
+              </div>
+              <div className="text-xl font-extrabold text-stone-900 group-hover:text-[#8E5364] transition">
                 {new Set(trackCircles.map(c => c.teacherId)).size} معلمات
+              </div>
+              <div className="text-[10px] text-[#8E5364] font-bold mt-1 group-hover:underline flex items-center justify-center gap-0.5">
+                <span>سجل المعلمات والمشرفات</span>
+                <span>←</span>
               </div>
             </div>
             <div className="p-3.5 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2]">
@@ -418,13 +454,26 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
 
       {/* Circles Grid Section */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
-            <span>الحلقات التابعة للمسار ({trackCircles.length})</span>
-          </h3>
-          <span className="text-xs text-stone-400">
-            انقري على الحلقة لعرض سجلها وتفاصيل طالباتها أو تعديلها وحذفها
-          </span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
+              <span>الحلقات التابعة للمسار ({trackCircles.length})</span>
+            </h3>
+            <span className="text-xs text-stone-400">
+              انقري على الحلقة لعرض سجلها وتفاصيل طالباتها أو تعديلها وحذفها
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onNavigateToSection('staff')}
+            className="self-start sm:self-auto px-3.5 py-1.5 bg-[#FAF0F3] hover:bg-[#8E5364] text-[#8E5364] hover:text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-[#8E5364]/20 cursor-pointer shadow-2xs active:scale-95"
+            title="الانتقال إلى سجل المعلمات والمشرفات"
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>الوصول إلى قسم المعلمات والمشرفات</span>
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
         </div>
 
         {trackCircles.length === 0 ? (

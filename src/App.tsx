@@ -96,66 +96,40 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     let active = true;
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (!active) return;
+    const restoreSession = async () => {
+      if (typeof window !== 'undefined') {
+        const isAuth = localStorage.getItem('ghaith_is_authenticated') === 'true';
+        const isLocked = localStorage.getItem('ghaith_is_locked') === 'true';
+        const savedUserId = localStorage.getItem('ghaith_active_user_id') || localStorage.getItem('ghaith_current_user_id');
 
-      // Check if user has an active authenticated session from passcode or leader login
-      const hasStaffSession =
-        typeof window !== 'undefined' &&
-        localStorage.getItem('ghaith_is_authenticated') === 'true' &&
-        localStorage.getItem('ghaith_is_locked') !== 'true';
-
-      if (!firebaseUser) {
-        if (hasStaffSession) {
-          setIsAuthenticated(true);
-          setAuthChecking(false);
+        if (isAuth && !isLocked) {
+          if (savedUserId && authDataRef.current.users.length > 0) {
+            const found = authDataRef.current.users.find(u => u.id === savedUserId);
+            if (found) {
+              try {
+                await authDataRef.current.switchUser(found.id);
+              } catch (e) {
+                console.warn('Session user restore notice:', e);
+              }
+            }
+          }
+          if (active) {
+            setAuthError('');
+            setIsAuthenticated(true);
+            setAuthChecking(false);
+          }
           return;
         }
+      }
+      if (active) {
         setIsAuthenticated(false);
         setAuthChecking(false);
-        return;
       }
+    };
 
-      const authEmail = firebaseUser.email?.trim().toLowerCase() || '';
-      const isSuper = authEmail === 'yr.play.com@gmail.com';
-      const matched = authDataRef.current.users.find((u) => u.email?.trim().toLowerCase() === authEmail);
-
-      if (!matched && !isSuper) {
-        await signOut(auth);
-        if (active) {
-          setIsAuthenticated(false);
-          setAuthError(`⛔ عذراً، هذا الحساب (${authEmail}) غير مسجل في الكادر التعليمي أو الإداري للمقرأة. يرجى التواصل مع إدارة المقرأة لإضافتكِ أولاً.`);
-          setAuthChecking(false);
-        }
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('ghaith_is_authenticated');
-        }
-        return;
-      }
-
-      if (active) {
-        setAuthError('');
-        setIsAuthenticated(true);
-        setAuthChecking(false);
-      }
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('ghaith_is_locked');
-        localStorage.setItem('ghaith_is_authenticated', 'true');
-      }
-
-      try {
-        if (matched) {
-          await authDataRef.current.switchUser(matched.id);
-        } else if (isSuper) {
-          const owner = authDataRef.current.users.find((u) => u.role === 'owner') || authDataRef.current.users[0];
-          if (owner) await authDataRef.current.switchUser(owner.id);
-        }
-      } catch (e) {
-        console.warn('User switch error:', e);
-      }
-    });
-    return () => { active = false; unsubscribe(); };
-  }, [users]);
+    restoreSession();
+    return () => { active = false; };
+  }, [users.length]);
 
   // تطبيق الهوية البصرية ونوع الخط تلقائياً
   React.useEffect(() => {
@@ -203,10 +177,39 @@ const AppContent: React.FC = () => {
     }
   }, [settings?.primaryColor, settings?.secondaryColor, settings?.buttonRadius, settings?.fontFamily]);
 
+  // تطبيق الشعار المختار للمقرأة في صفحة الويب وتبويب المتصفح (Favicon + Apple Touch Icon + Tab Title)
+  React.useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const siteName = settings?.name || 'مقرأة غيث الغيم';
+      const siteSubtitle = settings?.subtitle || 'منصة الإدارة والمقرأة القرآنية';
+      document.title = `${siteName} | ${siteSubtitle}`;
+
+      const logo = settings?.logoUrl;
+      if (logo) {
+        // تحديث أيقونة الموقع (Favicon) وروابط الأيقونات في ترويسة صفحة الويب فوراً
+        const updateFaviconLink = (rel: string) => {
+          let link = document.querySelector(`link[rel='${rel}']`) as HTMLLinkElement | null;
+          if (!link) {
+            link = document.createElement('link');
+            link.rel = rel;
+            document.head.appendChild(link);
+          }
+          link.href = logo;
+        };
+
+        updateFaviconLink('icon');
+        updateFaviconLink('shortcut icon');
+        updateFaviconLink('apple-touch-icon');
+      }
+    }
+  }, [settings?.logoUrl, settings?.name, settings?.subtitle]);
+
   const handleLockSession = () => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('ghaith_is_locked', 'true');
       localStorage.removeItem('ghaith_is_authenticated');
+      localStorage.removeItem('ghaith_active_user_id');
+      localStorage.removeItem('ghaith_current_user_id');
     }
     setIsAuthenticated(false);
     setAuthError('');
@@ -253,12 +256,16 @@ const AppContent: React.FC = () => {
   }
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#F9F7F5] text-stone-700">
-        <div className="w-16 h-16 rounded-3xl bg-[#FAF2F4] border border-[#E8D5D8] flex items-center justify-center text-3xl shadow-sm animate-pulse mb-4">
-          📖
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#F9F7F5] dark:bg-[#0E0E11] text-stone-700 dark:text-stone-300">
+        <div className="w-20 h-20 rounded-3xl bg-white dark:bg-stone-800 border border-[#E8D5D8] dark:border-stone-700 p-2 flex items-center justify-center text-3xl shadow-sm animate-pulse mb-4 overflow-hidden">
+          {settings?.logoUrl ? (
+            <img src={settings.logoUrl} alt="شعار المقرأة" className="w-full h-full object-contain" />
+          ) : (
+            <span>📖</span>
+          )}
         </div>
-        <h2 className="text-xl font-bold font-quran text-stone-900 mb-1">{settings?.name || 'مقرأة غيث الغيم'}</h2>
-        <p className="text-xs text-stone-500">جاري الاتصال بقاعدة البيانات وتحميل الحلقات والمسارات...</p>
+        <h2 className="text-xl font-bold font-quran text-stone-900 dark:text-stone-100 mb-1">{settings?.name || 'مقرأة غيث الغيم'}</h2>
+        <p className="text-xs text-stone-500 dark:text-stone-400">جاري الاتصال بقاعدة البيانات وتحميل الحلقات والمسارات...</p>
       </div>
     );
   }
@@ -398,7 +405,7 @@ const AppContent: React.FC = () => {
           )}
 
           {currentView === 'staff' && (
-            hasFullAccess(currentUser) ? (
+            (hasFullAccess(currentUser) || !!currentUser?.permissions?.canAccessStaff || !!currentUser?.permissions?.canManageUsers) ? (
               <StaffView />
             ) : (
               <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center" dir="rtl">

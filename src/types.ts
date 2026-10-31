@@ -13,6 +13,7 @@ export interface UserPermissions {
   canManagePlans?: boolean;
   canManageFinances?: boolean;
   canEditTrackCriteria?: boolean;
+  canAccessStaff?: boolean;
   canManageSettings?: boolean;
   canManageUsers?: boolean;
   canManageTracks?: boolean;
@@ -43,11 +44,11 @@ export interface User {
 export const hasFullAccess = (user: Pick<User, 'role'> | null | undefined): boolean =>
   user?.role === 'owner' || user?.role === 'developer' || user?.role === 'leader';
 
-export const isPlatformOwner = (user: Pick<User, 'role' | 'email'> | null | undefined): boolean =>
-  user?.role === 'owner' || user?.email?.trim().toLowerCase() === 'yr.play.com@gmail.com';
+export const isPlatformOwner = (user: Pick<User, 'role'> | null | undefined): boolean =>
+  user?.role === 'owner';
 
-export const isTechnicalDeveloper = (user: Pick<User, 'role'> | null | undefined): boolean =>
-  user?.role === 'developer';
+export const isTechnicalDeveloper = (user: Pick<User, 'role' | 'email'> | null | undefined): boolean =>
+  user?.role === 'developer' || user?.email?.trim().toLowerCase() === 'yr.play.com@gmail.com';
 
 // 1. معايير دليل الإتقان (مشكاة الغيم) الموحدة القابلة للتعديل
 export interface CriterionItem {
@@ -522,6 +523,26 @@ export const defaultPermissionsByRole: Record<string, UserPermissions> = {
     canManagePlans: true,
     canManageFinances: true,
     canEditTrackCriteria: true,
+    canAccessStaff: true,
+    canManageSettings: true,
+    canManageUsers: true,
+    canManageTracks: true,
+    canManageCircles: true,
+    canEditScores: true,
+    canExportReports: true
+  },
+  owner: {
+    canRecordAttendance: true,
+    canRecordRecitation: true,
+    canGradeAtqini: true,
+    canManageChallenges: true,
+    canGradeExams: true,
+    canEditStudents: true,
+    canViewReports: true,
+    canManagePlans: true,
+    canManageFinances: true,
+    canEditTrackCriteria: true,
+    canAccessStaff: true,
     canManageSettings: true,
     canManageUsers: true,
     canManageTracks: true,
@@ -540,6 +561,7 @@ export const defaultPermissionsByRole: Record<string, UserPermissions> = {
     canManagePlans: true,
     canManageFinances: true,
     canEditTrackCriteria: true,
+    canAccessStaff: true,
     canManageSettings: true,
     canManageUsers: true,
     canManageTracks: true,
@@ -558,6 +580,7 @@ export const defaultPermissionsByRole: Record<string, UserPermissions> = {
     canManagePlans: true,
     canManageFinances: false, // محصورة على الإدارة العليا فقط
     canEditTrackCriteria: false, // محصورة على الإدارة العليا فقط ما لم تمنح يدوياً
+    canAccessStaff: false, // محصورة على الإدارة العليا ما لم تمنح يدوياً
     canManageSettings: false,
     canManageUsers: false,
     canManageTracks: false,
@@ -576,6 +599,7 @@ export const defaultPermissionsByRole: Record<string, UserPermissions> = {
     canManagePlans: false,
     canManageFinances: false, // محصورة على الإدارة العليا فقط
     canEditTrackCriteria: false, // محصورة على الإدارة العليا فقط
+    canAccessStaff: false,
     canManageSettings: false,
     canManageUsers: false,
     canManageTracks: false,

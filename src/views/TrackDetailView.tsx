@@ -243,16 +243,30 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
           </div>
         </div>
 
-        {canEditCriteria && (
-          <button
-            type="button"
-            onClick={handleOpenEditModal}
-            className="px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer active:scale-95"
-          >
-            <Settings className="w-4 h-4" />
-            <span>تعديل معايير دليل الإتقان</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {onNavigateToSection && (
+            <button
+              type="button"
+              onClick={() => onNavigateToSection('staff')}
+              className="px-4 py-2.5 bg-[#FAF0F3] hover:bg-[#8E5364] text-[#8E5364] hover:text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 border border-[#8E5364]/30 shadow-xs cursor-pointer active:scale-95"
+              title="الوصول إلى قسم وسجل المعلمات والمشرفات"
+            >
+              <Users className="w-4 h-4" />
+              <span>قسم المعلمات والمشرفات</span>
+            </button>
+          )}
+
+          {canEditCriteria && (
+            <button
+              type="button"
+              onClick={handleOpenEditModal}
+              className="px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer active:scale-95"
+            >
+              <Settings className="w-4 h-4" />
+              <span>تعديل معايير دليل الإتقان</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* المؤشرات التعليمية والتربوية للمسار */}

@@ -4,9 +4,10 @@ import { ViewType } from '../components/Sidebar';
 import {
   Users, Layers, Award, CheckCircle2, AlertTriangle, ArrowUpRight,
   TrendingUp, Calendar, Sparkles, BookOpen, Clock, HeartHandshake,
-  UserCheck, ShieldAlert, Plus, ChevronLeft, Edit3, Filter, Check, History
+  UserCheck, UserCog, ShieldAlert, Plus, ChevronLeft, Edit3, Filter, Check, History
 } from 'lucide-react';
 import { AuditLogModal } from '../components/AuditLogModal';
+import { hasFullAccess } from '../types';
 
 interface DashboardViewProps {
   onNavigate: (view: ViewType) => void;
@@ -23,7 +24,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     students, circles, tracks, attendanceRecords, dailyRecords,
     studentAtqiniSubmissions, studentChallengeSubmissions,
     allStudentScores, settings, auditLogs, selectedTrackId, setSelectedTrackId,
-    updateSettings
+    updateSettings, currentUser
   } = useApp();
 
   const [auditModalOpen, setAuditModalOpen] = useState(false);
@@ -185,6 +186,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <Sparkles className="w-3.5 h-3.5" />
               <span>واجبات «أتقني»</span>
             </button>
+            {hasFullAccess(currentUser) && (
+              <button
+                onClick={() => onNavigate('staff')}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/15 backdrop-blur text-white text-xs font-medium hover:bg-white/25 border border-white/20 transition cursor-pointer"
+                title="الوصول إلى قسم المعلمات والمشرفات"
+              >
+                <UserCog className="w-3.5 h-3.5" />
+                <span>المعلمات والمشرفات</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -288,12 +299,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span>🪴</span>
             <span>حلقات {currentTrack ? currentTrack.name : 'المقرأة'}:</span>
           </h3>
-          <button
-            onClick={() => onNavigate('tracks_circles')}
-            className="text-xs text-[#8E5364] font-bold hover:underline"
-          >
-            إدارة الحلقات والمسارات
-          </button>
+          <div className="flex items-center gap-2">
+            {hasFullAccess(currentUser) && (
+              <>
+                <button
+                  onClick={() => onNavigate('staff')}
+                  className="text-xs text-[#8E5364] font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                  title="الانتقال إلى سجل المعلمات والمشرفات"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>المعلمات والمشرفات</span>
+                </button>
+                <span className="text-stone-300">•</span>
+              </>
+            )}
+            <button
+              onClick={() => onNavigate('tracks_circles')}
+              className="text-xs text-[#8E5364] font-bold hover:underline cursor-pointer"
+            >
+              إدارة الحلقات والمسارات
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

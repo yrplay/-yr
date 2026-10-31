@@ -208,7 +208,7 @@ export const Header: React.FC<HeaderProps> = ({
                       متصلة الآن
                     </span>
                     <span className="text-[11px] text-stone-500 font-semibold">
-                      {currentUser?.role === 'owner' ? 'مالك المنصة' : currentUser?.role === 'developer' ? 'المطور التقني' : isLeader ? 'قائدة المقرأة' : currentUser?.role === 'supervisor' ? 'مشرفة المقرأة' : 'معلمة حلقة'}
+                      {currentUser?.role === 'developer' ? 'المطور التقني' : currentUser?.role === 'owner' ? 'مالك المنصة' : isLeader ? 'قائدة المقرأة' : currentUser?.role === 'supervisor' ? 'مشرفة المقرأة' : 'معلمة حلقة'}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">

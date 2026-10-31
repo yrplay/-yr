@@ -59,10 +59,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
     { id: 'settings', label: 'الإعدادات والنسخ الاحتياطي', icon: Settings, adminOnly: true },
   ];
 
-  // تخصيص الأقسام الإدارية والمالية للإدارة العليا فقط
+  // تخصيص الأقسام الإدارية والمالية والكادر بحسب الصلاحيات المخصصة
   const canAccessFinances = hasAdminAccess || !!currentUser?.permissions?.canManageFinances;
+  const canAccessStaffSection = hasAdminAccess || !!currentUser?.permissions?.canAccessStaff || !!currentUser?.permissions?.canManageUsers;
   const menuItems = rawMenuItems.filter(item => {
     if (item.id === 'subscriptions') return canAccessFinances;
+    if (item.id === 'staff') return canAccessStaffSection;
     if (item.adminOnly) return hasAdminAccess;
     return true;
   });
@@ -85,22 +87,32 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
             : 'translate-x-full lg:translate-x-0 pointer-events-none lg:pointer-events-auto'
         }`}
       >
-        {/* Mobile Header in Drawer */}
-        <div className="flex items-center justify-between p-4 border-b border-[#EBE3DC] lg:hidden">
+        {/* Sidebar Header with Maqra'ah Logo & Name */}
+        <div className="flex items-center justify-between p-4 border-b border-[#EBE3DC]">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-white border border-[#E0D0D4] flex items-center justify-center shadow-xs p-0.5 overflow-hidden">
+            <div className="w-9 h-9 rounded-xl bg-white border border-[#E0D0D4] flex items-center justify-center shadow-xs p-1 overflow-hidden shrink-0">
               <img
                 src={settings?.logoUrl || '/pwa-192x192.png'}
                 alt={settings?.name || 'مقرأة غيث الغيم'}
                 className="w-full h-full object-contain"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = '/pwa-192x192.png';
+                }}
               />
             </div>
-            <span className="font-bold text-stone-800 font-quran text-base">{settings?.name || 'مقرأة غيث الغيم'}</span>
+            <div className="min-w-0">
+              <span className="font-bold text-stone-800 font-quran text-sm block leading-tight truncate">
+                {settings?.name || 'مقرأة غيث الغيم'}
+              </span>
+              <span className="text-[10px] text-stone-400 block truncate">
+                {settings?.subtitle || 'المقرأة القرآنية النموذجية'}
+              </span>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-stone-500 hover:bg-stone-200/60 active:scale-95 transition"
+            className="p-2 rounded-xl text-stone-500 hover:bg-stone-200/60 active:scale-95 transition lg:hidden shrink-0"
             aria-label="إغلاق القائمة"
           >
             <X className="w-5 h-5" />

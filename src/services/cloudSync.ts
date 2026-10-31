@@ -1,10 +1,23 @@
-import { doc, onSnapshot, runTransaction } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, runTransaction } from 'firebase/firestore';
 import { db, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID } from '../firebase';
 import { mergeArrayByKey, mergeDeletedEntities, sanitizeCloudState, type DeletedEntities } from './cloudSyncHelpers';
 
 export type CloudSyncStatus = 'connected' | 'syncing' | 'offline' | 'error';
 
 const CLOUD_DOC_PATH = { collection: FIRESTORE_COLLECTION, id: FIRESTORE_DOC_ID };
+
+export const fetchCloudDatabaseOnce = async (): Promise<any | null> => {
+  try {
+    const docRef = doc(db, CLOUD_DOC_PATH.collection, CLOUD_DOC_PATH.id);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return sanitizeCloudState(snap.data());
+    }
+  } catch (err) {
+    console.warn('Initial cloud database fetch notice:', err);
+  }
+  return null;
+};
 
 export const subscribeToCloudDatabase = (
   onData: (data: any) => void,

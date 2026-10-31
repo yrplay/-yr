@@ -531,9 +531,9 @@ export interface AuditLog {
 export const hasFullAccess = (user: Pick<User, 'role'> | null | undefined): boolean =>
   user?.role === 'owner' || user?.role === 'developer' || user?.role === 'leader';
 
-export const isPlatformOwner = (user: Pick<User, 'role' | 'email'> | null | undefined): boolean =>
-  user?.role === 'owner' || user?.email?.trim().toLowerCase() === 'yr.play.com@gmail.com';
+export const isPlatformOwner = (user: Pick<User, 'role'> | null | undefined): boolean =>
+  user?.role === 'owner';
 
-export const isTechnicalDeveloper = (user: Pick<User, 'role'> | null | undefined): boolean =>
-  user?.role === 'developer';
+export const isTechnicalDeveloper = (user: Pick<User, 'role' | 'email'> | null | undefined): boolean =>
+  user?.role === 'developer' || user?.email?.trim().toLowerCase() === 'yr.play.com@gmail.com';
 

@@ -5,7 +5,7 @@ import {
   Mail, Phone, Layers, Award, X, Upload, Trash2, Sparkles, FileSignature,
   Copy, KeyRound, Check, Table, LayoutGrid, Lock
 } from 'lucide-react';
-import { User, UserRole, UserPermissions, defaultPermissionsByRole, hasFullAccess } from '../types';
+import { User, UserRole, UserPermissions, defaultPermissionsByRole, hasFullAccess, isTechnicalDeveloper } from '../types';
 import { IslamicIconPicker, renderUserAvatarBadge, getAvatarLabel } from '../components/IslamicIconLibrary';
 
 const PERMISSION_ITEMS: {
@@ -86,6 +86,13 @@ const PERMISSION_ITEMS: {
     icon: '🎯'
   },
   {
+    key: 'canAccessStaff',
+    title: 'الوصول إلى قسم وسجل المعلمات والمشرفات',
+    description: 'الاطلاع على سجل الكادر التعليمي، وإدارة بيانات وتوزيع المعلمات والمشرفات، وتعيين الحلقات.',
+    category: 'إدارة الكادر والمقرأة',
+    icon: '👩‍🏫'
+  },
+  {
     key: 'canManageSettings',
     title: 'الوصول لإعدادات وهوية المقرأة العامة',
     description: 'تغيير الشعار والهوية البصرية والألوان وإدارة نصوص المنظومة.',
@@ -97,8 +104,9 @@ const PERMISSION_ITEMS: {
 export const StaffView: React.FC = () => {
   const { users, circles, currentUser, createUser, updateUser, deleteUser, showToast } = useApp();
 
-  // تخصيص القسم بالكامل لإدارة المقرأة فقط (القائدة)
-  if (!hasFullAccess(currentUser)) {
+  // تخصيص القسم بالكامل لإدارة المقرأة أو لمن تملك صلاحية الوصول لقسم المعلمات
+  const canAccessThisSection = hasFullAccess(currentUser) || !!currentUser?.permissions?.canAccessStaff || !!currentUser?.permissions?.canManageUsers;
+  if (!canAccessThisSection) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center" dir="rtl">
         <div className="w-16 h-16 rounded-3xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-center text-3xl shadow-xs mb-4">
@@ -134,6 +142,9 @@ export const StaffView: React.FC = () => {
     canEditStudents: false,
     canViewReports: false,
     canManagePlans: false,
+    canManageFinances: false,
+    canEditTrackCriteria: false,
+    canAccessStaff: false,
     canManageSettings: false,
   });
 
@@ -151,6 +162,19 @@ export const StaffView: React.FC = () => {
   });
 
   const copyTeacherCredentials = (teacher: User) => {
+    const isDev = teacher.role === 'developer' || teacher.id === 'u-dev' || teacher.email?.trim().toLowerCase() === 'yr.play.com@gmail.com';
+    const isOwner = teacher.role === 'owner' || teacher.id === 'u-owner' || teacher.email?.trim().toLowerCase() === 'owner@ghaym.org';
+    const isCurrentDev = currentUser?.role === 'developer' || isTechnicalDeveloper(currentUser);
+    const isCurrentOwner = currentUser?.role === 'owner' || currentUser?.id === teacher.id;
+
+    if (isDev && !isCurrentDev) {
+      showToast('بيانات حساب المطور التقني محمية وخاصة ولا يمكن نسخها ⛔', 'error');
+      return;
+    }
+    if (isOwner && !isCurrentDev && !isCurrentOwner) {
+      showToast('بيانات حساب مالك المنصة محمية وخاصة ولا يمكن نسخها إلا للمطور أو المالك نفسه ⛔', 'error');
+      return;
+    }
     const text = `🌸 بيانات حسابكِ في مقرأة غيث الغيم:
 الاسم: ${teacher.name}
 الصفة: ${teacher.title || (teacher.role === 'supervisor' ? 'مشرفة مسار' : 'معلمة حلقة')}
@@ -171,6 +195,18 @@ export const StaffView: React.FC = () => {
   };
 
   const handleOpenPermissionsModal = (user: User) => {
+    const isDev = user.role === 'developer' || user.id === 'u-dev' || user.email?.trim().toLowerCase() === 'yr.play.com@gmail.com';
+    const isOwner = user.role === 'owner' || user.id === 'u-owner' || user.email?.trim().toLowerCase() === 'owner@ghaym.org';
+    const isCurrentDev = currentUser?.role === 'developer' || isTechnicalDeveloper(currentUser);
+
+    if (isDev && !isCurrentDev) {
+      showToast('حساب المطور التقني محمي برمجياً ويمتلك كامل الصلاحيات ولا يمكن تعديله ⛔', 'error');
+      return;
+    }
+    if (isOwner && !isCurrentDev) {
+      showToast('صلاحيات حساب مالك المنصة مخصصة ومحمية ولا يمكن تعديلها إلا من المطور التقني ⛔', 'error');
+      return;
+    }
     setPermissionsModalUser(user);
     setUserPermissionsState(getUserEffectivePermissions(user));
   };
@@ -191,6 +227,7 @@ export const StaffView: React.FC = () => {
       canManagePlans: true,
       canManageFinances: true,
       canEditTrackCriteria: true,
+      canAccessStaff: true,
       canManageSettings: true,
     });
   };
@@ -207,6 +244,7 @@ export const StaffView: React.FC = () => {
       canManagePlans: false,
       canManageFinances: false,
       canEditTrackCriteria: false,
+      canAccessStaff: false,
       canManageSettings: false,
     });
   };
@@ -228,6 +266,19 @@ export const StaffView: React.FC = () => {
 
   const handleOpenStaffModal = (user?: User) => {
     if (user) {
+      const isDev = user.role === 'developer' || user.id === 'u-dev' || user.email?.trim().toLowerCase() === 'yr.play.com@gmail.com';
+      const isOwner = user.role === 'owner' || user.id === 'u-owner' || user.email?.trim().toLowerCase() === 'owner@ghaym.org';
+      const isCurrentDev = currentUser?.role === 'developer' || isTechnicalDeveloper(currentUser);
+      const isCurrentOwner = currentUser?.id === user.id;
+
+      if (isDev && !isCurrentDev) {
+        showToast('بيانات حساب المطور التقني محمية ومشفرة ولا يمكن تعديلها إلا من المطور نفسه ⛔', 'error');
+        return;
+      }
+      if (isOwner && !isCurrentDev && !isCurrentOwner) {
+        showToast('بيانات حساب مالك المنصة محمية ومشفرة ولا يمكن تعديلها إلا للمطور التقني أو المالك نفسه ⛔', 'error');
+        return;
+      }
       setEditingStaff(user);
       setStaffForm({
         name: user.name,
@@ -335,12 +386,18 @@ export const StaffView: React.FC = () => {
   const canDeleteTargetUser = (curr: User | null, target: User): boolean => {
     if (!curr || !target) return false;
     if (curr.id === target.id) return false;
-    // Platform Owner can NEVER be deleted
-    if (target.role === 'owner' || target.email?.trim().toLowerCase() === 'yr.play.com@gmail.com') return false;
-    // Owner can delete anyone else (developer, leader, supervisor, teacher)
-    if (curr.role === 'owner' || curr.email?.trim().toLowerCase() === 'yr.play.com@gmail.com') return true;
-    // Developer can delete leaders, supervisors, and teachers (cannot delete another developer)
-    if (curr.role === 'developer') return target.role !== 'developer';
+    // Platform Developer can NEVER be deleted by anyone!
+    if (target.role === 'developer' || target.id === 'u-dev' || target.email?.trim().toLowerCase() === 'yr.play.com@gmail.com') return false;
+    // Platform Owner can only be managed/deleted by Developer
+    if (target.role === 'owner' || target.id === 'u-owner') {
+      return curr.role === 'developer' || isTechnicalDeveloper(curr);
+    }
+    // Developer can delete leaders, supervisors, and teachers
+    if (curr.role === 'developer' || isTechnicalDeveloper(curr)) return true;
+    // Owner can delete leaders, supervisors, and teachers
+    if (curr.role === 'owner') {
+      return true;
+    }
     // Leader can only delete supervisors and teachers
     if (curr.role === 'leader') return target.role === 'supervisor' || target.role === 'teacher';
     return false;
@@ -348,21 +405,23 @@ export const StaffView: React.FC = () => {
 
   const canEditTargetRole = (curr: User | null, target: User): boolean => {
     if (!curr || !target) return false;
-    // Owner role is immutable
-    if (target.role === 'owner' || target.email?.trim().toLowerCase() === 'yr.play.com@gmail.com') return false;
-    // Owner can edit any other user's role
-    if (curr.role === 'owner' || curr.email?.trim().toLowerCase() === 'yr.play.com@gmail.com') return true;
-    // Developer can change roles of leaders, supervisors, and teachers
-    if (curr.role === 'developer') return target.role !== 'developer';
+    // Developer is immutable and protected
+    if (target.role === 'developer' || target.id === 'u-dev' || target.email?.trim().toLowerCase() === 'yr.play.com@gmail.com') return false;
+    // Technical Developer can edit ANY user's role, including the Platform Owner!
+    if (curr.role === 'developer' || isTechnicalDeveloper(curr)) return true;
+    // Owner can change roles of leaders, supervisors, and teachers (cannot change owner or developer)
+    if (curr.role === 'owner') {
+      return target.role !== 'owner';
+    }
     // Leader can only switch roles between supervisor and teacher
     if (curr.role === 'leader') return target.role === 'supervisor' || target.role === 'teacher';
     return false;
   };
 
   const roleLabels: Record<UserRole, { label: string; bg: string }> = {
-    owner: { label: 'مالك المنصة', bg: 'bg-purple-100 text-purple-900 border-purple-300' },
-    developer: { label: 'المطور التقني', bg: 'bg-indigo-100 text-indigo-900 border-indigo-300' },
-    leader: { label: 'قائدة المقرأة', bg: 'bg-rose-100 text-rose-800 border-rose-300' },
+    developer: { label: 'المطور التقني', bg: 'bg-indigo-100 text-indigo-950 border-indigo-300 font-bold shadow-2xs' },
+    owner: { label: 'مالك المنصة', bg: 'bg-purple-100 text-purple-900 border-purple-300 font-bold' },
+    leader: { label: 'قائدة المقرأة', bg: 'bg-rose-100 text-rose-800 border-rose-300 font-bold' },
     supervisor: { label: 'مشرفة مسار / حلقات', bg: 'bg-amber-100 text-amber-800 border-amber-300' },
     teacher: { label: 'معلمة حلقة', bg: 'bg-emerald-100 text-emerald-800 border-emerald-300' }
   };
@@ -497,6 +556,17 @@ export const StaffView: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-stone-100">
                 {users.map(user => {
+                  const isDevAccount = user.role === 'developer' || user.id === 'u-dev' || user.email?.trim().toLowerCase() === 'yr.play.com@gmail.com';
+                  const isOwnerAccount = user.role === 'owner' || user.id === 'u-owner' || user.email?.trim().toLowerCase() === 'owner@ghaym.org';
+                  const isCurrentDev = currentUser?.role === 'developer' || isTechnicalDeveloper(currentUser);
+                  
+                  // Developer is protected from anyone who is not the developer
+                  const isProtectedDevFromOther = isDevAccount && !isCurrentDev;
+                  // Owner is protected from leaders and others (only Developer and the Owner himself can view/manage)
+                  const isProtectedOwnerFromOther = isOwnerAccount && !isCurrentDev && currentUser?.id !== user.id;
+
+                  const isProtectedUser = isProtectedDevFromOther || isProtectedOwnerFromOther;
+
                   const roleConfig = roleLabels[user.role] || roleLabels.teacher;
                   const iconColor = user.avatarColor || '#8E5364';
                   
@@ -520,8 +590,18 @@ export const StaffView: React.FC = () => {
                             {renderUserAvatarBadge(user.avatarIcon, iconColor, 'w-4 h-4')}
                           </div>
                           <div>
-                            <div className="font-bold text-stone-900 text-xs sm:text-sm">{user.name}</div>
-                            <div className="text-[11px] text-stone-500">{user.title}</div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-stone-900 text-xs sm:text-sm">{user.name}</span>
+                              {(isDevAccount || isProtectedOwnerFromOther) && (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-stone-100 text-stone-600 border border-stone-200">
+                                  <Lock className="w-2.5 h-2.5 text-stone-400" />
+                                  <span>محمي</span>
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-stone-500 font-medium">
+                              {user.role === 'developer' ? 'المطور التقني' : user.title}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -535,46 +615,66 @@ export const StaffView: React.FC = () => {
 
                       {/* Email */}
                       <td className="py-3 px-4 font-mono font-medium text-stone-800">
-                        <div className="flex items-center gap-1.5">
-                          <span className="truncate max-w-[170px]">{user.email}</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(user.email || '');
-                              showToast(`تم نسخ بريد ${user.name} 📋`);
-                            }}
-                            className="text-stone-400 hover:text-stone-700 transition cursor-pointer"
-                            title="نسخ البريد الإلكتروني"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        {isProtectedUser ? (
+                          <span className="inline-flex items-center gap-1.5 text-stone-400 font-sans text-[11px] bg-stone-50 border border-stone-200 px-2 py-0.5 rounded-md">
+                            <Lock className="w-3 h-3 text-stone-400" />
+                            <span>محمي ومشفر 🔒</span>
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate max-w-[170px]">
+                              {user.email}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(user.email || '');
+                                showToast(`تم نسخ بريد ${user.name} 📋`);
+                              }}
+                              className="text-stone-400 hover:text-stone-700 transition cursor-pointer"
+                              title="نسخ البريد الإلكتروني"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </td>
 
                       {/* Phone */}
                       <td className="py-3 px-4 font-mono text-stone-600">
-                        {user.phone || '—'}
+                        {isProtectedUser ? (
+                          <span className="text-stone-400 text-xs">محمي 🔒</span>
+                        ) : (
+                          user.phone || '—'
+                        )}
                       </td>
 
                       {/* الرمز السري للدخول */}
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`font-mono font-bold px-2.5 py-1 rounded-lg border text-xs ${
-                            user.passcode ? 'bg-stone-100 text-stone-800 border-stone-200' : 'bg-rose-50 text-rose-700 border-rose-200'
-                          }`}>
-                            {user.passcode || 'غير محدد'}
+                        {isProtectedUser ? (
+                          <span className="font-mono font-bold px-2.5 py-1 rounded-lg border text-xs bg-stone-100 text-stone-500 border-stone-200 inline-flex items-center gap-1.5">
+                            <Lock className="w-3.5 h-3.5 text-stone-400" />
+                            <span>•••••• (مشفر سحابياً)</span>
                           </span>
-                          {user.passcode && (
-                            <button
-                              type="button"
-                              onClick={() => copyTeacherCredentials(user)}
-                              className="p-1.5 rounded-lg bg-[#FAF0F3] hover:bg-[#8E5364] text-[#8E5364] hover:text-white transition cursor-pointer"
-                              title="نسخ بيانات الدخول والرمز لإرسالها للمعلمة"
-                            >
-                              <Copy className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <span className={`font-mono font-bold px-2.5 py-1 rounded-lg border text-xs ${
+                              user.passcode ? 'bg-stone-100 text-stone-800 border-stone-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                            }`}>
+                              {user.passcode || 'غير محدد'}
+                            </span>
+                            {user.passcode && (
+                              <button
+                                type="button"
+                                onClick={() => copyTeacherCredentials(user)}
+                                className="p-1.5 rounded-lg bg-[#FAF0F3] hover:bg-[#8E5364] text-[#8E5364] hover:text-white transition cursor-pointer"
+                                title="نسخ بيانات الدخول والرمز لإرسالها للمعلمة"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </td>
                       {/* Circles */}
                       <td className="py-3 px-4">
@@ -609,39 +709,48 @@ export const StaffView: React.FC = () => {
 
                       {/* Administrative Actions */}
                       <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {/* الصلاحيات */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenPermissionsModal(user)}
-                            className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition cursor-pointer shadow-2xs"
-                            title="إدارة الصلاحيات التسع"
-                          >
-                            <Shield className="w-3.5 h-3.5" />
-                          </button>
+                        {isProtectedUser ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-stone-100 border border-stone-200 text-stone-400 text-[11px] font-bold">
+                            <Lock className="w-3.5 h-3.5 text-stone-400" />
+                            <span>حساب محمي 🔒</span>
+                          </span>
+                        ) : (
+                          <div className="flex items-center justify-center gap-1.5">
+                            {/* الصلاحيات */}
+                            {(!isOwnerAccount || isCurrentDev) && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenPermissionsModal(user)}
+                                className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition cursor-pointer shadow-2xs"
+                                title="إدارة الصلاحيات المخصصة"
+                              >
+                                <Shield className="w-3.5 h-3.5" />
+                              </button>
+                            )}
 
-                          {/* تعديل كامل */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenStaffModal(user)}
-                            className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition cursor-pointer shadow-2xs"
-                            title="تعديل البيانات الكاملة والتوقيع"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* حذف الحساب وإلغاء الصلاحية */}
-                          {canDeleteTargetUser(currentUser, user) && (
+                            {/* تعديل كامل */}
                             <button
                               type="button"
-                              onClick={() => setTeacherToDelete(user)}
-                              className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition cursor-pointer shadow-2xs"
-                              title={user.role === 'leader' ? "حذف حساب قائدة المقرأة وإلغاء الصلاحية" : "حذف حساب الموظفة وإلغاء الصلاحية"}
+                              onClick={() => handleOpenStaffModal(user)}
+                              className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition cursor-pointer shadow-2xs"
+                              title="تعديل البيانات الكاملة والتوقيع"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Edit className="w-3.5 h-3.5" />
                             </button>
-                          )}
-                        </div>
+
+                            {/* حذف الحساب وإلغاء الصلاحية */}
+                            {canDeleteTargetUser(currentUser, user) && (
+                              <button
+                                type="button"
+                                onClick={() => setTeacherToDelete(user)}
+                                className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition cursor-pointer shadow-2xs"
+                                title={user.role === 'leader' ? "حذف حساب قائدة المقرأة وإلغاء الصلاحية" : "حذف حساب الموظفة وإلغاء الصلاحية"}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -654,6 +763,13 @@ export const StaffView: React.FC = () => {
         /* العرض الثاني: بطاقات الكادر التفصيلية (Cards View) */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {users.map(user => {
+            const isDevAccount = user.role === 'developer' || user.id === 'u-dev' || user.email?.trim().toLowerCase() === 'yr.play.com@gmail.com';
+            const isOwnerAccount = user.role === 'owner' || user.id === 'u-owner' || user.email?.trim().toLowerCase() === 'owner@ghaym.org';
+            const isCurrentDev = currentUser?.role === 'developer' || isTechnicalDeveloper(currentUser);
+            const isProtectedDevFromOther = isDevAccount && !isCurrentDev;
+            const isProtectedOwnerFromOther = isOwnerAccount && !isCurrentDev && currentUser?.id !== user.id;
+            const isProtectedUser = isProtectedDevFromOther || isProtectedOwnerFromOther;
+
             const roleConfig = roleLabels[user.role] || roleLabels.teacher;
             const iconColor = user.avatarColor || '#8E5364';
 
@@ -680,8 +796,16 @@ export const StaffView: React.FC = () => {
                       {renderUserAvatarBadge(user.avatarIcon, iconColor, 'w-6 h-6')}
                     </div>
                     <div>
-                      <h3 className="font-bold text-stone-900 text-sm">{user.name}</h3>
-                      <p className="text-[11px] text-stone-500">{user.title}</p>
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="font-bold text-stone-900 text-sm">{user.name}</h3>
+                        {(isDevAccount || isProtectedOwnerFromOther) && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-stone-100 text-stone-600 border border-stone-200">
+                            <Lock className="w-2.5 h-2.5 text-stone-400" />
+                            <span>محمي</span>
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-stone-500">{user.role === 'developer' ? 'المطور التقني' : user.title}</p>
                       <span className="text-[10px] text-stone-500 flex items-center gap-1 mt-0.5">
                         <span>✨</span>
                         <span>{getAvatarLabel(user.avatarIcon)}</span>
@@ -696,28 +820,37 @@ export const StaffView: React.FC = () => {
 
                 {/* Contact info */}
                 <div className="space-y-1.5 text-xs text-stone-600 bg-[#FCFAF8] p-3 rounded-2xl border border-[#EFE8E2]">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 truncate">
-                      <Mail className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                      <span className="text-[11px] font-mono truncate">{user.email}</span>
+                  {isProtectedUser ? (
+                    <div className="flex items-center gap-2 text-stone-400 text-xs py-1">
+                      <Lock className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                      <span>بيانات التواصل محمية ومشفرة 🔒</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(user.email || '');
-                        showToast(`تم نسخ بريد ${user.name} 📋`);
-                      }}
-                      className="text-stone-400 hover:text-stone-700 transition"
-                      title="نسخ البريد"
-                    >
-                      <Copy className="w-3 h-3" />
-                    </button>
-                  </div>
-                  {user.phone && (
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-3.5 h-3.5 text-stone-400" />
-                      <span className="text-[11px] font-mono">{user.phone}</span>
-                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 truncate">
+                          <Mail className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                          <span className="text-[11px] font-mono truncate">{user.email}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(user.email || '');
+                            showToast(`تم نسخ بريد ${user.name} 📋`);
+                          }}
+                          className="text-stone-400 hover:text-stone-700 transition"
+                          title="نسخ البريد"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                      </div>
+                      {user.phone && (
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-3.5 h-3.5 text-stone-400" />
+                          <span className="text-[11px] font-mono">{user.phone}</span>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
                 {/* Circles info */}
@@ -781,7 +914,7 @@ export const StaffView: React.FC = () => {
                     <span>الصلاحيات المخصصة:</span>
                   </span>
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FAF0F3] text-[#8E5364] border border-[#F3DFE5]">
-                    {Object.values(getUserEffectivePermissions(user)).filter(Boolean).length} من ٩ صلاحيات
+                    {Object.values(getUserEffectivePermissions(user)).filter(Boolean).length} من {PERMISSION_ITEMS.length} صلاحيات
                   </span>
                 </div>
 
@@ -791,67 +924,85 @@ export const StaffView: React.FC = () => {
                     <KeyRound className="w-3.5 h-3.5 text-[#8E5364]" />
                     <span>الرمز السري للدخول (PIN):</span>
                   </span>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`font-mono font-bold px-2.5 py-0.5 rounded-lg border text-xs ${
-                      user.passcode ? 'bg-stone-100 text-stone-800 border-stone-200' : 'bg-rose-50 text-rose-700 border-rose-200'
-                    }`}>
-                      {user.passcode || 'غير محدد'}
+                  {isProtectedUser ? (
+                    <span className="font-mono font-bold px-2.5 py-0.5 rounded-lg border text-xs bg-stone-100 text-stone-500 border-stone-200 inline-flex items-center gap-1">
+                      <Lock className="w-3 h-3 text-stone-400" />
+                      <span>•••••• (مشفر سحابياً)</span>
                     </span>
-                    {user.passcode && (
-                      <button
-                        type="button"
-                        onClick={() => copyTeacherCredentials(user)}
-                        className="p-1 rounded-lg bg-[#FAF0F3] hover:bg-[#8E5364] text-[#8E5364] hover:text-white transition cursor-pointer"
-                        title="نسخ بيانات الدخول والرمز للمعلمة"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <span className={`font-mono font-bold px-2.5 py-0.5 rounded-lg border text-xs ${
+                        user.passcode ? 'bg-stone-100 text-stone-800 border-stone-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                      }`}>
+                        {user.passcode || 'غير محدد'}
+                      </span>
+                      {user.passcode && (
+                        <button
+                          type="button"
+                          onClick={() => copyTeacherCredentials(user)}
+                          className="p-1 rounded-lg bg-[#FAF0F3] hover:bg-[#8E5364] text-[#8E5364] hover:text-white transition cursor-pointer"
+                          title="نسخ بيانات الدخول والرمز للمعلمة"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Actions Bar */}
                 <div className="pt-2 border-t border-stone-100 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => copyTeacherCredentials(user)}
-                    className="flex-1 py-2 px-2.5 bg-[#FAF0F3] hover:bg-[#8E5364] text-[#8E5364] hover:text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border border-[#8E5364]/20 cursor-pointer shadow-2xs active:scale-95"
-                    title="نسخ رسالة بيانات الدخول الرسمية"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>نسخ بيانات الدخول</span>
-                  </button>
+                  {isProtectedUser ? (
+                    <div className="w-full py-2.5 bg-stone-100 border border-stone-200 rounded-xl text-center text-xs font-bold text-stone-500 flex items-center justify-center gap-1.5 shadow-2xs">
+                      <Lock className="w-3.5 h-3.5 text-stone-400" />
+                      <span>حساب محمي ومشفر 🔒</span>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => copyTeacherCredentials(user)}
+                        className="flex-1 py-2 px-2.5 bg-[#FAF0F3] hover:bg-[#8E5364] text-[#8E5364] hover:text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border border-[#8E5364]/20 cursor-pointer shadow-2xs active:scale-95"
+                        title="نسخ رسالة بيانات الدخول الرسمية"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>نسخ بيانات الدخول</span>
+                      </button>
 
-                  <button
-                    type="button"
-                    onClick={() => handleOpenPermissionsModal(user)}
-                    className="py-2 px-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border border-stone-200 cursor-pointer shadow-2xs"
-                    title="تحديد الصلاحيات"
-                  >
-                    <Shield className="w-3.5 h-3.5 text-[#8E5364]" />
-                    <span>الصلاحيات</span>
-                  </button>
+                      {(!isOwnerAccount || isCurrentDev) && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPermissionsModal(user)}
+                          className="py-2 px-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border border-stone-200 cursor-pointer shadow-2xs"
+                          title="تحديد الصلاحيات"
+                        >
+                          <Shield className="w-3.5 h-3.5 text-[#8E5364]" />
+                          <span>الصلاحيات</span>
+                        </button>
+                      )}
 
-                  <button
-                    type="button"
-                    onClick={() => handleOpenStaffModal(user)}
-                    className="py-2 px-3 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer active:scale-95"
-                    title="تعديل الشعار والبيانات"
-                  >
-                    <Edit className="w-3.5 h-3.5" />
-                    <span>تعديل</span>
-                  </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenStaffModal(user)}
+                        className="py-2 px-3 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer active:scale-95"
+                        title="تعديل الشعار والبيانات"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                        <span>تعديل</span>
+                      </button>
 
-                  {canDeleteTargetUser(currentUser, user) && (
-                    <button
-                      type="button"
-                      onClick={() => setTeacherToDelete(user)}
-                      className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border border-rose-200 cursor-pointer shadow-2xs active:scale-95"
-                      title={user.role === 'leader' ? "حذف حساب قائدة المقرأة وإلغاء الصلاحية" : "حذف حساب الموظفة وإلغاء الصلاحية"}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>حذف</span>
-                    </button>
+                      {canDeleteTargetUser(currentUser, user) && (
+                        <button
+                          type="button"
+                          onClick={() => setTeacherToDelete(user)}
+                          className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 border border-rose-200 cursor-pointer shadow-2xs active:scale-95"
+                          title={user.role === 'leader' ? "حذف حساب قائدة المقرأة وإلغاء الصلاحية" : "حذف حساب الموظفة وإلغاء الصلاحية"}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف</span>
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -909,33 +1060,62 @@ export const StaffView: React.FC = () => {
                     value={staffForm.role}
                     onChange={e => {
                       const newRole = e.target.value as UserRole;
-                      const roleDefaultTitle = newRole === 'leader' ? 'قائدة مقرأة غيث الغيم' : newRole === 'supervisor' ? 'مشرفة مسار' : newRole === 'developer' ? 'مهندس المنصة والمطور' : 'معلمة حلقة';
+                      const roleDefaultTitle =
+                        newRole === 'owner'
+                          ? 'مالك المنصة'
+                          : newRole === 'leader'
+                          ? 'قائدة مقرأة غيث الغيم'
+                          : newRole === 'supervisor'
+                          ? 'مشرفة مسار'
+                          : newRole === 'developer'
+                          ? 'المطور التقني'
+                          : 'معلمة حلقة';
                       setStaffForm({
                         ...staffForm,
                         role: newRole,
-                        title: staffForm.title && staffForm.title !== 'معلمة حلقة' && staffForm.title !== 'قائدة مقرأة غيث الغيم' ? staffForm.title : roleDefaultTitle
+                        title:
+                          staffForm.title &&
+                          staffForm.title !== 'معلمة حلقة' &&
+                          staffForm.title !== 'قائدة مقرأة غيث الغيم' &&
+                          staffForm.title !== 'مالك المنصة' &&
+                          staffForm.title !== 'المطور التقني'
+                            ? staffForm.title
+                            : roleDefaultTitle
                       });
                     }}
                     disabled={editingStaff ? !canEditTargetRole(currentUser, editingStaff) : false}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white font-bold disabled:bg-stone-100 disabled:text-stone-500"
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white font-bold disabled:bg-stone-100 disabled:text-stone-500 cursor-pointer disabled:cursor-not-allowed"
                   >
                     <option value="teacher">معلمة حلقة قرآنية</option>
                     <option value="supervisor">مشرفة مسار / حلقات</option>
-                    <option value="leader">قائدة المقرأة (قابلة للتعديل والحذف)</option>
-                    {/* Developer: exactly 1 allowed in system */}
-                    {(currentUser?.role === 'owner' || editingStaff?.role === 'developer') && (
-                      <option value="developer" disabled={users.some(u => u.role === 'developer' && u.id !== editingStaff?.id)}>
-                        المطور التقني (مطور واحد فقط للمنصة)
+                    <option value="leader">قائدة المقرأة</option>
+                    {/* مالك المنصة: قابل للتعديل والتعيين عن طريق المطور التقني حتى لمالك المنصة */}
+                    {(currentUser?.role === 'developer' || isTechnicalDeveloper(currentUser) || editingStaff?.role === 'owner') && (
+                      <option value="owner">
+                        مالك المنصة
                       </option>
                     )}
-                    {editingStaff?.role === 'owner' && (
-                      <option value="owner" disabled>مالك المنصة العام (منصب حصري غير قابل للنقل)</option>
+                    {/* حساب المطور التقني ثابت للمطور */}
+                    {editingStaff?.role === 'developer' && (
+                      <option value="developer" disabled>
+                        المطور التقني (حساب ثابت)
+                      </option>
                     )}
                   </select>
-                  {editingStaff && !canEditTargetRole(currentUser, editingStaff) && (
+                  {editingStaff && !canEditTargetRole(currentUser, editingStaff) ? (
                     <p className="mt-1 text-[10px] text-amber-700">
-                      {editingStaff.role === 'owner' ? 'منصب مالك المنصة ثابت ومحمي من التعديل.' : 'تعديل هذا المنصب مقتصر على مالك المنصة أو المطور.'}
+                      {editingStaff.role === 'developer'
+                        ? 'حساب المطور التقني حساب ثابت لا يمكن تغيير منصبه.'
+                        : 'تعديل هذا المنصب متاح حصرياً للمطور التقني أو مالك المنصة.'}
                     </p>
+                  ) : (
+                    (currentUser?.role === 'developer' || isTechnicalDeveloper(currentUser)) && (
+                      <p className="mt-1 text-[10px] text-emerald-700 font-bold">
+                        {editingStaff?.role === 'owner'
+                          ? '✨ بصفتك المطور التقني، يحق لك تعديل منصب مالك المنصة وتغيير رتبته بحرية.'
+                          : '✨ بصفتك المطور التقني، لديك كامل الصلاحيات لتعديل المناصب لكافة الحسابات.'}
+                      </p>
+                    )
                   )}
                 </div>
               </div>
