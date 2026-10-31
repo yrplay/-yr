@@ -1,10 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-  History, X, Search, Filter, Download, UserCheck, Shield,
-  Calendar, Clock, CheckCircle2, AlertCircle, FileText
+  History, X, Search, Download, FileText, Trash2, RotateCcw
 } from 'lucide-react';
-import { AuditLog } from '../types';
+import { isTechnicalDeveloper } from '../types';
 
 interface AuditLogModalProps {
   isOpen: boolean;
@@ -12,29 +11,91 @@ interface AuditLogModalProps {
 }
 
 export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose }) => {
-  const { auditLogs, settings } = useApp();
+  const { auditLogs, settings, currentUser, deleteAuditLog, clearAuditLogs } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAction, setSelectedAction] = useState<string>('all');
   const [selectedTarget, setSelectedTarget] = useState<string>('all');
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  const canManageAuditLogs =
+    currentUser?.role === 'developer' ||
+    isTechnicalDeveloper(currentUser) ||
+    currentUser?.role === 'owner';
+
+  const getTargetLabel = (target: string) => {
+    const map: Record<string, string> = {
+      student: 'شؤون الطالبات',
+      circle: 'الحلقات القرآنية',
+      track: 'المسارات المعتمدة',
+      monthlyPlan: 'الخطط الشهرية',
+      studentPlan: 'مقررات الطالبات',
+      dailyRecord: 'سجل التسميع والحفظ',
+      attendance: 'الحضور والتحضير',
+      atqini: 'واجبات التجويد (أتقني)',
+      atqiniSubmission: 'تقييم واجبات أتقني',
+      challenge: 'التحديات والمراجعة الثنائية',
+      exam: 'الاختبارات الشهرية',
+      subscription: 'الاشتراكات والمالية',
+      gradingConfig: 'نظام الدرجات والمعايير',
+      settings: 'إعدادات وهوية المنصة',
+      auth: 'الكادر والصلاحيات والدخول',
+      system: 'النظام العام'
+    };
+    return map[target] || target || 'عام';
+  };
+
+  const getRoleBadge = (role?: string) => {
+    switch (role) {
+      case 'developer':
+        return { label: 'المطور التقني', cls: 'bg-violet-100 text-violet-800 border border-violet-200' };
+      case 'owner':
+        return { label: 'مالك المنصة', cls: 'bg-amber-100 text-amber-900 border border-amber-200' };
+      case 'leader':
+        return { label: 'قائدة المقرأة', cls: 'bg-rose-100 text-rose-800 border border-rose-200' };
+      case 'supervisor':
+        return { label: 'مشرفة', cls: 'bg-sky-100 text-sky-800 border border-sky-200' };
+      default:
+        return { label: 'معلمة', cls: 'bg-emerald-100 text-emerald-800 border border-emerald-200' };
+    }
+  };
 
   const filteredLogs = useMemo(() => {
     return (auditLogs || []).filter(log => {
       const targetId = log.entityId || (log as any).targetId || '';
-      const action = log.actionType || (log as any).action || '';
+      const action = log.actionType || log.action || '';
       const target = log.entity || (log as any).targetType || '';
+      const targetLabel = getTargetLabel(target);
 
+      const q = searchQuery.trim().toLowerCase();
       const matchSearch =
-        !searchQuery.trim() ||
-        log.details.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (targetId && targetId.toLowerCase().includes(searchQuery.toLowerCase()));
+        !q ||
+        (log.details || '').toLowerCase().includes(q) ||
+        (log.userName || '').toLowerCase().includes(q) ||
+        targetLabel.toLowerCase().includes(q) ||
+        (targetId && targetId.toLowerCase().includes(q));
 
       const matchAction = selectedAction === 'all' || action === selectedAction;
-      const matchTarget = selectedTarget === 'all' || target === selectedTarget;
+      const matchTarget =
+        selectedTarget === 'all' ||
+        target === selectedTarget ||
+        (selectedTarget === 'monthlyPlan' && (target === 'monthlyPlan' || target === 'studentPlan')) ||
+        (selectedTarget === 'atqini' && (target === 'atqini' || target === 'atqiniSubmission'));
 
       return matchSearch && matchAction && matchTarget;
     });
   }, [auditLogs, searchQuery, selectedAction, selectedTarget]);
+
+  const stats = useMemo(() => {
+    const list = auditLogs || [];
+    return {
+      total: list.length,
+      creates: list.filter(l => (l.actionType || l.action) === 'create').length,
+      updates: list.filter(l => (l.actionType || l.action) === 'update').length,
+      grades: list.filter(l => (l.actionType || l.action) === 'grade').length,
+      deletes: list.filter(l => ['delete', 'archive'].includes(l.actionType || l.action || '')).length,
+      logins: list.filter(l => (l.actionType || l.action) === 'login').length
+    };
+  }, [auditLogs]);
 
   if (!isOpen) return null;
 
@@ -47,38 +108,18 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
       case 'grade':
         return { label: 'رصد تقييم', bg: 'bg-[#FAF2F4] text-[#8E5364] border-[#E8D5D8]' };
       case 'archive':
-        return { label: 'أرشفة', bg: 'bg-stone-100 text-stone-700 border-stone-200' };
+        return { label: 'أرشفة', bg: 'bg-amber-50 text-amber-800 border-amber-200' };
       case 'delete':
         return { label: 'حذف', bg: 'bg-rose-50 text-rose-800 border-rose-200' };
       case 'login':
         return { label: 'تسجيل دخول', bg: 'bg-purple-50 text-purple-800 border-purple-200' };
       default:
-        return { label: action, bg: 'bg-stone-50 text-stone-700 border-stone-200' };
+        return { label: action || 'عملية', bg: 'bg-stone-50 text-stone-700 border-stone-200' };
     }
   };
 
-  const getTargetLabel = (target: string) => {
-    const map: Record<string, string> = {
-      student: 'طالبة',
-      circle: 'حلقة',
-      track: 'مسار',
-      monthlyPlan: 'خطة شهرية',
-      studentPlan: 'مقرر طالبة',
-      dailyRecord: 'تسميع يومي',
-      attendance: 'حضور',
-      atqini: 'واجب تجويد',
-      atqiniSubmission: 'تقييم تجويد',
-      challenge: 'تحدي قرآني',
-      exam: 'اختبار شهري',
-      gradingConfig: 'نظام الدرجات',
-      settings: 'إعدادات المنصة',
-      auth: 'المستخدمين'
-    };
-    return map[target] || target;
-  };
-
   const handleDownloadLogJson = () => {
-    const jsonStr = JSON.stringify(auditLogs, null, 2);
+    const jsonStr = JSON.stringify(filteredLogs, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -91,40 +132,75 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-stone-900/60 backdrop-blur-xs">
-      <div className="bg-white rounded-3xl max-w-4xl w-full h-[90vh] flex flex-col shadow-2xl border border-stone-200 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-stone-900/60 backdrop-blur-xs" dir="rtl">
+      <div className="bg-white rounded-3xl max-w-5xl w-full h-[90vh] flex flex-col shadow-2xl border border-stone-200 overflow-hidden">
         
         {/* Modal Header */}
-        <div className="p-5 border-b border-[#E8DFD8] bg-[#FCFAF8] flex items-center justify-between">
+        <div className="p-5 border-b border-[#E8DFD8] bg-[#FCFAF8] flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div
-              className="w-10 h-10 rounded-2xl text-white flex items-center justify-center shadow-xs"
+              className="w-10 h-10 rounded-2xl text-white flex items-center justify-center shadow-xs shrink-0"
               style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
             >
               <History className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-stone-900 text-base sm:text-lg font-quran flex items-center gap-2">
+              <h3 className="font-bold text-stone-900 text-base sm:text-lg font-quran flex items-center gap-2 flex-wrap">
                 <span>سجل التعديلات والعمليات الإدارية</span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-[#FAF2F4] text-[#8E5364] border border-[#E8D5D8] font-sans font-bold">
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#FAF2F4] text-[#8E5364] border border-[#E8D5D8] font-sans font-bold">
                   {filteredLogs.length} عملية موثقة
                 </span>
               </h3>
               <p className="text-xs text-stone-500">
-                توثيق كامل لكافة التعديلات، إدخالات التسميع، والدرجات مع أسماء المنفذين والتوقيت الدقيق
+                توثيق فوري لكافة الإضافات، التعديلات، رصد التسميع والدرجات، الحضور، وإدارة الكادر بالتوقيت الدقيق
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            {canManageAuditLogs && auditLogs.length > 1 && (
+              confirmClear ? (
+                <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-xl">
+                  <span className="text-[11px] font-bold text-rose-800">تأكيد تصفير السجل؟</span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await clearAuditLogs();
+                      setConfirmClear(false);
+                    }}
+                    className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-bold cursor-pointer"
+                  >
+                    نعم، تصفير
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmClear(false)}
+                    className="px-2 py-1 bg-white text-stone-600 rounded-lg text-[11px] font-bold border border-stone-200 cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmClear(true)}
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
+                  title="تنظيف وتصفير السجل السابق"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>تصفير السجل</span>
+                </button>
+              )
+            )}
+
             <button
               type="button"
               onClick={handleDownloadLogJson}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-stone-50 text-stone-700 border border-stone-200 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-stone-50 text-stone-700 border border-stone-200 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
               title="تصدير السجل كملف JSON"
             >
               <Download className="w-3.5 h-3.5 text-[#8E5364]" />
-              <span>تصدير السجل</span>
+              <span className="hidden sm:inline">تصدير السجل</span>
             </button>
             <button
               type="button"
@@ -136,6 +212,66 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
           </div>
         </div>
 
+        {/* Summary KPI Strip */}
+        <div className="px-4 py-2.5 bg-[#FAF7F5] border-b border-stone-100 flex flex-wrap items-center gap-2 text-[11px]">
+          <button
+            type="button"
+            onClick={() => setSelectedAction('all')}
+            className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer border ${
+              selectedAction === 'all' ? 'bg-[#8E5364] text-white border-[#8E5364]' : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50'
+            }`}
+          >
+            الكل ({stats.total})
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedAction('create')}
+            className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer border ${
+              selectedAction === 'create' ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+            }`}
+          >
+            إضافات ({stats.creates})
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedAction('update')}
+            className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer border ${
+              selectedAction === 'update' ? 'bg-blue-700 text-white border-blue-700' : 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'
+            }`}
+          >
+            تعديلات وحضور ({stats.updates})
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedAction('grade')}
+            className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer border ${
+              selectedAction === 'grade' ? 'bg-[#8E5364] text-white border-[#8E5364]' : 'bg-[#FAF2F4] text-[#8E5364] border-[#E8D5D8] hover:bg-[#F3E4E8]'
+            }`}
+          >
+            رصد تسميع وتقييم ({stats.grades})
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedAction('login')}
+            className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer border ${
+              selectedAction === 'login' ? 'bg-purple-700 text-white border-purple-700' : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
+            }`}
+          >
+            عمليات دخول ({stats.logins})
+          </button>
+          {stats.deletes > 0 && (
+            <button
+              type="button"
+              onClick={() => setSelectedAction('delete')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer border ${
+                selectedAction === 'delete' ? 'bg-rose-700 text-white border-rose-700' : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+              }`}
+            >
+              حذف / أرشفة ({stats.deletes})
+            </button>
+          )}
+        </div>
+
         {/* Filters & Search Toolbar */}
         <div className="p-4 border-b border-stone-100 bg-white flex flex-wrap items-center justify-between gap-3 text-xs">
           {/* Search Box */}
@@ -145,7 +281,7 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="البحث باسم المعلمة، تفاصيل التعديل، أو المعرف..."
+              placeholder="البحث باسم المنفذ، تفاصيل العملية، اسم الطالبة، أو القسم..."
               className="w-full pr-9 pl-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-2 focus:ring-[#8E5364] bg-stone-50/50"
             />
           </div>
@@ -153,7 +289,7 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
           <div className="flex items-center gap-2 flex-wrap">
             {/* Filter by Action */}
             <div className="flex items-center gap-1.5">
-              <span className="text-stone-500 font-medium">العملية:</span>
+              <span className="text-stone-500 font-medium">نوع العملية:</span>
               <select
                 value={selectedAction}
                 onChange={e => setSelectedAction(e.target.value)}
@@ -161,8 +297,8 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
               >
                 <option value="all">كافة العمليات</option>
                 <option value="create">إضافة جديدة</option>
-                <option value="update">تعديل</option>
-                <option value="grade">رصد درجات</option>
+                <option value="update">تعديل بيانات / حضور</option>
+                <option value="grade">رصد درجات وتقييم</option>
                 <option value="archive">أرشفة</option>
                 <option value="delete">حذف</option>
                 <option value="login">تسجيل دخول</option>
@@ -180,11 +316,17 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
                 <option value="all">كافة الأقسام</option>
                 <option value="student">شؤون الطالبات</option>
                 <option value="dailyRecord">سجل التسميع والحفظ</option>
-                <option value="monthlyPlan">الخطط الشهرية</option>
-                <option value="circle">الحلقات</option>
-                <option value="track">المسارات</option>
-                <option value="gradingConfig">نظام الدرجات</option>
-                <option value="settings">الإعدادات</option>
+                <option value="attendance">الحضور والتحضير</option>
+                <option value="monthlyPlan">الخطط والمقررات الشهرية</option>
+                <option value="circle">الحلقات القرآنية</option>
+                <option value="track">المسارات المعتمدة</option>
+                <option value="atqini">واجبات وتقييم «أتقني»</option>
+                <option value="challenge">التحديات والمراجعة الثنائية</option>
+                <option value="exam">الاختبارات الشهرية</option>
+                <option value="subscription">الاشتراكات والمالية</option>
+                <option value="gradingConfig">نظام الدرجات والمعايير</option>
+                <option value="auth">الكادر والصلاحيات والدخول</option>
+                <option value="settings">الإعدادات والهوية</option>
               </select>
             </div>
           </div>
@@ -197,27 +339,36 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
               <table className="w-full text-right text-xs">
                 <thead>
                   <tr className="bg-[#FAF6F2] text-stone-600 font-bold border-b border-stone-200">
-                    <th className="p-3">التوقيت والتاريخ</th>
-                    <th className="p-3">المستخدم والمنصب</th>
+                    <th className="p-3">التاريخ والتوقيت</th>
+                    <th className="p-3">المنفّذ والمنصب</th>
                     <th className="p-3 text-center">نوع العملية</th>
                     <th className="p-3">القسم</th>
-                    <th className="p-3">تفاصيل التعديل أو الرصد</th>
+                    <th className="p-3">تفاصيل العملية أو التعديل</th>
+                    {canManageAuditLogs && <th className="p-3 text-center w-14">إجراء</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100">
                   {filteredLogs.map(log => {
-                    const action = log.actionType || (log as any).action || '';
+                    const action = log.actionType || log.action || '';
                     const entity = log.entity || (log as any).targetType || '';
                     const badge = getActionBadge(action);
-                    const formattedDate = new Date(log.timestamp).toLocaleDateString('ar-SA', {
-                      year: 'numeric',
-                      month: 'short',
-                      day: 'numeric'
-                    });
-                    const formattedTime = new Date(log.timestamp).toLocaleTimeString('ar-SA', {
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    });
+                    const roleBadge = getRoleBadge(log.userRole);
+                    const dateObj = new Date(log.timestamp);
+                    const isValidDate = !isNaN(dateObj.getTime());
+                    const formattedDate = isValidDate
+                      ? dateObj.toLocaleDateString('ar-SA', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric'
+                        })
+                      : '—';
+                    const formattedTime = isValidDate
+                      ? dateObj.toLocaleTimeString('ar-SA', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit'
+                        })
+                      : '';
 
                     return (
                       <tr key={log.id} className="hover:bg-[#FCF9FA] transition">
@@ -227,33 +378,38 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
                         </td>
 
                         <td className="p-3 whitespace-nowrap">
-                          <div className="font-bold text-stone-900">{log.userName}</div>
-                          <span className={`inline-block text-[10px] px-1.5 py-0.2 rounded font-medium ${
-                            log.userRole === 'developer'
-                              ? 'bg-violet-100 text-violet-800'
-                              : log.userRole === 'leader'
-                              ? 'bg-rose-100 text-rose-800'
-                              : log.userRole === 'supervisor'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-emerald-100 text-emerald-800'
-                          }`}>
-                            {log.userRole === 'developer' ? 'مطوّر' : log.userRole === 'leader' ? 'قائدة' : log.userRole === 'supervisor' ? 'مشرفة' : 'معلمة'}
+                          <div className="font-bold text-stone-900 mb-0.5">{log.userName}</div>
+                          <span className={`inline-block text-[10px] px-2 py-0.5 rounded-md font-bold ${roleBadge.cls}`}>
+                            {roleBadge.label}
                           </span>
                         </td>
 
                         <td className="p-3 text-center whitespace-nowrap">
-                          <span className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-bold ${badge.bg}`}>
+                          <span className={`inline-block px-2.5 py-0.5 rounded-full border text-[10px] font-bold ${badge.bg}`}>
                             {badge.label}
                           </span>
                         </td>
 
-                        <td className="p-3 whitespace-nowrap text-stone-600 font-medium">
+                        <td className="p-3 whitespace-nowrap text-stone-700 font-bold">
                           {getTargetLabel(entity)}
                         </td>
 
                         <td className="p-3 text-stone-800 font-medium leading-relaxed">
                           {log.details}
                         </td>
+
+                        {canManageAuditLogs && (
+                          <td className="p-3 text-center whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => void deleteAuditLog(log.id)}
+                              title="حذف هذا السجل"
+                              className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -266,7 +422,7 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
                 <FileText className="w-6 h-6" />
               </div>
               <h4 className="font-bold text-stone-700 text-sm mb-1">لا توجد عمليات مطابقة لخيارات البحث</h4>
-              <p className="text-xs text-stone-400">جربي تغيير الكلمات المفتاحية أو تصفية نوع العملية</p>
+              <p className="text-xs text-stone-400">جربي تغيير الكلمات المفتاحية أو تصفية نوع العملية أو القسم</p>
             </div>
           )}
         </div>
@@ -274,7 +430,7 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
         {/* Modal Footer */}
         <div className="p-4 border-t border-[#E8DFD8] bg-[#FCFAF8] flex items-center justify-between text-xs">
           <span className="text-stone-500">
-            يتم تسجيل كافة العمليات الإدارية تلقائياً لضمان الشفافية والرقابة المعتمدة لمقرأة {settings.name || 'غيث الغيم'}.
+            يتم توثيق ومزامنة كافة العمليات الإدارية والتعليمية تلقائياً لضمان الشفافية والرقابة المعتمدة لمقرأة {settings.name || 'غيث الغيم'}.
           </span>
           <button
             type="button"

@@ -146,10 +146,12 @@ export const SettingsView: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const applyLiveIdentity = (updated: Partial<typeof form>) => {
+  const applyLiveIdentity = (updated: Partial<typeof form>, skipPersist?: boolean) => {
     const next = { ...form, ...updated };
     setForm(next);
-    updateSettings(updated);
+    if (!skipPersist) {
+      updateSettings(updated);
+    }
 
     if (typeof document !== 'undefined') {
       if (next.primaryColor) {
@@ -222,11 +224,11 @@ export const SettingsView: React.FC = () => {
               ...(tr.systemRules?.masteryGuide || {}),
               ...masteryData
             }
-          });
+          }, true);
         }
       }
 
-      applyLiveIdentity(form);
+      applyLiveIdentity(form, true);
       showToast('تم حفظ كافة التعديلات، الهوية، الشعار، ومعايير دليل الإتقان بنجاح في النظام ✅');
     } finally {
       setIsSaving(false);

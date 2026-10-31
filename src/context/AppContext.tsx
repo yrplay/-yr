@@ -91,13 +91,13 @@ interface AppContextType {
   error: string | null;
   
   refreshData: () => Promise<void>;
-  switchUser: (userId: string) => Promise<boolean>;
+  switchUser: (userId: string, silentRestore?: boolean) => Promise<boolean>;
   
   selectedTrackId: string | null;
   setSelectedTrackId: (id: string | null) => void;
   createTrack: (track: Partial<Track>) => Promise<Track>;
   updateTrack: (id: string, track: Partial<Track>) => Promise<void>;
-  updateTrackSystemRules: (trackId: string, rules: Partial<TrackSystemRules>) => Promise<void>;
+  updateTrackSystemRules: (trackId: string, rules: Partial<TrackSystemRules>, silent?: boolean) => Promise<void>;
   archiveTrack: (id: string) => Promise<void>;
   restoreTrack: (id: string) => Promise<void>;
   createCircle: (circle: Partial<Circle>) => Promise<Circle>;
@@ -139,15 +139,24 @@ interface AppContextType {
   saveExamResult: (result: Partial<StudentExamResult>) => Promise<void>;
   
   updateGradingConfig: (trackId: string, config: Partial<TrackGradingConfig>) => Promise<void>;
-  updateSettings: (settings: Partial<InstitutionSettings>) => Promise<void>;
+  updateSettings: (settings: Partial<InstitutionSettings>, silent?: boolean) => Promise<void>;
   downloadBackup: () => void;
   restoreBackup: (backupData: any) => Promise<boolean>;
   resetSampleData: () => Promise<void>;
 
   createUser: (user: Partial<User>) => Promise<User>;
-  updateUser: (id: string, user: Partial<User>) => Promise<void>;
+  updateUser: (id: string, user: Partial<User>, silent?: boolean) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
   changeUserPasscode: (userId: string, newPasscode: string) => Promise<boolean>;
+
+  recordAuditLog: (
+    actionType: 'create' | 'update' | 'grade' | 'archive' | 'delete' | 'login',
+    entity: string,
+    details: string,
+    entityId?: string
+  ) => void;
+  deleteAuditLog: (logId: string) => Promise<void>;
+  clearAuditLogs: () => Promise<void>;
   
   getStudentScoreSummary: (studentId: string) => StudentScoreSummary;
   allStudentScores: Record<string, StudentScoreSummary>;
@@ -178,11 +187,44 @@ const GRADING_CONFIGS_KEY = isLocalDemoMode ? 'ghaith_demo_grading_configs' : 'g
 
 const FAKE_DEMO_IDS = new Set(['u-1', 'u-2', 'u-3', 'u-4', 'u-5', 'u-leader']);
 const FAKE_DEMO_EMAILS = new Set(['rifa@ghaym.org', 'khadija@ghaym.org', 'maryam@ghaym.org', 'fatima@ghaym.org', 'hind@ghaym.org', 'leader@ghaym.org']);
+const FAKE_DEMO_NAMES = new Set(['أ. مريم الدوسري', 'أ. فاطمة الشهري', 'أ. خديجة العتيبي', 'أ. هند القحطاني']);
 
 const isFakeDemoUser = (user: any) => {
   if (!user || typeof user !== 'object') return false;
   const email = (user.email || '').trim().toLowerCase();
   return FAKE_DEMO_IDS.has(user.id) || FAKE_DEMO_EMAILS.has(email) || user.id === 'u-leader';
+};
+
+const isFakeDemoAuditLog = (log: any) => {
+  if (!log || typeof log !== 'object') return true;
+  const id = String(log.id || '');
+  if (id.startsWith('log-179233')) return true;
+  if (FAKE_DEMO_NAMES.has((log.userName || '').trim())) return true;
+  return false;
+};
+
+const sanitizeAndSortAuditLogs = (logs: any[]): AuditLog[] => {
+  if (!Array.isArray(logs)) return [];
+  const map = new Map<string, AuditLog>();
+  for (const raw of logs) {
+    if (!raw || typeof raw !== 'object' || !raw.id || isFakeDemoAuditLog(raw)) continue;
+    const normalized: AuditLog = {
+      id: String(raw.id),
+      userId: String(raw.userId || 'u-dev'),
+      userName: String(raw.userName || 'إدارة المقرأة'),
+      userRole: raw.userRole || 'leader',
+      action: String(raw.actionType || raw.action || 'update'),
+      actionType: String(raw.actionType || raw.action || 'update'),
+      entity: String(raw.entity || (raw as any).targetType || 'system'),
+      entityId: String(raw.entityId || (raw as any).targetId || ''),
+      details: String(raw.details || ''),
+      timestamp: String(raw.timestamp || new Date().toISOString())
+    };
+    map.set(normalized.id, normalized);
+  }
+  const result = Array.from(map.values());
+  result.sort((a, b) => (Date.parse(b.timestamp) || 0) - (Date.parse(a.timestamp) || 0));
+  return result.slice(0, 500);
 };
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -292,6 +334,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               }
             }
             if (parsed.settings && typeof parsed.settings === 'object') delete parsed.settings.leaderPasscode;
+            if (Array.isArray(parsed.auditLogs)) {
+              parsed.auditLogs = sanitizeAndSortAuditLogs(parsed.auditLogs);
+            }
             localStorage.setItem('ghaith_alghaym_db_v1', JSON.stringify(parsed));
             return parsed;
           }
@@ -398,7 +443,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   });
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
-    return initialCached?.auditLogs || initialData.auditLogs || [];
+    return sanitizeAndSortAuditLogs(initialCached?.auditLogs || initialData.auditLogs || []);
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -488,8 +533,128 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       supportPhone: "0500000001",
       securityEnabled: true,
     },
-    auditLogs: initialCached?.auditLogs || initialData.auditLogs || []
+    auditLogs: sanitizeAndSortAuditLogs(initialCached?.auditLogs || initialData.auditLogs || [])
   });
+
+  const appendAuditEntry = (
+    actionType: 'create' | 'update' | 'grade' | 'archive' | 'delete' | 'login',
+    entity: string,
+    details: string,
+    entityId?: string,
+    actorOverride?: User | null
+  ): AuditLog[] => {
+    const actor = actorOverride || masterStateRef.current.currentUser || currentUser;
+    const nowIso = new Date().toISOString();
+    const nowMs = Date.now();
+    const currentLogs: AuditLog[] = sanitizeAndSortAuditLogs(
+      Array.isArray(masterStateRef.current.auditLogs) ? masterStateRef.current.auditLogs : auditLogs
+    );
+
+    const latest = currentLogs[0];
+    const actorId = actor?.id || 'u-dev';
+    const cleanEntityId = entityId || '';
+
+    // Coalesce rapid repeated updates on the exact same entity within 4 seconds by the same user
+    if (
+      latest &&
+      latest.userId === actorId &&
+      latest.actionType === actionType &&
+      latest.entity === entity &&
+      (latest.entityId || '') === cleanEntityId &&
+      nowMs - (Date.parse(latest.timestamp) || 0) < 4000
+    ) {
+      const updatedFirst: AuditLog = {
+        ...latest,
+        userName: actor?.name || latest.userName,
+        userRole: actor?.role || latest.userRole,
+        details,
+        timestamp: nowIso
+      };
+      const nextLogs = [updatedFirst, ...currentLogs.slice(1)];
+      masterStateRef.current.auditLogs = nextLogs;
+      setAuditLogs(nextLogs);
+      return nextLogs;
+    }
+
+    const newLog: AuditLog = {
+      id: `log-${nowMs}-${Math.random().toString(36).slice(2, 7)}`,
+      userId: actorId,
+      userName: actor?.name || 'إدارة المقرأة',
+      userRole: actor?.role || 'leader',
+      action: actionType,
+      actionType,
+      entity,
+      entityId: cleanEntityId,
+      details,
+      timestamp: nowIso
+    };
+    const nextLogs = sanitizeAndSortAuditLogs([newLog, ...currentLogs]);
+    masterStateRef.current.auditLogs = nextLogs;
+    setAuditLogs(nextLogs);
+    return nextLogs;
+  };
+
+  const recordAuditLog = (
+    actionType: 'create' | 'update' | 'grade' | 'archive' | 'delete' | 'login',
+    entity: string,
+    details: string,
+    entityId?: string
+  ) => {
+    const nextLogs = appendAuditEntry(actionType, entity, details, entityId);
+    persistState({ auditLogs: nextLogs });
+  };
+
+  const deleteAuditLog = async (logId: string) => {
+    if (currentUser?.role !== 'developer' && !isTechnicalDeveloper(currentUser) && currentUser?.role !== 'owner') {
+      showToast('حذف سجلات الرقابة متاح حصرياً للمطور التقني أو مالك المنصة ⛔', 'error');
+      return;
+    }
+    const currentLogs: AuditLog[] = Array.isArray(masterStateRef.current.auditLogs)
+      ? masterStateRef.current.auditLogs
+      : auditLogs;
+    const nextLogs = currentLogs.filter(l => l.id !== logId);
+    masterStateRef.current.auditLogs = nextLogs;
+    setAuditLogs(nextLogs);
+    persistState({
+      auditLogs: nextLogs,
+      _deletedEntities: addDeletedEntity('auditLogs', logId)
+    });
+    showToast('تم حذف العملية المحددة من السجل 🗑️', 'info');
+  };
+
+  const clearAuditLogs = async () => {
+    if (currentUser?.role !== 'developer' && !isTechnicalDeveloper(currentUser) && currentUser?.role !== 'owner') {
+      showToast('تصفير سجل العمليات متاح حصرياً للمطور التقني أو مالك المنصة ⛔', 'error');
+      return;
+    }
+    const currentLogs: AuditLog[] = Array.isArray(masterStateRef.current.auditLogs)
+      ? masterStateRef.current.auditLogs
+      : auditLogs;
+    const deletedIds = currentLogs.map(l => l.id);
+    const resetEntry: AuditLog = {
+      id: `log-${Date.now()}-clear`,
+      userId: currentUser?.id || 'u-dev',
+      userName: currentUser?.name || 'مطور المنصة',
+      userRole: currentUser?.role || 'developer',
+      action: 'delete',
+      actionType: 'delete',
+      entity: 'settings',
+      entityId: 'audit-logs',
+      details: 'تصفير وتنظيف سجل التعديلات والعمليات الإدارية السابق',
+      timestamp: new Date().toISOString()
+    };
+    const nextLogs = [resetEntry];
+    masterStateRef.current.auditLogs = nextLogs;
+    setAuditLogs(nextLogs);
+    persistState({
+      auditLogs: nextLogs,
+      _deletedEntities: mergeDeletedEntityMaps(
+        masterStateRef.current._deletedEntities,
+        { auditLogs: deletedIds }
+      )
+    });
+    showToast('تم تنظيف وتصفير سجل العمليات الإدارية بنجاح ✨', 'success');
+  };
 
   const mergeEntities = <T extends Record<string, any>>(
     localList: T[] = [],
@@ -809,7 +974,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSettings(mergedSettings);
     }
 
-    if (Array.isArray(data.auditLogs)) setAuditLogs(data.auditLogs);
+    if (Array.isArray(data.auditLogs)) {
+      const mergedLogs = sanitizeAndSortAuditLogs(
+        mergeEntities(masterStateRef.current.auditLogs || [], data.auditLogs, 'id')
+      );
+      masterStateRef.current.auditLogs = mergedLogs;
+      setAuditLogs(mergedLogs);
+    }
     setLastSynced(new Date());
   };
 
@@ -970,7 +1141,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('تبديل الأدوار داخل الجلسة غير مسموح؛ سجّلي الخروج ثم ادخلي بحساب الإدارة', 'info');
   };
 
-  const switchUser = async (userId: string) => {
+  const switchUser = async (userId: string, silentRestore?: boolean) => {
     try {
       const allStaff = masterStateRef.current.users?.length ? masterStateRef.current.users : users;
       let targetUser = allStaff.find((user: User) => user.id === userId);
@@ -994,8 +1165,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         localStorage.setItem('ghaith_is_authenticated', 'true');
         localStorage.removeItem('ghaith_is_locked');
       }
-      persistState({ currentUser: targetUser });
-      showToast(`تم تسجيل الدخول: ${targetUser.name} (${targetUser.title || 'الكادر'}) 🌸`, 'info');
+      if (!silentRestore) {
+        const nextLogs = appendAuditEntry(
+          'login',
+          'auth',
+          `تسجيل الدخول إلى المنصة بحساب: ${targetUser.name} (${targetUser.title || targetUser.role})`,
+          targetUser.id,
+          targetUser
+        );
+        persistState({ currentUser: targetUser, auditLogs: nextLogs });
+        showToast(`تم تسجيل الدخول: ${targetUser.name} (${targetUser.title || 'الكادر'}) 🌸`, 'info');
+      } else {
+        persistState({ currentUser: targetUser });
+      }
       return true;
     } catch (err: any) {
       console.warn('switchUser error:', err);
@@ -1043,22 +1225,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = [...currentTracks.filter((t: Track) => t.id !== newTrack.id), newTrack];
     masterStateRef.current.tracks = next;
     setTracks(next);
-    persistState({ tracks: next });
+    const nextLogs = appendAuditEntry('create', 'track', `إنشاء مسار قرآني جديد: ${newTrack.name}`, newTrack.id);
+    persistState({ tracks: next, auditLogs: nextLogs });
     showToast(`تمت إضافة المسار "${newTrack.name}" بنجاح`);
     return newTrack;
   };
 
   const updateTrack = async (id: string, track: Partial<Track>) => {
     const currentTracks = masterStateRef.current.tracks?.length ? masterStateRef.current.tracks : tracks;
+    const targetTrack = currentTracks.find((t: Track) => t.id === id);
     const next = currentTracks.map((t: Track) => t.id === id ? { ...t, ...track, updatedAt: new Date().toISOString() } : t);
     masterStateRef.current.tracks = next;
     setTracks(next);
-    persistState({ tracks: next });
+    const nextLogs = appendAuditEntry('update', 'track', `تحديث بيانات المسار: ${track.name || targetTrack?.name || id}`, id);
+    persistState({ tracks: next, auditLogs: nextLogs });
     showToast('تم تحديث المسار بنجاح');
   };
 
-  const updateTrackSystemRules = async (trackId: string, rules: Partial<TrackSystemRules>) => {
+  const updateTrackSystemRules = async (trackId: string, rules: Partial<TrackSystemRules>, silent?: boolean) => {
     const currentTracks = masterStateRef.current.tracks?.length ? masterStateRef.current.tracks : tracks;
+    const targetTrack = currentTracks.find((t: Track) => t.id === trackId);
     const next = currentTracks.map((t: Track) => {
       if (t.id !== trackId) return t;
       const currentRules = t.systemRules || {
@@ -1091,25 +1277,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
     masterStateRef.current.tracks = next;
     setTracks(next);
-    persistState({ tracks: next });
-    showToast('تم تحديث نظام ومعايير المسار بنجاح ⚙️');
+    if (!silent) {
+      const nextLogs = appendAuditEntry('update', 'track', `تحديث معايير ونظام العمل للمسار: ${targetTrack?.name || trackId}`, trackId);
+      persistState({ tracks: next, auditLogs: nextLogs });
+      showToast('تم تحديث نظام ومعايير المسار بنجاح ⚙️');
+    } else {
+      persistState({ tracks: next });
+    }
   };
 
   const archiveTrack = async (id: string) => {
     const currentTracks = masterStateRef.current.tracks?.length ? masterStateRef.current.tracks : tracks;
+    const targetTrack = currentTracks.find((t: Track) => t.id === id);
     const next = currentTracks.map((t: Track) => t.id === id ? { ...t, isArchived: true, updatedAt: new Date().toISOString() } : t);
     masterStateRef.current.tracks = next;
     setTracks(next);
-    persistState({ tracks: next });
+    const nextLogs = appendAuditEntry('archive', 'track', `أرشفة المسار: ${targetTrack?.name || id}`, id);
+    persistState({ tracks: next, auditLogs: nextLogs });
     showToast('تمت أرشفة المسار بنجاح');
   };
 
   const restoreTrack = async (id: string) => {
     const currentTracks = masterStateRef.current.tracks?.length ? masterStateRef.current.tracks : tracks;
+    const targetTrack = currentTracks.find((t: Track) => t.id === id);
     const next = currentTracks.map((t: Track) => t.id === id ? { ...t, isArchived: false, updatedAt: new Date().toISOString() } : t);
     masterStateRef.current.tracks = next;
     setTracks(next);
-    persistState({ tracks: next });
+    const nextLogs = appendAuditEntry('update', 'track', `استعادة المسار من الأرشيف: ${targetTrack?.name || id}`, id);
+    persistState({ tracks: next, auditLogs: nextLogs });
     showToast('تمت استعادة المسار بنجاح');
   };
 
@@ -1140,7 +1335,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = [...currentCircles.filter((c: Circle) => c.id !== newCircle.id), newCircle];
     masterStateRef.current.circles = next;
     setCircles(next);
-    persistState({ circles: next });
+    const nextLogs = appendAuditEntry('create', 'circle', `إضافة حلقة قرآنية جديدة: ${newCircle.name} (المعلمة: ${newCircle.teacherName})`, newCircle.id);
+    persistState({ circles: next, auditLogs: nextLogs });
     showToast(`تمت إضافة الحلقة "${newCircle.name}" بنجاح`);
     return newCircle;
   };
@@ -1150,6 +1346,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const teacherObj = currentUsers.find((u: User) => u.id === circle.teacherId);
     const supervisorObj = currentUsers.find((u: User) => u.id === circle.supervisorId);
     const currentCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
+    const existingCircle = currentCircles.find((c: Circle) => c.id === id);
     const next = currentCircles.map((c: Circle) => {
       if (c.id !== id) return c;
       return {
@@ -1162,25 +1359,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
     masterStateRef.current.circles = next;
     setCircles(next);
-    persistState({ circles: next });
+    const nextLogs = appendAuditEntry('update', 'circle', `تحديث بيانات الحلقة: ${circle.name || existingCircle?.name || id}`, id);
+    persistState({ circles: next, auditLogs: nextLogs });
     showToast('تم تحديث بيانات الحلقة بنجاح');
   };
 
   const archiveCircle = async (id: string) => {
     const currentCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
+    const existingCircle = currentCircles.find((c: Circle) => c.id === id);
     const next = currentCircles.map((c: Circle) => c.id === id ? { ...c, isArchived: true, updatedAt: new Date().toISOString() } : c);
     masterStateRef.current.circles = next;
     setCircles(next);
-    persistState({ circles: next });
+    const nextLogs = appendAuditEntry('archive', 'circle', `أرشفة الحلقة: ${existingCircle?.name || id}`, id);
+    persistState({ circles: next, auditLogs: nextLogs });
     showToast('تمت أرشفة الحلقة');
   };
 
   const restoreCircle = async (id: string) => {
     const currentCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
+    const existingCircle = currentCircles.find((c: Circle) => c.id === id);
     const next = currentCircles.map((c: Circle) => c.id === id ? { ...c, isArchived: false, updatedAt: new Date().toISOString() } : c);
     masterStateRef.current.circles = next;
     setCircles(next);
-    persistState({ circles: next });
+    const nextLogs = appendAuditEntry('update', 'circle', `استعادة الحلقة من الأرشيف: ${existingCircle?.name || id}`, id);
+    persistState({ circles: next, auditLogs: nextLogs });
     showToast('تمت استعادة الحلقة');
   };
 
@@ -1208,26 +1410,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = [...currentStudents.filter((s: Student) => s.id !== newStudent.id), newStudent];
     masterStateRef.current.students = next;
     setStudents(next);
-    persistState({ students: next });
+    const nextLogs = appendAuditEntry(
+      'create',
+      'student',
+      `تسجيل طالبة جديدة: ${newStudent.name}${circle ? ` في ${circle.name}` : ''}`,
+      newStudent.id
+    );
+    persistState({ students: next, auditLogs: nextLogs });
     showToast(`تم تسجيل الطالبة "${newStudent.name}" بنجاح`);
     return newStudent;
   };
 
   const updateStudent = async (id: string, student: Partial<Student>) => {
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const existingStudent = currentStudents.find((s: Student) => s.id === id);
     const next = currentStudents.map((s: Student) => s.id === id ? { ...s, ...student, updatedAt: new Date().toISOString() } : s);
     masterStateRef.current.students = next;
     setStudents(next);
-    persistState({ students: next });
+    const nextLogs = appendAuditEntry(
+      'update',
+      'student',
+      `تحديث بيانات وملف الطالبة: ${student.name || existingStudent?.name || id}`,
+      id
+    );
+    persistState({ students: next, auditLogs: nextLogs });
     showToast('تم تحديث ملف الطالبة بنجاح');
   };
 
   const archiveStudent = async (id: string) => {
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const existingStudent = currentStudents.find((s: Student) => s.id === id);
     const next = currentStudents.map((s: Student) => s.id === id ? { ...s, status: 'archived' as const, updatedAt: new Date().toISOString() } : s);
     masterStateRef.current.students = next;
     setStudents(next);
-    persistState({ students: next });
+    const nextLogs = appendAuditEntry('archive', 'student', `أرشفة سجل الطالبة: ${existingStudent?.name || id}`, id);
+    persistState({ students: next, auditLogs: nextLogs });
     showToast('تمت أرشفة سجل الطالبة بنجاح');
   };
 
@@ -1237,7 +1454,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = currentStudents.filter((s: Student) => s.id !== id);
     masterStateRef.current.students = next;
     setStudents(next);
-    persistState({ students: next, _deletedEntities: addDeletedEntity('students', id) });
+    const nextLogs = appendAuditEntry('delete', 'student', `حذف سجل الطالبة نهائياً: ${studentToDelete?.name || id}`, id);
+    persistState({ students: next, auditLogs: nextLogs, _deletedEntities: addDeletedEntity('students', id) });
     showToast(`تم حذف سجل الطالبة "${studentToDelete?.name || ''}" نهائياً من المقرأة بنجاح`);
   };
 
@@ -1256,7 +1474,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
     masterStateRef.current.students = next;
     setStudents(next);
-    persistState({ students: next });
+    const nextLogs = appendAuditEntry(
+      'update',
+      'student',
+      partnerId ? `تعيين رفيقة المراجعة الثنائية: ${s1?.name || ''} ↔ ${s2?.name || ''}` : `إلغاء اقتران المراجعة الثنائية للطالبة: ${s1?.name || ''}`,
+      studentId
+    );
+    persistState({ students: next, auditLogs: nextLogs });
     showToast(partnerId ? `تم تعيين الثنائي: ${s1?.name || ''} ↔ ${s2?.name || ''}` : 'تم إلغاء اقتران الثنائي');
   };
 
@@ -1264,11 +1488,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const studentId = sub.studentId || '';
     const cycleMonth = sub.cycleMonth || settings.currentHijriMonth || 'جمادى الأولى';
     const cleanId = sub.id || `sub_${studentId}_${cycleMonth.replace(/\s+/g, '_')}`;
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === studentId);
 
     const newSub: StudentSubscription = {
       id: cleanId,
       studentId,
-      trackId: sub.trackId || (students.find(s => s.id === studentId)?.trackId || tracks[0]?.id || 't-1'),
+      trackId: sub.trackId || (studentObj?.trackId || tracks[0]?.id || 't-1'),
       cycleMonth,
       requiredAmount: sub.requiredAmount ?? 150,
       paidAmount: sub.paidAmount ?? 0,
@@ -1295,7 +1521,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     masterStateRef.current.studentSubscriptions = next;
     setStudentSubscriptions(next);
-    persistState({ studentSubscriptions: next });
+    const statusAr = newSub.status === 'paid' ? 'مدفوع بالكامل' : newSub.status === 'partial' ? 'سداد جزئي' : newSub.status === 'exempt' ? 'معفاة' : 'معلق';
+    const nextLogs = appendAuditEntry(
+      existingIdx >= 0 ? 'update' : 'create',
+      'subscription',
+      `توثيق سند اشتراك للطالبة ${studentObj?.name || studentId} (${cycleMonth}) — الحالة: ${statusAr} (${newSub.paidAmount} ر.س)`,
+      cleanId
+    );
+    persistState({ studentSubscriptions: next, auditLogs: nextLogs });
     showToast('تم رصد وتحديث سند السداد والاشتراك المالي بنجاح 💳');
   };
 
@@ -1320,17 +1553,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = [...currentPlans.filter((p: MonthlyPlan) => p.id !== newPlan.id), newPlan];
     masterStateRef.current.monthlyPlans = next;
     setMonthlyPlans(next);
-    persistState({ monthlyPlans: next });
+    const nextLogs = appendAuditEntry('create', 'monthlyPlan', `إنشاء خطة شهرية جديدة: ${newPlan.title} (${newPlan.hijriMonth})`, newPlan.id);
+    persistState({ monthlyPlans: next, auditLogs: nextLogs });
     showToast(`تم إنشاء الخطة الشهرية: ${newPlan.title}`);
     return newPlan;
   };
 
   const updateMonthlyPlan = async (id: string, plan: Partial<MonthlyPlan>) => {
     const currentPlans = masterStateRef.current.monthlyPlans?.length ? masterStateRef.current.monthlyPlans : monthlyPlans;
+    const existingPlan = currentPlans.find((p: MonthlyPlan) => p.id === id);
     const next = currentPlans.map((p: MonthlyPlan) => p.id === id ? { ...p, ...plan, updatedAt: new Date().toISOString() } : p);
     masterStateRef.current.monthlyPlans = next;
     setMonthlyPlans(next);
-    persistState({ monthlyPlans: next });
+    const nextLogs = appendAuditEntry('update', 'monthlyPlan', `تعديل الخطة الشهرية: ${plan.title || existingPlan?.title || id}`, id);
+    persistState({ monthlyPlans: next, auditLogs: nextLogs });
     showToast('تم تعديل الخطة الشهرية');
   };
 
@@ -1348,7 +1584,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = [...currentPlans, duplicated];
     masterStateRef.current.monthlyPlans = next;
     setMonthlyPlans(next);
-    persistState({ monthlyPlans: next });
+    const nextLogs = appendAuditEntry('create', 'monthlyPlan', `نسخ الخطة الشهرية: ${duplicated.title}`, duplicated.id);
+    persistState({ monthlyPlans: next, auditLogs: nextLogs });
     showToast('تم نسخ الخطة الشهرية بنجاح');
   };
 
@@ -1356,6 +1593,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const studentId = plan.studentId || '';
     const monthlyPlanId = plan.monthlyPlanId || monthlyPlans[0]?.id || 'mp-1';
     const cleanId = plan.id || `sp_${studentId}_${monthlyPlanId}`;
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === studentId);
 
     const newPlan: StudentMonthlyPlan = {
       id: cleanId,
@@ -1399,7 +1638,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     masterStateRef.current.studentPlans = next;
     setStudentPlans(next);
-    persistState({ studentPlans: next });
+    const nextLogs = appendAuditEntry(
+      existingIdx >= 0 ? 'update' : 'create',
+      'studentPlan',
+      `تحديث مقرر وخطة الطالبة: ${studentObj?.name || studentId} (${newPlan.newMemorization.targetPages} أوجه حفظ / ${newPlan.revision.targetPages} أوجه مراجعة)`,
+      cleanId
+    );
+    persistState({ studentPlans: next, auditLogs: nextLogs });
     showToast('تم حفظ خطة الطالبة وتحديث المقرر بنجاح');
   };
 
@@ -1407,6 +1652,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const studentId = record.studentId || '';
     const recDate = record.date || new Date().toISOString().split('T')[0];
     const cleanId = record.id || `dr_${studentId}_${recDate}`;
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === studentId);
 
     const newRecord: DailyRecord = {
       id: cleanId,
@@ -1456,13 +1703,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     masterStateRef.current.dailyRecords = next;
     setDailyRecords(next);
-    persistState({ dailyRecords: next });
+    const nextLogs = appendAuditEntry(
+      'grade',
+      'dailyRecord',
+      `رصد تسميع يومي للطالبة ${studentObj?.name || studentId} بتاريخ ${recDate} (الدرجة: ${newRecord.recitationScore}/10)`,
+      cleanId
+    );
+    persistState({ dailyRecords: next, auditLogs: nextLogs });
     showToast('تم رصد التسميع وتحديث درجات الطالبة 📖');
   };
 
   const saveAttendance = async (record: Partial<AttendanceRecord>) => {
     const recDate = record.date || new Date().toISOString().split('T')[0];
     const cleanId = record.id || `att_${record.studentId}_${recDate}`;
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === record.studentId);
+
     const newRecord: AttendanceRecord = {
       id: cleanId,
       studentId: record.studentId || '',
@@ -1489,7 +1745,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     masterStateRef.current.attendanceRecords = next;
     setAttendanceRecords(next);
-    persistState({ attendanceRecords: next });
+    const statusMap: Record<string, string> = {
+      present: 'حاضرة',
+      late: 'متأخرة',
+      absent_excused: 'غائبة بعذر',
+      absent_unexcused: 'غائبة بدون عذر',
+      unrecorded: 'غير مرصود'
+    };
+    const nextLogs = appendAuditEntry(
+      'update',
+      'attendance',
+      `تسجيل حضور/تحضير للطالبة ${studentObj?.name || newRecord.studentId} بتاريخ ${recDate} (${statusMap[newRecord.status] || newRecord.status}${newRecord.earlyPrepCardSent ? ' + تحضير مبكر ⭐' : ''})`,
+      cleanId
+    );
+    persistState({ attendanceRecords: next, auditLogs: nextLogs });
     showToast('تم تسجيل الحضور والتحضير بنجاح ✅');
   };
 
@@ -1518,7 +1787,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
     masterStateRef.current.attendanceRecords = next;
     setAttendanceRecords(next);
-    persistState({ attendanceRecords: next });
+    const batchDate = records[0]?.date || new Date().toISOString().split('T')[0];
+    const nextLogs = appendAuditEntry(
+      'update',
+      'attendance',
+      `رصد الحضور الجماعي لعدد (${records.length}) طالبة بتاريخ ${batchDate}`,
+      `bulk-att-${batchDate}`
+    );
+    persistState({ attendanceRecords: next, auditLogs: nextLogs });
     showToast(`تم رصد الحضور لـ ${records.length} طالبة بنجاح ✅`);
   };
 
@@ -1544,31 +1820,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = [...currentAtq.filter((a: AtqiniAssignment) => a.id !== newAss.id), newAss];
     masterStateRef.current.atqiniAssignments = next;
     setAtqiniAssignments(next);
-    persistState({ atqiniAssignments: next });
+    const nextLogs = appendAuditEntry('create', 'atqini', `نشر واجب تجويد «أتقني» جديد: ${newAss.title}`, newAss.id);
+    persistState({ atqiniAssignments: next, auditLogs: nextLogs });
     showToast(`تم نشر واجب التجويد: ${newAss.title}`);
     return newAss;
   };
 
   const updateAtqiniAssignment = async (id: string, assignment: Partial<AtqiniAssignment>) => {
     const currentAtq = masterStateRef.current.atqiniAssignments?.length ? masterStateRef.current.atqiniAssignments : atqiniAssignments;
+    const existingAss = currentAtq.find((a: AtqiniAssignment) => a.id === id);
     const next = currentAtq.map((a: AtqiniAssignment) => a.id === id ? { ...a, ...assignment, updatedAt: new Date().toISOString() } : a);
     masterStateRef.current.atqiniAssignments = next;
     setAtqiniAssignments(next);
-    persistState({ atqiniAssignments: next });
+    const nextLogs = appendAuditEntry('update', 'atqini', `تعديل واجب التجويد «أتقني»: ${assignment.title || existingAss?.title || id}`, id);
+    persistState({ atqiniAssignments: next, auditLogs: nextLogs });
     showToast('تم تعديل واجب التجويد');
   };
 
   const deleteAtqiniAssignment = async (id: string) => {
     const currentAtq = masterStateRef.current.atqiniAssignments?.length ? masterStateRef.current.atqiniAssignments : atqiniAssignments;
+    const existingAss = currentAtq.find((a: AtqiniAssignment) => a.id === id);
     const next = currentAtq.filter((a: AtqiniAssignment) => a.id !== id);
     masterStateRef.current.atqiniAssignments = next;
     setAtqiniAssignments(next);
-    persistState({ atqiniAssignments: next, _deletedEntities: addDeletedEntity('atqiniAssignments', id) });
+    const nextLogs = appendAuditEntry('delete', 'atqini', `حذف واجب التجويد «أتقني»: ${existingAss?.title || id}`, id);
+    persistState({ atqiniAssignments: next, auditLogs: nextLogs, _deletedEntities: addDeletedEntity('atqiniAssignments', id) });
     showToast('تم حذف واجب التجويد');
   };
 
   const saveAtqiniSubmission = async (sub: Partial<StudentAtqiniSubmission>) => {
     const cleanId = sub.id || `atqs_${sub.assignmentId}_${sub.studentId}`;
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === sub.studentId);
+
     const newSub: StudentAtqiniSubmission = {
       id: cleanId,
       assignmentId: sub.assignmentId || '',
@@ -1597,7 +1881,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     masterStateRef.current.studentAtqiniSubmissions = next;
     setStudentAtqiniSubmissions(next);
-    persistState({ studentAtqiniSubmissions: next });
+    const nextLogs = appendAuditEntry(
+      'grade',
+      'atqiniSubmission',
+      `رصد تقييم واجب «أتقني» للطالبة ${studentObj?.name || newSub.studentId} (التقدير: ${newSub.rating} — الدرجة: ${newSub.score})`,
+      cleanId
+    );
+    persistState({ studentAtqiniSubmissions: next, auditLogs: nextLogs });
     showToast('تم رصد تقييم واجب «أتقني» للتجويد');
   };
 
@@ -1628,31 +1918,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = [...currentCh.filter((c: Challenge) => c.id !== newCh.id), newCh];
     masterStateRef.current.challenges = next;
     setChallenges(next);
-    persistState({ challenges: next });
+    const nextLogs = appendAuditEntry('create', 'challenge', `إطلاق تحدٍ قرآني جديد: ${newCh.title}`, newCh.id);
+    persistState({ challenges: next, auditLogs: nextLogs });
     showToast(`تم إطلاق التحدي القرآني: ${newCh.title}`);
     return newCh;
   };
 
   const updateChallenge = async (id: string, challenge: Partial<Challenge>) => {
     const currentCh = masterStateRef.current.challenges?.length ? masterStateRef.current.challenges : challenges;
+    const existingCh = currentCh.find((c: Challenge) => c.id === id);
     const next = currentCh.map((c: Challenge) => c.id === id ? { ...c, ...challenge, updatedAt: new Date().toISOString() } : c);
     masterStateRef.current.challenges = next;
     setChallenges(next);
-    persistState({ challenges: next });
+    const nextLogs = appendAuditEntry('update', 'challenge', `تحديث بيانات التحدي القرآني: ${challenge.title || existingCh?.title || id}`, id);
+    persistState({ challenges: next, auditLogs: nextLogs });
     showToast('تم تحديث التحدي القرآني');
   };
 
   const deleteChallenge = async (id: string) => {
     const currentCh = masterStateRef.current.challenges?.length ? masterStateRef.current.challenges : challenges;
+    const existingCh = currentCh.find((c: Challenge) => c.id === id);
     const next = currentCh.filter((c: Challenge) => c.id !== id);
     masterStateRef.current.challenges = next;
     setChallenges(next);
-    persistState({ challenges: next, _deletedEntities: addDeletedEntity('challenges', id) });
+    const nextLogs = appendAuditEntry('delete', 'challenge', `حذف التحدي القرآني: ${existingCh?.title || id}`, id);
+    persistState({ challenges: next, auditLogs: nextLogs, _deletedEntities: addDeletedEntity('challenges', id) });
     showToast('تم حذف التحدي');
   };
 
   const saveChallengeSubmission = async (sub: Partial<StudentChallengeSubmission>) => {
     const cleanId = sub.id || `cs_${sub.challengeId}_${sub.studentId}`;
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === sub.studentId);
+
     const newSub: StudentChallengeSubmission = {
       id: cleanId,
       challengeId: sub.challengeId || '',
@@ -1680,7 +1978,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     masterStateRef.current.studentChallengeSubmissions = next;
     setStudentChallengeSubmissions(next);
-    persistState({ studentChallengeSubmissions: next });
+    const nextLogs = appendAuditEntry(
+      'grade',
+      'challenge',
+      `رصد نتيجة التحدي والمراجعة الثنائية للطالبة ${studentObj?.name || newSub.studentId} (${newSub.totalPointsEarned} نقطة)`,
+      cleanId
+    );
+    persistState({ studentChallengeSubmissions: next, auditLogs: nextLogs });
     showToast('تم رصد نتيجة التحدي والمراجعة الثنائية');
   };
 
@@ -1704,22 +2008,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = [...currentExams.filter((e: MonthlyExam) => e.id !== newExam.id), newExam];
     masterStateRef.current.monthlyExams = next;
     setMonthlyExams(next);
-    persistState({ monthlyExams: next });
+    const nextLogs = appendAuditEntry('create', 'exam', `جدولة اختبار شهري جديد: ${newExam.title} (${newExam.examDateHijri})`, newExam.id);
+    persistState({ monthlyExams: next, auditLogs: nextLogs });
     showToast(`تمت جدولة الاختبار الشهري: ${newExam.title}`);
     return newExam;
   };
 
   const updateMonthlyExam = async (id: string, exam: Partial<MonthlyExam>) => {
     const currentExams = masterStateRef.current.monthlyExams?.length ? masterStateRef.current.monthlyExams : monthlyExams;
+    const existingExam = currentExams.find((e: MonthlyExam) => e.id === id);
     const next = currentExams.map((e: MonthlyExam) => e.id === id ? { ...e, ...exam, updatedAt: new Date().toISOString() } : e);
     masterStateRef.current.monthlyExams = next;
     setMonthlyExams(next);
-    persistState({ monthlyExams: next });
+    const nextLogs = appendAuditEntry('update', 'exam', `تعديل بيانات الاختبار الشهري: ${exam.title || existingExam?.title || id}`, id);
+    persistState({ monthlyExams: next, auditLogs: nextLogs });
     showToast('تم تعديل بيانات الاختبار الشهري');
   };
 
   const deleteMonthlyExam = async (id: string) => {
     const currentExams = masterStateRef.current.monthlyExams?.length ? masterStateRef.current.monthlyExams : monthlyExams;
+    const existingExam = currentExams.find((e: MonthlyExam) => e.id === id);
     const nextExams = currentExams.filter((e: MonthlyExam) => e.id !== id);
     const currentResults = masterStateRef.current.studentExamResults || studentExamResults;
     const nextResults = currentResults.filter((r: StudentExamResult) => r.examId !== id);
@@ -1728,9 +2036,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     masterStateRef.current.studentExamResults = nextResults;
     setMonthlyExams(nextExams);
     setStudentExamResults(nextResults);
+    const nextLogs = appendAuditEntry('delete', 'exam', `حذف الاختبار الشهري: ${existingExam?.title || id}`, id);
     persistState({
       monthlyExams: nextExams,
       studentExamResults: nextResults,
+      auditLogs: nextLogs,
       _deletedEntities: mergeDeletedEntityMaps(
         addDeletedEntity('monthlyExams', id),
         { studentExamResults: removedResults.map((result: StudentExamResult) => result.id) }
@@ -1741,6 +2051,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const saveExamResult = async (result: Partial<StudentExamResult>) => {
     const cleanId = result.id || `er_${result.examId}_${result.studentId}`;
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === result.studentId);
     const currentResults = masterStateRef.current.studentExamResults || studentExamResults;
     const existingIdx = currentResults.findIndex(
       (r: StudentExamResult) => r.id === cleanId || (r.examId === result.examId && r.studentId === result.studentId)
@@ -1779,12 +2091,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     masterStateRef.current.studentExamResults = next;
     setStudentExamResults(next);
-    persistState({ studentExamResults: next });
+    const finalScore = result.score ?? (existingIdx >= 0 ? next[existingIdx].score : 0);
+    const nextLogs = appendAuditEntry(
+      'grade',
+      'exam',
+      `رصد درجة الاختبار الشهري للطالبة ${studentObj?.name || result.studentId} (الدرجة: ${finalScore})`,
+      cleanId
+    );
+    persistState({ studentExamResults: next, auditLogs: nextLogs });
     showToast('تم رصد درجة ومقرر الاختبار الشهري بنجاح');
   };
 
   const updateGradingConfig = async (trackId: string, config: Partial<TrackGradingConfig>) => {
     const current: TrackGradingConfig[] = masterStateRef.current.gradingConfigs || gradingConfigs || [];
+    const currentTracks = masterStateRef.current.tracks?.length ? masterStateRef.current.tracks : tracks;
+    const trackObj = currentTracks.find((t: Track) => t.id === trackId);
     const existingIdx = current.findIndex((g: TrackGradingConfig) => g.trackId === trackId);
     let next: TrackGradingConfig[];
     if (existingIdx >= 0) {
@@ -1811,16 +2132,33 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         localStorage.setItem(GRADING_CONFIGS_KEY, JSON.stringify(next));
       } catch {}
     }
-    persistState({ gradingConfigs: next });
+    const nextLogs = appendAuditEntry('update', 'gradingConfig', `تحديث أوزان ومعايير نظام الدرجات للمسار: ${trackObj?.name || trackId}`, trackId);
+    persistState({ gradingConfigs: next, auditLogs: nextLogs });
     showToast('تم حفظ وتحديث أوزان ومعايير نظام الدرجات بنجاح ⚖️');
   };
 
-  const updateSettings = async (newSettings: Partial<InstitutionSettings>) => {
+  const updateSettings = async (newSettings: Partial<InstitutionSettings>, silent?: boolean) => {
     const next = { ...settings, ...newSettings };
     masterStateRef.current.settings = next;
     setSettings(next);
-    persistState({ settings: next });
-    showToast('تم حفظ الإعدادات العامة للمقرأة');
+    if (!silent) {
+      const changedKeys = Object.keys(newSettings);
+      let summary = 'تحديث الإعدادات العامة والهوية البصرية للمقرأة';
+      if (changedKeys.length === 1 && changedKeys[0] === 'logoUrl') {
+        summary = newSettings.logoUrl ? 'تحديث شعار المقرأة الرسمي' : 'إزالة شعار المقرأة المرفوع';
+      } else if (changedKeys.length === 1 && changedKeys[0] === 'sealImageUrl') {
+        summary = newSettings.sealImageUrl ? 'رفع وتحديث صورة الختم الرسمي للمقرأة' : 'إزالة صورة الختم المرفوعة';
+      } else if (changedKeys.length === 1 && changedKeys[0] === 'leaderSignatureUrl') {
+        summary = newSettings.leaderSignatureUrl ? 'تحديث توقيع قائدة المقرأة المعتمد' : 'إزالة توقيع قائدة المقرأة';
+      } else if (changedKeys.length === 1 && changedKeys[0] === 'showOfficialSeal') {
+        summary = newSettings.showOfficialSeal ? 'تفعيل إظهار الختم الرسمي على الشهادات والتقارير' : 'إخفاء الختم الرسمي من الشهادات والتقارير';
+      }
+      const nextLogs = appendAuditEntry('update', 'settings', summary, 'settings-main');
+      persistState({ settings: next, auditLogs: nextLogs });
+      showToast('تم حفظ الإعدادات العامة للمقرأة');
+    } else {
+      persistState({ settings: next });
+    }
   };
 
   const downloadBackup = async () => {
@@ -1882,7 +2220,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       masterStateRef.current = {};
       applyState(normalizedBackup);
-      persistState({ ...normalizedBackup, _replaceState: true });
+      const nextLogs = appendAuditEntry('update', 'settings', 'استعادة قاعدة البيانات بالكامل من ملف نسخة احتياطية', 'backup-restore');
+      persistState({ ...normalizedBackup, auditLogs: nextLogs, _replaceState: true });
       showToast('تمت استعادة قاعدة البيانات بالكامل بنجاح');
       return true;
     } catch (err: any) {
@@ -1894,7 +2233,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const resetSampleData = async () => {
     masterStateRef.current = {};
     applyState({ ...initialData, _deletedEntities: {} });
-    persistState({ ...initialData, _deletedEntities: {}, _replaceState: true });
+    const nextLogs = appendAuditEntry('update', 'settings', 'إعادة ضبط النظام إلى البيانات النموذجية الأصلية', 'system-reset');
+    persistState({ ...initialData, auditLogs: nextLogs, _deletedEntities: {}, _replaceState: true });
     showToast('تمت إعادة ضبط البيانات النموذجية بنجاح');
   };
 
@@ -1944,6 +2284,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } as User;
 
     const next = [...users.filter(existing => existing.id !== newUser.id), newUser];
+    masterStateRef.current.users = next;
     setUsers(next);
 
     // Sync to authorized_staff in Firestore including passcode
@@ -1964,12 +2305,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    persistState({ users: next });
+    const nextLogs = appendAuditEntry(
+      'create',
+      'auth',
+      `إضافة حساب جديد في الكادر: ${newUser.name} (${newUser.title || newUser.role})`,
+      newUser.id
+    );
+    persistState({ users: next, auditLogs: nextLogs });
     showToast(`تمت إضافة ${newUser.name} بالمنصب (${newUser.title || newUser.role}) بنجاح ✨`);
     return newUser;
   };
 
-  const updateUser = async (id: string, user: Partial<User>) => {
+  const updateUser = async (id: string, user: Partial<User>, silent?: boolean) => {
     const target = users.find(u => u.id === id);
     if (!target) return;
 
@@ -2014,6 +2361,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...user,
       updatedAt: new Date().toISOString()
     } : u);
+    masterStateRef.current.users = nextUsers;
     setUsers(nextUsers);
     if (currentUser?.id === id) {
       setCurrentUser({ ...currentUser, ...user, updatedAt: new Date().toISOString() });
@@ -2066,8 +2414,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setCircles(nextCircles);
     }
 
-    persistState({ users: nextUsers, circles: nextCircles });
-    showToast('تم حفظ التعديلات وتحديث المنصب والبيانات بنجاح ✨');
+    if (!silent) {
+      const isPermissionsOnly = Object.keys(user).length === 1 && 'permissions' in user;
+      const isPasscodeOnly = Object.keys(user).length === 1 && 'passcode' in user;
+      const logDetail = isPermissionsOnly
+        ? `تحديث صلاحيات الوصول لحساب الكادر: ${updated?.name || target.name}`
+        : isPasscodeOnly
+        ? `تحديث الرمز السري للدخول لحساب: ${updated?.name || target.name}`
+        : `تعديل بيانات/منصب حساب الكادر: ${updated?.name || target.name} (${updated?.title || updated?.role || target.role})`;
+      const nextLogs = appendAuditEntry('update', 'auth', logDetail, id);
+      persistState({ users: nextUsers, circles: nextCircles, auditLogs: nextLogs });
+      showToast('تم حفظ التعديلات وتحديث المنصب والبيانات بنجاح ✨');
+    } else {
+      persistState({ users: nextUsers, circles: nextCircles });
+    }
   };
 
   const deleteUser = async (id: string) => {
@@ -2097,6 +2457,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     const nextUsers = users.filter(u => u.id !== id);
+    masterStateRef.current.users = nextUsers;
     setUsers(nextUsers);
 
     // Unassign circles assigned to this teacher or supervisor
@@ -2128,9 +2489,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
+    const nextLogs = appendAuditEntry(
+      'delete',
+      'auth',
+      `حذف حساب الكادر وإلغاء صلاحية الدخول: ${target.name} (${target.title || target.role})`,
+      id
+    );
     persistState({
       users: nextUsers,
       circles: nextCircles,
+      auditLogs: nextLogs,
       _deletedEntities: mergeDeletedEntityMaps(
         masterStateRef.current._deletedEntities,
         { users: [id] }
@@ -2614,6 +2982,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateUser,
         deleteUser,
         changeUserPasscode,
+        recordAuditLog,
+        deleteAuditLog,
+        clearAuditLogs,
         getStudentScoreSummary,
         allStudentScores,
         toast,

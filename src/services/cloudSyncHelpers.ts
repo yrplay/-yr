@@ -48,8 +48,8 @@ export const mergeArrayByKey = (
       const parsed = new Date(value).getTime();
       return Number.isFinite(parsed) ? parsed : 0;
     };
-    const existingTime = parseTime(existing.recordedAt || existing.updatedAt || existing.evaluatedAt || existing.createdAt);
-    const incomingTime = parseTime(item.recordedAt || item.updatedAt || item.evaluatedAt || item.createdAt);
+    const existingTime = parseTime(existing.recordedAt || existing.updatedAt || existing.evaluatedAt || existing.createdAt || existing.timestamp);
+    const incomingTime = parseTime(item.recordedAt || item.updatedAt || item.evaluatedAt || item.createdAt || item.timestamp);
     const base = incomingTime >= existingTime ? { ...existing, ...item } : { ...item, ...existing };
     
     // For user items or items with passcode, never overwrite a set passcode with an empty or missing one
@@ -61,5 +61,9 @@ export const mergeArrayByKey = (
     }
     map.set(id, base);
   }
-  return Array.from(map.values());
+  const merged = Array.from(map.values());
+  if (merged.length > 1 && merged.every(item => item && typeof item.timestamp === 'string')) {
+    merged.sort((a, b) => (Date.parse(b.timestamp) || 0) - (Date.parse(a.timestamp) || 0));
+  }
+  return merged;
 };

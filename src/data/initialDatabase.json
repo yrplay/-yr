@@ -1053,148 +1053,16 @@
   },
   "auditLogs": [
     {
-      "id": "log-1792334384218-ubbhd",
-      "timestamp": "2026-10-18T14:39:44.218Z",
-      "userName": "أ. مريم الدوسري",
-      "userRole": "teacher",
-      "actionType": "update",
-      "entity": "attendance",
-      "entityId": "att-1792334374078-gpd",
-      "details": "تسجيل حضور/تحضير لطالبة بتاريخ 2026-10-18"
-    },
-    {
-      "id": "log-1792334380696-qa94t",
-      "timestamp": "2026-10-18T14:39:40.696Z",
-      "userName": "أ. مريم الدوسري",
-      "userRole": "teacher",
-      "actionType": "update",
-      "entity": "attendance",
-      "entityId": "att-1792334374078-gpd",
-      "details": "تسجيل حضور/تحضير لطالبة بتاريخ 2026-10-18"
-    },
-    {
-      "id": "log-1792334377448-o1p0b",
-      "timestamp": "2026-10-18T14:39:37.448Z",
-      "userName": "أ. مريم الدوسري",
-      "userRole": "teacher",
-      "actionType": "update",
-      "entity": "attendance",
-      "entityId": "att-1792334374078-gpd",
-      "details": "تسجيل حضور/تحضير لطالبة بتاريخ 2026-10-18"
-    },
-    {
-      "id": "log-1792334374078-ciqez",
-      "timestamp": "2026-10-18T14:39:34.078Z",
-      "userName": "أ. مريم الدوسري",
-      "userRole": "teacher",
-      "actionType": "update",
-      "entity": "attendance",
-      "entityId": "att-1792334374078-gpd",
-      "details": "تسجيل حضور/تحضير لطالبة بتاريخ 2026-10-18"
-    },
-    {
-      "id": "log-1792334372627-mcs7r",
-      "timestamp": "2026-10-18T14:39:32.627Z",
-      "userName": "أ. مريم الدوسري",
-      "userRole": "teacher",
-      "actionType": "login",
-      "entity": "auth",
-      "details": "تسجيل الدخول / تبديل المستخدم إلى: أ. مريم الدوسري (معلمة حلقة راسخات (١))"
-    },
-    {
-      "id": "log-1792334365595-uld3o",
-      "timestamp": "2026-10-18T14:39:25.595Z",
-      "userName": "ريفة المنصوري",
-      "userRole": "leader",
-      "actionType": "update",
-      "entity": "attendance",
-      "entityId": "att-1792334363868-m2o",
-      "details": "تسجيل حضور/تحضير لطالبة بتاريخ 2026-10-18"
-    },
-    {
-      "id": "log-1792334363868-oiwrm",
-      "timestamp": "2026-10-18T14:39:23.868Z",
-      "userName": "ريفة المنصوري",
-      "userRole": "leader",
-      "actionType": "update",
-      "entity": "attendance",
-      "entityId": "att-1792334363868-m2o",
-      "details": "تسجيل حضور/تحضير لطالبة بتاريخ 2026-10-18"
-    },
-    {
-      "id": "log-1792334355076-0ubs5",
-      "timestamp": "2026-10-18T14:39:15.076Z",
-      "userName": "ريفة المنصوري",
-      "userRole": "leader",
-      "actionType": "update",
-      "entity": "attendance",
-      "entityId": "att-1792334349867-406",
-      "details": "تسجيل حضور/تحضير لطالبة بتاريخ 2026-10-18"
-    },
-    {
-      "id": "log-1792334352159-fnpz9",
-      "timestamp": "2026-10-18T14:39:12.159Z",
-      "userName": "ريفة المنصوري",
-      "userRole": "leader",
-      "actionType": "update",
-      "entity": "attendance",
-      "entityId": "att-1792334349867-406",
-      "details": "تسجيل حضور/تحضير لطالبة بتاريخ 2026-10-18"
-    },
-    {
-      "id": "log-1792334349867-b4xh8",
-      "timestamp": "2026-10-18T14:39:09.867Z",
-      "userName": "ريفة المنصوري",
-      "userRole": "leader",
-      "actionType": "update",
-      "entity": "attendance",
-      "entityId": "att-1792334349867-406",
-      "details": "تسجيل حضور/تحضير لطالبة بتاريخ 2026-10-18"
-    },
-    {
-      "id": "log-1792333426863-nfaas",
-      "timestamp": "2026-10-18T14:23:46.863Z",
-      "userName": "ريفة المنصوري",
-      "userRole": "leader",
-      "actionType": "login",
-      "entity": "auth",
-      "details": "تسجيل الدخول / تبديل المستخدم إلى: ريفة المنصوري (قائدة مقرأة غيث الغيم)"
-    },
-    {
-      "id": "log-1792333422890-9z6e6",
-      "timestamp": "2026-10-18T14:23:42.890Z",
-      "userName": "أ. فاطمة الشهري",
-      "userRole": "teacher",
-      "actionType": "login",
-      "entity": "auth",
-      "details": "تسجيل الدخول / تبديل المستخدم إلى: أ. فاطمة الشهري (معلمة حلقة راسخات (٢))"
-    },
-    {
-      "id": "log-1792333417239-ah64u",
-      "timestamp": "2026-10-18T14:23:37.239Z",
-      "userName": "أ. مريم الدوسري",
-      "userRole": "teacher",
-      "actionType": "login",
-      "entity": "auth",
-      "details": "تسجيل الدخول / تبديل المستخدم إلى: أ. مريم الدوسري (معلمة حلقة راسخات (١))"
-    },
-    {
-      "id": "log-1792333412718-suz7k",
-      "timestamp": "2026-10-18T14:23:32.718Z",
-      "userName": "أ. خديجة العتيبي",
-      "userRole": "supervisor",
-      "actionType": "login",
-      "entity": "auth",
-      "details": "تسجيل الدخول / تبديل المستخدم إلى: أ. خديجة العتيبي (مشرفة مسار مشكاة الغيم)"
-    },
-    {
       "id": "log-1",
-      "timestamp": "2026-10-18T14:22:05.888Z",
-      "userName": "ريفة المنصوري",
-      "userRole": "leader",
+      "userId": "u-dev",
+      "timestamp": "2025-01-01T08:00:00.000Z",
+      "userName": "مطور المنصة",
+      "userRole": "developer",
+      "action": "create",
       "actionType": "create",
       "entity": "system",
-      "details": "تهيئة النظام واعتماد مسار مشكاة الغيم وحلقات راسخات (١، ٢، ٣)"
+      "entityId": "system-init",
+      "details": "تهيئة النظام واعتماد مسار مشكاة الغيم وحلقات المقرأة"
     }
   ],
   "studentSubscriptions": [

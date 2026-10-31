@@ -107,7 +107,7 @@ const AppContent: React.FC = () => {
             const found = authDataRef.current.users.find(u => u.id === savedUserId);
             if (found) {
               try {
-                await authDataRef.current.switchUser(found.id);
+                await authDataRef.current.switchUser(found.id, true);
               } catch (e) {
                 console.warn('Session user restore notice:', e);
               }
