@@ -3,11 +3,11 @@
   "private": true,
   "version": "1.0.0",
   "engines": {
-    "node": ">=24.12.0"
+    "node": ">=22.0.0"
   },
   "type": "module",
   "scripts": {
-    "dev": "vite --port 3000 --host 0.0.0.0",
+    "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
