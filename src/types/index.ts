@@ -321,7 +321,7 @@ export interface AtqiniAssignment {
   maxScore: number;
 }
 
-export type AtqiniRating = 'ممتاز' | 'ممتاز جدًا' | 'جيد جدًا' | 'جيد' | 'يحتاج إلى تحسين' | 'لم يُنجز';
+export type AtqiniRating = 'ممتاز' | 'جيد جدًا' | 'جيد' | 'يحتاج إلى تحسين' | 'لم يُنجز';
 
 export interface StudentAtqiniSubmission {
   id: string;

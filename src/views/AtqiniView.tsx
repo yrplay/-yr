@@ -244,12 +244,15 @@ export const AtqiniView: React.FC = () => {
       s => s.assignmentId === currentAssignment?.id && s.studentId === student.id
     );
     if (existing) {
+      const normalizedRating = (existing.rating as string) === 'ممتاز جدًا' || (existing.rating as string) === 'ممتاز جدا'
+        ? 'ممتاز'
+        : existing.rating;
       setSubForm({
         status: existing.status,
         isCompletedCorrectly: existing.isCompletedCorrectly,
         extractedExamplesDone: existing.extractedExamplesDone,
         appliedDuringRecitation: existing.appliedDuringRecitation,
-        rating: existing.rating,
+        rating: normalizedRating,
         score: existing.score,
         teacherNotes: existing.teacherNotes || ''
       });
@@ -817,7 +820,6 @@ export const AtqiniView: React.FC = () => {
                     className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white font-bold"
                   >
                     <option value="ممتاز">ممتاز ⭐⭐⭐</option>
-                    <option value="ممتاز جدًا">ممتاز جدًا ⭐⭐</option>
                     <option value="جيد جدًا">جيد جدًا ⭐</option>
                     <option value="جيد">جيد</option>
                     <option value="يحتاج إلى تحسين">يحتاج إلى تحسين</option>
