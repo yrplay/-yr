@@ -39,7 +39,7 @@
       "name": "مسار مشكاة الغيم",
       "code": "MG-MEM",
       "description": "المسار التأسيسي والتمكيني لحفظ كتاب الله وضبطه وإتقانه وتطبيق أحكام التجويد وفق خطط مشكاة الغيم المعتمدة.",
-      "icon": "🪴",
+      "icon": "📖",
       "subscriptionFee": {
         "amount": 250,
         "currency": "ر.س",
@@ -101,8 +101,8 @@
     {
       "id": "c-1",
       "trackId": "t-1",
-      "name": "راسخات (١) 🪴🤎",
-      "icon": "🪴",
+      "name": "راسخات (١)",
+      "icon": "📖",
       "teacherId": "",
       "teacherName": "غير محدد",
       "supervisorId": "",
@@ -123,8 +123,8 @@
     {
       "id": "c-2",
       "trackId": "t-1",
-      "name": "راسخات (٢) 🪴🤎",
-      "icon": "🪴",
+      "name": "راسخات (٢)",
+      "icon": "📖",
       "teacherId": "",
       "teacherName": "غير محدد",
       "supervisorId": "",
@@ -145,8 +145,8 @@
     {
       "id": "c-3",
       "trackId": "t-1",
-      "name": "راسخات (٣) 🪴🤎",
-      "icon": "🪴",
+      "name": "راسخات (٣)",
+      "icon": "📖",
       "teacherId": "",
       "teacherName": "غير محدد",
       "supervisorId": "",

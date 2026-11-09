@@ -23,14 +23,26 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
     dailyRecords, attendanceRecords, studentAtqiniSubmissions,
     studentChallengeSubmissions, studentExamResults,
     allStudentScores, settings, showToast, updateSettings,
-    saveStudentPlan, updateStudent, saveDailyRecord, saveExamResult
+    saveStudentPlan, updateStudent, saveDailyRecord, saveExamResult,
+    selectedTrackId
   } = useApp();
 
+  const availableStudents = React.useMemo(() => {
+    if (!selectedTrackId || selectedTrackId === 'all') return students;
+    return students.filter(s => s.trackId === selectedTrackId);
+  }, [students, selectedTrackId]);
+
   const [selectedStudentId, setSelectedStudentId] = useState<string>(
-    initialStudentId || students[0]?.id || ''
+    initialStudentId || availableStudents[0]?.id || students[0]?.id || ''
   );
 
-  const student = students.find(s => s.id === selectedStudentId) || students[0];
+  useEffect(() => {
+    if (availableStudents.length > 0 && !availableStudents.some(s => s.id === selectedStudentId)) {
+      setSelectedStudentId(availableStudents[0].id);
+    }
+  }, [availableStudents, selectedStudentId]);
+
+  const student = availableStudents.find(s => s.id === selectedStudentId) || availableStudents[0] || students[0];
   const circle = circles.find(c => c.id === student?.circleId);
   const track = tracks.find(t => t.id === student?.trackId) || tracks[0];
   const score = allStudentScores[student?.id];
@@ -693,7 +705,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               onChange={e => setSelectedStudentId(e.target.value)}
               className="px-3 py-1.5 border border-stone-200 rounded-xl text-xs font-bold bg-white focus:ring-2 focus:ring-[#8E5364]"
             >
-              {students.map(s => {
+              {availableStudents.map(s => {
                 const c = circles.find(ci => ci.id === s.circleId);
                 return (
                   <option key={s.id} value={s.id}>

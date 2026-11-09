@@ -12,13 +12,25 @@ export const ChallengesView: React.FC = () => {
   const {
     challenges, studentChallengeSubmissions, students, circles, tracks,
     createChallenge, updateChallenge, deleteChallenge,
-    saveChallengeSubmission, toggleChallengeEarlyAchievement, currentUser, quickModalAction, clearQuickModal, settings
+    saveChallengeSubmission, toggleChallengeEarlyAchievement, currentUser, quickModalAction, clearQuickModal, settings,
+    selectedTrackId
   } = useApp();
+
+  const availableChallenges = React.useMemo(() => {
+    if (!selectedTrackId || selectedTrackId === 'all') return challenges;
+    return challenges.filter(ch => !ch.trackId || ch.trackId === selectedTrackId);
+  }, [challenges, selectedTrackId]);
 
   const [activeTab, setActiveTab] = useState<'thursday' | 'grand' | 'peer_review'>('thursday');
   const [selectedChallengeId, setSelectedChallengeId] = useState<string>(
-    challenges[0]?.id || ''
+    availableChallenges[0]?.id || challenges[0]?.id || ''
   );
+
+  React.useEffect(() => {
+    if (availableChallenges.length > 0 && !availableChallenges.some(c => c.id === selectedChallengeId)) {
+      setSelectedChallengeId(availableChallenges[0].id);
+    }
+  }, [availableChallenges, selectedChallengeId]);
 
   // حالة فلترة وبحث الإنجاز المبكر
   const [earlySearchQuery, setEarlySearchQuery] = useState('');
@@ -97,9 +109,9 @@ export const ChallengesView: React.FC = () => {
   const [challengeToDelete, setChallengeToDelete] = useState<{ id: string; title: string } | null>(null);
   const [cannotDeleteNotice, setCannotDeleteNotice] = useState(false);
 
-  const currentChallenge = challenges.find(c => c.id === selectedChallengeId) || challenges[0];
+  const currentChallenge = availableChallenges.find(c => c.id === selectedChallengeId) || availableChallenges[0] || challenges[0];
 
-  const activeStudents = students.filter(s => s.status === 'active');
+  const activeStudents = students.filter(s => s.status === 'active' && (!selectedTrackId || selectedTrackId === 'all' || s.trackId === selectedTrackId));
 
   const isEarlyAwardedForStudent = (studentId: string) => {
     const sub = studentChallengeSubmissions.find(
@@ -405,7 +417,7 @@ export const ChallengesView: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {challenges.map(ch => {
+            {availableChallenges.map(ch => {
               const isSelected = currentChallenge?.id === ch.id;
               return (
                 <div
@@ -827,7 +839,7 @@ export const ChallengesView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
-                {students.filter(s => s.status === 'active').map((student, idx) => {
+                {activeStudents.map((student, idx) => {
                   const sub = studentChallengeSubmissions.find(
                     c => c.challengeId === currentChallenge?.id && c.studentId === student.id
                   );
@@ -974,7 +986,7 @@ export const ChallengesView: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {students.filter(s => s.partnerStudentId).map(student => {
+            {activeStudents.filter(s => s.partnerStudentId).map(student => {
               const partner = students.find(s => s.id === student.partnerStudentId);
               const sub = studentChallengeSubmissions.find(
                 c => c.challengeId === currentChallenge?.id && c.studentId === student.id

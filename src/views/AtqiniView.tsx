@@ -514,7 +514,7 @@ export const AtqiniView: React.FC = () => {
             </div>
 
             <div className="text-xs text-stone-600">
-              تم تصحيح: <strong>{studentAtqiniSubmissions.filter(s => s.assignmentId === currentAssignment.id && s.status === 'completed').length}</strong> من {students.length} طالبة
+              تم تصحيح: <strong>{studentAtqiniSubmissions.filter(s => s.assignmentId === currentAssignment.id && s.status === 'completed' && availableStudents.some(st => st.id === s.studentId)).length}</strong> من {availableStudents.length} طالبة
             </div>
           </div>
 
@@ -535,7 +535,7 @@ export const AtqiniView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
-                {students.map((student, idx) => {
+                {availableStudents.map((student, idx) => {
                   const circle = circles.find(c => c.id === student.circleId);
                   const sub = studentAtqiniSubmissions.find(
                     s => s.assignmentId === currentAssignment.id && s.studentId === student.id

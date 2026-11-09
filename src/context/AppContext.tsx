@@ -240,13 +240,15 @@ const sanitizeAndSortAuditLogs = (logs: any[]): AuditLog[] => {
 const ensureDefaultTrackIntegrity = (data: any) => {
   if (!data || typeof data !== 'object') return data;
 
-  // 1. Ensure track t-1 exists and is named 'مسار مشكاة الغيم'
+  // 1. Ensure track t-1 exists and is named 'مسار مشكاة الغيم', and clean emojis from track names
   if (Array.isArray(data.tracks)) {
     data.tracks = data.tracks.map((t: any) => {
-      if (t.id === 't-1' && (t.name === 'مشكاة الغيم للحفظ' || !t.name.includes('مشكاة الغيم'))) {
-        return { ...t, name: 'مسار مشكاة الغيم' };
+      const cleanedName = String(t.name || '').replace(/[🪴🤎]/g, '').trim();
+      const cleanedIcon = (!t.icon || t.icon === '🪴' || t.icon === '🤎') ? '📖' : t.icon;
+      if (t.id === 't-1' && (cleanedName === 'مشكاة الغيم للحفظ' || !cleanedName.includes('مشكاة الغيم'))) {
+        return { ...t, name: 'مسار مشكاة الغيم', icon: cleanedIcon };
       }
-      return t;
+      return { ...t, name: cleanedName || t.name, icon: cleanedIcon };
     });
   }
 
@@ -258,10 +260,12 @@ const ensureDefaultTrackIntegrity = (data: any) => {
     }));
   }
 
-  // 3. Ensure all circles have a valid trackId (default to t-1)
+  // 3. Ensure all circles have a valid trackId (default to t-1) and clean emojis from circle names
   if (Array.isArray(data.circles)) {
     data.circles = data.circles.map((c: any) => ({
       ...c,
+      name: String(c.name || '').replace(/[🪴🤎]/g, '').trim() || c.name,
+      icon: (!c.icon || c.icon === '🪴' || c.icon === '🤎') ? '📖' : c.icon,
       trackId: c.trackId || 't-1'
     }));
   }

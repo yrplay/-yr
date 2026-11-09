@@ -126,13 +126,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 className="bg-black/25 hover:bg-black/40 text-white font-bold text-xs rounded-xl px-2.5 py-1 border border-white/30 outline-none cursor-pointer transition shadow-2xs"
               >
                 <option value="all" className="bg-stone-800 text-white">
-                  كافة المسارات المجمعة ({students.length} طالبة)
+                  كافة المسارات ({students.length} طالبة)
                 </option>
                 {tracks.filter(t => !t.isArchived).map(track => {
                   const count = students.filter(s => s.trackId === track.id).length;
+                  const cleanTrackName = (track.name || '').replace(/[🪴🤎]/g, '').trim();
                   return (
                     <option key={track.id} value={track.id} className="bg-stone-800 text-white">
-                      {track.name} ({count} طالبة)
+                      {cleanTrackName} ({count} طالبة)
                     </option>
                   );
                 })}
@@ -209,19 +210,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <button
               type="button"
               onClick={togglePrivacyMode}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition cursor-pointer shadow-xs ${
+              className={`flex items-center justify-center w-9 h-9 rounded-xl text-xs font-bold border transition cursor-pointer shadow-xs ${
                 isPrivacyMode
                   ? 'bg-amber-400 text-stone-900 border-amber-300 hover:bg-amber-300'
                   : 'bg-white/15 backdrop-blur text-white border-white/25 hover:bg-white/25'
               }`}
               title={isPrivacyMode ? 'إلغاء وضع الخصوصية وإظهار الأرقام والأسماء' : 'تفعيل وضع الخصوصية وتمويه الأرقام الحساسة'}
+              aria-label="وضع الخصوصية"
             >
               {isPrivacyMode ? (
-                <EyeOff className="w-3.5 h-3.5" />
+                <EyeOff className="w-4 h-4" />
               ) : (
-                <Eye className="w-3.5 h-3.5" />
+                <Eye className="w-4 h-4" />
               )}
-              <span>وضع الخصوصية</span>
             </button>
           </div>
         </div>
@@ -272,7 +273,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span className="text-xs font-normal text-stone-400 mr-1.5">حلقة</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-stone-500">
-            <span>{currentTrack ? currentTrack.name : `${tracks.length} مسارات معتمدة`}</span>
+            <span>{currentTrack ? (currentTrack.name || '').replace(/[🪴🤎]/g, '').trim() : `${tracks.length} مسارات معتمدة`}</span>
             <ChevronLeft className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-[-2px] transition" />
           </div>
         </div>
@@ -300,7 +301,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Early Prep & Attendance */}
         <div
           onClick={() => onNavigate('attendance')}
-          className="bg-white p-4 sm:p-5 rounded-2xl border border-[#E8DFD8] shadow-2xs hover:border-[#D4C4BC] transition cursor-pointer group"
+          className="bg-white p-4 sm:p-5 rounded-2xl border border-[#E8DFD8] shadow-2xs hover:border-[#D4C4BC] transition cursor-pointer group flex flex-col justify-between"
         >
           <div className="flex items-center justify-between text-stone-500 mb-2">
             <span className="text-xs font-semibold">التحضير المبكر والحضور</span>
@@ -308,11 +309,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <Clock className="w-4 h-4" />
             </div>
           </div>
-          <div className={`text-xl sm:text-2xl font-bold text-stone-900 mb-1 flex items-baseline ${privacyBlurClass}`}>
-            <span>{todayAttendance.length > 0 ? `${presentToday} / ${todayAttendance.length}` : formatHijriShort(today)}</span>
-          </div>
+          {todayAttendance.length > 0 ? (
+            <div className={`text-lg sm:text-xl font-semibold text-stone-900 mb-1 flex items-baseline ${privacyBlurClass}`}>
+              <span>{presentToday} / {todayAttendance.length}</span>
+              <span className="text-xs font-normal text-stone-400 mr-1.5">حاضرة</span>
+            </div>
+          ) : (
+            <div className="text-[1.05rem] sm:text-[1.15rem] font-semibold text-stone-900 mb-1.5 leading-snug">
+              <span>{formatHijriShort(today)}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between text-[11px] text-stone-500">
-            <span className={privacyBlurClass}>{earlyPrepToday} بطاقة تحضير مبكر ⭐</span>
+            <span><span className={privacyBlurClass}>{earlyPrepToday}</span> بطاقة تحضير مبكر ⭐</span>
             <ChevronLeft className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-[-2px] transition" />
           </div>
         </div>
@@ -323,8 +331,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
-            <span>🪴</span>
-            <span>حلقات {currentTrack ? currentTrack.name : 'المقرأة'}:</span>
+            <Layers className="w-4 h-4 text-[#8E5364]" />
+            <span>حلقات {currentTrack ? (currentTrack.name || '').replace(/[🪴🤎]/g, '').trim() : 'المقرأة'}:</span>
           </h3>
           <div className="flex items-center gap-2">
             {hasFullAccess(currentUser) && (

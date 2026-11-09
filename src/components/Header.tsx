@@ -96,13 +96,13 @@ export const Header: React.FC<HeaderProps> = ({
   };
   return (
     <>
-      <header className="sticky top-0 z-30 bg-[#FCFAF8]/95 backdrop-blur-md border-b border-[#EBE3DC] px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between shadow-2xs" dir="rtl">
-        {/* الجزء الأيمن: زر فتح القائمة للشاشات الصغيرة وشعار المقرأة */}
-        <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-30 bg-[#FCFAF8]/95 backdrop-blur-md border-b border-[#EBE3DC] px-3 sm:px-6 lg:px-8 py-2 flex items-center justify-between gap-2 shadow-2xs" dir="rtl">
+        {/* الجزء الأيمن: زر فتح القائمة للشاشات الصغيرة وشعار المقرأة ومحدد المسارات */}
+        <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1">
           <button
             type="button"
             onClick={onToggleSidebar}
-            className="lg:hidden p-2 rounded-xl text-stone-600 hover:bg-stone-200/50 active:scale-95 transition"
+            className="lg:hidden w-[38px] h-[38px] flex items-center justify-center rounded-xl text-stone-600 hover:bg-stone-200/50 active:scale-95 transition shrink-0"
             aria-label="القائمة الرئيسية"
           >
             <Menu className="w-5 h-5" />
@@ -119,17 +119,17 @@ export const Header: React.FC<HeaderProps> = ({
             }}
             title={canOpenAdminSettings ? "الانتقال إلى الإعدادات والنسخ الاحتياطي" : (settings?.name || 'مقرأة غيث الغيم')}
             aria-label="الانتقال إلى الإعدادات"
-            className="flex items-center gap-2.5 text-right p-1.5 -m-1.5 rounded-2xl hover:bg-[#722F37]/5 active:scale-98 transition group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#722F37]/30"
+            className="flex items-center gap-2 text-right p-1 -m-1 rounded-2xl hover:bg-[#722F37]/5 active:scale-98 transition group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#722F37]/30 shrink-0"
           >
-            <div className="w-9 h-9 rounded-2xl bg-white border border-[#E0D0D4] flex items-center justify-center p-1 shadow-xs overflow-hidden group-hover:border-[#722F37]/50 group-hover:shadow-sm transition">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl sm:rounded-2xl bg-white border border-[#E0D0D4] flex items-center justify-center p-1 shadow-xs overflow-hidden group-hover:border-[#722F37]/50 group-hover:shadow-sm transition shrink-0">
               <img
                 src={settings?.logoUrl || '/pwa-192x192.png'}
                 alt="شعار المقرأة"
                 className="w-full h-full object-contain group-hover:scale-105 transition duration-200"
               />
             </div>
-            <div>
-              <h1 className="text-sm sm:text-base font-bold font-quran text-stone-900 leading-tight group-hover:text-[#722F37] transition">
+            <div className="hidden xs:block sm:block">
+              <h1 className="text-xs sm:text-base font-bold font-quran text-stone-900 leading-tight group-hover:text-[#722F37] transition truncate max-w-[95px] sm:max-w-none">
                 {settings?.name || 'مقرأة غيث الغيم'}
               </h1>
               <p className="text-[10px] text-stone-500 hidden sm:block group-hover:text-stone-700 transition">
@@ -139,54 +139,52 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           {/* شارة تقويم أم القرى الهجري في الترويسة */}
-          <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-white border border-[#E8DFD8] text-xs font-bold text-stone-700 shadow-2xs">
+          <div className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-[#E8DFD8] text-xs font-bold text-stone-700 shadow-2xs shrink-0">
             <Calendar className="w-3.5 h-3.5 text-[#8E5364]" />
             <span>{formatHijriDate(new Date(), { includeWeekday: true })}</span>
           </div>
 
-          {/* محدد المسارات القرآني العام الشامل */}
-          <div className="relative flex items-center">
-            <div className="relative">
-              <select
-                value={selectedTrackId || 'all'}
-                onChange={(e) => setSelectedTrackId(e.target.value === 'all' ? null : e.target.value)}
-                aria-label="تحديد المسار القرآني العام"
-                title="تحديد المسار القرآني لعزل البيانات وعرض سجلاته"
-                className={`text-xs font-bold rounded-2xl pr-7 pl-3 py-1.5 border transition appearance-none cursor-pointer shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#8E5364]/30 max-w-[190px] sm:max-w-none truncate ${
-                  selectedTrackId && selectedTrackId !== 'all'
-                    ? 'bg-[#8E5364]/10 text-[#722F37] border-[#8E5364]/40 font-extrabold ring-1 ring-[#8E5364]/20'
-                    : 'bg-white hover:bg-stone-50 border-[#E8DFD8] text-stone-700'
-                }`}
-              >
-                <option value="all">🪴 كافة المسارات المجمعة ({students.length} طالبة)</option>
-                {tracks.filter(t => !t.isArchived).map(t => {
-                  const count = students.filter(s => s.trackId === t.id && s.status === 'active').length;
-                  return (
-                    <option key={t.id} value={t.id}>
-                      {t.icon || '🪴'} {t.name} ({count} طالبة)
-                    </option>
-                  );
-                })}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-stone-500">
-                <Layers className="w-3.5 h-3.5 text-[#8E5364]" />
-              </div>
+          {/* محدد المسارات القرآني العام الشامل (نظيف وبدون إيموجيات مؤقتة) */}
+          <div className="relative flex items-center min-w-0">
+            <select
+              value={selectedTrackId || 'all'}
+              onChange={(e) => setSelectedTrackId(e.target.value === 'all' ? null : e.target.value)}
+              aria-label="تحديد المسار القرآني العام"
+              title="تحديد المسار القرآني لعزل البيانات وعرض سجلاته"
+              className={`h-[38px] text-[11px] sm:text-xs font-semibold rounded-xl pr-2.5 sm:pr-3 pl-6 sm:pl-7 py-1 border transition appearance-none cursor-pointer shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#8E5364]/30 max-w-[130px] sm:max-w-[195px] md:max-w-[240px] truncate ${
+                selectedTrackId && selectedTrackId !== 'all'
+                  ? 'bg-[#8E5364]/10 text-[#722F37] border-[#8E5364]/40 font-bold ring-1 ring-[#8E5364]/20'
+                  : 'bg-white hover:bg-stone-50 border-[#E8DFD8] text-stone-700'
+              }`}
+            >
+              <option value="all">كافة المسارات</option>
+              {tracks.filter(t => !t.isArchived).map(t => {
+                const cleanTrackName = (t.name || '').replace(/[🪴🤎]/g, '').trim();
+                return (
+                  <option key={t.id} value={t.id}>
+                    {cleanTrackName}
+                  </option>
+                );
+              })}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2 text-stone-400">
+              <ChevronDown className="w-3.5 h-3.5 text-[#8E5364]" />
             </div>
           </div>
         </div>
 
-        {/* الجزء الأيسر: زر وضع الخصوصية + زر التبديل بين الوضع الليلي والنهاري + القائمة المنسدلة لحساب المعلمة */}
-        <div className="flex items-center gap-2">
-          {/* زر وضع الخصوصية الشامل (إخفاء/إظهار الأرقام والأسماء الحساسة) */}
+        {/* الجزء الأيسر: أزرار الأيقونات المختصرة (وضع الخصوصية + الوضع الليلي) + قائمة المعلمة */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* زر وضع الخصوصية الشامل (أيقونة فقط مع تلميح عند التمرير) */}
           <button
             type="button"
             onClick={togglePrivacyMode}
-            title={isPrivacyMode ? 'إلغاء وضع الخصوصية وإظهار البيانات 👁️' : 'تفعيل وضع الخصوصية وتمويه الأرقام والأسماء 🔒'}
+            title={isPrivacyMode ? 'وضع الخصوصية مفعل — انقري لإظهار البيانات' : 'وضع الخصوصية — إخفاء الأسماء والأرقام'}
             aria-label="وضع الخصوصية"
             aria-pressed={isPrivacyMode}
-            className={`px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-2xl border transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 ${
+            className={`w-[38px] h-[38px] rounded-xl border transition flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 shrink-0 ${
               isPrivacyMode
-                ? 'bg-amber-400 text-stone-900 border-amber-300 hover:bg-amber-300 font-extrabold'
+                ? 'bg-amber-400 text-stone-900 border-amber-300 hover:bg-amber-300'
                 : 'bg-white hover:bg-stone-50 border-[#E8DFD8] text-stone-700'
             }`}
           >
@@ -195,29 +193,20 @@ export const Header: React.FC<HeaderProps> = ({
             ) : (
               <Eye className="w-4 h-4 text-[#8E5364]" />
             )}
-            <span className={`text-xs font-bold hidden sm:inline ${isPrivacyMode ? 'text-stone-900' : 'text-stone-700'}`}>
-              وضع الخصوصية
-            </span>
           </button>
 
-          {/* زر التبديل السريع بين الوضع النهاري والليلي */}
+          {/* زر التبديل السريع بين الوضع النهاري والليلي (أيقونة فقط) */}
           <button
             type="button"
             onClick={toggleTheme}
-            title={isDarkMode ? 'التبديل إلى الوضع النهاري ☀️' : 'التبديل إلى الوضع الليلي 🌙'}
+            title={isDarkMode ? 'التبديل إلى الوضع النهاري' : 'التبديل إلى الوضع الليلي'}
             aria-label={isDarkMode ? 'تفعيل الوضع النهاري' : 'تفعيل الوضع الليلي'}
-            className="p-2 sm:px-2.5 sm:py-1.5 rounded-2xl border transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 bg-white hover:bg-stone-50 border-[#E8DFD8] text-stone-700"
+            className="w-[38px] h-[38px] rounded-xl border transition flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 shrink-0 bg-white hover:bg-stone-50 border-[#E8DFD8] text-stone-700"
           >
             {isDarkMode ? (
-              <>
-                <Sun className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-bold hidden sm:inline text-amber-300">النهاري</span>
-              </>
+              <Sun className="w-4 h-4 text-amber-400" />
             ) : (
-              <>
-                <Moon className="w-4 h-4 text-[#8E5364]" />
-                <span className="text-xs font-bold hidden sm:inline text-stone-700">الليلي</span>
-              </>
+              <Moon className="w-4 h-4 text-[#8E5364]" />
             )}
           </button>
 
@@ -227,7 +216,7 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => setShowProfileMenu((prev) => !prev)}
               aria-expanded={showProfileMenu}
               aria-haspopup="true"
-              className="flex items-center gap-2.5 px-3 py-1.5 rounded-2xl border transition text-right bg-white hover:bg-[#FAF7F5] border-[#E8D5D8] cursor-pointer shadow-xs active:scale-98"
+              className="h-[38px] flex items-center gap-1.5 sm:gap-2.5 px-2 sm:px-3 rounded-xl border transition text-right bg-white hover:bg-[#FAF7F5] border-[#E8D5D8] cursor-pointer shadow-xs active:scale-98"
             >
               <ChevronDown
                 className={`w-3.5 h-3.5 text-stone-400 transition-transform duration-200 ${
@@ -235,7 +224,7 @@ export const Header: React.FC<HeaderProps> = ({
                 }`}
               />
 
-              <div className="text-right">
+              <div className="text-right hidden md:block">
                 <div className="flex items-center gap-1.5 justify-end">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
                   <span className="text-xs sm:text-sm font-bold text-stone-800 leading-none">
@@ -249,13 +238,13 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* الأيقونة الرمزية أو الإيموجي المخصص للمعلمة */}
               <div
-                className="w-7 h-7 rounded-xl border flex items-center justify-center text-xs font-bold shrink-0 transition shadow-2xs"
+                className="w-7 h-7 rounded-lg border flex items-center justify-center text-xs font-bold shrink-0 transition shadow-2xs"
                 style={{
                   backgroundColor: `${currentUser?.avatarColor || '#8E5364'}18`,
                   borderColor: `${currentUser?.avatarColor || '#8E5364'}40`,
                   color: currentUser?.avatarColor || '#8E5364'
                 }}
-                title="شعاركِ المعتمد"
+                title={currentUser?.name || 'شعاركِ المعتمد'}
               >
                 {renderUserAvatarBadge(currentUser?.avatarIcon, currentUser?.avatarColor || '#8E5364', 'w-4 h-4')}
               </div>
