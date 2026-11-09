@@ -1612,6 +1612,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const cycleMonth = sub.cycleMonth || settings.currentHijriMonth || 'جمادى الأولى';
     const cleanId = sub.id || `sub_${studentId}_${cycleMonth.replace(/\s+/g, '_')}`;
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === studentId);
     const resolvedTrackId = (sub.trackId && sub.trackId !== 'general')
       ? sub.trackId
       : (studentObj?.trackId || (selectedTrackId && selectedTrackId !== 'all' ? selectedTrackId : (tracks[0]?.id || 't-1')));

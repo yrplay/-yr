@@ -1061,6 +1061,8 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                     />
                   )}
                 </div>
+              </div>
+
               {/* رسوم الاشتراك المالي المستقل للمسار */}
               <div className="p-3.5 bg-[#FCFAF8] rounded-2xl border border-stone-200 space-y-2.5">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-stone-800">
