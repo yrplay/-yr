@@ -77,9 +77,18 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
 
   const totalAbsentDays = (score?.absentUnexcusedCount || 0) + (score?.absentExcusedCount || 0);
 
+  // سجلات الطالبة اليومية وحسابات درجات الحفظ من 10 (تصحيح خطأ 23.8 / 10)
+  const studentRecords = (dailyRecords || []).filter(r => r.studentId === student?.id);
+  const memScore = score?.memorizationScore ?? 25;
+  const memMax = score?.memorizationMax || 25;
+  const normMemScore = Number(((memScore / memMax) * 10).toFixed(1));
+
+  // التحقق من إتمام خطة الحفظ الشهري أو وجود جلسات تثبيت وسرد
+  const hasConsolidation = studentRecords.some((r: any) => r.isConsolidationSession);
+  const isPlanCompleted = doneNewPages >= targetNewPages && targetNewPages > 0;
+
   // حساب معدل الالتزام بمعايير التحضير والإتقان (درجة من 10 ونسبة مئوية ووسام تقييمي)
   const preparationMetrics = React.useMemo(() => {
-    const studentRecords = (dailyRecords || []).filter(r => r.studentId === student?.id);
     if (studentRecords.length === 0) {
       return {
         averageScore: 10,
@@ -608,6 +617,19 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
       </div>
     </div>
 
+    ${(hasConsolidation || isPlanCompleted) ? `
+      <div style="background: linear-gradient(135deg, #ECFDF5, #F0FDF4); border: 1.5px solid #10B981; border-radius: 12px; padding: 7px 14px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 16px;">⭐</span>
+          <div>
+            <strong style="color: #065F46; font-size: 12px;">أتمت الخطة وتم تثبيت وسرد المقرّر بنجاح ⭐</strong>
+            <span style="font-size: 10.5px; color: #047857; margin-right: 6px;">(إنجاز كامل للحفظ الجديد مع استمرار التثبيت والسرد دون المساس بصفحات المراجعة)</span>
+          </div>
+        </div>
+        <span style="background: #10B981; color: white; padding: 2px 10px; border-radius: 20px; font-size: 10px; font-weight: bold;">خطة مكتملة ومثبتة 🏆</span>
+      </div>
+    ` : ''}
+
     <div class="section-title">تفاصيل الأداء التراكمي المعتمد:</div>
     <table class="table-custom">
       <thead>
@@ -628,8 +650,8 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         <tr>
           <td><strong>الحفظ الجديد</strong></td>
           <td>${targetNewPages} صفحات</td>
-          <td>${doneNewPages} صفحات</td>
-          <td>${score?.memorizationScore || 10} / 10</td>
+          <td>${doneNewPages} صفحات ${hasConsolidation || isPlanCompleted ? '• تثبيت وسرد ⭐' : ''}</td>
+          <td>${normMemScore} / 10 <span style="font-size: 9.5px; color: #78716c;">(${memScore} / ${memMax} نقطة)</span></td>
         </tr>
         <tr>
           <td><strong>المراجعة الصغرى</strong></td>
@@ -927,6 +949,32 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           </div>
         </div>
 
+        {/* Dedicated Consolidation Honor Badge when plan completed / consolidation session recorded */}
+        {(hasConsolidation || isPlanCompleted) && (
+          <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-amber-50 dark:from-emerald-950/30 dark:via-teal-950/20 dark:to-amber-950/20 rounded-3xl border-2 border-emerald-400/40 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-500 text-white flex items-center justify-center text-xl shadow-xs shrink-0">
+                ⭐
+              </div>
+              <div>
+                <div className="text-sm sm:text-base font-extrabold text-emerald-950 dark:text-emerald-200 font-quran flex items-center gap-2">
+                  <span>أتمت الخطة وتم تثبيت وسرد المقرّر بنجاح ⭐</span>
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 px-2 py-0.5 rounded-full font-sans font-bold">
+                    إنجاز استثنائي 🏆
+                  </span>
+                </div>
+                <p className="text-xs text-stone-600 dark:text-stone-300 mt-1">
+                  أكملت الطالبة مستهدف الحفظ الجديد بالكامل ({doneNewPages} / {targetNewPages} ص) وخُصصت بقية الجلسات للتثبيت والسرد اليومي مع الحفاظ على برنامج المراجعة الصغرى والتمكين مستقلاً تماماً.
+                </p>
+              </div>
+            </div>
+            <div className="shrink-0 text-center bg-white dark:bg-stone-900 px-4 py-2 rounded-2xl border border-emerald-200 dark:border-emerald-800 self-end sm:self-center">
+              <span className="text-[10px] text-stone-500 font-bold block">مستهدف الحفظ الجديد</span>
+              <span className="text-xs font-black text-emerald-700 dark:text-emerald-400">100% مكتمل ومثبت ✨</span>
+            </div>
+          </div>
+        )}
+
         {/* Dedicated Metric Card & Monthly Progress Bar: معدل الالتزام بمعايير التحضير والإتقان */}
         <div className="bg-white dark:bg-stone-900 rounded-3xl border-2 border-[#E8DFD8] dark:border-stone-800 p-5 shadow-xs space-y-4 hover:border-[#8E5364]/40 transition">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 dark:border-stone-800 pb-3">
@@ -1047,7 +1095,14 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             <div className="space-y-1.5 text-stone-600">
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>الحفظ الجديد المنجز (بشروط):</span>
-                <strong className="text-stone-900">{doneNewPages} من {targetNewPages} صفحات</strong>
+                <strong className="text-stone-900 flex items-center gap-1.5">
+                  <span>{doneNewPages} من {targetNewPages} صفحات</span>
+                  {(hasConsolidation || isPlanCompleted) && (
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 px-1.5 py-0.5 rounded-md font-bold">
+                      تثبيت وسرد ⭐
+                    </span>
+                  )}
+                </strong>
               </div>
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>المراجعة الصغرى المنجزة:</span>
@@ -1073,7 +1128,9 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               </div>
               <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900 items-center">
                 <span>درجة الحفظ والمراجعة:</span>
-                <span style={{ color: customPrimaryColor }}>{score?.memorizationScore} / {score?.memorizationMax} نقطة</span>
+                <span style={{ color: customPrimaryColor }}>
+                  {normMemScore} / 10 <span className="text-xs font-normal text-stone-500 font-mono">({score?.memorizationScore} / {score?.memorizationMax} نقطة)</span>
+                </span>
               </div>
             </div>
           </div>
@@ -1616,6 +1673,19 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                   </div>
                 </div>
 
+                {/* Consolidation Honor Banner in Preview */}
+                {(hasConsolidation || isPlanCompleted) && (
+                  <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-2.5 flex items-center justify-between text-xs text-emerald-900">
+                    <span className="font-bold flex items-center gap-1.5">
+                      <span>⭐</span>
+                      <span>أتمت الخطة وتم تثبيت وسرد المقرّر بنجاح ⭐</span>
+                    </span>
+                    <span className="text-[10px] bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                      مكتملة ومثبتة 🏆
+                    </span>
+                  </div>
+                )}
+
                 {/* Table Overview */}
                 <div className="border border-stone-200 rounded-xl overflow-hidden text-xs">
                   <table className="w-full text-right border-collapse">
@@ -1637,8 +1707,17 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                       <tr>
                         <td className="p-2.5 font-bold text-stone-900">الحفظ الجديد</td>
                         <td className="p-2.5">{targetNewPages} صفحات</td>
-                        <td className="p-2.5">{doneNewPages} صفحات</td>
-                        <td className="p-2.5 font-bold" style={{ color: customPrimaryColor }}>{score?.memorizationScore || 10} / 10</td>
+                        <td className="p-2.5">
+                          {doneNewPages} صفحات
+                          {(hasConsolidation || isPlanCompleted) && (
+                            <span className="mr-1.5 text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md font-bold">
+                              تثبيت وسرد ⭐
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-2.5 font-bold" style={{ color: customPrimaryColor }}>
+                          {normMemScore} / 10 <span className="text-[11px] font-normal text-stone-500 font-mono">({memScore} / {memMax} نقطة)</span>
+                        </td>
                       </tr>
                       <tr>
                         <td className="p-2.5 font-bold text-stone-900">المراجعة الصغرى</td>

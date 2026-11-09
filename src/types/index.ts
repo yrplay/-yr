@@ -279,6 +279,8 @@ export interface DailyRecord {
   tajweedErrorsCount: number;    // عدد الأخطاء التجويدية
   recitationScore: number;       // درجة التسميع المحسوبة
   preparationScore?: number;     // درجة معايير التحضير من 10
+  isConsolidationSession?: boolean; // جلسة تثبيت وسرد المقرّر
+  consolidationNotes?: string;
   
   // شروط الحفظ المتقن (دليل مشكاة الغيم)
   conditions: {

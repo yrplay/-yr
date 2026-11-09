@@ -247,6 +247,10 @@ export interface DailyRecord {
   // الدرجة الآلية لمعايير التحضير والإتقان من 10
   preparationScore?: number;
   
+  // جلسات تثبيت وسرد المقرّر بعد إتمام الخطة الشهرية
+  isConsolidationSession?: boolean;
+  consolidationNotes?: string;
+  
   // الخانات المستقلة للمراجعة الصغرى والتمكين
   minorRevisionPortion?: RevisionPortion;
   tamkeenRevisionPortion?: RevisionPortion;

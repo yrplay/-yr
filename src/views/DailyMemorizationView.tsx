@@ -257,6 +257,25 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     ? (modalStudentPlan.tamkeenRevision?.enabled ?? modalStudentPlan.revision?.enabled) !== false
     : true;
 
+  // فحص إتمام مستهدف الحفظ الجديد الشهري للطالبة المعروضة في نافذة الرصد
+  const modalStudentScore = useMemo(() => {
+    if (!modalStudent) return null;
+    return allStudentScores ? allStudentScores[modalStudent.id] : null;
+  }, [modalStudent, allStudentScores]);
+
+  const targetNewPages = useMemo(() => {
+    if (modalStudentPlan?.newMemorization?.targetPages !== undefined) {
+      return modalStudentPlan.newMemorization.targetPages;
+    }
+    return modalStudentScore?.newMemorizationPagesTarget ?? 8;
+  }, [modalStudentPlan, modalStudentScore]);
+
+  const doneNewPages = useMemo(() => {
+    return modalStudentScore?.newMemorizationPagesDone ?? 0;
+  }, [modalStudentScore]);
+
+  const isTargetCompleted = targetNewPages > 0 && doneNewPages >= targetNewPages;
+
   const studentStats = useMemo(() => {
     if (!studentRecords.length) {
       return { totalPages: 0, totalUnconditionedPages: 0, avgScore: 10, totalSessions: 0, totalMistakes: 0 };
@@ -364,6 +383,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     alerts: 0,
     tajweedErrors: 0,
     notes: '',
+    isConsolidation: false, // جلسة تثبيت وسرد المقرّر الشهري (تفعيل عند إتمام المستهدف الشهري)
 
     // المراجعة الصغرى (الربط القريب)
     minorFromSurah: 2,
@@ -451,6 +471,11 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     const studentPlan = (studentPlans || []).find(p => p.studentId === studentId && p.status === 'active')
       || (studentPlans || []).find(p => p.studentId === studentId);
 
+    const studentScore = allStudentScores ? allStudentScores[studentId] : null;
+    const targetPages = studentPlan?.newMemorization?.targetPages ?? studentScore?.newMemorizationPagesTarget ?? 8;
+    const donePages = studentScore?.newMemorizationPagesDone ?? 0;
+    const hasMetTarget = targetPages > 0 && donePages >= targetPages;
+
     const planNewEnabled = studentPlan ? studentPlan.newMemorization?.enabled !== false : true;
     const planMinorEnabled = studentPlan ? studentPlan.minorRevision?.enabled !== false : true;
     const planTamkeenEnabled = studentPlan
@@ -478,18 +503,20 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     setCriteriaCounts(initCounts);
 
     if (existing) {
+      const isConsolidation = existing.isConsolidationSession ?? (hasMetTarget && (existing.newMemorizationPages === 0 || existing.newPages === 0));
       setForm({
         newFromSurah: existing.newFromSurah ?? 2,
         newFromAyah: existing.newFromAyah ?? 1,
         newToSurah: existing.newToSurah ?? 2,
         newToAyah: existing.newToAyah ?? 15,
-        newPages: planNewEnabled ? (existing.newMemorizationPages ?? existing.newPages ?? 1) : 0,
+        newPages: isConsolidation ? 0 : (planNewEnabled ? (existing.newMemorizationPages ?? existing.newPages ?? 1) : 0),
         newWithConditions: true,
-        recitedPortion: existing.requiredPortionText ?? existing.recitedPortion ?? '',
+        recitedPortion: existing.requiredPortionText ?? existing.recitedPortion ?? (isConsolidation ? 'تثبيت وسرد المقرّر الشهري' : ''),
         hifzErrors: existing.memorizationMistakes ?? existing.hifzErrors ?? 0,
         alerts: existing.hintsCount ?? existing.alerts ?? 0,
         tajweedErrors: existing.tajweedErrorsCount ?? existing.tajweedErrors ?? 0,
         notes: existing.notes || '',
+        isConsolidation,
 
         minorFromSurah: existing.minorRevisionPortion?.surahNumber ?? existing.minorFromSurah ?? 2,
         minorFromAyah: existing.minorRevisionPortion?.fromAyah ?? existing.minorFromAyah ?? 1,
@@ -548,13 +575,16 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         newFromAyah: defFromA,
         newToSurah: defToS,
         newToAyah: defToA,
-        newPages: initialNewPages,
+        newPages: hasMetTarget ? 0 : initialNewPages,
         newWithConditions: true,
-        recitedPortion: planNewEnabled ? formatPortionText(defFromS, defFromA, defToS, defToA) : 'خطة الحفظ الجديد معطّلة لهذا الشهر',
+        recitedPortion: hasMetTarget
+          ? 'تثبيت وسرد المقرّر الشهري'
+          : (planNewEnabled ? formatPortionText(defFromS, defFromA, defToS, defToA) : 'خطة الحفظ الجديد معطّلة لهذا الشهر'),
         hifzErrors: 0,
         alerts: 0,
         tajweedErrors: 0,
         notes: '',
+        isConsolidation: hasMetTarget,
 
         minorFromSurah: minFromS,
         minorFromAyah: minFromA,
@@ -626,7 +656,9 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     const reciteCount = criteriaCounts['crit-recite'] ?? (activeCriteriaList[1] ? criteriaCounts[activeCriteriaList[1].id] : 0) ?? 0;
     const repeatCount = criteriaCounts['crit-repeat'] ?? (activeCriteriaList[2] ? criteriaCounts[activeCriteriaList[2].id] : 0) ?? 0;
 
-    const effectiveNewPages = isNewMemPlanEnabled ? Number(form.newPages || 0) : 0;
+    const effectiveNewPages = isNewMemPlanEnabled
+      ? (form.isConsolidation ? 0 : Number(form.newPages || 0))
+      : 0;
     const effectiveMinorPages = isMinorRevPlanEnabled ? Number(form.minorPages || 0) : 0;
     const effectiveMajorPages = isTamkeenRevPlanEnabled ? Number(form.majorPages || 0) : 0;
     const effectiveMinorDone = isMinorRevPlanEnabled ? form.minorDone : false;
@@ -646,7 +678,11 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       newMemorizationPages: effectiveNewPages,
       newMemorizationCompleted: isNewMemPlanEnabled,
       newMemorizationWithConditions: true,
-      requiredPortionText: isNewMemPlanEnabled ? form.recitedPortion : 'مراجعة فقط (الحفظ الجديد معطّل)',
+      isConsolidationSession: form.isConsolidation,
+      consolidationNotes: form.isConsolidation ? (form.notes || 'تثبيت وسرد المقرّر الشهري') : undefined,
+      requiredPortionText: form.isConsolidation
+        ? (form.recitedPortion || 'تثبيت وسرد المقرّر الشهري')
+        : (isNewMemPlanEnabled ? form.recitedPortion : 'مراجعة فقط (الحفظ الجديد معطّل)'),
       revisionCompleted: effectiveMinorDone || effectiveMajorDone,
       revisionPages: effectiveMinorPages + effectiveMajorPages,
       minorRevisionPortion: {
@@ -896,7 +932,13 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                       <div className="text-xs text-stone-500 text-right">
                         <span>الدرجة: <strong className="text-[#8E5364] font-bold"><span className="privacy-score-digit">{record.recitationScore}</span>/10</strong></span>
                         <span className="mx-1.5">•</span>
-                        <span>الأوجه: <strong className="text-stone-800 dark:text-stone-200"><span className="privacy-score-digit">{record.newMemorizationPages ?? 1}</span></strong></span>
+                        {record.isConsolidationSession ? (
+                          <span className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 px-2 py-0.5 rounded-md font-bold text-[10px]">
+                            تثبيت وسرد 🔄
+                          </span>
+                        ) : (
+                          <span>الأوجه: <strong className="text-stone-800 dark:text-stone-200"><span className="privacy-score-digit">{record.newMemorizationPages ?? 1}</span></strong></span>
+                        )}
                         <span className="mx-1.5">•</span>
                         <span>أخطاء: <strong className="text-rose-600"><span className="privacy-score-digit">{record.memorizationMistakes ?? 0}</span></strong></span>
                         <span className="mx-1.5">•</span>
@@ -1074,36 +1116,120 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
               {/* مقرر الحفظ الجديد (يتزامن مع تفعيل/تعطيل القسم في الخطة الشهرية) */}
               {isNewMemPlanEnabled ? (
                 <div className="p-3.5 bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-3">
+                  
+                  {/* خيارات إتمام الخطة المبكر: تثبيت وسرد المقرّر vs مواصلة حفظ جديد */}
+                  {(isTargetCompleted || form.isConsolidation) && (
+                    <div className="p-3 bg-gradient-to-r from-emerald-50 via-teal-50 to-amber-50 dark:from-emerald-950/40 dark:via-teal-950/30 dark:to-amber-950/30 rounded-2xl border-2 border-emerald-400/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                          <span>🏆</span>
+                          <span>أتمت الطالبة خطة الحفظ الشهري بنجاح ({doneNewPages} / {targetNewPages} ص)</span>
+                        </span>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 px-2 py-0.5 rounded-full font-bold">
+                          المستهدف 100% ✨
+                        </span>
+                      </div>
+
+                      <p className="text-[11px] text-stone-600 dark:text-stone-300 leading-relaxed">
+                        اختاري مسار جلسة اليوم لحل الأيام المتبقية في الشهر دون التأثير على حساب مراجعة التمكين أو المراجعة الصغرى:
+                      </p>
+
+                      {/* زرّي الاختيار الواضحين */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForm(prev => ({
+                              ...prev,
+                              isConsolidation: true,
+                              newPages: 0,
+                              recitedPortion: prev.recitedPortion && !prev.recitedPortion.includes('معطّل') ? prev.recitedPortion : 'تثبيت وسرد المقرّر الشهري'
+                            }));
+                          }}
+                          className={`p-2.5 rounded-xl text-right transition border cursor-pointer ${
+                            form.isConsolidation
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/20'
+                              : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-emerald-300'
+                          }`}
+                        >
+                          <div className="font-bold text-xs flex items-center justify-between">
+                            <span className="flex items-center gap-1">
+                              <span>🔄</span>
+                              <span>تثبيت وسرد المقرّر الشهري</span>
+                            </span>
+                            {form.isConsolidation && <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded">محدد ✓</span>}
+                          </div>
+                          <div className={`text-[10px] mt-1 leading-snug ${form.isConsolidation ? 'text-emerald-100' : 'text-stone-500'}`}>
+                            تثبيت الحفظ الجديد عند 100%، دون زيادته للمراجعة حفاظاً على دقة برنامجها، مع منح وسام شرفي بملف الإنجاز ⭐
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForm(prev => ({
+                              ...prev,
+                              isConsolidation: false,
+                              newPages: prev.newPages > 0 ? prev.newPages : 1
+                            }));
+                          }}
+                          className={`p-2.5 rounded-xl text-right transition border cursor-pointer ${
+                            !form.isConsolidation
+                              ? 'bg-[#8E5364] text-white border-[#8E5364] shadow-xs ring-2 ring-[#8E5364]/20'
+                              : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-[#8E5364]'
+                          }`}
+                        >
+                          <div className="font-bold text-xs flex items-center justify-between">
+                            <span className="flex items-center gap-1">
+                              <span>🌟</span>
+                              <span>مواصلة حفظ جديد (تجاوز المستهدف)</span>
+                            </span>
+                            {!form.isConsolidation && <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded">محدد ✓</span>}
+                          </div>
+                          <div className={`text-[10px] mt-1 leading-snug ${!form.isConsolidation ? 'text-[#F9ECEF]' : 'text-stone-500'}`}>
+                            للطالبات المتقدمات: زيادة عدد الأوجه المنجزة فعلياً فوق المستهدف كإنجاز وتجاوز معتمد 📈
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
                       <Bookmark className="w-3.5 h-3.5 text-[#8E5364]" />
-                      <span>مقرر الحفظ الجديد:</span>
+                      <span>{form.isConsolidation ? 'مقرر التثبيت والسرد المعتمد:' : 'مقرر الحفظ الجديد:'}</span>
                     </span>
                     
                     <div className="flex items-center gap-1.5 bg-[#FAF7F5] dark:bg-stone-800 px-2.5 py-1 rounded-xl border border-[#E2D5CC] dark:border-stone-700">
                       <span className="text-[11px] text-stone-500 font-bold">الأوجه المنجزة:</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="2"
-                        step="0.25"
-                        value={form.newPages}
-                        onChange={e => setForm({ ...form, newPages: Math.min(2, Math.max(0, parseFloat(e.target.value) || 0)) })}
-                        className="w-16 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364]"
-                      />
+                      {form.isConsolidation ? (
+                        <span className="px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-xs font-extrabold font-mono" title="الحفظ الجديد مثبت عند 100% دون زيادة صفحات المراجعة">
+                          0 ص (تثبيت وسرد 🔒)
+                        </span>
+                      ) : (
+                        <input
+                          type="number"
+                          min="0"
+                          max="5"
+                          step="0.25"
+                          value={form.newPages}
+                          onChange={e => setForm({ ...form, newPages: Math.min(5, Math.max(0, parseFloat(e.target.value) || 0)) })}
+                          className="w-16 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364]"
+                        />
+                      )}
                     </div>
                   </div>
 
                   {/* نص المقرر التسميعي - كتابة وتعديل يدوي */}
                   <div className="space-y-1">
                     <label className="block text-[11px] font-bold text-stone-600 dark:text-stone-400">
-                      المقرر الذي تم تسميعه:
+                      {form.isConsolidation ? 'المقرر الذي تم تثبيته وسرده اليوم:' : 'المقرر الذي تم تسميعه:'}
                     </label>
                     <input
                       type="text"
                       value={form.recitedPortion}
                       onChange={e => setForm({ ...form, recitedPortion: e.target.value })}
-                      placeholder="مثال: من سورة البقرة آية ١ إلى ٢٥"
+                      placeholder={form.isConsolidation ? 'مثال: سرد وتثبيت سورة البقرة من آية 1 إلى 50' : 'مثال: من سورة البقرة آية ١ إلى ٢٥'}
                       className="w-full px-3.5 py-2.5 bg-[#FAF7F5] dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 rounded-xl text-xs text-stone-800 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-[#8E5364]"
                     />
                   </div>
@@ -1805,9 +1931,15 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                                 </td>
                                 <td className="p-2.5 text-center font-mono font-bold">
                                   <div className="flex flex-col items-center justify-center gap-0.5">
-                                    <span className="text-[#8E5364] dark:text-[#E8BDC8]">
-                                      {r.newMemorizationPages ?? 1} ص
-                                    </span>
+                                    {r.isConsolidationSession ? (
+                                      <span className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 px-2 py-0.5 rounded-full text-[10px] font-sans font-bold">
+                                        تثبيت وسرد ⭐
+                                      </span>
+                                    ) : (
+                                      <span className="text-[#8E5364] dark:text-[#E8BDC8]">
+                                        {r.newMemorizationPages ?? 1} ص
+                                      </span>
+                                    )}
                                   </div>
                                 </td>
                                 <td className="p-2.5 text-center whitespace-nowrap">
