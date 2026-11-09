@@ -15,6 +15,7 @@ import {
   normalizeEntityIcon
 } from '../components/CircleIconLibrary';
 import { TrackDetailView } from './TrackDetailView';
+import { optimizeImageForStorage } from '../utils/imageOptimizer';
 
 const TRACK_EMOJIS = [
   '🪴', '🌱', '🌿', '🌴', '🌸', '📖', '🌟', '💎', '🕊️', '📜',
@@ -183,14 +184,15 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     setTrackModalOpen(true);
   };
 
-  const handleTrackLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTrackLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      setTrackForm(prev => ({ ...prev, logoUrl: ev.target?.result as string }));
-    };
-    reader.readAsDataURL(file);
+    try {
+      const dataUrl = await optimizeImageForStorage(file, 512, 512);
+      setTrackForm(prev => ({ ...prev, logoUrl: dataUrl }));
+    } catch (err: any) {
+      console.warn('Track logo optimization failed:', err);
+    }
   };
 
   const handleSaveTrack = async (e: React.FormEvent) => {

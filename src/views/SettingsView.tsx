@@ -12,6 +12,7 @@ import { AuditLogModal } from '../components/AuditLogModal';
 import { DeveloperDeploymentPanel } from '../components/DeveloperDeploymentPanel';
 import { defaultMasteryGuideConfig, hasFullAccess } from '../types';
 import { syncInstitutionLogoAsPWAAppIcon } from '../services/pwaIconSync';
+import { optimizeImageForStorage } from '../utils/imageOptimizer';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -96,56 +97,44 @@ export const SettingsView: React.FC = () => {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 3 * 1024 * 1024) {
-      showToast('حجم الشعار يجب أن يكون أقل من 3 ميجابايت', 'error');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const dataUrl = ev.target?.result as string;
+    try {
+      const dataUrl = await optimizeImageForStorage(file, 512, 512);
       setForm(prev => ({ ...prev, logoUrl: dataUrl }));
-      updateSettings({ logoUrl: dataUrl });
+      await updateSettings({ logoUrl: dataUrl });
       syncInstitutionLogoAsPWAAppIcon({ ...settings, ...form, logoUrl: dataUrl });
-      showToast('تم حفظ شعار المقرأة واعتماده كأيقونة لتثبيت التطبيق على الجهاز بنجاح 🖼️📲');
-    };
-    reader.readAsDataURL(file);
+      showToast('تم حفظ وتحديث شعار المقرأة في الشهادات وأيقونة التطبيق بنجاح 🖼️📲');
+    } catch (err: any) {
+      showToast('تعذر معالجة الشعار: ' + err.message, 'error');
+    }
   };
 
-  const handleSealImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSealImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      showToast('حجم صورة الختم يجب أن يكون أقل من 2 ميجابايت', 'error');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const dataUrl = ev.target?.result as string;
+    try {
+      const dataUrl = await optimizeImageForStorage(file, 400, 400);
       setForm(prev => ({ ...prev, sealImageUrl: dataUrl }));
-      updateSettings({ sealImageUrl: dataUrl });
-      showToast('تم حفظ صورة الختم المخصص بنجاح 💮');
-    };
-    reader.readAsDataURL(file);
+      await updateSettings({ sealImageUrl: dataUrl });
+      showToast('تم حفظ وتحديث صورة الختم المخصص بنجاح 💮');
+    } catch (err: any) {
+      showToast('تعذر معالجة الختم: ' + err.message, 'error');
+    }
   };
 
-  const handleLeaderSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLeaderSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      showToast('حجم صورة التوقيع يجب أن يكون أقل من 2 ميجابايت', 'error');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const dataUrl = ev.target?.result as string;
+    try {
+      const dataUrl = await optimizeImageForStorage(file, 400, 200);
       setForm(prev => ({ ...prev, leaderSignatureUrl: dataUrl }));
-      updateSettings({ leaderSignatureUrl: dataUrl });
-      showToast('تم حفظ توقيع قائدة المقرأة بنجاح ✍️');
-    };
-    reader.readAsDataURL(file);
+      await updateSettings({ leaderSignatureUrl: dataUrl });
+      showToast('تم حفظ وتحديث توقيع قائدة المقرأة بنجاح ✍️');
+    } catch (err: any) {
+      showToast('تعذر معالجة التوقيع: ' + err.message, 'error');
+    }
   };
 
   const applyLiveIdentity = (updated: Partial<typeof form>, skipPersist?: boolean) => {

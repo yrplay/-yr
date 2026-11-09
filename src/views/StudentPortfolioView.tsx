@@ -7,6 +7,8 @@ import {
   Eye, Edit3, Palette, X, RefreshCw, Upload, Trash2, Printer
 } from 'lucide-react';
 import { OfficialSeal } from '../components/OfficialSeal';
+import { optimizeImageForStorage } from '../utils/imageOptimizer';
+import { syncInstitutionLogoAsPWAAppIcon } from '../services/pwaIconSync';
 
 interface StudentPortfolioViewProps {
   initialStudentId?: string;
@@ -45,6 +47,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   const student = availableStudents.find(s => s.id === selectedStudentId) || availableStudents[0] || students[0];
   const circle = circles.find(c => c.id === student?.circleId);
   const track = tracks.find(t => t.id === student?.trackId) || tracks[0];
+  const effectiveLogoUrl = settings.logoUrl || track?.logoUrl || '';
   const score = allStudentScores[student?.id];
 
   // Specific student records
@@ -202,21 +205,36 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
     { name: 'العنابي الداكن', primary: '#831843', secondary: '#1E293B' }
   ];
 
-  const handleCustomSealUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCustomLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      showToast('حجم صورة الختم يجب أن يكون أقل من 2 ميجابايت', 'error');
-      return;
+    try {
+      const dataUrl = await optimizeImageForStorage(file, 512, 512);
+      await updateSettings({ logoUrl: dataUrl });
+      syncInstitutionLogoAsPWAAppIcon({ ...settings, logoUrl: dataUrl });
+      showToast('تم حفظ وتحديث شعار المقرأة في الشهادة وتثبيته فوراً 🖼️✨');
+    } catch (err: any) {
+      showToast('تعذر معالجة الشعار: ' + err.message, 'error');
     }
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const dataUrl = ev.target?.result as string;
-      updateSettings({ sealImageUrl: dataUrl, showOfficialSeal: true });
+  };
+
+  const handleRemoveCustomLogo = async () => {
+    await updateSettings({ logoUrl: '' });
+    syncInstitutionLogoAsPWAAppIcon({ ...settings, logoUrl: '' });
+    showToast('تم إزالة الشعار واستعادة الرمز الافتراضي 📖');
+  };
+
+  const handleCustomSealUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await optimizeImageForStorage(file, 400, 400);
+      await updateSettings({ sealImageUrl: dataUrl, showOfficialSeal: true });
       setShowSeal(true);
       showToast('تم حفظ وتركيب صورة الختم المخصص بنجاح 💮');
-    };
-    reader.readAsDataURL(file);
+    } catch (err: any) {
+      showToast('تعذر معالجة الختم: ' + err.message, 'error');
+    }
   };
 
   const handleRemoveCustomSeal = () => {
@@ -546,8 +564,8 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   <div class="cert-card">
     <div class="header">
       <div style="display: flex; align-items: center; gap: 16px;">
-        ${settings.logoUrl ? `
-          <img src="${settings.logoUrl}" alt="شعار مقرأة ${settings.name}" style="height: 65px; max-width: 130px; object-fit: contain; border-radius: 12px; background: white; padding: 2px; border: 1px solid #E8DFD8;" />
+        ${effectiveLogoUrl ? `
+          <img src="${effectiveLogoUrl}" alt="شعار مقرأة ${settings.name}" crossorigin="anonymous" style="height: 65px; max-width: 140px; object-fit: contain; border-radius: 12px; background: white; padding: 2px; border: 1px solid #E8DFD8;" />
         ` : `
           <div style="width: 58px; height: 58px; border-radius: 16px; background: ${customPrimaryColor}15; border: 1.5px solid ${customPrimaryColor}35; display: flex; align-items: center; justify-content: center; font-size: 28px;">
             📖
@@ -760,13 +778,24 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         printWindow.document.close();
         printWindow.focus();
         showToast('جاري فتح نافذة حفظ وتصدير الشهادة كـ PDF... اختر "حفظ بتنسيق PDF" (Save as PDF) 📄', 'success');
-        setTimeout(() => {
+
+        // انتظار اكتمال تحميل صورة الشعار والختم قبل الطباعة
+        const triggerPrint = () => {
           try {
+            printWindow.focus();
             printWindow.print();
           } catch (e) {
             console.log('PDF window print handled', e);
           }
-        }, 400);
+        };
+
+        if (printWindow.document.readyState === 'complete') {
+          setTimeout(triggerPrint, 350);
+        } else {
+          printWindow.onload = () => setTimeout(triggerPrint, 350);
+          // ضمان تشغيل الطباعة بعد مهلة كافية حتى لو لم يطلق المتصفح حدث onload
+          setTimeout(triggerPrint, 700);
+        }
       } else {
         // Fallback: download HTML so user has the certified document
         handleDownloadHtml();
@@ -852,20 +881,34 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         {/* Certificate Frame Pattern Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-[#E8DFD8] pb-6 text-center sm:text-right">
           <div className="flex items-center justify-center sm:justify-start gap-3">
-            {settings.logoUrl ? (
-              <img
-                src={settings.logoUrl}
-                alt="شعار المقرأة"
-                className="w-16 h-16 object-contain rounded-2xl border border-stone-200 p-1 bg-white shadow-2xs"
-              />
-            ) : (
-              <div
-                className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shadow-2xs"
-                style={{ backgroundColor: `${customPrimaryColor}15`, border: `1.5px solid ${customPrimaryColor}30` }}
+            <div className="relative group">
+              {effectiveLogoUrl ? (
+                <img
+                  src={effectiveLogoUrl}
+                  alt="شعار المقرأة"
+                  className="w-16 h-16 object-contain rounded-2xl border border-stone-200 p-1 bg-white shadow-2xs"
+                />
+              ) : (
+                <div
+                  className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shadow-2xs"
+                  style={{ backgroundColor: `${customPrimaryColor}15`, border: `1.5px solid ${customPrimaryColor}30` }}
+                >
+                  📖
+                </div>
+              )}
+              <label
+                className="absolute inset-0 bg-black/60 text-white rounded-2xl opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center text-[10px] font-bold cursor-pointer"
+                title="انقري لتغيير أو رفع شعار المقرأة للشهادة"
               >
-                📖
-              </div>
-            )}
+                <span>تغيير</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleCustomLogoUpload}
+                />
+              </label>
+            </div>
             <div>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-900 font-quran">
                 مقرأة {settings.name}
@@ -1511,7 +1554,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                     <span>توقيع القائدة</span>
                   </label>
 
-                  <label
+                    <label
                     style={{ backgroundColor: customPrimaryColor }}
                     className="px-2.5 py-1.5 hover:brightness-105 text-white rounded-xl cursor-pointer text-[11px] font-bold transition shadow-xs flex items-center gap-1"
                   >
@@ -1533,6 +1576,33 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                     >
                       <Trash2 className="w-3 h-3" />
                       <span>حذف الختم</span>
+                    </button>
+                  )}
+
+                  {/* زر رفع / تغيير شعار المقرأة للشهادة */}
+                  <label
+                    className="px-2.5 py-1.5 bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200 border border-stone-200 dark:border-stone-700 hover:border-[#8E5364] rounded-xl cursor-pointer text-[11px] font-bold transition shadow-xs flex items-center gap-1.5"
+                    title="تغيير أو رفع شعار المقرأة ليظهر في أعلى الشهادة والتقارير"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-[#8E5364]" />
+                    <span>{effectiveLogoUrl ? 'تغيير الشعار' : 'رفع شعار المقرأة'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleCustomLogoUpload}
+                    />
+                  </label>
+
+                  {effectiveLogoUrl && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveCustomLogo}
+                      className="px-2 py-1.5 bg-stone-100 hover:bg-rose-50 text-stone-500 hover:text-rose-700 border border-stone-200 hover:border-rose-200 rounded-xl cursor-pointer text-[10px] font-bold transition flex items-center gap-1"
+                      title="إزالة الشعار واستعادة الرمز الافتراضي"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>إزالة الشعار</span>
                     </button>
                   )}
                 </div>
@@ -1572,20 +1642,34 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                 {/* Header with Logo and editable Date */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-[#E8DFD8] pb-5 text-center sm:text-right">
                   <div className="flex items-center justify-center sm:justify-start gap-3">
-                    {settings.logoUrl ? (
-                      <img
-                        src={settings.logoUrl}
-                        alt="شعار المقرأة"
-                        className="w-14 h-14 object-contain rounded-2xl border border-stone-200 p-1 bg-white shadow-2xs"
-                      />
-                    ) : (
-                      <div
-                        className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-2xs"
-                        style={{ backgroundColor: `${customPrimaryColor}15`, border: `1.5px solid ${customPrimaryColor}30` }}
+                    <div className="relative group">
+                      {effectiveLogoUrl ? (
+                        <img
+                          src={effectiveLogoUrl}
+                          alt="شعار المقرأة"
+                          className="w-14 h-14 object-contain rounded-2xl border border-stone-200 p-1 bg-white shadow-2xs"
+                        />
+                      ) : (
+                        <div
+                          className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-2xs"
+                          style={{ backgroundColor: `${customPrimaryColor}15`, border: `1.5px solid ${customPrimaryColor}30` }}
+                        >
+                          📖
+                        </div>
+                      )}
+                      <label
+                        className="absolute inset-0 bg-black/60 text-white rounded-2xl opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center text-[9px] font-bold cursor-pointer"
+                        title="انقري لتغيير الشعار فوراً"
                       >
-                        📖
-                      </div>
-                    )}
+                        <span>تغيير</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleCustomLogoUpload}
+                        />
+                      </label>
+                    </div>
                     <div>
                       <h2 className="text-xl sm:text-2xl font-extrabold text-stone-900 font-quran">
                         مقرأة {settings.name}
