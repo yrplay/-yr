@@ -278,6 +278,7 @@ export interface DailyRecord {
   hintsCount: number;            // عدد التنبيهات
   tajweedErrorsCount: number;    // عدد الأخطاء التجويدية
   recitationScore: number;       // درجة التسميع المحسوبة
+  preparationScore?: number;     // درجة معايير التحضير من 10
   
   // شروط الحفظ المتقن (دليل مشكاة الغيم)
   conditions: {

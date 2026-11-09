@@ -77,6 +77,65 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
 
   const totalAbsentDays = (score?.absentUnexcusedCount || 0) + (score?.absentExcusedCount || 0);
 
+  // حساب معدل الالتزام بمعايير التحضير والإتقان (درجة من 10 ونسبة مئوية ووسام تقييمي)
+  const preparationMetrics = React.useMemo(() => {
+    const studentRecords = (dailyRecords || []).filter(r => r.studentId === student?.id);
+    if (studentRecords.length === 0) {
+      return {
+        averageScore: 10,
+        percentage: 100,
+        count: 0,
+        badgeText: 'ممتازة وملتزمة بالتحضير المتقن ⭐',
+        badgeColor: 'emerald' as const,
+        badgeBg: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+      };
+    }
+
+    const scores = studentRecords.map(r => {
+      if (typeof r.preparationScore === 'number') {
+        return r.preparationScore;
+      }
+      const listen = r.criteriaListenCount ?? (r.conditions?.listenedToReader ? 5 : 0);
+      const recite = r.criteriaReciteCount ?? (r.conditions?.recitedLooking ? 5 : 0);
+      const repeat = r.criteriaRepeatCount ?? (r.conditions?.masteryRepetition ? 10 : 0);
+      const listenPts = Math.min(3, (listen / 5) * 3);
+      const recitePts = Math.min(3, (recite / 5) * 3);
+      const repeatPts = Math.min(4, (repeat / 10) * 4);
+      return Math.min(10, Math.max(0, Math.round((listenPts + recitePts + repeatPts) * 10) / 10));
+    });
+
+    const sum = scores.reduce((acc, s) => acc + s, 0);
+    const avg = Math.round((sum / scores.length) * 10) / 10;
+    const pct = Math.min(100, Math.round((avg / 10) * 100));
+
+    let badgeText = '';
+    let badgeColor: 'emerald' | 'amber' | 'rose' = 'emerald';
+    let badgeBg = '';
+
+    if (avg >= 9) {
+      badgeText = 'ممتازة وملتزمة بالتحضير المتقن ⭐';
+      badgeColor = 'emerald';
+      badgeBg = 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
+    } else if (avg >= 7) {
+      badgeText = 'جيدة جداً - تحتاج زيادة التكرار 📈';
+      badgeColor = 'amber';
+      badgeBg = 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800';
+    } else {
+      badgeText = 'دون المستوى المطلوب - يلزم العناية بالاستماع والتكرار ⚠️';
+      badgeColor = 'rose';
+      badgeBg = 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800';
+    }
+
+    return {
+      averageScore: avg,
+      percentage: pct,
+      count: scores.length,
+      badgeText,
+      badgeColor,
+      badgeBg
+    };
+  }, [dailyRecords, student?.id]);
+
   // Dynamic Free Color Customization state
   const [customPrimaryColor, setCustomPrimaryColor] = useState<string>(settings.primaryColor || '#8E5364');
   const [customSecondaryColor, setCustomSecondaryColor] = useState<string>(settings.secondaryColor || '#2D5A43');
@@ -538,6 +597,11 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         <div style="font-size: 9px; color: #78716c; margin-top: 2px;">المستهدف: ${targetRevPages} ص</div>
       </div>
       <div class="stat-box">
+        <div class="stat-label">معايير التحضير</div>
+        <div class="stat-value" style="color: #047857;">${preparationMetrics.averageScore} / 10</div>
+        <div style="font-size: 9px; color: #78716c; margin-top: 2px;">نسبة ${preparationMetrics.percentage}% (${preparationMetrics.count} جلسات)</div>
+      </div>
+      <div class="stat-box">
         <div class="stat-label">الترتيب في الحلقة</div>
         <div class="stat-value" style="color: ${customPrimaryColor};">المركز ${score?.rankInCircle || 1}</div>
         <div style="font-size: 9px; color: #78716c; margin-top: 2px;">في حلقة ${circle?.name || ''}</div>
@@ -597,6 +661,12 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           <td>اختبار تمكيني شامل</td>
           <td>${studentExam ? studentExam.score : 95} درجة</td>
           <td>${studentExam ? studentExam.score : 95} / 100</td>
+        </tr>
+        <tr>
+          <td><strong>معايير التحضير والإتقان ⭐</strong></td>
+          <td>الاستماع (5 مرات) • التلاوة (5 مرات) • التكرار (10 مرات)</td>
+          <td>المعدل: ${preparationMetrics.averageScore} من 10 (${preparationMetrics.percentage}%)</td>
+          <td><span style="font-weight: bold; color: ${preparationMetrics.badgeColor === 'emerald' ? '#047857' : preparationMetrics.badgeColor === 'amber' ? '#b45309' : '#b91c1c'};">${preparationMetrics.badgeText}</span></td>
         </tr>
       </tbody>
     </table>
@@ -854,6 +924,91 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             <span className="text-[11px] text-white/70 block mt-1">
               مجموع النقاط: {score?.totalEarnedPoints} / {score?.totalPossiblePoints}
             </span>
+          </div>
+        </div>
+
+        {/* Dedicated Metric Card & Monthly Progress Bar: معدل الالتزام بمعايير التحضير والإتقان */}
+        <div className="bg-white dark:bg-stone-900 rounded-3xl border-2 border-[#E8DFD8] dark:border-stone-800 p-5 shadow-xs space-y-4 hover:border-[#8E5364]/40 transition">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 dark:border-stone-800 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-700 dark:text-amber-400 flex items-center justify-center text-lg font-bold shrink-0">
+                ⭐
+              </div>
+              <div>
+                <h3 className="font-bold text-stone-900 dark:text-stone-100 text-sm flex items-center gap-2 font-quran">
+                  <span>معدل الالتزام بمعايير التحضير والإتقان</span>
+                  <span className="text-[10px] text-stone-400 font-sans font-normal">(دليل مشكاة الغيم)</span>
+                </h3>
+                <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                  متوسط درجات التحضير اليومي من 10 ونسبة الإنجاز التراكمية الشهرية
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className={`px-3 py-1 rounded-full text-xs font-bold border ${preparationMetrics.badgeBg}`}>
+                {preparationMetrics.badgeText}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="bg-[#FAF7F5] dark:bg-stone-800/60 p-3.5 rounded-2xl border border-[#EFE8E2] dark:border-stone-700 text-center">
+              <span className="text-stone-400 block text-[10px] font-bold">متوسط درجة التحضير</span>
+              <div className="text-2xl font-black font-mono text-emerald-700 dark:text-emerald-400 mt-0.5">
+                {preparationMetrics.averageScore} <span className="text-xs text-stone-400 font-normal">/ 10</span>
+              </div>
+              <span className="text-[10px] text-stone-500 block mt-0.5">من إجمالي {preparationMetrics.count} جلسات تسميع</span>
+            </div>
+
+            <div className="bg-[#FAF7F5] dark:bg-stone-800/60 p-3.5 rounded-2xl border border-[#EFE8E2] dark:border-stone-700 text-center">
+              <span className="text-stone-400 block text-[10px] font-bold">نسبة الالتزام المئوية</span>
+              <div className="text-2xl font-black font-mono text-[#8E5364] dark:text-[#E8BDC8] mt-0.5">
+                {preparationMetrics.percentage}%
+              </div>
+              <span className="text-[10px] text-stone-500 block mt-0.5">وفق المعايير المستهدفة</span>
+            </div>
+
+            <div className="bg-[#FAF7F5] dark:bg-stone-800/60 p-3.5 rounded-2xl border border-[#EFE8E2] dark:border-stone-700 flex flex-col justify-center px-4">
+              <span className="text-stone-700 dark:text-stone-300 font-bold text-[10px] mb-1">تفاصيل المعايير اليومية:</span>
+              <div className="space-y-0.5 text-[10px] text-stone-600 dark:text-stone-400">
+                <div className="flex justify-between">
+                  <span>• الاستماع للمقرئ (5 مرات):</span>
+                  <strong className="text-emerald-700 dark:text-emerald-400">3 درجات</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span>• التلاوة نظراً (5 مرات):</span>
+                  <strong className="text-emerald-700 dark:text-emerald-400">3 درجات</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span>• التكرار المتقن (10 مرات):</span>
+                  <strong className="text-emerald-700 dark:text-emerald-400">4 درجات</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Monthly Progress Bar */}
+          <div className="space-y-1.5 pt-1">
+            <div className="flex justify-between text-xs font-bold text-stone-700 dark:text-stone-300">
+              <span className="flex items-center gap-1.5">
+                <span>مستوى الإنجاز والالتزام بالتحضير الشهري:</span>
+                <span className="text-stone-400 text-[11px] font-normal font-mono">({preparationMetrics.percentage}% من المستهدف)</span>
+              </span>
+              <span className="font-mono text-emerald-700 dark:text-emerald-400 font-bold">{preparationMetrics.averageScore} / 10</span>
+            </div>
+            <div className="w-full h-3.5 bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden p-0.5 border border-stone-200 dark:border-stone-700">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  preparationMetrics.averageScore >= 9
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
+                    : preparationMetrics.averageScore >= 7
+                    ? 'bg-gradient-to-r from-amber-500 to-emerald-500'
+                    : 'bg-gradient-to-r from-rose-500 to-amber-500'
+                }`}
+                style={{ width: `${Math.max(5, preparationMetrics.percentage)}%` }}
+              />
+            </div>
           </div>
         </div>
 
@@ -1450,6 +1605,11 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                     <span className="text-[9px] text-stone-400 block mt-0.5">المستهدف: {targetRevPages} ص</span>
                   </div>
                   <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
+                    <span className="text-[10px] text-stone-500 block">معايير التحضير</span>
+                    <strong className="text-sm font-bold text-emerald-700">{preparationMetrics.averageScore} / 10</strong>
+                    <span className="text-[9px] text-stone-400 block mt-0.5">نسبة {preparationMetrics.percentage}%</span>
+                  </div>
+                  <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
                     <span className="text-[10px] text-stone-500 block">الترتيب في الحلقة</span>
                     <strong className="text-sm font-bold" style={{ color: customPrimaryColor }}>المركز #{score?.rankInCircle || 1}</strong>
                     <span className="text-[9px] text-stone-400 block mt-0.5">حلقة {circle?.name}</span>
@@ -1517,6 +1677,14 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                         <td className="p-2.5">اختبار تمكيني شامل</td>
                         <td className="p-2.5">{studentExam ? studentExam.score : 95} درجة</td>
                         <td className="p-2.5 font-bold text-emerald-800">{studentExam ? studentExam.score : 95} / 100</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2.5 font-bold text-stone-900">معايير التحضير والإتقان ⭐</td>
+                        <td className="p-2.5">الاستماع (5) • التلاوة (5) • التكرار (10)</td>
+                        <td className="p-2.5">المعدل: {preparationMetrics.averageScore} من 10 ({preparationMetrics.percentage}%)</td>
+                        <td className="p-2.5 font-bold" style={{ color: preparationMetrics.badgeColor === 'emerald' ? '#047857' : preparationMetrics.badgeColor === 'amber' ? '#b45309' : '#b91c1c' }}>
+                          {preparationMetrics.badgeText}
+                        </td>
                       </tr>
                     </tbody>
                   </table>

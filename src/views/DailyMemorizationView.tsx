@@ -284,9 +284,9 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       return trackMastery.unifiedCriteria;
     }
     const list: Array<{ id: string; title: string; count: number; unit: string }> = [
-      { id: 'crit-listen', title: 'الاستماع للمقرئ', count: trackMastery?.listenToReciterTimes || 3, unit: 'مرات' },
+      { id: 'crit-listen', title: 'الاستماع للمقرئ', count: trackMastery?.listenToReciterTimes || 5, unit: 'مرات' },
       { id: 'crit-recite', title: 'التلاوة نظراً من المصحف', count: trackMastery?.reciteLookingTimes || 5, unit: 'مرات' },
-      { id: 'crit-repeat', title: 'التكرار المتقن للوجه', count: trackMastery?.masteryRepetitionTimes || 20, unit: 'مرة' }
+      { id: 'crit-repeat', title: 'التكرار المتقن للوجه', count: trackMastery?.masteryRepetitionTimes || 10, unit: 'مرات' }
     ];
     if (trackMastery?.customCriteria && Array.isArray(trackMastery.customCriteria)) {
       trackMastery.customCriteria.forEach((c, i) => {
@@ -403,6 +403,24 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     
     return Math.max(0, Math.round((baseScore - totalDeductions) * 100) / 100);
   }, [form.hifzErrors, form.alerts, form.tajweedErrors, baseScore, hifzDeduction, alertDeduction, tajweedDeduction]);
+
+  // حساب درجة التحضير اليومي الآلية من 10 (الاستماع 3 + التلاوة 3 + التكرار المتقن 4) مع الخصم النسبي التلقائي
+  const calculatedPrepScore = useMemo(() => {
+    const listenCount = criteriaCounts['crit-listen'] ?? (activeCriteriaList[0] ? criteriaCounts[activeCriteriaList[0].id] : 0) ?? 0;
+    const reciteCount = criteriaCounts['crit-recite'] ?? (activeCriteriaList[1] ? criteriaCounts[activeCriteriaList[1].id] : 0) ?? 0;
+    const repeatCount = criteriaCounts['crit-repeat'] ?? (activeCriteriaList[2] ? criteriaCounts[activeCriteriaList[2].id] : 0) ?? 0;
+
+    const listenTarget = (activeCriteriaList.find(c => c.id === 'crit-listen' || c.title.includes('استماع'))?.count) || 5;
+    const reciteTarget = (activeCriteriaList.find(c => c.id === 'crit-recite' || c.title.includes('تلاوة'))?.count) || 5;
+    const repeatTarget = (activeCriteriaList.find(c => c.id === 'crit-repeat' || c.title.includes('تكرار'))?.count) || 10;
+
+    const listenPts = Math.min(3, (listenCount / listenTarget) * 3);
+    const recitePts = Math.min(3, (reciteCount / reciteTarget) * 3);
+    const repeatPts = Math.min(4, (repeatCount / repeatTarget) * 4);
+
+    const sum = listenPts + recitePts + repeatPts;
+    return Math.min(10, Math.max(0, Math.round(sum * 10) / 10));
+  }, [criteriaCounts, activeCriteriaList]);
 
   // تصفية الطالبات
   const circleStudents = useMemo(() => {
@@ -621,6 +639,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       date: selectedDate,
       dayName: getHijriParts(selectedDate).weekday,
       recitationScore: calculatedNewScore,
+      preparationScore: calculatedPrepScore,
       memorizationMistakes: form.hifzErrors,
       hintsCount: form.alerts,
       tajweedErrorsCount: form.tajweedErrors,
@@ -882,6 +901,12 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                         <span>أخطاء: <strong className="text-rose-600"><span className="privacy-score-digit">{record.memorizationMistakes ?? 0}</span></strong></span>
                         <span className="mx-1.5">•</span>
                         <span>تنبيهات: <strong className="text-amber-600"><span className="privacy-score-digit">{record.hintsCount ?? 0}</span></strong></span>
+                        {typeof record.preparationScore === 'number' && (
+                          <>
+                            <span className="mx-1.5">•</span>
+                            <span className="text-emerald-700 dark:text-emerald-400 font-bold">التحضير: <strong><span className="privacy-score-digit">{record.preparationScore}</span>/10</strong></span>
+                          </>
+                        )}
                       </div>
                       <div className="px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-400 font-bold text-xs">
                         تم الرصد ✅
@@ -1292,6 +1317,43 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                 >
                   <span>{isEditingMastery ? 'إغلاق ✕' : '⚙️ تعديل أو إضافة معايير'}</span>
                 </button>
+              </div>
+
+              {/* بطاقة حساب درجة التحضير اليومي الآلية من 10 مع التحديث الحي المباشر */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-l from-emerald-50 via-[#FAF7F5] to-amber-50 dark:from-emerald-950/30 dark:via-stone-900 dark:to-amber-950/30 border border-emerald-300 dark:border-emerald-700/60 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-base">⭐</span>
+                    <span className="text-xs font-bold text-stone-800 dark:text-stone-100">
+                      درجة التحضير اليومي الآلية:
+                    </span>
+                    <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full ${
+                      calculatedPrepScore >= 9
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                        : calculatedPrepScore >= 7
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                        : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                    }`}>
+                      {calculatedPrepScore >= 9
+                        ? 'ممتازة وملتزمة بالتحضير المتقن ⭐'
+                        : calculatedPrepScore >= 7
+                        ? 'جيدة جداً - تحتاج زيادة التكرار 📈'
+                        : 'دون المستوى المطلوب - يلزم العناية بالاستماع والتكرار ⚠️'}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-stone-500 dark:text-stone-400">
+                    الاستماع للمقرئ (3 درجات) • التلاوة نظراً (3 درجات) • التكرار المتقن للوجه (4 درجات)
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="text-center bg-white dark:bg-stone-800 px-3.5 py-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800 shadow-2xs">
+                    <span className="block text-[9px] text-stone-400 font-bold">الدرجة من 10</span>
+                    <span className="text-2xl font-black font-mono text-emerald-700 dark:text-emerald-400">
+                      {calculatedPrepScore} <span className="text-xs text-stone-400 font-normal">/ 10</span>
+                    </span>
+                  </div>
+                </div>
               </div>
 
               {/* لوحة التعديل الموحدة لكافة المعايير (كلها زي بعض) */}

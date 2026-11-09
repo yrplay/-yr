@@ -6,7 +6,14 @@ import {
   Calendar, CheckCircle2, AlertCircle, Trash2
 } from 'lucide-react';
 import { hasFullAccess, StudentStatus } from '../types';
-import { formatHijriShort, HijriDateNavigationBar } from '../utils/hijriDate';
+import {
+  formatHijriShort,
+  formatHijriDate,
+  HIJRI_MONTHS,
+  HIJRI_YEARS,
+  parseHijriDateParts,
+  formatHijriFromParts
+} from '../utils/hijriDate';
 
 interface StudentsViewProps {
   onSelectStudent: (studentId: string) => void;
@@ -47,7 +54,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
     circleId: '',
     status: 'active' as StudentStatus,
     notes: '',
-    joinDate: new Date().toISOString().split('T')[0]
+    joinDate: '1448-01-01'
   });
 
   // Automatically open modal when quickModalAction is triggered
@@ -95,7 +102,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
         circleId: student.circleId,
         status: student.status,
         notes: student.notes || '',
-        joinDate: student.joinDate || new Date().toISOString().split('T')[0]
+        joinDate: student.joinDate || '1448-01-01'
       });
     } else {
       const defaultTrackId = (selectedTrackId && selectedTrackId !== 'all') ? selectedTrackId : (tracks[0]?.id || 't-1');
@@ -110,7 +117,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
         circleId: availableCirclesInTrack[0]?.id || circles[0]?.id || '',
         status: 'active',
         notes: '',
-        joinDate: new Date().toISOString().split('T')[0]
+        joinDate: '1448-01-01'
       });
     }
     setStudentModalOpen(true);
@@ -514,12 +521,98 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">تاريخ الانضمام (تقويم أم القرى)</label>
-                  <HijriDateNavigationBar
-                    selectedDate={studentForm.joinDate}
-                    onChangeDate={date => setStudentForm({ ...studentForm, joinDate: date })}
-                    compact
-                  />
+                  <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1">
+                    تاريخ الانضمام (تقويم أم القرى الهجري)
+                  </label>
+                  {(() => {
+                    const parts = parseHijriDateParts(studentForm.joinDate);
+                    const selectedYear = parts.year || 1448;
+                    const selectedMonth = parts.month || 1;
+                    const selectedDay = parts.day || 1;
+
+                    return (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-3 gap-2">
+                          {/* 1. السنة الهجرية (1440 إلى 1455 هـ، افتراضي 1448 هـ) */}
+                          <div>
+                            <label className="block text-[10px] text-stone-500 dark:text-stone-400 mb-1 font-bold">
+                              السنة:
+                            </label>
+                            <select
+                              value={selectedYear}
+                              onChange={e => {
+                                const newYear = Number(e.target.value);
+                                setStudentForm(prev => ({
+                                  ...prev,
+                                  joinDate: formatHijriFromParts(newYear, selectedMonth, selectedDay)
+                                }));
+                              }}
+                              className="w-full px-2 py-2 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-bold bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-100 outline-hidden focus:border-[#8E5364]"
+                            >
+                              {HIJRI_YEARS.map(yr => (
+                                <option key={yr} value={yr}>
+                                  {yr} هـ
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* 2. الشهر الهجري (12 شهر) */}
+                          <div>
+                            <label className="block text-[10px] text-stone-500 dark:text-stone-400 mb-1 font-bold">
+                              الشهر:
+                            </label>
+                            <select
+                              value={selectedMonth}
+                              onChange={e => {
+                                const newMonth = Number(e.target.value);
+                                setStudentForm(prev => ({
+                                  ...prev,
+                                  joinDate: formatHijriFromParts(selectedYear, newMonth, selectedDay)
+                                }));
+                              }}
+                              className="w-full px-2 py-2 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-bold bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-100 outline-hidden focus:border-[#8E5364]"
+                            >
+                              {HIJRI_MONTHS.map(m => (
+                                <option key={m.number} value={m.number}>
+                                  {m.number}. {m.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* 3. اليوم (1 إلى 30) */}
+                          <div>
+                            <label className="block text-[10px] text-stone-500 dark:text-stone-400 mb-1 font-bold">
+                              اليوم:
+                            </label>
+                            <select
+                              value={selectedDay}
+                              onChange={e => {
+                                const newDay = Number(e.target.value);
+                                setStudentForm(prev => ({
+                                  ...prev,
+                                  joinDate: formatHijriFromParts(selectedYear, selectedMonth, newDay)
+                                }));
+                              }}
+                              className="w-full px-2 py-2 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-bold bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-100 outline-hidden focus:border-[#8E5364]"
+                            >
+                              {Array.from({ length: 30 }, (_, i) => i + 1).map(d => (
+                                <option key={d} value={d}>
+                                  {d}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center justify-between bg-[#FAF7F5] dark:bg-stone-800/60 px-3 py-1.5 rounded-xl border border-stone-200/60 dark:border-stone-700/60">
+                          <span>التاريخ المعتمد: <strong className="text-stone-800 dark:text-stone-200">{formatHijriDate(studentForm.joinDate)}</strong></span>
+                          <span className="text-[10px] font-bold text-[#8E5364] dark:text-[#E8BDC8]">تقويم أم القرى 📅</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 

@@ -3,6 +3,23 @@ import { Calendar, ChevronRight, ChevronLeft } from 'lucide-react';
 
 export const HIJRI_LOCALE = 'ar-SA-u-ca-islamic-umalqura';
 
+export const HIJRI_MONTHS = [
+  { number: 1, name: 'المحرم' },
+  { number: 2, name: 'صفر' },
+  { number: 3, name: 'ربيع الأول' },
+  { number: 4, name: 'ربيع الآخر' },
+  { number: 5, name: 'جمادى الأولى' },
+  { number: 6, name: 'جمادى الآخرة' },
+  { number: 7, name: 'رجب' },
+  { number: 8, name: 'شعبان' },
+  { number: 9, name: 'رمضان' },
+  { number: 10, name: 'شوال' },
+  { number: 11, name: 'ذو القعدة' },
+  { number: 12, name: 'ذو الحجة' }
+];
+
+export const HIJRI_YEARS = Array.from({ length: 16 }, (_, i) => 1440 + i); // 1440 to 1455
+
 const parseDateInput = (input?: string | Date | number): Date | null => {
   if (!input) return null;
   if (input instanceof Date) {
@@ -32,10 +49,26 @@ export const formatHijriDate = (
   options?: { includeWeekday?: boolean; short?: boolean }
 ): string => {
   if (!input) return '—';
+  const str = String(input).trim();
   // If already a formatted Hijri string (contains Arabic letters and no ISO pattern), return as is
-  if (typeof input === 'string' && !/^\d{4}-\d{2}-\d{2}/.test(input.trim()) && /[\u0600-\u06FF]/.test(input)) {
-    return input;
+  if (!/^\d{4}-\d{2}-\d{2}/.test(str) && /[\u0600-\u06FF]/.test(str)) {
+    return str;
   }
+
+  // Handle pure Hijri YYYY-MM-DD string (where YYYY is between 1300 and 1600 e.g. 1440-1455)
+  const hijriIsoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (hijriIsoMatch) {
+    const y = Number(hijriIsoMatch[1]);
+    const m = Number(hijriIsoMatch[2]);
+    const d = Number(hijriIsoMatch[3]);
+    if (y >= 1300 && y <= 1600) {
+      const mon = HIJRI_MONTHS.find(monItem => monItem.number === m);
+      const monName = mon ? mon.name : `شهر ${m}`;
+      const toAr = (n: number) => n.toLocaleString('ar-SA');
+      return `${toAr(d)} ${monName} ${toAr(y)} هـ`;
+    }
+  }
+
   const date = parseDateInput(input);
   if (!date) return String(input);
 
@@ -146,6 +179,69 @@ export const getHijriParts = (input?: string | Date | number): {
       weekLabel: 'الأسبوع الأول'
     };
   }
+};
+
+/**
+ * Parses any date (Hijri YYYY-MM-DD, Gregorian ISO, or formatted Arabic string) into Hijri year, month, day
+ */
+export const parseHijriDateParts = (input?: string | Date | number): { year: number; month: number; day: number } => {
+  if (!input) {
+    return { year: 1448, month: 1, day: 1 };
+  }
+  const str = String(input).trim();
+  const hijriIsoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (hijriIsoMatch) {
+    const y = Number(hijriIsoMatch[1]);
+    const m = Number(hijriIsoMatch[2]);
+    const d = Number(hijriIsoMatch[3]);
+    if (y >= 1300 && y <= 1600) {
+      return {
+        year: y,
+        month: Math.min(12, Math.max(1, m)),
+        day: Math.min(30, Math.max(1, d))
+      };
+    }
+  }
+
+  // If text contains arabic month name and hijri year
+  const normalized = str.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
+  const yearMatch = normalized.match(/(14\d{2})/);
+  const dayMatch = normalized.match(/^(\d{1,2})[\s/]|[\s/](\d{1,2})[\s/]/);
+  let foundMonth = 1;
+  HIJRI_MONTHS.forEach(m => {
+    if (str.includes(m.name)) {
+      foundMonth = m.number;
+    }
+  });
+  if (yearMatch) {
+    const y = Number(yearMatch[1]);
+    const d = dayMatch ? Number(dayMatch[1] || dayMatch[2]) : 1;
+    return {
+      year: y,
+      month: foundMonth,
+      day: Math.min(30, Math.max(1, d))
+    };
+  }
+
+  try {
+    const parts = getHijriParts(input);
+    return {
+      year: parts.year || 1448,
+      month: parts.month || 1,
+      day: parts.day || 1
+    };
+  } catch {
+    return { year: 1448, month: 1, day: 1 };
+  }
+};
+
+/**
+ * Returns a standardized Hijri ISO format YYYY-MM-DD
+ */
+export const formatHijriFromParts = (year: number, month: number, day: number): string => {
+  const m = String(month).padStart(2, '0');
+  const d = String(day).padStart(2, '0');
+  return `${year}-${m}-${d}`;
 };
 
 /**

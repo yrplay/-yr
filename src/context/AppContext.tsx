@@ -71,6 +71,9 @@ export interface StudentScoreSummary {
   rankInTrack: number;
   hasUnrecordedLogs: boolean;
   hasFrequentAbsence: boolean;
+  preparationScoreAverage?: number;
+  preparationScoreRate?: number;
+  preparationBadgeText?: string;
 }
 
 interface AppContextType {
@@ -3694,6 +3697,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const matchedScale = scale.find(s => finalPercentage >= s.minPercentage) || scale[scale.length - 1];
 
+    const prepScores = sDaily.map(dr => {
+      if (typeof dr.preparationScore === 'number') {
+        return dr.preparationScore;
+      }
+      const listen = dr.criteriaListenCount ?? (dr.conditions?.listenedToReader ? 5 : 0);
+      const recite = dr.criteriaReciteCount ?? (dr.conditions?.recitedLooking ? 5 : 0);
+      const repeat = dr.criteriaRepeatCount ?? (dr.conditions?.masteryRepetition ? 10 : 0);
+      const listenPts = Math.min(3, (listen / 5) * 3);
+      const recitePts = Math.min(3, (recite / 5) * 3);
+      const repeatPts = Math.min(4, (repeat / 10) * 4);
+      return Math.min(10, Math.max(0, Math.round((listenPts + recitePts + repeatPts) * 10) / 10));
+    });
+    const prepSum = prepScores.reduce((acc, s) => acc + s, 0);
+    const prepAvg = prepScores.length > 0 ? Math.round((prepSum / prepScores.length) * 10) / 10 : 10;
+    const prepRate = Math.min(100, Math.round((prepAvg / 10) * 100));
+    const prepBadge = prepAvg >= 9
+      ? 'ممتازة وملتزمة بالتحضير المتقن ⭐'
+      : prepAvg >= 7
+      ? 'جيدة جداً - تحتاج زيادة التكرار 📈'
+      : 'دون المستوى المطلوب - يلزم العناية بالاستماع والتكرار ⚠️';
+
     return {
       studentId,
       attendanceScore: Number(attendanceScore.toFixed(1)),
@@ -3737,7 +3761,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       rankInCircle: 1,
       rankInTrack: 1,
       hasUnrecordedLogs: completedDailyRecords.length === 0,
-      hasFrequentAbsence: absentUnexcusedCount >= 2
+      hasFrequentAbsence: absentUnexcusedCount >= 2,
+      preparationScoreAverage: prepAvg,
+      preparationScoreRate: prepRate,
+      preparationBadgeText: prepBadge
     };
   };
 
@@ -3885,7 +3912,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       rankInCircle: 1,
       rankInTrack: 1,
       hasUnrecordedLogs: true,
-      hasFrequentAbsence: false
+      hasFrequentAbsence: false,
+      preparationScoreAverage: 10,
+      preparationScoreRate: 100,
+      preparationBadgeText: 'ممتازة وملتزمة بالتحضير المتقن ⭐'
     };
   };
 

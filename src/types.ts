@@ -244,6 +244,9 @@ export interface DailyRecord {
   tajweedErrorsCount: number;
   recitationScore: number;
   
+  // الدرجة الآلية لمعايير التحضير والإتقان من 10
+  preparationScore?: number;
+  
   // الخانات المستقلة للمراجعة الصغرى والتمكين
   minorRevisionPortion?: RevisionPortion;
   tamkeenRevisionPortion?: RevisionPortion;
