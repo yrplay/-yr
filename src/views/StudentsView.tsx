@@ -265,15 +265,15 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                 return (
                   <tr key={student.id} className="hover:bg-[#FCF9FA] transition group">
                     <td className="p-3.5 font-mono text-[11px] font-bold text-stone-500">
-                      {student.code}
+                      <span className="privacy-phone">{student.code}</span>
                     </td>
 
                     <td className="p-3.5">
                       <div className="font-bold text-stone-900 text-sm group-hover:text-[#8E5364] transition">
-                        {student.name}
+                        <span className="privacy-student-name">{student.name}</span>
                       </div>
                       <div className="text-[11px] text-stone-400">
-                        {student.phone} {student.joinDate ? `• انضمت: ${formatHijriShort(student.joinDate)}` : ''}
+                        <span className="privacy-phone">{student.phone}</span> {student.joinDate ? `• انضمت: ${formatHijriShort(student.joinDate)}` : ''}
                       </div>
                     </td>
 
@@ -287,11 +287,11 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                         <div className="flex items-center gap-1.5">
                           <span className="inline-flex items-center gap-1 bg-[#F5ECE8] text-[#7A4B37] px-2.5 py-1 rounded-full text-[11px] font-medium">
                             <span>🤝</span>
-                            <span>{student.partnerStudentName}</span>
+                            <span className="privacy-student-name">{student.partnerStudentName}</span>
                           </span>
                           <button
                             onClick={() => handleOpenPartnerModal(student)}
-                            className="text-stone-400 hover:text-stone-700 p-1"
+                            className="text-stone-400 hover:text-stone-700 p-1 cursor-pointer"
                             title="تغيير الرفيقة"
                           >
                             <Edit className="w-3 h-3" />
@@ -300,7 +300,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                       ) : (
                         <button
                           onClick={() => handleOpenPartnerModal(student)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-100 hover:bg-[#F5ECE8] text-stone-600 hover:text-[#7A4B37] text-[11px] font-medium transition"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-100 hover:bg-[#F5ECE8] text-stone-600 hover:text-[#7A4B37] text-[11px] font-medium transition cursor-pointer"
                         >
                           <HeartHandshake className="w-3.5 h-3.5" />
                           <span>تعيين رفيقة</span>
@@ -310,26 +310,28 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 
                     <td className="p-3.5">
                       <div className="font-semibold text-stone-800">
-                        {score?.newMemorizationPagesDone} / {score?.newMemorizationPagesTarget} ص
+                        <span className="privacy-score-digit">{score?.newMemorizationPagesDone}</span> / {score?.newMemorizationPagesTarget} ص
                       </div>
                       <div className="text-[10px] text-stone-400">
-                        مراجعة: {score?.revisionPagesDone} ص
+                        مراجعة: <span className="privacy-score-digit">{score?.revisionPagesDone}</span> ص
                       </div>
                     </td>
 
                     <td className="p-3.5">
-                      <div className="font-bold text-[#2D5A43]">{score?.attendanceRate}%</div>
+                      <div className="font-bold text-[#2D5A43]">
+                        <span className="privacy-score-digit">{score?.attendanceRate}%</span>
+                      </div>
                       <div className="text-[10px] text-stone-400">
-                        {score?.earlyPrepCount} مبكر ⭐
+                        <span className="privacy-score-digit">{score?.earlyPrepCount}</span> مبكر ⭐
                       </div>
                     </td>
 
                     <td className="p-3.5">
                       <div className="font-extrabold text-stone-900 text-sm">
-                        {score?.finalPercentage}%
+                        <span className="privacy-score-digit">{score?.finalPercentage}%</span>
                       </div>
                       <div className="text-[10px] text-stone-400">
-                        {score?.totalEarnedPoints} / {score?.totalPossiblePoints} نقطة
+                        <span className="privacy-score-digit">{score?.totalEarnedPoints}</span> / {score?.totalPossiblePoints} نقطة
                       </div>
                     </td>
 

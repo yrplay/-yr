@@ -591,7 +591,7 @@ export const StaffView: React.FC = () => {
                           </div>
                           <div>
                             <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-stone-900 text-xs sm:text-sm">{user.name}</span>
+                              <span className="font-bold text-stone-900 text-xs sm:text-sm privacy-teacher-name">{user.name}</span>
                               {(isDevAccount || isProtectedOwnerFromOther) && (
                                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-stone-100 text-stone-600 border border-stone-200">
                                   <Lock className="w-2.5 h-2.5 text-stone-400" />
@@ -622,7 +622,7 @@ export const StaffView: React.FC = () => {
                           </span>
                         ) : (
                           <div className="flex items-center gap-1.5">
-                            <span className="truncate max-w-[170px]">
+                            <span className="truncate max-w-[170px] privacy-email">
                               {user.email}
                             </span>
                             <button
@@ -645,7 +645,7 @@ export const StaffView: React.FC = () => {
                         {isProtectedUser ? (
                           <span className="text-stone-400 text-xs">محمي 🔒</span>
                         ) : (
-                          user.phone || '—'
+                          <span className="privacy-phone">{user.phone || '—'}</span>
                         )}
                       </td>
 
@@ -797,7 +797,7 @@ export const StaffView: React.FC = () => {
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <h3 className="font-bold text-stone-900 text-sm">{user.name}</h3>
+                        <h3 className="font-bold text-stone-900 text-sm privacy-teacher-name">{user.name}</h3>
                         {(isDevAccount || isProtectedOwnerFromOther) && (
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-stone-100 text-stone-600 border border-stone-200">
                             <Lock className="w-2.5 h-2.5 text-stone-400" />
@@ -830,7 +830,7 @@ export const StaffView: React.FC = () => {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 truncate">
                           <Mail className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                          <span className="text-[11px] font-mono truncate">{user.email}</span>
+                          <span className="text-[11px] font-mono truncate privacy-email">{user.email}</span>
                         </div>
                         <button
                           type="button"
@@ -847,7 +847,7 @@ export const StaffView: React.FC = () => {
                       {user.phone && (
                         <div className="flex items-center gap-2">
                           <Phone className="w-3.5 h-3.5 text-stone-400" />
-                          <span className="text-[11px] font-mono">{user.phone}</span>
+                          <span className="text-[11px] font-mono privacy-phone">{user.phone}</span>
                         </div>
                       )}
                     </>

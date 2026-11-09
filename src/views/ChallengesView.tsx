@@ -696,7 +696,7 @@ export const ChallengesView: React.FC = () => {
                     <div className="flex items-start justify-between gap-1.5 mb-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-xs text-stone-900 truncate block">
+                          <span className="font-bold text-xs text-stone-900 truncate block privacy-student-name">
                             {student.name}
                           </span>
                         </div>
@@ -705,7 +705,7 @@ export const ChallengesView: React.FC = () => {
                           {student.partnerStudentName && (
                             <>
                               <span>•</span>
-                              <span className="text-[#7A4B37] font-semibold truncate">🤝 {student.partnerStudentName}</span>
+                              <span className="text-[#7A4B37] font-semibold truncate">🤝 <span className="privacy-student-name">{student.partnerStudentName}</span></span>
                             </>
                           )}
                         </div>
@@ -732,7 +732,7 @@ export const ChallengesView: React.FC = () => {
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="text-stone-500 font-medium">مجموع نقاط التحدي:</span>
                         <div className="flex items-center gap-1">
-                          <span className="font-extrabold text-sm text-stone-900">
+                          <span className="font-extrabold text-sm text-stone-900 privacy-score-digit">
                             {totalPoints}
                           </span>
                           <span className="text-stone-400 text-[10px]">/ {maxPoints}</span>
@@ -841,7 +841,7 @@ export const ChallengesView: React.FC = () => {
                       <td className="p-3.5 font-semibold text-stone-400">{idx + 1}</td>
                       <td className="p-3.5 font-bold text-stone-900">
                         <div className="flex items-center gap-1.5">
-                          <span>{student.name}</span>
+                          <span className="privacy-student-name">{student.name}</span>
                           {isAwarded && (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold border border-emerald-200">
                               <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-500" />
@@ -854,7 +854,7 @@ export const ChallengesView: React.FC = () => {
                       <td className="p-3.5">
                         {student.partnerStudentName ? (
                           <span className="inline-flex items-center gap-1 bg-[#F5ECE8] text-[#7A4B37] px-2 py-0.5 rounded-full text-[11px] font-semibold">
-                            <span>🤝</span> {student.partnerStudentName}
+                            <span>🤝</span> <span className="privacy-student-name">{student.partnerStudentName}</span>
                           </span>
                         ) : (
                           <span className="text-stone-300">غير معينة</span>
@@ -917,7 +917,7 @@ export const ChallengesView: React.FC = () => {
                         {sub ? (
                           <div className="space-y-1">
                             <div className="flex items-center gap-1">
-                              <span className="font-extrabold text-sm text-stone-900">
+                              <span className="font-extrabold text-sm text-stone-900 privacy-score-digit">
                                 {sub.totalPointsEarned}
                               </span>
                               <span className="text-[10px] text-stone-400">/ {maxPoints}</span>
@@ -937,7 +937,7 @@ export const ChallengesView: React.FC = () => {
                       </td>
 
                       <td className="p-3.5 text-stone-600 max-w-xs">
-                        <div className="truncate">{sub?.teacherNotes || '—'}</div>
+                        <div className="truncate privacy-text-blur">{sub?.teacherNotes || '—'}</div>
                         {(sub?.updatedAt || sub?.evaluatedAt) && (
                           <div className="text-[10px] text-stone-400 mt-0.5 flex items-center gap-1">
                             <Clock className="w-2.5 h-2.5 text-[#8E5364]" />
@@ -984,7 +984,7 @@ export const ChallengesView: React.FC = () => {
               return (
                 <div key={student.id} className="p-4 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2] space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-stone-500 font-mono">{student.code}</span>
+                    <span className="text-xs font-bold text-stone-500 font-mono privacy-phone">{student.code}</span>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FAF0F3] text-[#8E5364] font-semibold">
                       {circle?.name}
                     </span>
@@ -997,12 +997,12 @@ export const ChallengesView: React.FC = () => {
                     title="انقري لفتح كشف سجل الثنائية والمراجعة المشتركة 📜"
                   >
                     <div className="text-xs">
-                      <div className="font-bold text-stone-900 group-hover:text-[#8E5364] transition">{student.name}</div>
+                      <div className="font-bold text-stone-900 group-hover:text-[#8E5364] transition privacy-student-name">{student.name}</div>
                       <div className="text-[10px] text-stone-400">الطالبة</div>
                     </div>
                     <span className="text-stone-400 group-hover:text-[#8E5364] group-hover:scale-110 transition text-sm">↔️</span>
                     <div className="text-xs text-left">
-                      <div className="font-bold text-[#7A4B37] group-hover:text-[#8E5364] transition">{partner?.name || student.partnerStudentName}</div>
+                      <div className="font-bold text-[#7A4B37] group-hover:text-[#8E5364] transition privacy-student-name">{partner?.name || student.partnerStudentName}</div>
                       <div className="text-[10px] text-stone-400">الرفيقة</div>
                     </div>
                   </button>
@@ -1067,7 +1067,7 @@ export const ChallengesView: React.FC = () => {
               رصد نقاط التحدي والمراجعة الثنائية
             </h3>
             <p className="text-xs text-stone-500 mb-4">
-              للطالبة: <strong>{evalStudent.name}</strong> • الرفيقة: <strong>{evalStudent.partnerStudentName || 'لم تعين'}</strong>
+              للطالبة: <strong className="privacy-student-name">{evalStudent.name}</strong> • الرفيقة: <strong className="privacy-student-name">{evalStudent.partnerStudentName || 'لم تعين'}</strong>
             </p>
 
             <form onSubmit={handleSaveSubmission} className="space-y-4">
@@ -1508,8 +1508,8 @@ export const ChallengesView: React.FC = () => {
                 {/* Student 1 */}
                 <div className="p-3 rounded-xl bg-white border border-stone-200 shadow-2xs space-y-1">
                   <div className="text-[10px] text-stone-400 font-semibold">الطالبة الأولى</div>
-                  <div className="text-sm font-bold text-stone-900">{selectedPairRecord.student.name}</div>
-                  <div className="text-[11px] font-mono text-[#8E5364] font-semibold">{selectedPairRecord.student.code}</div>
+                  <div className="text-sm font-bold text-stone-900 privacy-student-name">{selectedPairRecord.student.name}</div>
+                  <div className="text-[11px] font-mono text-[#8E5364] font-semibold privacy-phone">{selectedPairRecord.student.code}</div>
                   <div className="text-[10px] text-stone-500">
                     {circles.find(c => c.id === selectedPairRecord.student.circleId)?.name || 'الحلقة'}
                   </div>
@@ -1525,10 +1525,10 @@ export const ChallengesView: React.FC = () => {
                 {/* Student 2 (Partner) */}
                 <div className="p-3 rounded-xl bg-white border border-stone-200 shadow-2xs space-y-1">
                   <div className="text-[10px] text-stone-400 font-semibold">الرفيقة المعينة</div>
-                  <div className="text-sm font-bold text-[#7A4B37]">
+                  <div className="text-sm font-bold text-[#7A4B37] privacy-student-name">
                     {selectedPairRecord.partner?.name || selectedPairRecord.student.partnerStudentName || 'الرفيقة'}
                   </div>
-                  <div className="text-[11px] font-mono text-stone-600 font-semibold">
+                  <div className="text-[11px] font-mono text-stone-600 font-semibold privacy-phone">
                     {selectedPairRecord.partner?.code || '—'}
                   </div>
                   <div className="text-[10px] text-stone-500">

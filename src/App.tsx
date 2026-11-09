@@ -46,7 +46,7 @@ const readNavigationFromUrl = () => {
 };
 
 const AppContent: React.FC = () => {
-  const { loading, error, toast, triggerQuickModal, settings, currentUser, users, switchUser, showToast, cloudDataReady, cloudStatus } = useApp();
+  const { loading, error, toast, triggerQuickModal, settings, currentUser, users, switchUser, showToast, cloudDataReady, cloudStatus, isPrivacyMode } = useApp();
   const [initialNavigation] = useState(readNavigationFromUrl);
   const [currentView, setCurrentView] = useState<ViewType>(initialNavigation.view);
   const [sidebarOpen, setSidebarOpen] = useState(false);

@@ -440,7 +440,43 @@ export const ReportsView: React.FC = () => {
               {reportRows.map((row, rowIndex) => (
                 <tr key={`${reportType}-${rowIndex}`} className="hover:bg-[#FCF9FA] transition">
                   <td className="p-3 font-semibold text-stone-400">{rowIndex + 1}</td>
-                  {row.map((value, columnIndex) => <td key={`${rowIndex}-${columnIndex}`} className="p-3 text-stone-700">{value}</td>)}
+                  {row.map((value, columnIndex) => {
+                    const header = reportHeaders[columnIndex] || '';
+                    const isStudentName = header === 'اسم الطالبة' || header === 'الرفيقة';
+                    const isCode = header === 'الكود';
+                    const isTeacher = header === 'المعلمة';
+                    const isScoreOrMetric =
+                      header.includes('درجة') ||
+                      header.includes('النسبة') ||
+                      header.includes('النقاط') ||
+                      header.includes('أيام') ||
+                      header.includes('غياب') ||
+                      header.includes('أخطاء') ||
+                      header.includes('التنبيهات') ||
+                      header.includes('الترتيب') ||
+                      header.includes('المشاركات') ||
+                      header.includes('الواجبات') ||
+                      header.includes('الحفظ') ||
+                      header.includes('المراجعة') ||
+                      header.includes('المكتملة') ||
+                      header.includes('بطاقات');
+
+                    return (
+                      <td key={`${rowIndex}-${columnIndex}`} className="p-3 text-stone-700">
+                        {isStudentName ? (
+                          <span className="font-bold privacy-student-name">{value}</span>
+                        ) : isCode ? (
+                          <span className="font-mono text-[11px] privacy-phone">{value}</span>
+                        ) : isTeacher ? (
+                          <span className="privacy-teacher-name">{value}</span>
+                        ) : isScoreOrMetric && value !== '—' && value !== '' ? (
+                          <span className="privacy-score-digit">{value}</span>
+                        ) : (
+                          <span>{value}</span>
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
               {reportRows.length === 0 && <tr><td colSpan={reportHeaders.length + 1} className="p-8 text-center text-stone-400">لا توجد بيانات مسجلة لهذا التقرير ضمن المرشحات الهجرية المحددة.</td></tr>}

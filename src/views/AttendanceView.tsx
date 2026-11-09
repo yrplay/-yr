@@ -214,10 +214,12 @@ export const AttendanceView: React.FC = () => {
                     <span className="w-5 h-5 rounded-full bg-stone-100 text-stone-500 text-[10px] flex items-center justify-center font-bold">
                       {idx + 1}
                     </span>
-                    <h3 className="font-bold text-stone-900 text-sm">{student.name}</h3>
+                    <h3 className="font-bold text-stone-900 text-sm">
+                      <span className="privacy-student-name">{student.name}</span>
+                    </h3>
                   </div>
                   <div className="text-[11px] text-stone-400 font-mono mt-0.5 mr-7">
-                    كود: {student.code} • حضور: <strong className="text-[#2D5A43]">{score?.attendanceRate || 0}%</strong>
+                    كود: <span className="privacy-phone">{student.code}</span> • حضور: <strong className="text-[#2D5A43]"><span className="privacy-score-digit">{score?.attendanceRate || 0}</span>%</strong>
                   </div>
                 </div>
 
@@ -335,8 +337,12 @@ export const AttendanceView: React.FC = () => {
                     <td className="p-3.5 font-semibold text-stone-400">{idx + 1}</td>
 
                     <td className="p-3.5">
-                      <div className="font-bold text-stone-900 text-sm">{student.name}</div>
-                      <div className="text-[11px] text-stone-400 font-mono">{student.code}</div>
+                      <div className="font-bold text-stone-900 text-sm">
+                        <span className="privacy-student-name">{student.name}</span>
+                      </div>
+                      <div className="text-[11px] text-stone-400 font-mono">
+                        <span className="privacy-phone">{student.code}</span>
+                      </div>
                     </td>
 
                     {/* Early Prep Toggle */}

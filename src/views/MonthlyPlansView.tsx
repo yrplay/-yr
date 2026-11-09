@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { QURAN_SURAHS, getSurahByNumber, getAyahCount } from '../data/quranData';
 import {
   Calendar, Plus, Copy, BookOpen, CheckCircle2, Clock,
-  ChevronLeft, Award, FileText, Sparkles, AlertCircle, Edit
+  ChevronLeft, ChevronDown, Award, FileText, Sparkles, AlertCircle, Edit
 } from 'lucide-react';
 import { MonthlyPlan, StudentMonthlyPlan } from '../types';
 
@@ -16,6 +16,7 @@ export const MonthlyPlansView: React.FC = () => {
 
   const [selectedPlanId, setSelectedPlanId] = useState<string>(monthlyPlans[0]?.id || 'mp-1');
   const [selectedStudentId, setSelectedStudentId] = useState<string>(students[0]?.id || 's-1');
+  const [isStudentDropdownOpen, setIsStudentDropdownOpen] = useState(false);
 
   // Modals state
   const [planModalOpen, setPlanModalOpen] = useState(false);
@@ -347,20 +348,60 @@ export const MonthlyPlansView: React.FC = () => {
               <label className="block text-[11px] font-bold text-stone-600 mb-0.5">
                 اختاري الطالبة لعرض وتعديل خطتها الفردية:
               </label>
-              <select
-                value={selectedStudentId}
-                onChange={e => setSelectedStudentId(e.target.value)}
-                className="px-3 py-1.5 border border-stone-200 rounded-xl text-xs font-bold bg-white focus:ring-2 focus:ring-[#8E5364]"
-              >
-                {students.map(s => {
-                  const circle = circles.find(c => c.id === s.circleId);
-                  return (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.code}) - {circle?.name}
-                    </option>
-                  );
-                })}
-              </select>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsStudentDropdownOpen(!isStudentDropdownOpen)}
+                  className="px-3 py-1.5 border border-stone-200 rounded-xl text-xs font-bold bg-white focus:ring-2 focus:ring-[#8E5364] flex items-center justify-between gap-2 min-w-[240px] text-right cursor-pointer shadow-2xs hover:border-[#8E5364]/40 transition"
+                  title="اختاري الطالبة من هنا"
+                >
+                  <span className="truncate">
+                    <span className="privacy-student-name">{selectedStudent?.name || 'اختاري الطالبة من هنا'}</span>
+                    {selectedStudent && (
+                      <span className="text-stone-400 font-normal mr-1 text-[11px]">
+                        (<span className="privacy-phone">{selectedStudent.code}</span>) - {circles.find(c => c.id === selectedStudent.circleId)?.name}
+                      </span>
+                    )}
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                </button>
+
+                {isStudentDropdownOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setIsStudentDropdownOpen(false)}
+                    />
+                    <div className="absolute top-full right-0 mt-1 w-80 max-h-60 overflow-y-auto bg-white border border-stone-200 rounded-2xl shadow-xl z-50 py-1 divide-y divide-stone-100">
+                      {students.map(s => {
+                        const circle = circles.find(c => c.id === s.circleId);
+                        const isSelected = s.id === selectedStudentId;
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedStudentId(s.id);
+                              setIsStudentDropdownOpen(false);
+                            }}
+                            className={`w-full text-right px-3.5 py-2 text-xs transition flex items-center justify-between cursor-pointer ${
+                              isSelected ? 'bg-[#FAF0F3] text-[#8E5364] font-bold' : 'hover:bg-stone-50 text-stone-800'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <span className="block font-bold privacy-student-name">{s.name}</span>
+                              <span className="text-[10px] text-stone-400 block mt-0.5">
+                                كود: <span className="privacy-phone">{s.code}</span> • {circle?.name}
+                              </span>
+                            </div>
+                            {isSelected && <span className="text-[#8E5364] text-xs font-bold">✓</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
@@ -395,7 +436,7 @@ export const MonthlyPlansView: React.FC = () => {
         {/* Plan Progress Indicator */}
         <div className="bg-[#FCFAF8] p-4 rounded-2xl border border-[#EFE8E2]">
           <div className="flex items-center justify-between text-xs font-bold text-stone-800 mb-2">
-            <span>مؤشر إنجاز الخطة الشهرية للطالبة ({selectedStudent?.name})</span>
+            <span>مؤشر إنجاز الخطة الشهرية للطالبة (<span className="privacy-student-name">{selectedStudent?.name}</span>)</span>
             <span className="text-[#8E5364]">
               {studentScore?.newMemorizationPagesDone} من أصل {studentScore?.newMemorizationPagesTarget} صفحات منجزة
             </span>

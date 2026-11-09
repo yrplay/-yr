@@ -790,11 +790,15 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-[#FCFAF8] p-4 rounded-2xl border border-[#EFE8E2] text-xs">
           <div>
             <span className="text-stone-400 block text-[10px]">اسم الطالبة:</span>
-            <strong className="text-sm font-quran" style={{ color: customPrimaryColor }}>{student.name}</strong>
+            <strong className="text-sm font-quran" style={{ color: customPrimaryColor }}>
+              <span className="privacy-student-name">{student.name}</span>
+            </strong>
           </div>
           <div>
             <span className="text-stone-400 block text-[10px]">كود الطالبة والحلقة:</span>
-            <strong className="text-stone-800">{student.code} • {circle?.name}</strong>
+            <strong className="text-stone-800">
+              <span className="privacy-phone">{student.code}</span> • {circle?.name}
+            </strong>
           </div>
           <div>
             <span className="text-stone-400 block text-[10px]">المعلمة والمشرفة:</span>
@@ -802,7 +806,9 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           </div>
           <div>
             <span className="text-stone-400 block text-[10px]">الرفيقة القرآنية 🤝:</span>
-            <strong className="text-[#7A4B37]">{student.partnerStudentName || 'لم تعين'}</strong>
+            <strong className="text-[#7A4B37]">
+              {student.partnerStudentName ? <span className="privacy-student-name">{student.partnerStudentName}</span> : 'لم تعين'}
+            </strong>
           </div>
           <div>
             <span className="text-stone-400 block text-[10px]">الحضور والغياب:</span>

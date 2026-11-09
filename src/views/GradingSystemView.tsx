@@ -366,7 +366,7 @@ export const GradingSystemView: React.FC = () => {
               : 'bg-amber-50 text-amber-900 border border-amber-200'
           }`}>
             <div className="flex items-center gap-2">
-              <span>مجموع أوزان البنود المفعلة: <strong>{totalWeights}%</strong></span>
+              <span>مجموع أوزان البنود المفعلة: <strong className="privacy-score-digit">{totalWeights}%</strong></span>
               <span>{totalWeights === 100 ? '✅ الأوزان متطابقة تماماً مع ١٠٠٪' : '⚠️ يرجى ضبط الأوزان لتساوي ١٠٠٪'}</span>
             </div>
             {totalWeights !== 100 && (
@@ -405,7 +405,7 @@ export const GradingSystemView: React.FC = () => {
                 });
                 setIsDirty(true);
               }}
-              className="w-full px-2.5 py-1.5 border border-stone-200 rounded-xl text-center font-bold"
+              className="w-full px-2.5 py-1.5 border border-stone-200 rounded-xl text-center font-bold privacy-score-digit"
             />
           </div>
 
@@ -425,7 +425,7 @@ export const GradingSystemView: React.FC = () => {
                 });
                 setIsDirty(true);
               }}
-              className="w-full px-2.5 py-1.5 border border-rose-200 rounded-xl text-center font-bold text-rose-700"
+              className="w-full px-2.5 py-1.5 border border-rose-200 rounded-xl text-center font-bold text-rose-700 privacy-score-digit"
             />
           </div>
 
@@ -445,7 +445,7 @@ export const GradingSystemView: React.FC = () => {
                 });
                 setIsDirty(true);
               }}
-              className="w-full px-2.5 py-1.5 border border-amber-200 rounded-xl text-center font-bold text-amber-700"
+              className="w-full px-2.5 py-1.5 border border-amber-200 rounded-xl text-center font-bold text-amber-700 privacy-score-digit"
             />
           </div>
 
@@ -465,7 +465,7 @@ export const GradingSystemView: React.FC = () => {
                 });
                 setIsDirty(true);
               }}
-              className="w-full px-2.5 py-1.5 border border-purple-200 rounded-xl text-center font-bold text-purple-700"
+              className="w-full px-2.5 py-1.5 border border-purple-200 rounded-xl text-center font-bold text-purple-700 privacy-score-digit"
             />
           </div>
 
@@ -484,7 +484,7 @@ export const GradingSystemView: React.FC = () => {
                 });
                 setIsDirty(true);
               }}
-              className="w-full px-2.5 py-1.5 border border-stone-200 rounded-xl text-center"
+              className="w-full px-2.5 py-1.5 border border-stone-200 rounded-xl text-center privacy-score-digit"
             />
           </div>
 
@@ -503,7 +503,7 @@ export const GradingSystemView: React.FC = () => {
                 });
                 setIsDirty(true);
               }}
-              className="w-full px-2.5 py-1.5 border border-stone-200 rounded-xl text-center"
+              className="w-full px-2.5 py-1.5 border border-stone-200 rounded-xl text-center privacy-score-digit"
             />
           </div>
         </div>
@@ -548,7 +548,7 @@ export const GradingSystemView: React.FC = () => {
                       min="1"
                       value={item.maxScore}
                       onChange={e => handleUpdateItem(item.id, 'maxScore', Math.max(1, Number(e.target.value) || 1))}
-                      className="w-16 px-2 py-1 border border-stone-200 rounded-lg text-center text-xs font-bold"
+                      className="w-16 px-2 py-1 border border-stone-200 rounded-lg text-center text-xs font-bold privacy-score-digit"
                     />
                   </td>
                   <td className="p-3.5 text-center">
@@ -558,7 +558,7 @@ export const GradingSystemView: React.FC = () => {
                       max="100"
                       value={item.weightPercentage}
                       onChange={e => handleUpdateItem(item.id, 'weightPercentage', Math.max(0, Number(e.target.value) || 0))}
-                      className="w-16 px-2 py-1 border border-stone-200 rounded-lg text-center text-xs font-bold text-[#8E5364]"
+                      className="w-16 px-2 py-1 border border-stone-200 rounded-lg text-center text-xs font-bold text-[#8E5364] privacy-score-digit"
                     />
                   </td>
                   <td className="p-3.5 text-center">
@@ -610,7 +610,7 @@ export const GradingSystemView: React.FC = () => {
             <div key={scale.minPercentage} className="p-3 rounded-2xl border border-stone-200 bg-[#FCFAF8] flex items-center justify-between">
               <div>
                 <span className="font-bold text-xs text-stone-900 block">{scale.label} ({scale.letter})</span>
-                <span className="text-[10px] text-stone-400">من {scale.minPercentage}% فأعلى</span>
+                <span className="text-[10px] text-stone-400">من <span className="privacy-score-digit">{scale.minPercentage}%</span> فأعلى</span>
               </div>
               <span className="w-4 h-4 rounded-full" style={{ backgroundColor: scale.color }}></span>
             </div>

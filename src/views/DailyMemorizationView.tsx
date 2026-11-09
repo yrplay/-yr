@@ -705,17 +705,19 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                   title="انقر لفتح كشف سجل الطالبة ومتابعة محفوظاتها ودرجاتها"
                 >
                   <div className="w-10 h-10 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800 flex items-center justify-center font-bold text-sm text-[#8E5364] dark:text-[#E8BDC8] group-hover:bg-[#8E5364] group-hover:text-white transition shadow-2xs shrink-0">
-                    {st.name.charAt(0)}
+                    <span className="privacy-student-name">{st.name.charAt(0)}</span>
                   </div>
                   <div>
                     <div className="flex items-center gap-1.5">
                       <h4 className="font-bold text-stone-900 dark:text-stone-100 text-sm group-hover:text-[#8E5364] dark:group-hover:text-[#E8BDC8] transition flex items-center gap-1">
-                        <span>{st.name}</span>
+                        <span className="privacy-student-name">{st.name}</span>
                         <FileText className="w-3.5 h-3.5 text-stone-400 group-hover:text-[#8E5364] transition opacity-70" />
                       </h4>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[11px] text-stone-400 font-mono">{st.code}</span>
+                      <span className="text-[11px] text-stone-400 font-mono">
+                        <span className="privacy-phone">{st.code}</span>
+                      </span>
                       <span className="text-[10px] text-[#8E5364] dark:text-[#E8BDC8] font-bold underline">
                         فتح كشف السجل 📜
                       </span>
@@ -727,13 +729,13 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                   {record ? (
                     <div className="flex items-center gap-3 text-left">
                       <div className="text-xs text-stone-500 text-right">
-                        <span>الدرجة: <strong className="text-[#8E5364] font-bold">{record.recitationScore}/10</strong></span>
+                        <span>الدرجة: <strong className="text-[#8E5364] font-bold"><span className="privacy-score-digit">{record.recitationScore}</span>/10</strong></span>
                         <span className="mx-1.5">•</span>
-                        <span>الأوجه: <strong className="text-stone-800 dark:text-stone-200">{record.newMemorizationPages ?? 1}</strong></span>
+                        <span>الأوجه: <strong className="text-stone-800 dark:text-stone-200"><span className="privacy-score-digit">{record.newMemorizationPages ?? 1}</span></strong></span>
                         <span className="mx-1.5">•</span>
-                        <span>أخطاء: <strong className="text-rose-600">{record.memorizationMistakes ?? 0}</strong></span>
+                        <span>أخطاء: <strong className="text-rose-600"><span className="privacy-score-digit">{record.memorizationMistakes ?? 0}</span></strong></span>
                         <span className="mx-1.5">•</span>
-                        <span>تنبيهات: <strong className="text-amber-600">{record.hintsCount ?? 0}</strong></span>
+                        <span>تنبيهات: <strong className="text-amber-600"><span className="privacy-score-digit">{record.hintsCount ?? 0}</span></strong></span>
                       </div>
                       <div className="px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-400 font-bold text-xs">
                         تم الرصد ✅

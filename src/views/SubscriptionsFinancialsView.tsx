@@ -348,8 +348,10 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                 <tr key={st.id} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition">
                     <td className="p-3.5 text-stone-400 font-mono">{idx + 1}</td>
                     <td className="p-3.5">
-                      <strong className="block text-stone-900 dark:text-stone-100 font-bold">{st.name}</strong>
-                      <span className="text-[10px] text-stone-400 font-mono">{st.code}</span>
+                      <strong className="block text-stone-900 dark:text-stone-100 font-bold">
+                        <span className="privacy-student-name">{st.name}</span>
+                      </strong>
+                      <span className="text-[10px] text-stone-400 font-mono privacy-phone">{st.code}</span>
                     </td>
                     <td className="p-3.5 text-stone-500">{circle?.name || 'غير محدد'}</td>
                     <td className="p-3.5 font-mono">{reqAmount} {currency}</td>
@@ -401,7 +403,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
             <div className="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
               <h3 className="text-sm font-bold text-stone-800 dark:text-stone-100 flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-[#8E5364]" />
-                <span>تعديل بيانات الاشتراك: {students.find(s => s.id === selectedSub.studentId)?.name}</span>
+                <span>تعديل بيانات الاشتراك: <span className="privacy-student-name">{students.find(s => s.id === selectedSub.studentId)?.name}</span></span>
               </h3>
               <button
                 type="button"

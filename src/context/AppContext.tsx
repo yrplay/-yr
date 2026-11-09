@@ -504,6 +504,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('ghaith_privacy_mode', String(isPrivacyMode));
+      if (isPrivacyMode) {
+        document.body.classList.add('privacy-mode-active');
+      } else {
+        document.body.classList.remove('privacy-mode-active');
+      }
     }
   }, [isPrivacyMode]);
 

@@ -332,7 +332,9 @@ export const ExamsView: React.FC = () => {
                 return (
                   <tr key={student.id} className="hover:bg-[#FCF9FA] transition">
                     <td className="p-3.5 font-semibold text-stone-400 text-center w-12">{idx + 1}</td>
-                    <td className="p-3.5 font-bold text-stone-900 min-w-[180px]">{student.name}</td>
+                    <td className="p-3.5 font-bold text-stone-900 min-w-[180px]">
+                      <span className="privacy-student-name">{student.name}</span>
+                    </td>
                     <td className="p-3.5 text-stone-500">{circle?.name}</td>
                     <td className="p-3.5 w-36">
                       <button
@@ -349,20 +351,24 @@ export const ExamsView: React.FC = () => {
                     <td className="p-3.5 text-center">
                       {res !== undefined ? (
                         <span className={`font-semibold ${res.memorizationMistakes > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
-                          {res.memorizationMistakes}
+                          <span className="privacy-exam-score">{res.memorizationMistakes}</span>
                         </span>
                       ) : <span className="text-stone-300">—</span>}
                     </td>
 
                     <td className="p-3.5 text-center">
                       {res !== undefined ? (
-                        <span className="font-semibold text-amber-700">{res.warningsCount}</span>
+                        <span className="font-semibold text-amber-700">
+                          <span className="privacy-exam-score">{res.warningsCount}</span>
+                        </span>
                       ) : <span className="text-stone-300">—</span>}
                     </td>
 
                     <td className="p-3.5 text-center">
                       {res !== undefined ? (
-                        <span className="font-semibold text-purple-700">{res.tajweedErrors}</span>
+                        <span className="font-semibold text-purple-700">
+                          <span className="privacy-exam-score">{res.tajweedErrors}</span>
+                        </span>
                       ) : <span className="text-stone-300">—</span>}
                     </td>
 
@@ -370,21 +376,23 @@ export const ExamsView: React.FC = () => {
                       {res !== undefined ? (
                         <div className="flex items-center justify-center gap-1.5">
                           <span className="text-base font-extrabold text-[#2D5A43]">
-                            {res.score}
+                            <span className="privacy-exam-score">{res.score}</span>
                           </span>
                           <span className="text-[10px] text-stone-400">/ 100</span>
                         </div>
                       ) : (
-                        <span className="text-stone-300 font-normal">بانتظار الاختبار</span>
+                        <span className="text-stone-300 font-normal">
+                          <span className="privacy-text-blur">بانتظار الاختبار</span>
+                        </span>
                       )}
                     </td>
 
                     <td className="p-3.5 text-stone-700 font-medium text-[11px]">
-                      {cleanTeacherName(res?.examinerName || circle?.teacherName)}
+                      <span className="privacy-teacher-name">{cleanTeacherName(res?.examinerName || circle?.teacherName)}</span>
                     </td>
 
                     <td className="p-3.5 text-stone-600 max-w-xs truncate text-[11px]">
-                      {res?.notes || '—'}
+                      <span className="privacy-text-blur">{res?.notes || '—'}</span>
                     </td>
 
                     <td className="p-3.5 text-center">
@@ -508,7 +516,7 @@ export const ExamsView: React.FC = () => {
               </button>
             </div>
             <p className="text-xs text-stone-500 mb-4">
-              للطالبة: <strong>{evalStudent.name}</strong> • الاختبار: <strong>{currentExam?.title}</strong>
+              للطالبة: <strong className="privacy-student-name">{evalStudent.name}</strong> • الاختبار: <strong>{currentExam?.title}</strong>
             </p>
 
             <form onSubmit={handleSaveResult} className="space-y-4">
@@ -630,7 +638,7 @@ export const ExamsView: React.FC = () => {
                   تخصيص مقرر الاختبار الفردي
                 </h3>
                 <p className="text-xs text-stone-500 mt-0.5">
-                  للطالبة: <strong className="text-stone-800">{quickPortionStudent.name}</strong>
+                  للطالبة: <strong className="text-stone-800 privacy-student-name">{quickPortionStudent.name}</strong>
                 </p>
               </div>
               <button

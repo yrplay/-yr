@@ -432,7 +432,9 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 <span>إجمالي الطالبات</span>
                 <ChevronLeft className="w-3 h-3 text-stone-400 group-hover:text-[#8E5364] group-hover:-translate-x-0.5 transition" />
               </div>
-              <div className="text-xl font-extrabold text-stone-900 group-hover:text-[#8E5364] transition">{trackStudents.length}</div>
+              <div className="text-xl font-extrabold text-stone-900 group-hover:text-[#8E5364] transition">
+                <span className="privacy-count-digit">{trackStudents.length}</span>
+              </div>
             </div>
             <div
               onClick={() => setSelectedCircleId(null)}
@@ -455,7 +457,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 <ChevronLeft className="w-3.5 h-3.5 text-stone-400 group-hover:text-[#8E5364] group-hover:-translate-x-0.5 transition" />
               </div>
               <div className="text-xl font-extrabold text-stone-900 group-hover:text-[#8E5364] transition">
-                {new Set(trackCircles.map(c => c.teacherId)).size} معلمات
+                <span className="privacy-count-digit">{new Set(trackCircles.map(c => c.teacherId)).size}</span> معلمات
               </div>
               <div className="text-[10px] text-[#8E5364] font-bold mt-1 group-hover:underline flex items-center justify-center gap-0.5">
                 <span>سجل المعلمات والمشرفات</span>
@@ -465,9 +467,11 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
             <div className="p-3.5 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2]">
               <div className="text-xs text-stone-600 mb-1">متوسط إنجاز المسار</div>
               <div className="text-xl font-extrabold text-[#2D5A43]">
-                {trackStudents.length > 0
-                  ? Math.round(trackStudents.reduce((acc, s) => acc + (allStudentScores[s.id]?.finalPercentage || 0), 0) / trackStudents.length)
-                  : 0}%
+                <span className="privacy-score-digit">
+                  {trackStudents.length > 0
+                    ? Math.round(trackStudents.reduce((acc, s) => acc + (allStudentScores[s.id]?.finalPercentage || 0), 0) / trackStudents.length)
+                    : 0}%
+                </span>
               </div>
             </div>
           </div>
@@ -543,14 +547,16 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                       </div>
                     </div>
                     <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#EBF3EE] text-[#2D5A43]">
-                      {avgCircleScore}%
+                      <span className="privacy-score-digit">{avgCircleScore}</span>%
                     </span>
                   </div>
 
                   <div className="space-y-2 text-xs text-stone-600 mb-4">
                     <div className="flex justify-between text-[11px]">
                       <span>استيعاب الحلقة:</span>
-                      <span className="font-semibold text-stone-800">{cStudents.length} / {circle.maxStudents} طالبة</span>
+                      <span className="font-semibold text-stone-800">
+                        <span className="privacy-count-digit">{cStudents.length}</span> / {circle.maxStudents} طالبة
+                      </span>
                     </div>
                     <div className="w-full bg-[#EFEAE5] h-1.5 rounded-full overflow-hidden">
                       <div
@@ -749,12 +755,16 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                       return (
                         <tr key={st.id} className="hover:bg-[#FAF7F9] transition">
                           <td className="p-3 font-semibold text-stone-400">{idx + 1}</td>
-                          <td className="p-3 font-mono text-[11px] text-stone-500">{st.code}</td>
-                          <td className="p-3 font-bold text-stone-900">{st.name}</td>
+                          <td className="p-3 font-mono text-[11px] text-stone-500">
+                            <span className="privacy-phone">{st.code}</span>
+                          </td>
+                          <td className="p-3 font-bold text-stone-900">
+                            <span className="privacy-student-name">{st.name}</span>
+                          </td>
                           <td className="p-3 text-stone-600">
                             {st.partnerStudentName ? (
                               <span className="inline-flex items-center gap-1 bg-[#F5ECE8] text-[#7A4B37] px-2 py-0.5 rounded-full text-[11px]">
-                                <span>🤝</span> {st.partnerStudentName}
+                                <span>🤝</span> <span className="privacy-student-name">{st.partnerStudentName}</span>
                               </span>
                             ) : (
                               <span className="text-stone-300 text-[11px]">غير معينة</span>

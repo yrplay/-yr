@@ -536,8 +536,8 @@ export const AtqiniView: React.FC = () => {
                       <td className="p-3.5 text-stone-400 font-semibold">{idx + 1}</td>
 
                       <td className="p-3.5 font-bold text-stone-900">
-                        <div>{student.name}</div>
-                        <div className="text-[10px] text-stone-400 font-mono">{student.code}</div>
+                        <div className="privacy-student-name">{student.name}</div>
+                        <div className="text-[10px] text-stone-400 font-mono privacy-phone">{student.code}</div>
                       </td>
 
                       <td className="p-3.5 text-stone-600">
@@ -612,7 +612,7 @@ export const AtqiniView: React.FC = () => {
                       <td className="p-3.5">
                         {sub ? (
                           <span className="font-extrabold text-sm text-stone-900">
-                            {sub.score} <span className="text-[10px] text-stone-400">/ {currentAssignment?.maxScore || 10}</span>
+                            <span className="privacy-score-digit">{sub.score}</span> <span className="text-[10px] text-stone-400">/ {currentAssignment?.maxScore || 10}</span>
                           </span>
                         ) : (
                           <span className="text-stone-300">—</span>
@@ -942,7 +942,7 @@ export const AtqiniView: React.FC = () => {
               تصحيح ورصد واجب «أتقني» للتجويد
             </h3>
             <p className="text-xs text-stone-500 mb-4">
-              للطالبة: <strong>{evalStudent.name}</strong> • الواجب: <strong>{currentAssignment?.tajweedRule}</strong>
+              للطالبة: <strong className="privacy-student-name">{evalStudent.name}</strong> • الواجب: <strong>{currentAssignment?.tajweedRule}</strong>
             </p>
 
             <form onSubmit={handleSaveSubmission} className="space-y-4">

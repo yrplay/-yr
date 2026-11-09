@@ -557,3 +557,46 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 .dark .border-stone-100 {
   border-color: #27272a !important;
 }
+
+/* =========================================================================
+   Global App-Wide Privacy Mode (وضع الخصوصية الدقيق للنصوص والأرقام حصراً)
+   Strictly blurs ONLY inner text elements displaying:
+   - Student names and personal IDs/phone numbers
+   - Raw recitation/exam score digits
+   - Student count numbers inside halaqah cards
+   NEVER blurs entire pages, wrappers, cards, tables, checkboxes, progress bars, or buttons.
+   ========================================================================= */
+body.privacy-mode-active .privacy-text-blur,
+body.privacy-mode-active [data-privacy-blur="text"],
+body.privacy-mode-active .privacy-student-name,
+body.privacy-mode-active .privacy-teacher-name,
+body.privacy-mode-active .privacy-phone,
+body.privacy-mode-active .privacy-email,
+body.privacy-mode-active .privacy-score-digit,
+body.privacy-mode-active .privacy-exam-score,
+body.privacy-mode-active .privacy-grade,
+body.privacy-mode-active .privacy-count-digit {
+  filter: blur(7px) !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  transition: filter 0.2s ease !important;
+  display: inline-block !important;
+}
+
+/* Universal Transition for smooth blur/restore on text elements */
+.privacy-text-blur,
+[data-privacy-blur="text"],
+.privacy-student-name,
+.privacy-teacher-name,
+.privacy-phone,
+.privacy-email,
+.privacy-score-digit,
+.privacy-exam-score,
+.privacy-grade,
+.privacy-count-digit {
+  transition: filter 0.2s ease;
+  display: inline-block;
+}
+
+
+

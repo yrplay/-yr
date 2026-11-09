@@ -143,25 +143,25 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* الجزء الأيسر: زر وضع الخصوصية + زر التبديل بين الوضع الليلي والنهاري + القائمة المنسدلة لحساب المعلمة */}
         <div className="flex items-center gap-2">
-          {/* زر وضع الخصوصية (إخفاء/إظهار الأرقام والأسماء الحساسة) */}
+          {/* زر وضع الخصوصية الشامل (إخفاء/إظهار الأرقام والأسماء الحساسة) */}
           <button
             type="button"
             onClick={togglePrivacyMode}
             title={isPrivacyMode ? 'إلغاء وضع الخصوصية وإظهار البيانات 👁️' : 'تفعيل وضع الخصوصية وتمويه الأرقام والأسماء 🔒'}
             aria-label="وضع الخصوصية"
             aria-pressed={isPrivacyMode}
-            className={`p-2 sm:px-3 sm:py-1.5 rounded-2xl border transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 ${
+            className={`px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-2xl border transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 ${
               isPrivacyMode
-                ? 'bg-[#8E5364] text-white border-[#8E5364] hover:bg-[#744251]'
+                ? 'bg-amber-400 text-stone-900 border-amber-300 hover:bg-amber-300 font-extrabold'
                 : 'bg-white hover:bg-stone-50 border-[#E8DFD8] text-stone-700'
             }`}
           >
             {isPrivacyMode ? (
-              <EyeOff className="w-4 h-4 text-white" />
+              <EyeOff className="w-4 h-4 text-stone-900" />
             ) : (
               <Eye className="w-4 h-4 text-[#8E5364]" />
             )}
-            <span className={`text-xs font-bold hidden sm:inline ${isPrivacyMode ? 'text-white' : 'text-stone-700'}`}>
+            <span className={`text-xs font-bold hidden sm:inline ${isPrivacyMode ? 'text-stone-900' : 'text-stone-700'}`}>
               وضع الخصوصية
             </span>
           </button>
