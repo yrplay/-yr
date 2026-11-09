@@ -293,8 +293,7 @@ export const GradingSystemView: React.FC = () => {
                 : 'bg-white text-stone-700 hover:bg-[#FAF6F2] border border-[#E8DFD8]'
             }`}
           >
-            <span>{t.icon || '🪴'}</span>
-            <span>{t.name}</span>
+            <span>{(t.name || '').replace(/[🪴🤎]/g, '').trim()}</span>
             {t.code && <span className="opacity-70 text-[10px]">({t.code})</span>}
           </button>
         ))}

@@ -223,8 +223,8 @@ export interface StudentMonthlyPlan {
 }
 
 // 3. سجلات اشتراكات ودفع الطالبات
-export type PaymentStatus = 'paid' | 'partial' | 'pending' | 'exempt'; // مدفوع، جزئي، معلق، معفى
-export type PaymentMethod = 'bank_transfer' | 'cash' | 'pos' | 'other';
+export type PaymentStatus = 'paid' | 'partial' | 'pending' | 'exempt' | 'overdue'; // مدفوع بالكامل، مدفوع جزئياً، غير مدفوع/معلق، معفاة/منحة، متأخر عن السداد
+export type PaymentMethod = 'bank_transfer' | 'cash' | 'pos' | 'exempt' | 'other';
 
 export interface StudentSubscription {
   id: string;

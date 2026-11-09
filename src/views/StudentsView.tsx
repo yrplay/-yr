@@ -442,7 +442,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                     className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
                   >
                     {tracks.filter(t => !t.isArchived).map(t => (
-                      <option key={t.id} value={t.id}>{t.icon || '🪴'} {t.name}</option>
+                      <option key={t.id} value={t.id}>{(t.name || '').replace(/[🪴🤎]/g, '').trim()}</option>
                     ))}
                   </select>
                 </div>

@@ -482,7 +482,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           <img src="${settings.logoUrl}" alt="شعار مقرأة ${settings.name}" style="height: 65px; max-width: 130px; object-fit: contain; border-radius: 12px; background: white; padding: 2px; border: 1px solid #E8DFD8;" />
         ` : `
           <div style="width: 58px; height: 58px; border-radius: 16px; background: ${customPrimaryColor}15; border: 1.5px solid ${customPrimaryColor}35; display: flex; align-items: center; justify-content: center; font-size: 28px;">
-            🪴
+            📖
           </div>
         `}
         <div>
@@ -771,7 +771,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                 className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shadow-2xs"
                 style={{ backgroundColor: `${customPrimaryColor}15`, border: `1.5px solid ${customPrimaryColor}30` }}
               >
-                🪴
+                📖
               </div>
             )}
             <div>
@@ -1371,7 +1371,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                         className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-2xs"
                         style={{ backgroundColor: `${customPrimaryColor}15`, border: `1.5px solid ${customPrimaryColor}30` }}
                       >
-                        🪴
+                        📖
                       </div>
                     )}
                     <div>

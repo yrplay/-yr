@@ -674,8 +674,8 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
                 <div key={c.id} className="bg-white dark:bg-stone-900 p-5 rounded-2xl border border-[#E2D5CC] dark:border-stone-800 shadow-xs space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-2xl">{c.icon || '🪴'}</span>
-                      <strong className="text-sm font-bold text-stone-800 dark:text-stone-100">{c.name}</strong>
+                      <span className="text-2xl">{(c.icon && c.icon !== '🪴' && c.icon !== '🤎') ? c.icon : '📖'}</span>
+                      <strong className="text-sm font-bold text-stone-800 dark:text-stone-100">{(c.name || '').replace(/[🪴🤎]/g, '').trim()}</strong>
                     </div>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300">
                       {count} / {c.maxStudents} طالبة

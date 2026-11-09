@@ -1262,7 +1262,7 @@ export const StaffView: React.FC = () => {
                           onChange={() => handleToggleCircle(circle.id)}
                           className="rounded text-[#8E5364] focus:ring-[#8E5364]"
                         />
-                        <span>{circle.icon || '🪴'} {circle.name}</span>
+                        <span>{(circle.name || '').replace(/[🪴🤎]/g, '').trim()}</span>
                         <span className="text-[10px] text-stone-400 mr-auto">({circle.scheduleDays.join('، ')})</span>
                       </label>
                     );

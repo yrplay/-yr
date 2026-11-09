@@ -4,14 +4,14 @@ import {
   Layers, Plus, Edit, Archive, Users, Calendar, Clock,
   Sparkles, Trophy, BookOpen, ChevronLeft, CheckCircle2,
   Sliders, UserCheck, Shield, AlertCircle, Trash2, RotateCcw,
-  Eye, EyeOff, AlertTriangle, X, ExternalLink, CreditCard
+  Eye, EyeOff, AlertTriangle, X, ExternalLink, CreditCard, FolderOpen
 } from 'lucide-react';
 import { Circle, hasFullAccess, Track, defaultMasteryGuideConfig } from '../types';
 import { CircleIconPicker } from '../components/CircleIconLibrary';
 import { TrackDetailView } from './TrackDetailView';
 
 const TRACK_EMOJIS = [
-  '🪴', '📖', '🌸', '🌟', '🌿', '💎', '🕊️', '📜',
+  '📖', '🌸', '🌟', '🌿', '💎', '🕊️', '📜',
   '🏆', '✨', '🪔', '🌴', '🌙', '🕌', '💫', '🌾',
   '🛡️', '👑', '🎯', '💡', '📿', '🕯️', '⭐️', '🌺'
 ];
@@ -71,7 +71,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     code: '',
     description: '',
     logoUrl: '',
-    icon: '🪴',
+    icon: '📖',
     subscriptionFee: {
       amount: 250,
       currency: 'ر.س',
@@ -88,7 +88,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     }
   });
   const [circleForm, setCircleForm] = useState({
-    name: '', trackId: '', icon: '🪴', teacherId: '', supervisorId: '',
+    name: '', trackId: '', icon: '📖', teacherId: '', supervisorId: '',
     maxStudents: 15, scheduleDays: ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء'],
     startTime: '16:00', endTime: '18:00', earlyPrepCutoffTime: '15:45'
   });
@@ -134,7 +134,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
         code: track.code,
         description: track.description || '',
         logoUrl: track.logoUrl || '',
-        icon: track.icon || '🪴',
+        icon: (track.icon && track.icon !== '🪴' && track.icon !== '🤎') ? track.icon : '📖',
         subscriptionFee: {
           amount: track.subscriptionFee?.amount ?? 250,
           currency: track.subscriptionFee?.currency || 'ر.س',
@@ -157,7 +157,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
         code: `MG-${Date.now().toString().slice(-3)}`,
         description: '',
         logoUrl: '',
-        icon: '🪴',
+        icon: '📖',
         subscriptionFee: {
           amount: 250,
           currency: 'ر.س',
@@ -207,7 +207,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
       setCircleForm({
         name: circle.name,
         trackId: circle.trackId || defaultTrackId,
-        icon: circle.icon || '🪴',
+        icon: (circle.icon && circle.icon !== '🪴' && circle.icon !== '🤎') ? circle.icon : '📖',
         teacherId: circle.teacherId,
         supervisorId: circle.supervisorId,
         maxStudents: circle.maxStudents || 15,
@@ -221,7 +221,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
       setCircleForm({
         name: '',
         trackId: defaultTrackId,
-        icon: '🪴',
+        icon: '📖',
         teacherId: teachers[0]?.id || '',
         supervisorId: supervisors[0]?.id || '',
         maxStudents: 15,
@@ -329,7 +329,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">🪴</span>
+            <Layers className="w-5 h-5 text-[#8E5364]" />
             <h2 className="text-xl font-bold text-stone-900 font-quran">المسارات والحلقات القرآنية</h2>
           </div>
           <p className="text-xs text-stone-500">
@@ -388,8 +388,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 : 'bg-white text-stone-700 hover:bg-[#FAF6F2] border border-[#E8DFD8]'
             }`}
           >
-            <span className="text-base">{track.icon || '🪴'}</span>
-            <span>{track.name}</span>
+            <span>{(track.name || '').replace(/[🪴🤎]/g, '').trim()}</span>
             <span className={`text-[10px] px-2 py-0.5 rounded-full ${
               selectedTrackId === track.id ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-600'
             }`}>
@@ -410,12 +409,12 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 </div>
               ) : (
                 <div className="w-12 h-12 rounded-2xl bg-[#FAF0F3] border border-[#E8D5D8] flex items-center justify-center text-xl shrink-0">
-                  {currentTrack.icon || '🪴'}
+                  {(currentTrack.icon && currentTrack.icon !== '🪴' && currentTrack.icon !== '🤎') ? currentTrack.icon : <BookOpen className="w-5 h-5 text-[#8E5364]" />}
                 </div>
               )}
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-bold text-stone-900">{currentTrack.name}</h3>
+                  <h3 className="text-lg font-bold text-stone-900">{(currentTrack.name || '').replace(/[🪴🤎]/g, '').trim()}</h3>
                   <span className="text-[11px] px-2 py-0.5 rounded-md bg-[#EBF3EE] text-[#2D5A43] font-semibold">
                     {currentTrack.code}
                   </span>
@@ -560,7 +559,9 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
 
         {trackCircles.length === 0 ? (
           <div className="bg-white p-8 rounded-3xl border border-stone-200 text-center space-y-3">
-            <span className="text-4xl">🪴</span>
+            <div className="flex justify-center">
+              <FolderOpen className="w-10 h-10 text-[#96503E]/40 stroke-[1.5]" />
+            </div>
             <h4 className="font-bold text-stone-700 text-sm">لا توجد حلقات نشطة في هذا المسار</h4>
             <p className="text-xs text-stone-400 max-w-sm mx-auto">
               يمكنك إنشاء حلقة جديدة وتعيين المعلمة والمشرفة وتحديد جدول الأيام وساعة التحضير
@@ -594,9 +595,9 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2.5">
-                      <span className="text-2xl">{circle.icon || '🪴'}</span>
+                      <span className="text-2xl">{(circle.icon && circle.icon !== '🪴' && circle.icon !== '🤎') ? circle.icon : '📖'}</span>
                       <div>
-                        <h4 className="font-bold text-stone-900 text-base">{circle.name}</h4>
+                        <h4 className="font-bold text-stone-900 text-base">{(circle.name || '').replace(/[🪴🤎]/g, '').trim()}</h4>
                         <p className="text-[11px] text-stone-500">
                           المعلمة: <strong className="text-stone-700">{circle.teacherName}</strong>
                         </p>
@@ -992,7 +993,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                     </span>
                   </div>
                   <div className="w-10 h-10 rounded-xl bg-white border border-[#8E5364]/30 shadow-xs flex items-center justify-center text-2xl">
-                    {trackForm.icon || '🪴'}
+                    {trackForm.icon || '📖'}
                   </div>
                 </div>
 
@@ -1021,7 +1022,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                     maxLength={4}
                     value={trackForm.icon}
                     onChange={e => setTrackForm(prev => ({ ...prev, icon: e.target.value }))}
-                    placeholder="🪴"
+                    placeholder="📖"
                     className="w-16 px-2 py-1 text-center border border-stone-200 rounded-lg text-sm bg-white font-bold"
                   />
                 </div>
@@ -1283,7 +1284,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="مثال: حلقة راسخات (٤) 🪴"
+                    placeholder="مثال: حلقة راسخات (٤)"
                     value={circleForm.name}
                     onChange={e => setCircleForm({ ...circleForm, name: e.target.value })}
                     className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-2 focus:ring-[#8E5364]"
@@ -1297,14 +1298,14 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                     className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
                   >
                     {tracks.filter(t => !t.isArchived).map(t => (
-                      <option key={t.id} value={t.id}>{t.icon || '🪴'} {t.name}</option>
+                      <option key={t.id} value={t.id}>{(t.name || '').replace(/[🪴🤎]/g, '').trim()}</option>
                     ))}
                   </select>
                 </div>
               </div>
 
               <CircleIconPicker
-                selectedIcon={circleForm.icon || '🪴'}
+                selectedIcon={circleForm.icon || '📖'}
                 onSelectIcon={(icon) => setCircleForm(prev => ({ ...prev, icon }))}
               />
 

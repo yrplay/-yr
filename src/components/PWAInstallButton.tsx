@@ -160,7 +160,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ variant = 'h
                   </li>
                 </ol>
                 <p className="text-[11px] text-stone-500">
-                  سيظهر التطبيق فوراً على شاشتكِ الرئيسية بنفس شعار المقرأة ويعمل بكامل الشاشة وبدون شريط المتصفح! 🪴
+                  سيظهر التطبيق فوراً على شاشتكِ الرئيسية بنفس شعار المقرأة ويعمل بكامل الشاشة وبدون شريط المتصفح!
                 </p>
               </div>
             ) : (

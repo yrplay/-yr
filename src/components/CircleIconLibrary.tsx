@@ -18,7 +18,6 @@ export const CIRCLE_ICONS: CircleIconOption[] = [
 
   // النماء والبركة
   { id: 'ghaym', name: 'غيث البركة', symbol: '🌧️', category: 'النماء والبركة', meaning: 'الغيث الذي يحيي القلوب بالقرآن' },
-  { id: 'plant', name: 'نبات الغيم', symbol: '🪴', category: 'النماء والبركة', meaning: 'نماء الغراس وتعهد الحفظ' },
   { id: 'palm', name: 'نخلة الرسوخ', symbol: '🌴', category: 'النماء والبركة', meaning: 'المؤمن كالنخلة ثابت الأصل باسق الفرع' },
   { id: 'flower', name: 'أترجة الإتقان', symbol: '🌸', category: 'النماء والبركة', meaning: 'المؤمن الذي يقرأ القرآن كالأترجة' },
   { id: 'basil', name: 'ريحان الحفظ', symbol: '🌿', category: 'النماء والبركة', meaning: 'الريحان الطيب العبق بآيات الله' },
@@ -64,7 +63,7 @@ export const CircleIconPicker: React.FC<CircleIconPickerProps> = ({ selectedIcon
           اختاري أيقونة ورمز الحلقة المعتمد:
         </label>
         <span className="text-[11px] font-bold text-[#8E5364] flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-stone-200">
-          <span className="text-base">{selectedIcon || '🪴'}</span>
+          <span className="text-base">{selectedIcon || '📖'}</span>
           <span>{currentIconObj ? currentIconObj.name : 'أيقونة مخصصة'}</span>
         </span>
       </div>
@@ -122,7 +121,7 @@ export const CircleIconPicker: React.FC<CircleIconPickerProps> = ({ selectedIcon
           placeholder="ألصقي أي رمز هنا..."
           className="w-24 px-2 py-1 text-center text-sm font-bold border border-stone-200 rounded-lg bg-white"
         />
-        <span className="text-[10px] text-stone-400">مثال: 🪴 أو 🌸 أو 📖</span>
+        <span className="text-[10px] text-stone-400">مثال: 🌸 أو 📖</span>
       </div>
     </div>
   );

@@ -270,7 +270,7 @@ const ensureDefaultTrackIntegrity = (data: any) => {
     }));
   }
 
-  // 4. Ensure studentSubscriptions have a valid trackId
+  // 4. Ensure studentSubscriptions have a valid trackId and merge local saved overrides
   if (Array.isArray(data.studentSubscriptions)) {
     const studentTrackMap = new Map<string, string>();
     if (Array.isArray(data.students)) {
@@ -278,10 +278,43 @@ const ensureDefaultTrackIntegrity = (data: any) => {
         if (s.id && s.trackId) studentTrackMap.set(s.id, s.trackId);
       });
     }
-    data.studentSubscriptions = data.studentSubscriptions.map((sub: any) => ({
+    let subsList = data.studentSubscriptions.map((sub: any) => ({
       ...sub,
       trackId: (sub.trackId && sub.trackId !== 'general') ? sub.trackId : (studentTrackMap.get(sub.studentId) || 't-1')
     }));
+    try {
+      if (typeof window !== 'undefined') {
+        const localSavedRaw = localStorage.getItem('ghaith_subscriptions_local_v1');
+        if (localSavedRaw) {
+          const localSaved: any[] = JSON.parse(localSavedRaw);
+          if (Array.isArray(localSaved) && localSaved.length > 0) {
+            const byId = new Map<string, any>();
+            subsList.forEach((s: any) => {
+              const k = s.id || `sub_${s.studentId}_${s.cycleMonth}`;
+              byId.set(k, s);
+            });
+            localSaved.forEach((loc: any) => {
+              if (!loc || !loc.studentId) return;
+              const k = loc.id || `sub_${loc.studentId}_${loc.cycleMonth}`;
+              const existing = byId.get(k);
+              const locTime = Date.parse(loc.updatedAt || '') || 0;
+              const exTime = existing ? (Date.parse(existing.updatedAt || '') || 0) : -1;
+              if (!existing || locTime >= exTime) {
+                byId.set(k, {
+                  ...existing,
+                  ...loc,
+                  trackId: (loc.trackId && loc.trackId !== 'general') ? loc.trackId : (studentTrackMap.get(loc.studentId) || 't-1')
+                });
+              }
+            });
+            subsList = Array.from(byId.values());
+          }
+        }
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    data.studentSubscriptions = subsList;
   }
 
   // 5. Ensure monthlyPlans, challenges, atqiniAssignments, monthlyExams have trackId
@@ -863,12 +896,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const mergeSubscriptions = (localSubs: StudentSubscription[] = [], incomingSubs: StudentSubscription[] = []): StudentSubscription[] => {
     const map = new Map<string, StudentSubscription>();
     for (const inc of incomingSubs) {
+      if (!inc || !inc.studentId) continue;
       const key = inc.id || `sub_${inc.studentId}_${inc.cycleMonth}`;
       map.set(key, inc);
     }
     for (const loc of localSubs) {
+      if (!loc || !loc.studentId) continue;
       const key = loc.id || `sub_${loc.studentId}_${loc.cycleMonth}`;
-      map.set(key, loc);
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, loc);
+      } else {
+        const locTime = Date.parse(loc.updatedAt || '') || 0;
+        const incTime = Date.parse(existing.updatedAt || '') || 0;
+        map.set(key, locTime >= incTime ? { ...existing, ...loc } : { ...loc, ...existing });
+      }
     }
     return Array.from(map.values());
   };
@@ -1307,7 +1349,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       code: track.code || `TRK-${Date.now().toString().slice(-4)}`,
       description: track.description || '',
       logoUrl: track.logoUrl,
-      icon: track.icon || '🪴',
+      icon: track.icon || '📖',
       isArchived: false,
       subscriptionFee: track.subscriptionFee || {
         amount: 150,
@@ -1432,7 +1474,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       id: circle.id || `c-${Date.now()}`,
       trackId: circle.trackId || (tracks[0]?.id ?? 't-1'),
       name: circle.name || 'حلقة جديدة',
-      icon: circle.icon || '🪴',
+      icon: circle.icon || '📖',
       teacherId: circle.teacherId || '',
       teacherName: teacherObj ? teacherObj.name : (circle.teacherName || 'غير محدد'),
       supervisorId: circle.supervisorId || '',
@@ -1613,33 +1655,47 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const saveStudentSubscription = async (sub: Partial<StudentSubscription>) => {
     const studentId = sub.studentId || '';
-    const cycleMonth = sub.cycleMonth || settings.currentHijriMonth || 'جمادى الأولى';
-    const cleanId = sub.id || `sub_${studentId}_${cycleMonth.replace(/\s+/g, '_')}`;
+    const currentSubs: StudentSubscription[] = masterStateRef.current.studentSubscriptions || studentSubscriptions || [];
+    const existingForStudent = currentSubs.find(
+      s => (sub.id && s.id === sub.id) || (s.studentId === studentId && (!sub.cycleMonth || s.cycleMonth === sub.cycleMonth))
+    );
+
+    const cycleMonth = sub.cycleMonth || existingForStudent?.cycleMonth || settings.currentHijriMonth || 'جمادى الأولى';
+    const cleanId = sub.id || existingForStudent?.id || `sub_${studentId}_${cycleMonth.replace(/\s+/g, '_')}`;
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
     const studentObj = currentStudents.find((s: Student) => s.id === studentId);
     const resolvedTrackId = (sub.trackId && sub.trackId !== 'general')
       ? sub.trackId
       : (studentObj?.trackId || (selectedTrackId && selectedTrackId !== 'all' ? selectedTrackId : (tracks[0]?.id || 't-1')));
 
+    const isExempt = sub.status === 'exempt' || sub.paymentMethod === 'exempt';
+    const reqAmount = Number(sub.requiredAmount ?? existingForStudent?.requiredAmount ?? 150);
+    const paidAmount = isExempt ? 0 : Number(sub.paidAmount ?? 0);
+    const resolvedStatus = isExempt
+      ? 'exempt'
+      : (sub.status || (paidAmount >= reqAmount && reqAmount > 0 ? 'paid' : paidAmount > 0 ? 'partial' : 'pending'));
+
     const newSub: StudentSubscription = {
+      ...existingForStudent,
+      ...sub,
       id: cleanId,
       studentId,
       trackId: resolvedTrackId,
       cycleMonth,
-      requiredAmount: sub.requiredAmount ?? 150,
-      paidAmount: sub.paidAmount ?? 0,
-      status: sub.status || ((sub.paidAmount ?? 0) >= (sub.requiredAmount ?? 150) ? 'paid' : (sub.paidAmount ?? 0) > 0 ? 'partial' : 'pending'),
-      paymentMethod: sub.paymentMethod || 'bank_transfer',
+      requiredAmount: reqAmount,
+      paidAmount,
+      status: resolvedStatus,
+      paymentMethod: isExempt ? 'exempt' : (sub.paymentMethod || existingForStudent?.paymentMethod || 'bank_transfer'),
       paymentDate: sub.paymentDate || new Date().toISOString().split('T')[0],
-      receiptNumber: sub.receiptNumber || '',
-      signatureUrl: sub.signatureUrl,
-      notes: sub.notes || '',
-      updatedAt: new Date().toISOString(),
-      ...sub
+      receiptNumber: sub.receiptNumber ?? existingForStudent?.receiptNumber ?? '',
+      signatureUrl: sub.signatureUrl ?? existingForStudent?.signatureUrl,
+      notes: sub.notes ?? existingForStudent?.notes ?? '',
+      updatedAt: new Date().toISOString()
     };
 
-    const currentSubs: StudentSubscription[] = masterStateRef.current.studentSubscriptions || [];
-    const existingIdx = currentSubs.findIndex(s => s.id === cleanId || (s.studentId === studentId && s.cycleMonth === cycleMonth));
+    const existingIdx = currentSubs.findIndex(
+      s => s.id === cleanId || (s.studentId === studentId && s.cycleMonth === cycleMonth)
+    );
 
     let next: StudentSubscription[];
     if (existingIdx >= 0) {
@@ -1651,7 +1707,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     masterStateRef.current.studentSubscriptions = next;
     setStudentSubscriptions(next);
-    const statusAr = newSub.status === 'paid' ? 'مدفوع بالكامل' : newSub.status === 'partial' ? 'سداد جزئي' : newSub.status === 'exempt' ? 'معفاة' : 'معلق';
+
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_subscriptions_local_v1', JSON.stringify(next));
+      }
+    } catch {
+      // ignore storage write errors
+    }
+
+    const statusAr =
+      newSub.status === 'paid'
+        ? 'مدفوع بالكامل'
+        : newSub.status === 'partial'
+        ? 'مدفوع جزئياً'
+        : newSub.status === 'exempt'
+        ? 'معفاة / منحة دراسية'
+        : newSub.status === 'overdue'
+        ? 'متأخر عن السداد'
+        : 'غير مدفوع / معلق';
+
     const nextLogs = appendAuditEntry(
       existingIdx >= 0 ? 'update' : 'create',
       'subscription',
@@ -1659,7 +1734,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       cleanId
     );
     persistState({ studentSubscriptions: next, auditLogs: nextLogs });
-    showToast('تم رصد وتحديث سند السداد والاشتراك المالي بنجاح 💳');
+    showToast('تم حفظ التعديلات واعتماد سند الاشتراك المالي بنجاح 💳');
   };
 
   const createMonthlyPlan = async (plan: Partial<MonthlyPlan>) => {

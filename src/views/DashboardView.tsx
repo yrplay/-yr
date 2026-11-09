@@ -372,9 +372,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-xl">{circle.icon || '🪴'}</span>
+                    <span className="text-xl">{(circle.icon && circle.icon !== '🪴' && circle.icon !== '🤎') ? circle.icon : '📖'}</span>
                     <div>
-                      <h3 className="font-bold text-stone-900 text-sm">{circle.name}</h3>
+                      <h3 className="font-bold text-stone-900 text-sm">{(circle.name || '').replace(/[🪴🤎]/g, '').trim()}</h3>
                       <p className="text-[11px] text-stone-500">المعلمة: <span className={privacyBlurClass}>{circle.teacherName}</span></p>
                     </div>
                   </div>

@@ -413,7 +413,6 @@ export const ReportsView: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-stone-200 pb-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl">🪴</span>
               <h3 className="text-xl font-bold text-stone-900 font-quran">مقرأة {settings.name} — مسار {tracks.find(track => track.id === selectedTrackId)?.name || (selectedTrackId === 'all' ? 'جميع المسارات' : '')}</h3>
             </div>
             <p className="text-xs text-stone-500 mt-0.5">

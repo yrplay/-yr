@@ -366,7 +366,6 @@ export const MonthlyPlansView: React.FC = () => {
         {/* Student Selector Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF6F2] p-4 rounded-2xl border border-[#EFE8E2]">
           <div className="flex items-center gap-3">
-            <span className="text-xl">🪴</span>
             <div>
               <label className="block text-[11px] font-bold text-stone-600 mb-0.5">
                 اختاري الطالبة لعرض وتعديل خطتها الفردية:
