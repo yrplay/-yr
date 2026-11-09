@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { AuditLogModal } from '../components/AuditLogModal';
 import { hasFullAccess } from '../types';
+import { formatHijriDate, formatHijriShort, getTodayISO } from '../utils/hijriDate';
 
 interface DashboardViewProps {
   onNavigate: (view: ViewType) => void;
@@ -67,7 +68,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const totalStudents = displayedStudents.length;
 
   // Today attendance for displayed track
-  const today = new Date().toISOString().split('T')[0];
+  const today = getTodayISO();
   const displayedStudentIds = new Set(displayedStudents.map(s => s.id));
   const todayAttendance = attendanceRecords.filter(
     a => a.date === today && displayedStudentIds.has(a.studentId)
@@ -135,6 +136,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   );
                 })}
               </select>
+            </div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/15 backdrop-blur text-xs font-bold text-white border border-white/20">
+              <Calendar className="w-3.5 h-3.5 text-amber-200" />
+              <span>{formatHijriDate(today, { includeWeekday: true })}</span>
             </div>
           </div>
 
@@ -303,7 +308,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
           <div className={`text-xl sm:text-2xl font-bold text-stone-900 mb-1 flex items-baseline ${privacyBlurClass}`}>
-            <span>{todayAttendance.length > 0 ? `${presentToday} / ${todayAttendance.length}` : 'سجل اليوم'}</span>
+            <span>{todayAttendance.length > 0 ? `${presentToday} / ${todayAttendance.length}` : formatHijriShort(today)}</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-stone-500">
             <span className={privacyBlurClass}>{earlyPrepToday} بطاقة تحضير مبكر ⭐</span>

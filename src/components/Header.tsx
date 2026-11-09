@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Menu, ChevronDown, Lock, KeyRound, Cloud, RefreshCw, UserCheck, Sparkles, Sun, Moon, Eye, EyeOff } from 'lucide-react';
+import { Menu, ChevronDown, Lock, KeyRound, Cloud, RefreshCw, UserCheck, Sparkles, Sun, Moon, Eye, EyeOff, Calendar } from 'lucide-react';
 import { StaffLoginGate } from './StaffLoginGate';
 import { renderUserAvatarBadge } from './IslamicIconLibrary';
 import { EditTeacherProfileModal } from './EditTeacherProfileModal';
@@ -8,6 +8,7 @@ import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../firebase';
 import { isLocalDemoMode } from '../demoMode';
 import { hasFullAccess } from '../types';
+import { formatHijriDate } from '../utils/hijriDate';
 
 interface HeaderProps {
   onToggleSidebar?: () => void;
@@ -132,6 +133,12 @@ export const Header: React.FC<HeaderProps> = ({
               </p>
             </div>
           </button>
+
+          {/* شارة تقويم أم القرى الهجري في الترويسة */}
+          <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-white border border-[#E8DFD8] text-xs font-bold text-stone-700 shadow-2xs">
+            <Calendar className="w-3.5 h-3.5 text-[#8E5364]" />
+            <span>{formatHijriDate(new Date(), { includeWeekday: true })}</span>
+          </div>
         </div>
 
         {/* الجزء الأيسر: زر وضع الخصوصية + زر التبديل بين الوضع الليلي والنهاري + القائمة المنسدلة لحساب المعلمة */}

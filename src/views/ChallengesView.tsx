@@ -6,6 +6,7 @@ import {
   Printer, X, AlertCircle
 } from 'lucide-react';
 import { Challenge, ChallengeType, hasFullAccess, StudentChallengeSubmission } from '../types';
+import { formatHijriShort, formatHijriDateTime } from '../utils/hijriDate';
 
 export const ChallengesView: React.FC = () => {
   const {
@@ -435,7 +436,7 @@ export const ChallengesView: React.FC = () => {
                       </div>
                       <div className="text-[10px] text-stone-400 flex items-center gap-1">
                         <span>📅</span>
-                        <span>{ch.dueDateDescription || ch.startDate}</span>
+                        <span>{ch.dueDateDescription || formatHijriShort(ch.startDate)}</span>
                       </div>
                     </div>
                   </div>
@@ -935,8 +936,14 @@ export const ChallengesView: React.FC = () => {
                         )}
                       </td>
 
-                      <td className="p-3.5 text-stone-600 max-w-xs truncate">
-                        {sub?.teacherNotes || '—'}
+                      <td className="p-3.5 text-stone-600 max-w-xs">
+                        <div className="truncate">{sub?.teacherNotes || '—'}</div>
+                        {(sub?.updatedAt || sub?.evaluatedAt) && (
+                          <div className="text-[10px] text-stone-400 mt-0.5 flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5 text-[#8E5364]" />
+                            <span>{formatHijriDateTime(sub?.updatedAt || sub?.evaluatedAt)}</span>
+                          </div>
+                        )}
                       </td>
 
                       <td className="p-3.5 text-center">
@@ -1628,7 +1635,7 @@ export const ChallengesView: React.FC = () => {
                         <span className="font-medium text-stone-800">{ch.title}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-stone-400 font-mono text-[10px]">{ch.startDate}</span>
+                        <span className="text-stone-400 text-[10px]">{formatHijriShort(ch.startDate)}</span>
                         <span className="font-bold text-emerald-700">
                           {chSub ? `${chSub.totalPointsEarned} نقاط ✅` : 'مكتمل بنجاح ✅'}
                         </span>

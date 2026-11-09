@@ -5,6 +5,7 @@ import {
   AlertCircle, ChevronLeft, UserCheck, Shield, Trash2
 } from 'lucide-react';
 import { MonthlyExam, StudentExamResult } from '../types';
+import { formatHijriShort } from '../utils/hijriDate';
 
 export const ExamsView: React.FC = () => {
   const {
@@ -256,7 +257,7 @@ export const ExamsView: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs text-stone-500 mt-1">
-                تاريخ الاختبار: <strong className="text-[#8E5364]">{currentExam.examDateHijri}</strong> ({currentExam.examDateGregorian})
+                تاريخ الاختبار (تقويم أم القرى): <strong className="text-[#8E5364]">{currentExam.examDateHijri || formatHijriShort(currentExam.examDateGregorian)}</strong>
               </p>
             </div>
 

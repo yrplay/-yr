@@ -5,6 +5,7 @@ import {
   AlertCircle, Star, Sparkles, Filter, Save, ChevronLeft, ChevronRight, Trash2
 } from 'lucide-react';
 import { AttendanceRecord } from '../types';
+import { HijriDateNavigationBar, formatHijriDate, formatHijriDateTime, getTodayISO } from '../utils/hijriDate';
 
 export const AttendanceView: React.FC = () => {
   const {
@@ -13,7 +14,7 @@ export const AttendanceView: React.FC = () => {
   } = useApp();
 
   const [selectedCircleId, setSelectedCircleId] = useState<string>(circles[0]?.id || 'c-1');
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayISO());
   const [reasonInputs, setReasonInputs] = useState<Record<string, string>>({});
   const [attendanceToDelete, setAttendanceToDelete] = useState<{ studentId: string; studentName: string; recordId: string } | null>(null);
 
@@ -153,14 +154,12 @@ export const AttendanceView: React.FC = () => {
             </select>
           </div>
 
-          {/* Date Selector */}
+          {/* Hijri Date Selector & Navigation (السابق / اليوم / التالي) */}
           <div>
-            <label className="block text-xs font-bold text-stone-700 mb-1">تاريخ الجلسة:</label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs font-bold bg-white focus:ring-2 focus:ring-[#8E5364]"
+            <HijriDateNavigationBar
+              label="تاريخ الجلسة (تقويم أم القرى):"
+              selectedDate={selectedDate}
+              onChangeDate={setSelectedDate}
             />
           </div>
 
@@ -428,7 +427,7 @@ export const AttendanceView: React.FC = () => {
                     <td className="p-3.5 text-stone-500 text-[11px]">
                       <div>{rec.recordedBy || 'المعلمة'}</div>
                       <div className="text-[10px] text-stone-400">
-                        {rec.recordedAt ? new Date(rec.recordedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                        {rec.recordedAt ? formatHijriDateTime(rec.recordedAt) : '—'}
                       </div>
                     </td>
 
@@ -471,7 +470,7 @@ export const AttendanceView: React.FC = () => {
                 هل أنت متأكد من حذف هذا السجل؟
               </p>
               <p className="text-xs text-stone-600 font-semibold mt-1">
-                للطالبة: «{attendanceToDelete.studentName}» • تاريخ: {selectedDate}
+                للطالبة: «{attendanceToDelete.studentName}» • تاريخ: {formatHijriDate(selectedDate)}
               </p>
             </div>
 

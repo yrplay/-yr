@@ -6,6 +6,7 @@ import {
   AlertTriangle, X, Check
 } from 'lucide-react';
 import { AtqiniAssignment, AtqiniRating, StudentAtqiniSubmission } from '../types';
+import { formatHijriDate, formatHijriShort, formatHijriDateTime, HijriDateNavigationBar } from '../utils/hijriDate';
 
 export const AtqiniView: React.FC = () => {
   const {
@@ -430,7 +431,7 @@ export const AtqiniView: React.FC = () => {
                 <h3 className="text-base sm:text-lg font-bold text-stone-900">{currentAssignment.title}</h3>
               </div>
               <p className="text-xs text-stone-500 mt-0.5">
-                الحكم: <strong className="text-[#8E5364]">{currentAssignment.tajweedRule}</strong> • النشر: <strong>{currentAssignment.publishedDate}</strong> • التسليم: <strong className="text-rose-700">{currentAssignment.dueDate}</strong>
+                الحكم: <strong className="text-[#8E5364]">{currentAssignment.tajweedRule}</strong> • النشر: <strong>{formatHijriShort(currentAssignment.publishedDate)}</strong> • التسليم: <strong className="text-rose-700">{formatHijriShort(currentAssignment.dueDate)}</strong>
               </p>
             </div>
 
@@ -618,8 +619,14 @@ export const AtqiniView: React.FC = () => {
                         )}
                       </td>
 
-                      <td className="p-3.5 text-stone-600 max-w-xs truncate">
-                        {sub?.teacherNotes || '—'}
+                      <td className="p-3.5 text-stone-600 max-w-xs">
+                        <div className="truncate">{sub?.teacherNotes || '—'}</div>
+                        {(sub?.updatedAt || sub?.submittedAt) && (
+                          <div className="text-[10px] text-stone-400 mt-0.5 flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5 text-[#8E5364]" />
+                            <span>{formatHijriDateTime(sub?.updatedAt || sub?.submittedAt)}</span>
+                          </div>
+                        )}
                       </td>
 
                       <td className="p-3.5 text-center">
@@ -853,23 +860,21 @@ export const AtqiniView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-2.5">
                 <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">تاريخ النشر</label>
-                  <input
-                    type="date"
-                    value={assignmentForm.publishedDate}
-                    onChange={e => setAssignmentForm({ ...assignmentForm, publishedDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs"
+                  <label className="block text-xs font-bold text-stone-700 mb-1">تاريخ النشر (تقويم أم القرى)</label>
+                  <HijriDateNavigationBar
+                    selectedDate={assignmentForm.publishedDate}
+                    onChangeDate={date => setAssignmentForm({ ...assignmentForm, publishedDate: date })}
+                    compact
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">موعد التسليم النهائي</label>
-                  <input
-                    type="date"
-                    value={assignmentForm.dueDate}
-                    onChange={e => setAssignmentForm({ ...assignmentForm, dueDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs"
+                  <label className="block text-xs font-bold text-stone-700 mb-1">موعد التسليم النهائي (تقويم أم القرى)</label>
+                  <HijriDateNavigationBar
+                    selectedDate={assignmentForm.dueDate}
+                    onChangeDate={date => setAssignmentForm({ ...assignmentForm, dueDate: date })}
+                    compact
                   />
                 </div>
               </div>

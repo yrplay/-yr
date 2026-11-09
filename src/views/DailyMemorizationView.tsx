@@ -7,6 +7,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { QURAN_SURAHS, SurahInfo } from '../data/quranData';
 import { defaultMasteryGuideConfig, CustomMasteryCriterion, MasteryGuideConfig, Student } from '../types';
+import { HijriDateNavigationBar, formatHijriDate, formatHijriShort, getHijriParts, getTodayISO } from '../utils/hijriDate';
 
 /**
  * دالة مساعدة لحساب عدد أوجه القرآن الكريم تقريبياً وبدقة
@@ -197,9 +198,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
   } = useApp();
 
   const [selectedCircleId, setSelectedCircleId] = useState<string>(circles[0]?.id || '');
-  const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  );
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayISO());
   const [searchQuery, setSearchQuery] = useState('');
   const [activeModalStudentId, setActiveModalStudentId] = useState<string | null>(null);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
@@ -579,7 +578,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       studentId: activeModalStudentId,
       circleId: selectedCircleId,
       date: selectedDate,
-      dayName: new Date(selectedDate).toLocaleDateString('ar-SA', { weekday: 'long' }),
+      dayName: getHijriParts(selectedDate).weekday,
       recitationScore: calculatedNewScore,
       memorizationMistakes: form.hifzErrors,
       hintsCount: form.alerts,
@@ -644,15 +643,10 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center gap-1.5 bg-[#FAF7F5] dark:bg-stone-800 px-3 py-2 rounded-2xl border border-[#E2D5CC] dark:border-stone-700">
-            <Calendar className="w-4 h-4 text-stone-500" />
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              className="bg-transparent text-xs font-bold text-stone-800 dark:text-stone-100 outline-hidden cursor-pointer"
-            />
-          </div>
+          <HijriDateNavigationBar
+            selectedDate={selectedDate}
+            onChangeDate={setSelectedDate}
+          />
 
           <div className="flex items-center gap-1.5 bg-[#FAF7F5] dark:bg-stone-800 px-3 py-2 rounded-2xl border border-[#E2D5CC] dark:border-stone-700">
             <select
@@ -675,7 +669,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h3 className="font-bold text-sm text-stone-800 dark:text-stone-100">
-              طالبات حلقة ({selectedCircle?.name || 'المحددة'}) — تاريخ: {selectedDate}
+              طالبات حلقة ({selectedCircle?.name || 'المحددة'}) — تاريخ: {formatHijriDate(selectedDate)}
             </h3>
             <span className="text-xs text-stone-500 mt-0.5 block">
               إجمالي طالبات الحلقة: {circleStudents.length} طالبة
@@ -796,7 +790,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                   <span>📖</span>
                   <span>رصد تسميع: {modalStudent.name}</span>
                 </h3>
-                <span className="text-[11px] text-stone-400 font-mono">{selectedDate}</span>
+                <span className="text-[11px] text-stone-400 font-bold">{formatHijriDate(selectedDate)}</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-stone-500 font-bold">
@@ -1485,8 +1479,8 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                             return (
                               <tr key={r.id || r.date} className="hover:bg-stone-50/60 dark:hover:bg-stone-800/40">
                                 <td className="p-2.5 font-bold whitespace-nowrap">
-                                  <div>{r.date}</div>
-                                  <span className="text-[10px] text-stone-400 font-normal">{r.dayName || ''}</span>
+                                  <div>{formatHijriShort(r.date)}</div>
+                                  <span className="text-[10px] text-stone-400 font-normal">{r.dayName || getHijriParts(r.date).weekday}</span>
                                 </td>
                                 <td className="p-2.5 font-bold text-stone-800 dark:text-stone-200">
                                   {r.requiredPortionText || 'مقرر الحفظ اليومي'}
@@ -1630,7 +1624,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                 هل أنت متأكد من حذف هذا السجل؟
               </p>
               <p className="text-xs text-stone-600 dark:text-stone-400 font-semibold mt-1">
-                تاريخ: {recordToDelete.date} • {recordToDelete.requiredPortionText || 'مقرر التسميع'}
+                تاريخ: {formatHijriDate(recordToDelete.date)} • {recordToDelete.requiredPortionText || 'مقرر التسميع'}
               </p>
             </div>
 

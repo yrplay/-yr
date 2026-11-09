@@ -4,6 +4,7 @@ import {
   History, X, Search, Download, FileText, Trash2, RotateCcw
 } from 'lucide-react';
 import { isTechnicalDeveloper } from '../types';
+import { formatHijriShort } from '../utils/hijriDate';
 
 interface AuditLogModalProps {
   isOpen: boolean;
@@ -356,11 +357,7 @@ export const AuditLogModal: React.FC<AuditLogModalProps> = ({ isOpen, onClose })
                     const dateObj = new Date(log.timestamp);
                     const isValidDate = !isNaN(dateObj.getTime());
                     const formattedDate = isValidDate
-                      ? dateObj.toLocaleDateString('ar-SA', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric'
-                        })
+                      ? formatHijriShort(dateObj)
                       : '—';
                     const formattedTime = isValidDate
                       ? dateObj.toLocaleTimeString('ar-SA', {

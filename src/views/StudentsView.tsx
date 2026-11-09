@@ -6,6 +6,7 @@ import {
   Calendar, CheckCircle2, AlertCircle, Trash2
 } from 'lucide-react';
 import { hasFullAccess, StudentStatus } from '../types';
+import { formatHijriShort, HijriDateNavigationBar } from '../utils/hijriDate';
 
 interface StudentsViewProps {
   onSelectStudent: (studentId: string) => void;
@@ -272,7 +273,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                         {student.name}
                       </div>
                       <div className="text-[11px] text-stone-400">
-                        {student.phone}
+                        {student.phone} {student.joinDate ? `• انضمت: ${formatHijriShort(student.joinDate)}` : ''}
                       </div>
                     </td>
 
@@ -487,7 +488,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div>
                   <label className="block text-xs font-bold text-stone-700 mb-1">حالة القيد</label>
                   <select
@@ -502,12 +503,11 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">تاريخ الانضمام</label>
-                  <input
-                    type="date"
-                    value={studentForm.joinDate}
-                    onChange={e => setStudentForm({ ...studentForm, joinDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white"
+                  <label className="block text-xs font-bold text-stone-700 mb-1">تاريخ الانضمام (تقويم أم القرى)</label>
+                  <HijriDateNavigationBar
+                    selectedDate={studentForm.joinDate}
+                    onChangeDate={date => setStudentForm({ ...studentForm, joinDate: date })}
+                    compact
                   />
                 </div>
               </div>
