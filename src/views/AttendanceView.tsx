@@ -9,27 +9,90 @@ import { HijriDateNavigationBar, formatHijriDate, formatHijriDateTime, getTodayI
 
 export const AttendanceView: React.FC = () => {
   const {
-    students, circles, attendanceRecords, saveAttendance, saveBulkAttendance,
-    deleteAttendanceRecord, showToast, currentUser, allStudentScores
+    students, circles, attendanceRecords, dailyRecords, studentChallengeSubmissions,
+    saveAttendance, saveBulkAttendance,
+    deleteAttendanceRecord, showToast, allStudentScores, selectedTrackId,
+    selectedCircleId, setSelectedCircleId, selectedDate, setSelectedDate
   } = useApp();
 
-  const [selectedCircleId, setSelectedCircleId] = useState<string>(circles[0]?.id || 'c-1');
-  const [selectedDate, setSelectedDate] = useState<string>(getTodayISO());
+  const availableCircles = React.useMemo(() => {
+    if (!selectedTrackId || selectedTrackId === 'all') return circles.filter(c => !c.isArchived);
+    return circles.filter(c => !c.isArchived && c.trackId === selectedTrackId);
+  }, [circles, selectedTrackId]);
+
+  const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'early_prep' | 'absent'>('all');
   const [reasonInputs, setReasonInputs] = useState<Record<string, string>>({});
   const [attendanceToDelete, setAttendanceToDelete] = useState<{ studentId: string; studentName: string; recordId: string } | null>(null);
 
-  const activeCircle = circles.find(c => c.id === selectedCircleId) || circles[0];
+  React.useEffect(() => {
+    if (availableCircles.length > 0 && !availableCircles.some(c => c.id === selectedCircleId)) {
+      setSelectedCircleId(availableCircles[0].id);
+    }
+  }, [availableCircles, selectedCircleId, setSelectedCircleId]);
+
+  const activeCircle = availableCircles.find(c => c.id === selectedCircleId) || availableCircles[0] || circles[0];
   const circleStudents = students.filter(s => s.circleId === activeCircle?.id && s.status === 'active');
 
-  // Get or compute record for a student on selectedDate
-  const getRecord = (studentId: string): Partial<AttendanceRecord> => {
+  const isSelectedDateThursday = React.useMemo(() => {
+    if (!selectedDate) return false;
+    const d = new Date(`${selectedDate}T12:00:00`);
+    return d.getDay() === 4;
+  }, [selectedDate]);
+
+  // Get or compute record for a student on selectedDate (including passive real-time derivation if not yet persisted)
+  const getRecord = (studentId: string): Partial<AttendanceRecord> & { syncSource?: string } => {
     const existing = attendanceRecords.find(a => a.studentId === studentId && a.date === selectedDate);
-    return existing || {
+    const hasDailyRecitation = dailyRecords.some(
+      r => r.studentId === studentId && r.date === selectedDate && (r.status === 'completed' || (r.recitationScore ?? 0) > 0)
+    );
+    const hasChallengeActivity = studentChallengeSubmissions.some(
+      sub => sub.studentId === studentId && (
+        (sub.evaluatedAt || sub.updatedAt || '').startsWith(selectedDate) ||
+        (isSelectedDateThursday && ((sub.earlyPrepPointsEarned ?? 0) > 0 || !!sub.earlyAchievementCompleted || !!sub.peerReviewEvaluation?.jointRevisionCompleted))
+      )
+    );
+    const hasChallengeEarlyBonus = studentChallengeSubmissions.some(
+      sub => sub.studentId === studentId && (
+        (sub.evaluatedAt || sub.updatedAt || '').startsWith(selectedDate) || isSelectedDateThursday
+      ) && ((sub.earlyPrepPointsEarned ?? 0) > 0 || !!sub.earlyAchievementCompleted)
+    );
+
+    let syncSource = existing?.recordedBy || '';
+    if (isSelectedDateThursday && hasChallengeActivity) {
+      syncSource = 'تلقائي • تحديات الخميس 🏆';
+    } else if (hasDailyRecitation) {
+      syncSource = 'تلقائي • سجل التسميع 📖';
+    } else if (existing?.earlyPrepCardSent) {
+      syncSource = 'تلقائي • التحضير المبكر ⚡';
+    }
+
+    if (existing) {
+      return {
+        ...existing,
+        status: existing.status === 'unrecorded' && (hasDailyRecitation || hasChallengeActivity) ? 'present' : existing.status,
+        earlyPrepCardSent: existing.earlyPrepCardSent || hasChallengeEarlyBonus,
+        syncSource: syncSource || existing.recordedBy || 'متزامن تلقائياً'
+      };
+    }
+
+    if (hasDailyRecitation || hasChallengeActivity) {
+      return {
+        studentId,
+        circleId: activeCircle?.id || '',
+        date: selectedDate,
+        status: 'present',
+        earlyPrepCardSent: hasChallengeEarlyBonus,
+        syncSource
+      };
+    }
+
+    return {
       studentId,
       circleId: activeCircle?.id || '',
       date: selectedDate,
       status: 'unrecorded',
-      earlyPrepCardSent: false
+      earlyPrepCardSent: false,
+      syncSource: ''
     };
   };
 
@@ -47,12 +110,14 @@ export const AttendanceView: React.FC = () => {
 
   const handleToggleEarlyPrep = async (studentId: string) => {
     const rec = getRecord(studentId);
+    const nextEarly = !rec.earlyPrepCardSent;
     await saveAttendance({
       ...rec,
       studentId,
       circleId: activeCircle?.id || rec.circleId || '',
       date: selectedDate,
-      earlyPrepCardSent: !rec.earlyPrepCardSent
+      status: nextEarly ? 'present' : (rec.status || 'present'),
+      earlyPrepCardSent: nextEarly
     });
   };
 
@@ -88,6 +153,7 @@ export const AttendanceView: React.FC = () => {
         studentId: st.id,
         circleId: activeCircle?.id || st.circleId || '',
         date: selectedDate,
+        status: 'present' as const,
         earlyPrepCardSent: true
       };
     });
@@ -100,6 +166,15 @@ export const AttendanceView: React.FC = () => {
   const unexcusedCount = dayRecords.filter(r => r.status === 'absent_unexcused').length;
   const excusedCount = dayRecords.filter(r => r.status === 'absent_excused').length;
   const earlyPrepCount = dayRecords.filter(r => r.earlyPrepCardSent).length;
+  const absentTotalCount = unexcusedCount + excusedCount;
+
+  const filteredStudents = circleStudents.filter(st => {
+    const rec = getRecord(st.id);
+    if (statusFilter === 'present') return rec.status === 'present';
+    if (statusFilter === 'early_prep') return !!rec.earlyPrepCardSent;
+    if (statusFilter === 'absent') return rec.status === 'absent_unexcused' || rec.status === 'absent_excused';
+    return true;
+  });
 
   return (
     <div className="space-y-6">
@@ -107,29 +182,32 @@ export const AttendanceView: React.FC = () => {
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
             <span className="text-xl">📋</span>
-            <h2 className="text-xl font-bold text-stone-900 font-quran">سجل الحضور والتحضير المبكر</h2>
+            <h2 className="text-xl font-bold text-stone-900 font-quran">لوحة متابعة الحضور والتحضير المبكر التلقائي</h2>
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold">
+              مزامنة فورية بالخلفية ⚡
+            </span>
           </div>
           <p className="text-xs text-stone-500">
-            رصد حضور جلسات التحفيظ، وتوثيق بطاقات التحضير المبكر ⭐ وأسباب الغياب
+            مرآة تلقائية تعرض الحضور والتحضير المبكر المرصود مباشرة من «سجل الحفظ والتسميع» (الأحد–الأربعاء) و«قسم التحديات» (الخميس) دون الحاجة لإعادة الإدخال اليدوي
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleBulkPresent}
-            className="flex items-center gap-1.5 px-3 py-2 bg-[#EBF3EE] hover:bg-[#DCEADA] text-[#2D5A43] rounded-xl text-xs font-bold transition"
+            className="flex items-center gap-1.5 px-3 py-2 bg-[#EBF3EE] hover:bg-[#DCEADA] text-[#2D5A43] rounded-xl text-xs font-bold transition cursor-pointer"
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>رصد الجميع حضور ✅</span>
+            <span>اعتماد حضور الجميع ✅</span>
           </button>
           <button
             onClick={handleBulkEarlyPrep}
-            className="flex items-center gap-1.5 px-3 py-2 bg-[#FAF6E8] hover:bg-[#F2ECD0] text-amber-900 rounded-xl text-xs font-bold transition"
+            className="flex items-center gap-1.5 px-3 py-2 bg-[#FAF6E8] hover:bg-[#F2ECD0] text-amber-900 rounded-xl text-xs font-bold transition cursor-pointer"
           >
             <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-            <span>رصد التحضير المبكر للكل ⭐</span>
+            <span>⚡ تحضير مبكر للجميع</span>
           </button>
         </div>
       </div>
@@ -146,7 +224,7 @@ export const AttendanceView: React.FC = () => {
               onChange={e => setSelectedCircleId(e.target.value)}
               className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs font-bold bg-white focus:ring-2 focus:ring-[#8E5364]"
             >
-              {circles.map(c => (
+              {availableCircles.map(c => (
                 <option key={c.id} value={c.id}>
                   {c.name} — أ. {c.teacherName} (حتى {c.earlyPrepCutoffTime} مبكر)
                 </option>
@@ -163,33 +241,77 @@ export const AttendanceView: React.FC = () => {
             />
           </div>
 
-          {/* Circle Timing Rules */}
-          <div className="p-2.5 rounded-xl bg-[#FCFAF8] border border-[#EFE8E2] text-xs">
-            <span className="font-bold text-stone-700 block">ضوابط وقت الحلقة:</span>
-            <span className="text-[11px] text-stone-500 block">
-              الوقت: {activeCircle?.startTime} - {activeCircle?.endTime} • حد التحضير المبكر: <strong>{activeCircle?.earlyPrepCutoffTime}</strong>
+          {/* Automation Mode Indicator */}
+          <div className="p-2.5 rounded-xl bg-[#FCFAF8] border border-[#EFE8E2] text-xs flex flex-col justify-center">
+            <span className="font-bold text-stone-700 block">
+              {isSelectedDateThursday ? '🏆 وضع يوم الخميس (التحديات والمراجعة):' : '📖 وضع أيام الأحد–الأربعاء (سجل التسميع):'}
+            </span>
+            <span className="text-[11px] text-stone-500 block mt-0.5">
+              {isSelectedDateThursday
+                ? 'يُسجَّل الحضور تلقائياً بمجرد تقييم التحدي أو منح (+2 نقاط) الإنجاز المبكر'
+                : `يُسجَّل الحضور تلقائياً عند التسميع أو ضغط «⚡ تحضير مبكر» (قبل ${activeCircle?.earlyPrepCutoffTime})`}
             </span>
           </div>
 
         </div>
 
-        {/* Day Metrics Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-stone-100 text-xs">
-          <div className="flex items-center gap-2 text-stone-700">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-            <span>حضور اليوم: <strong>{presentCount}</strong> طالبة</span>
+        {/* Interactive Filter & Metrics Strip */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-stone-100">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                statusFilter === 'all'
+                  ? 'bg-[#8E5364] text-white shadow-2xs'
+                  : 'bg-[#FAF6F2] text-stone-600 hover:bg-stone-200/70'
+              }`}
+            >
+              الكل ({circleStudents.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('present')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                statusFilter === 'present'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200/60'
+              }`}
+            >
+              الحاضرات ✅ ({presentCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('early_prep')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                statusFilter === 'early_prep'
+                  ? 'bg-amber-600 text-white shadow-2xs'
+                  : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200/60'
+              }`}
+            >
+              ⚡ التحضير المبكر ({earlyPrepCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('absent')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                statusFilter === 'absent'
+                  ? 'bg-rose-700 text-white shadow-2xs'
+                  : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200/60'
+              }`}
+            >
+              الغياب والأعذار ({absentTotalCount})
+            </button>
           </div>
-          <div className="flex items-center gap-2 text-stone-700">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-            <span>غياب دون عذر: <strong>{unexcusedCount}</strong></span>
-          </div>
-          <div className="flex items-center gap-2 text-stone-700">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-            <span>غياب بعذر: <strong>{excusedCount}</strong></span>
-          </div>
-          <div className="flex items-center gap-2 text-stone-700">
-            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-            <span>بطاقات مبكرة: <strong>{earlyPrepCount}</strong></span>
+
+          <div className="flex flex-wrap items-center gap-3 text-xs text-stone-600">
+            <span>حضور: <strong className="text-emerald-700">{presentCount}</strong></span>
+            <span>•</span>
+            <span>تحضير مبكر: <strong className="text-amber-700">{earlyPrepCount}</strong></span>
+            <span>•</span>
+            <span>غياب بعذر: <strong className="text-amber-600">{excusedCount}</strong></span>
+            <span>•</span>
+            <span>دون عذر: <strong className="text-rose-600">{unexcusedCount}</strong></span>
           </div>
         </div>
       </div>
@@ -198,7 +320,7 @@ export const AttendanceView: React.FC = () => {
       
       {/* Mobile Card Layout for Phones & Tablets */}
       <div className="block lg:hidden space-y-3">
-        {circleStudents.map((student, idx) => {
+        {filteredStudents.map((student, idx) => {
           const rec = getRecord(student.id);
           const score = allStudentScores[student.id];
 
@@ -221,6 +343,13 @@ export const AttendanceView: React.FC = () => {
                   <div className="text-[11px] text-stone-400 font-mono mt-0.5 mr-7">
                     كود: <span className="privacy-phone">{student.code}</span> • حضور: <strong className="text-[#2D5A43]"><span className="privacy-score-digit">{score?.attendanceRate || 0}</span>%</strong>
                   </div>
+                  {rec.syncSource && (
+                    <div className="mt-1 mr-7">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/70 text-[10px] font-bold">
+                        {rec.syncSource}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Mobile Early Prep & Delete Buttons */}
@@ -230,12 +359,12 @@ export const AttendanceView: React.FC = () => {
                     onClick={() => handleToggleEarlyPrep(student.id)}
                     className={`px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer touch-manipulation ${
                       rec.earlyPrepCardSent
-                        ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
-                        : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
+                        ? 'bg-emerald-600 text-white border border-emerald-700 shadow-2xs'
+                        : 'bg-white text-stone-600 border border-stone-300 hover:bg-emerald-50'
                     }`}
                   >
-                    <Star className={`w-4 h-4 ${rec.earlyPrepCardSent ? 'text-amber-600 fill-amber-500' : ''}`} />
-                    <span>{rec.earlyPrepCardSent ? 'مبكر ⭐' : 'تحضير مبكر؟'}</span>
+                    <span>⚡ تحضير مبكر</span>
+                    {rec.earlyPrepCardSent && <span>✓</span>}
                   </button>
 
                   {rec.id && (
@@ -319,16 +448,16 @@ export const AttendanceView: React.FC = () => {
               <tr className="bg-[#FAF6F2] text-stone-600 font-bold border-b border-stone-200">
                 <th className="p-3.5">#</th>
                 <th className="p-3.5">اسم الطالبة</th>
-                <th className="p-3.5 text-center">التحضير المبكر ⭐</th>
+                <th className="p-3.5 text-center">التحضير المبكر ⚡</th>
                 <th className="p-3.5 text-center">حالة الحضور</th>
+                <th className="p-3.5">مصدر المزامنة التلقائية</th>
                 <th className="p-3.5">سبب الغياب (إن وُجد)</th>
                 <th className="p-3.5">الإحصائية التراكمية</th>
-                <th className="p-3.5">المسؤول ووقت الرصد</th>
                 <th className="p-3.5 text-center">الإجراءات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
-              {circleStudents.map((student, idx) => {
+              {filteredStudents.map((student, idx) => {
                 const rec = getRecord(student.id);
                 const score = allStudentScores[student.id];
 
@@ -350,15 +479,15 @@ export const AttendanceView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleToggleEarlyPrep(student.id)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer touch-manipulation ${
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer touch-manipulation ${
                           rec.earlyPrepCardSent
-                            ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
-                            : 'bg-stone-100 hover:bg-stone-200 text-stone-400'
+                            ? 'bg-emerald-600 text-white border border-emerald-700 shadow-2xs ring-2 ring-emerald-400/25'
+                            : 'bg-white hover:bg-emerald-50 text-stone-600 hover:text-emerald-800 border border-stone-300'
                         }`}
-                        title="أرسلت الطالبة بطاقة التحضير المبكر ضمن الوقت المحدد"
+                        title="انقري لتبديل حالة التحضير المبكر والحضور"
                       >
-                        <Star className={`w-3.5 h-3.5 ${rec.earlyPrepCardSent ? 'text-amber-600 fill-amber-500' : ''}`} />
-                        <span>{rec.earlyPrepCardSent ? 'مبكر ⭐' : 'لم ترسل'}</span>
+                        <span>⚡ تحضير مبكر</span>
+                        {rec.earlyPrepCardSent && <span>✓</span>}
                       </button>
                     </td>
 
@@ -374,7 +503,7 @@ export const AttendanceView: React.FC = () => {
                               : 'text-stone-600 hover:text-stone-900'
                           }`}
                         >
-                          <span>✅ حضور</span>
+                          <span>✅ حاضرة</span>
                         </button>
                         <button
                           type="button"
@@ -401,6 +530,24 @@ export const AttendanceView: React.FC = () => {
                       </div>
                     </td>
 
+                    {/* Sync Source & Time */}
+                    <td className="p-3.5">
+                      {rec.status === 'present' ? (
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/70 text-[11px] font-bold">
+                            {rec.syncSource || 'سجل التسميع / الحضور'}
+                          </span>
+                          {rec.recordedAt && (
+                            <div className="text-[10px] text-stone-400">
+                              {formatHijriDateTime(rec.recordedAt)}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-stone-300 text-[11px]">لم يُسجل حضور بعد</span>
+                      )}
+                    </td>
+
                     {/* Reason input for excused absence */}
                     <td className="p-3.5">
                       {rec.status === 'absent_excused' ? (
@@ -422,18 +569,10 @@ export const AttendanceView: React.FC = () => {
                     {/* Cumulative Monthly Stats */}
                     <td className="p-3.5">
                       <div className="font-semibold text-stone-800">
-                        حضور: <span className="text-[#2D5A43] font-bold">{score?.attendanceRate}%</span>
+                        حضور: <span className="text-[#2D5A43] font-bold privacy-score-digit">{score?.attendanceRate}%</span>
                       </div>
                       <div className="text-[10px] text-stone-500">
-                        غياب: {score?.absentUnexcusedCount} دون عذر | مبكر: {score?.earlyPrepCount}
-                      </div>
-                    </td>
-
-                    {/* Recorder & Time */}
-                    <td className="p-3.5 text-stone-500 text-[11px]">
-                      <div>{rec.recordedBy || 'المعلمة'}</div>
-                      <div className="text-[10px] text-stone-400">
-                        {rec.recordedAt ? formatHijriDateTime(rec.recordedAt) : '—'}
+                        غياب: <span className="privacy-score-digit">{score?.absentUnexcusedCount}</span> دون عذر | مبكر: <span className="privacy-score-digit">{score?.earlyPrepCount}</span>
                       </div>
                     </td>
 

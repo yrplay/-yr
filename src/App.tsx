@@ -350,23 +350,23 @@ const AppContent: React.FC = () => {
             <MonthlyPlansView />
           )}
 
-          {currentView === 'attendance' && (
+          <div className={currentView === 'attendance' ? 'block' : 'hidden'}>
             <AttendanceView />
-          )}
+          </div>
 
-          {currentView === 'recitation' && (
+          <div className={currentView === 'recitation' ? 'block' : 'hidden'}>
             <DailyMemorizationView
               onSelectStudent={handleSelectStudentForPortfolio}
             />
-          )}
+          </div>
 
           {currentView === 'atqini' && (
             <AtqiniView />
           )}
 
-          {currentView === 'challenges' && (
+          <div className={currentView === 'challenges' ? 'block' : 'hidden'}>
             <ChallengesView />
-          )}
+          </div>
 
           {currentView === 'exams' && (
             <ExamsView />

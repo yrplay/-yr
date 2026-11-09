@@ -8,8 +8,14 @@ import {
 } from '../types';
 import initialData from '../data/initialData';
 import { subscribeToCloudDatabase, pushStateToCloud, fetchCloudDatabaseOnce, CloudSyncStatus } from '../services/cloudSync';
-import { deduplicateAtqiniSubmissions, deduplicateChallengeSubmissions } from '../services/cloudSyncHelpers';
+import {
+  deduplicateAtqiniSubmissions,
+  deduplicateChallengeSubmissions,
+  deduplicateAttendanceRecords,
+  deduplicateDailyRecords
+} from '../services/cloudSyncHelpers';
 import { summarizeDailyPageProgress } from '../services/recitationProgress';
+import { getTodayISO } from '../utils/hijriDate';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
@@ -96,6 +102,10 @@ interface AppContextType {
   
   selectedTrackId: string | null;
   setSelectedTrackId: (id: string | null) => void;
+  selectedCircleId: string;
+  setSelectedCircleId: (id: string) => void;
+  selectedDate: string;
+  setSelectedDate: (date: string) => void;
   createTrack: (track: Partial<Track>) => Promise<Track>;
   updateTrack: (id: string, track: Partial<Track>) => Promise<void>;
   updateTrackSystemRules: (trackId: string, rules: Partial<TrackSystemRules>, silent?: boolean) => Promise<void>;
@@ -194,6 +204,12 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const STORAGE_KEY = isLocalDemoMode ? 'ghaith_demo_db_v1' : 'ghaith_alghaym_db_v1';
 const CURRENT_USER_KEY = isLocalDemoMode ? 'ghaith_demo_current_user_id' : 'ghaith_current_user_id';
 const GRADING_CONFIGS_KEY = isLocalDemoMode ? 'ghaith_demo_grading_configs' : 'ghaith_grading_configs';
+const ATTENDANCE_LOCAL_KEY = 'ghaith_attendance_local_v1';
+const DAILY_RECORDS_LOCAL_KEY = 'ghaith_daily_records_local_v1';
+const CHALLENGE_SUBS_LOCAL_KEY = 'ghaith_challenge_subs_local_v1';
+const TRACKS_LOCAL_KEY = 'ghaith_tracks_local_v1';
+const CIRCLES_LOCAL_KEY = 'ghaith_circles_local_v1';
+const SUBSCRIPTIONS_LOCAL_KEY = 'ghaith_subscriptions_local_v1';
 
 const FAKE_DEMO_IDS = new Set(['u-1', 'u-2', 'u-3', 'u-4', 'u-5', 'u-leader']);
 const FAKE_DEMO_EMAILS = new Set(['rifa@ghaym.org', 'khadija@ghaym.org', 'maryam@ghaym.org', 'fatima@ghaym.org', 'hind@ghaym.org', 'leader@ghaym.org']);
@@ -393,6 +409,65 @@ const ensureDefaultTrackIntegrity = (data: any) => {
     data.monthlyExams = data.monthlyExams.map((e: any) => ({ ...e, trackId: e.trackId || 't-1' }));
   }
 
+  // 6. Merge local attendance, daily records, and challenge submissions from localStorage and deduplicate by composite keys
+  if (Array.isArray(data.attendanceRecords)) {
+    let attList = [...data.attendanceRecords];
+    try {
+      if (typeof window !== 'undefined') {
+        const localAttRaw = localStorage.getItem('ghaith_attendance_local_v1');
+        if (localAttRaw) {
+          const localAtt: any[] = JSON.parse(localAttRaw);
+          if (Array.isArray(localAtt) && localAtt.length > 0) {
+            attList = [...attList, ...localAtt];
+          }
+        }
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    data.attendanceRecords = deduplicateAttendanceRecords(attList);
+  }
+
+  if (Array.isArray(data.dailyRecords)) {
+    let drList = [...data.dailyRecords];
+    try {
+      if (typeof window !== 'undefined') {
+        const localDrRaw = localStorage.getItem('ghaith_daily_records_local_v1');
+        if (localDrRaw) {
+          const localDr: any[] = JSON.parse(localDrRaw);
+          if (Array.isArray(localDr) && localDr.length > 0) {
+            drList = [...drList, ...localDr];
+          }
+        }
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    data.dailyRecords = deduplicateDailyRecords(drList);
+  }
+
+  if (Array.isArray(data.studentChallengeSubmissions)) {
+    let chSubList = [...data.studentChallengeSubmissions];
+    try {
+      if (typeof window !== 'undefined') {
+        const localChSubRaw = localStorage.getItem('ghaith_challenge_subs_local_v1');
+        if (localChSubRaw) {
+          const localChSub: any[] = JSON.parse(localChSubRaw);
+          if (Array.isArray(localChSub) && localChSub.length > 0) {
+            chSubList = [...chSubList, ...localChSub];
+          }
+        }
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    data.studentChallengeSubmissions = deduplicateChallengeSubmissions(chSubList);
+  }
+
+  if (Array.isArray(data.studentAtqiniSubmissions)) {
+    data.studentAtqiniSubmissions = deduplicateAtqiniSubmissions(data.studentAtqiniSubmissions);
+  }
+
   return data;
 };
 
@@ -507,9 +582,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             if (Array.isArray(parsed.auditLogs)) {
               parsed.auditLogs = sanitizeAndSortAuditLogs(parsed.auditLogs);
             }
-            localStorage.setItem('ghaith_alghaym_db_v1', JSON.stringify(parsed));
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
             return parsed;
           }
+        } else {
+          // Initialize localStorage once from initialData so localStorage is permanently bound
+          const seeded = ensureDefaultTrackIntegrity({
+            ...initialData,
+            users: sanitizeUsersList(initialData.users),
+            auditLogs: sanitizeAndSortAuditLogs(initialData.auditLogs || [])
+          });
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
+          return seeded;
         }
       } catch {}
     }
@@ -611,7 +695,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
     return initialCached?.settings ? { ...baseSettings, ...initialCached.settings } : baseSettings;
   });
-  const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
+  const [selectedTrackId, setSelectedTrackIdState] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ghaith_selected_track_id') || null;
+    }
+    return null;
+  });
+  const setSelectedTrackId = (id: string | null) => {
+    setSelectedTrackIdState(id);
+    if (typeof window !== 'undefined') {
+      if (id) localStorage.setItem('ghaith_selected_track_id', id);
+      else localStorage.removeItem('ghaith_selected_track_id');
+    }
+  };
+
+  const [selectedCircleId, setSelectedCircleIdState] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('ghaith_selected_circle_id');
+      if (saved) return saved;
+    }
+    const firstCircle = (initialCached?.circles || initialData.circles || []).find((c: any) => !c.isArchived);
+    return firstCircle?.id || 'c-1';
+  });
+  const setSelectedCircleId = (id: string) => {
+    setSelectedCircleIdState(id);
+    if (typeof window !== 'undefined' && id) {
+      localStorage.setItem('ghaith_selected_circle_id', id);
+    }
+  };
+
+  const [selectedDate, setSelectedDateState] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('ghaith_selected_date');
+      if (saved && /^\d{4}-\d{2}-\d{2}$/.test(saved)) return saved;
+    }
+    return getTodayISO();
+  });
+  const setSelectedDate = (date: string) => {
+    setSelectedDateState(date);
+    if (typeof window !== 'undefined' && date) {
+      localStorage.setItem('ghaith_selected_date', date);
+    }
+  };
+
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
     return sanitizeAndSortAuditLogs(initialCached?.auditLogs || initialData.auditLogs || []);
   });
@@ -624,6 +750,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [quickModalAction, setQuickModalAction] = useState<{ type: string; timestamp: number } | null>(null);
 
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastLocalMutationTimeRef = useRef<number>(0);
+  const hasPendingLocalChangesRef = useRef<boolean>(false);
 
   const [theme, setThemeState] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
@@ -904,55 +1032,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   );
 
   const mergeDailyRecords = (localRecs: DailyRecord[] = [], incomingRecs: DailyRecord[] = []): DailyRecord[] => {
-    const map = new Map<string, DailyRecord>();
-    for (const inc of incomingRecs) {
-      const key = inc.id || `dr_${inc.studentId}_${inc.date}`;
-      map.set(key, inc);
-    }
-    for (const loc of localRecs) {
-      const key = loc.id || `dr_${loc.studentId}_${loc.date}`;
-      const inc = map.get(key);
-      if (!inc) {
-        map.set(key, loc);
-      } else {
-        const incTime = inc.recordedAt ? new Date(inc.recordedAt).getTime() : 0;
-        const locTime = loc.recordedAt ? new Date(loc.recordedAt).getTime() : 0;
-        map.set(key, locTime >= incTime ? loc : inc);
-      }
-    }
-    return Array.from(map.values());
+    // Put incomingRecs first and localRecs second so local session changes always win on equal/newer timestamps
+    return deduplicateDailyRecords<DailyRecord>([...incomingRecs, ...localRecs]);
   };
 
   const mergeStudentPlans = (localPlans: StudentMonthlyPlan[] = [], incomingPlans: StudentMonthlyPlan[] = []): StudentMonthlyPlan[] => {
     const map = new Map<string, StudentMonthlyPlan>();
     for (const inc of incomingPlans) {
-      const key = inc.id || `sp_${inc.studentId}_${inc.monthlyPlanId}`;
+      if (!inc || !inc.studentId) continue;
+      const key = `${inc.studentId}_${inc.monthlyPlanId || 'default'}`;
       map.set(key, inc);
     }
     for (const loc of localPlans) {
-      const key = loc.id || `sp_${loc.studentId}_${loc.monthlyPlanId}`;
+      if (!loc || !loc.studentId) continue;
+      const key = `${loc.studentId}_${loc.monthlyPlanId || 'default'}`;
       const inc = map.get(key);
       if (!inc) map.set(key, loc);
-      else map.set(key, { ...inc, ...loc });
+      else map.set(key, { ...inc, ...loc, id: loc.id || inc.id });
     }
     return Array.from(map.values());
   };
 
   const mergeAttendanceRecords = (localAtt: AttendanceRecord[] = [], incomingAtt: AttendanceRecord[] = []): AttendanceRecord[] => {
-    const map = new Map<string, AttendanceRecord>();
-    for (const inc of incomingAtt) {
-      const key = inc.id || `att_${inc.studentId}_${inc.date}`;
-      const isAbsent = inc.status === 'absent_unexcused' || inc.status === 'absent_excused';
-      map.set(key, { ...inc, earlyPrepCardSent: isAbsent ? false : !!inc.earlyPrepCardSent });
-    }
-    for (const loc of localAtt) {
-      const key = loc.id || `att_${loc.studentId}_${loc.date}`;
-      const inc = map.get(key);
-      const merged = !inc ? loc : { ...inc, ...loc };
-      const isAbsent = merged.status === 'absent_unexcused' || merged.status === 'absent_excused';
-      map.set(key, { ...merged, earlyPrepCardSent: isAbsent ? false : !!merged.earlyPrepCardSent });
-    }
-    return Array.from(map.values());
+    // Put incomingAtt first and localAtt second so local session changes always win on equal/newer timestamps
+    return deduplicateAttendanceRecords<AttendanceRecord>([...incomingAtt, ...localAtt]);
   };
 
   const mergeSubscriptions = (localSubs: StudentSubscription[] = [], incomingSubs: StudentSubscription[] = []): StudentSubscription[] => {
@@ -977,8 +1080,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return Array.from(map.values());
   };
 
-  const applyState = (incomingData: any) => {
+  const applyState = (incomingData: any, isFromCloud = false) => {
     if (!incomingData || typeof incomingData !== 'object') return;
+    // Never allow an asynchronous cloud echo to overwrite recent local user actions
+    if (isFromCloud && (hasPendingLocalChangesRef.current || Date.now() - lastLocalMutationTimeRef.current < 6000)) {
+      return;
+    }
+
     const sanitizedIncoming = ensureDefaultTrackIntegrity(incomingData);
 
     const deletedEntities = mergeDeletedEntityMaps(
@@ -1140,7 +1248,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (Array.isArray(incomingAtqSubmissions)) {
       const cleanIncoming = deduplicateAtqiniSubmissions<StudentAtqiniSubmission>(incomingAtqSubmissions);
       const currentAtqSubs = deduplicateAtqiniSubmissions<StudentAtqiniSubmission>(masterStateRef.current.studentAtqiniSubmissions || []);
-      const mergedAtqSubs = deduplicateAtqiniSubmissions<StudentAtqiniSubmission>(mergeEntities(currentAtqSubs, cleanIncoming));
+      // Put cleanIncoming first and currentAtqSubs second so local state always wins on equal/newer timestamps
+      const mergedAtqSubs = deduplicateAtqiniSubmissions<StudentAtqiniSubmission>([...cleanIncoming, ...currentAtqSubs]);
       masterStateRef.current.studentAtqiniSubmissions = mergedAtqSubs;
       setStudentAtqiniSubmissions(mergedAtqSubs);
     }
@@ -1154,7 +1263,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (Array.isArray(incomingChSubmissions)) {
       const cleanIncoming = deduplicateChallengeSubmissions<StudentChallengeSubmission>(incomingChSubmissions);
       const currentChSubs = deduplicateChallengeSubmissions<StudentChallengeSubmission>(masterStateRef.current.studentChallengeSubmissions || []);
-      const mergedChSubs = deduplicateChallengeSubmissions<StudentChallengeSubmission>(mergeEntities(currentChSubs, cleanIncoming));
+      // Put cleanIncoming first and currentChSubs second so local state always wins on equal/newer timestamps
+      const mergedChSubs = deduplicateChallengeSubmissions<StudentChallengeSubmission>([...cleanIncoming, ...currentChSubs]);
       masterStateRef.current.studentChallengeSubmissions = mergedChSubs;
       setStudentChallengeSubmissions(mergedChSubs);
     }
@@ -1190,13 +1300,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       masterStateRef.current.auditLogs = mergedLogs;
       setAuditLogs(mergedLogs);
     }
+
+    // Re-apply local storage overrides and persist the unified state to STORAGE_KEY
+    masterStateRef.current = ensureDefaultTrackIntegrity(masterStateRef.current);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(masterStateRef.current));
+      }
+    } catch {}
+
     setLastSynced(new Date());
   };
 
   const persistState = (overrides?: any) => {
     try {
+      lastLocalMutationTimeRef.current = Date.now();
+      hasPendingLocalChangesRef.current = true;
+
       const replaceCloudState = Boolean(overrides?._replaceState);
-      const payload = {
+      const rawPayload = {
         currentUser: masterStateRef.current.currentUser || currentUser,
         users: masterStateRef.current.users || users,
         tracks: masterStateRef.current.tracks || tracks,
@@ -1204,12 +1326,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         students: masterStateRef.current.students || students,
         monthlyPlans: masterStateRef.current.monthlyPlans || monthlyPlans,
         studentPlans: masterStateRef.current.studentPlans || studentPlans,
-        dailyRecords: masterStateRef.current.dailyRecords || dailyRecords,
-        attendanceRecords: masterStateRef.current.attendanceRecords || attendanceRecords,
+        dailyRecords: deduplicateDailyRecords(overrides?.dailyRecords || masterStateRef.current.dailyRecords || dailyRecords),
+        attendanceRecords: deduplicateAttendanceRecords(overrides?.attendanceRecords || masterStateRef.current.attendanceRecords || attendanceRecords),
         atqiniAssignments: masterStateRef.current.atqiniAssignments || atqiniAssignments,
-        studentAtqiniSubmissions: masterStateRef.current.studentAtqiniSubmissions || studentAtqiniSubmissions,
+        studentAtqiniSubmissions: deduplicateAtqiniSubmissions(overrides?.studentAtqiniSubmissions || masterStateRef.current.studentAtqiniSubmissions || studentAtqiniSubmissions),
         challenges: masterStateRef.current.challenges || challenges,
-        studentChallengeSubmissions: masterStateRef.current.studentChallengeSubmissions || studentChallengeSubmissions,
+        studentChallengeSubmissions: deduplicateChallengeSubmissions(overrides?.studentChallengeSubmissions || masterStateRef.current.studentChallengeSubmissions || studentChallengeSubmissions),
         monthlyExams: masterStateRef.current.monthlyExams || monthlyExams,
         studentExamResults: masterStateRef.current.studentExamResults || studentExamResults,
         studentSubscriptions: masterStateRef.current.studentSubscriptions || studentSubscriptions,
@@ -1219,12 +1341,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         auditLogs: masterStateRef.current.auditLogs || auditLogs,
         ...overrides
       };
-      delete payload._replaceState;
+      delete rawPayload._replaceState;
 
-      masterStateRef.current = payload;
+      rawPayload.attendanceRecords = deduplicateAttendanceRecords(rawPayload.attendanceRecords);
+      rawPayload.dailyRecords = deduplicateDailyRecords(rawPayload.dailyRecords);
+      rawPayload.studentChallengeSubmissions = deduplicateChallengeSubmissions(rawPayload.studentChallengeSubmissions);
+      rawPayload.studentAtqiniSubmissions = deduplicateAtqiniSubmissions(rawPayload.studentAtqiniSubmissions);
+
+      masterStateRef.current = rawPayload;
 
       try {
-        if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(rawPayload));
+          localStorage.setItem('ghaith_attendance_local_v1', JSON.stringify(rawPayload.attendanceRecords));
+          localStorage.setItem('ghaith_daily_records_local_v1', JSON.stringify(rawPayload.dailyRecords));
+          localStorage.setItem('ghaith_challenge_subs_local_v1', JSON.stringify(rawPayload.studentChallengeSubmissions));
+        }
       } catch (storageError) {
         console.warn('LocalStorage save failed; continuing with cloud sync:', storageError);
       }
@@ -1234,18 +1366,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         syncTimeoutRef.current = null;
       }
       if (isLocalDemoMode) {
+        hasPendingLocalChangesRef.current = false;
         setCloudStatus('offline');
         return;
       }
       
       syncTimeoutRef.current = setTimeout(() => {
-        pushStateToCloud(replaceCloudState ? { ...payload, _replaceState: true } : payload)
-          .then(() => setCloudStatus('connected'))
+        pushStateToCloud(replaceCloudState ? { ...rawPayload, _replaceState: true } : rawPayload)
+          .then(() => {
+            hasPendingLocalChangesRef.current = false;
+            setCloudStatus('connected');
+          })
           .catch(error => {
             console.warn('Cloud save failed:', error);
+            // Keep hasPendingLocalChangesRef true if cloud write failed so stale cloud reads never overwrite local state
             setCloudStatus('offline');
           });
-      }, 1200);
+      }, 600);
 
     } catch (e) {
       console.error('Unable to build local/cloud state payload:', e);
@@ -1262,17 +1399,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           try {
             const data = JSON.parse(cached);
             if (data && (Array.isArray(data.students) || Array.isArray(data.tracks))) {
-              applyState(data);
+              applyState(data, false);
               loadedFromCache = true;
             }
           } catch {}
         }
       }
-      if (!loadedFromCache) applyState(initialData);
+      if (!loadedFromCache) applyState(initialData, false);
       setError(null);
     } catch (error) {
       console.warn('Failed to initialize cached state; using bundled starter data:', error);
-      try { applyState(initialData); } catch {}
+      try { applyState(initialData, false); } catch {}
       setError(null);
     } finally {
       setLoading(false);
@@ -1290,6 +1427,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       const payload = { ...masterStateRef.current };
       await pushStateToCloud(payload);
+      hasPendingLocalChangesRef.current = false;
       setCloudStatus('connected');
       setLastSynced(new Date());
       showToast('تمت المزامنة السحابية بنجاح', 'success');
@@ -1312,7 +1450,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // 1. Immediately fetch latest cloud database to hydrate other devices upon opening
     void fetchCloudDatabaseOnce().then((cloudData) => {
       if (cloudData && typeof cloudData === 'object') {
-        applyState(cloudData);
+        applyState(cloudData, true);
         setCloudStatus('connected');
         setCloudDataReady(true);
       }
@@ -1324,7 +1462,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       unsubscribeCloud = subscribeToCloudDatabase(
         (cloudData) => {
           if (cloudData && typeof cloudData === 'object') {
-            applyState(cloudData);
+            applyState(cloudData, true);
             setCloudStatus('connected');
             setLastSynced(new Date());
           }
@@ -1943,9 +2081,90 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('تم حفظ خطة الطالبة وتحديث المقرر بنجاح');
   };
 
+  const getThisWeekThursdayISO = (baseDateIso?: string): string => {
+    const cleanBase = baseDateIso || getTodayISO();
+    const parts = cleanBase.split('-').map(Number);
+    const d = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0) : new Date();
+    if (Number.isNaN(d.getTime())) return getTodayISO();
+    const day = d.getDay(); // 0=Sun ... 4=Thu
+    const diffToThursday = 4 - day;
+    d.setDate(d.getDate() + diffToThursday);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dayNum = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dayNum}`;
+  };
+
+  const upsertAttendanceForDates = (
+    studentId: string,
+    dates: string[],
+    circleIdFallback?: string,
+    earlyPrepOverride?: boolean,
+    forcePresent: boolean = true,
+    statusOverride?: AttendanceRecord['status']
+  ): AttendanceRecord[] => {
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === studentId);
+    const circleId = circleIdFallback || studentObj?.circleId || '';
+    const uniqueDates = Array.from(new Set(dates.filter(Boolean)));
+    let nextAtt: AttendanceRecord[] = deduplicateAttendanceRecords<AttendanceRecord>(
+      masterStateRef.current.attendanceRecords || attendanceRecords || []
+    );
+
+    uniqueDates.forEach(targetDate => {
+      const cleanAttId = `att_${studentId}_${targetDate}`;
+      const existingAtt = nextAtt.find(
+        (a: AttendanceRecord) => a.studentId === studentId && a.date === targetDate
+      );
+
+      const resolvedStatus = statusOverride
+        ? statusOverride
+        : forcePresent
+          ? 'present'
+          : (existingAtt?.status && existingAtt.status !== 'unrecorded' ? existingAtt.status : 'present');
+
+      const isAbsent = resolvedStatus === 'absent_unexcused' || resolvedStatus === 'absent_excused';
+
+      const updatedRecord: AttendanceRecord = {
+        ...(existingAtt || {}),
+        id: existingAtt?.id || cleanAttId,
+        studentId,
+        circleId: circleId || existingAtt?.circleId || '',
+        date: targetDate,
+        status: resolvedStatus,
+        earlyPrepCardSent: isAbsent
+          ? false
+          : earlyPrepOverride !== undefined
+            ? earlyPrepOverride
+            : !!(existingAtt?.earlyPrepCardSent),
+        reason: resolvedStatus === 'present' ? undefined : existingAtt?.reason,
+        recordedBy: currentUser?.name || existingAtt?.recordedBy || 'معلمة الحلقة',
+        recordedAt: new Date().toISOString()
+      };
+
+      // Strictly remove any previous records for this studentId + targetDate regardless of ID
+      nextAtt = [
+        ...nextAtt.filter(a => !(a.studentId === studentId && a.date === targetDate) && a.id !== cleanAttId),
+        updatedRecord
+      ];
+    });
+
+    nextAtt = deduplicateAttendanceRecords(nextAtt);
+    masterStateRef.current.attendanceRecords = nextAtt;
+    setAttendanceRecords(nextAtt);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_attendance_local_v1', JSON.stringify(nextAtt));
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return nextAtt;
+  };
+
   const saveDailyRecord = async (record: Partial<DailyRecord>) => {
     const studentId = record.studentId || '';
-    const recDate = record.date || new Date().toISOString().split('T')[0];
+    const recDate = record.date || selectedDate || getTodayISO();
     const cleanId = record.id || `dr_${studentId}_${recDate}`;
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
     const studentObj = currentStudents.find((s: Student) => s.id === studentId);
@@ -1953,7 +2172,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newRecord: DailyRecord = {
       id: cleanId,
       studentId,
-      circleId: record.circleId || '',
+      circleId: record.circleId || studentObj?.circleId || '',
       date: recDate,
       dayName: record.dayName || 'الأحد',
       requiredPortionText: record.requiredPortionText || '',
@@ -1983,39 +2202,69 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...record
     };
 
-    const currentRecords: DailyRecord[] = masterStateRef.current.dailyRecords || [];
-    const existingIdx = currentRecords.findIndex(
-      d => d.id === cleanId || (d.studentId === newRecord.studentId && d.date === newRecord.date)
+    const currentRecords: DailyRecord[] = deduplicateDailyRecords<DailyRecord>(
+      masterStateRef.current.dailyRecords || dailyRecords || []
     );
-
-    let next: DailyRecord[];
-    if (existingIdx >= 0) {
-      next = [...currentRecords];
-      next[existingIdx] = { ...next[existingIdx], ...newRecord };
-    } else {
-      next = [...currentRecords, newRecord];
-    }
+    // Strictly replace any record for this studentId + recDate regardless of ID
+    const filtered = currentRecords.filter(
+      d => !(d.studentId === newRecord.studentId && d.date === newRecord.date) && d.id !== cleanId
+    );
+    const next: DailyRecord[] = deduplicateDailyRecords<DailyRecord>([...filtered, newRecord]);
 
     masterStateRef.current.dailyRecords = next;
     setDailyRecords(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_daily_records_local_v1', JSON.stringify(next));
+      }
+    } catch {
+      // ignore storage errors
+    }
+
+    // Auto-Attendance on Recitation: automatically sync student attendance status for recDate
+    const mappedAttStatus: AttendanceRecord['status'] =
+      newRecord.status === 'absent'
+        ? 'absent_unexcused'
+        : newRecord.status === 'excused'
+          ? 'absent_excused'
+          : 'present';
+    const nextAtt = studentId
+      ? upsertAttendanceForDates(studentId, [recDate], newRecord.circleId, undefined, true, mappedAttStatus)
+      : (masterStateRef.current.attendanceRecords || attendanceRecords);
+
     const nextLogs = appendAuditEntry(
       'grade',
       'dailyRecord',
-      `رصد تسميع يومي للطالبة ${studentObj?.name || studentId} بتاريخ ${recDate} (الدرجة: ${newRecord.recitationScore}/10)`,
+      `رصد تسميع يومي للطالبة ${studentObj?.name || studentId} بتاريخ ${recDate} (الدرجة: ${newRecord.recitationScore}/10) + مزامنة الحضور تلقائياً ✅`,
       cleanId
     );
-    persistState({ dailyRecords: next, auditLogs: nextLogs });
-    showToast('تم رصد التسميع وتحديث درجات الطالبة 📖');
+    persistState({ dailyRecords: next, attendanceRecords: nextAtt, auditLogs: nextLogs });
+    showToast(
+      mappedAttStatus === 'present'
+        ? 'تم رصد التسميع وتسجيل حضور الطالبة تلقائياً 📖✅'
+        : 'تم حفظ حالة الطالبة ومزامنتها في سجل الحضور تلقائياً ✅'
+    );
   };
 
   const deleteDailyRecord = async (id: string) => {
-    const currentRecords: DailyRecord[] = masterStateRef.current.dailyRecords || [];
+    const currentRecords: DailyRecord[] = masterStateRef.current.dailyRecords || dailyRecords || [];
     const recToDelete = currentRecords.find(d => d.id === id);
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
     const studentObj = currentStudents.find((s: Student) => s.id === recToDelete?.studentId);
-    const next = currentRecords.filter(d => d.id !== id);
+    const next = currentRecords.filter(d => {
+      if (d.id === id) return false;
+      if (recToDelete && d.studentId === recToDelete.studentId && d.date === recToDelete.date) return false;
+      return true;
+    });
     masterStateRef.current.dailyRecords = next;
     setDailyRecords(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_daily_records_local_v1', JSON.stringify(next));
+      }
+    } catch {
+      // ignore storage errors
+    }
     const nextLogs = appendAuditEntry(
       'delete',
       'dailyRecord',
@@ -2027,7 +2276,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const saveAttendance = async (record: Partial<AttendanceRecord>) => {
-    const recDate = record.date || new Date().toISOString().split('T')[0];
+    const recDate = record.date || selectedDate || getTodayISO();
     const cleanId = record.id || `att_${record.studentId}_${recDate}`;
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
     const studentObj = currentStudents.find((s: Student) => s.id === record.studentId);
@@ -2039,7 +2288,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...record,
       id: cleanId,
       studentId: record.studentId || '',
-      circleId: record.circleId || '',
+      circleId: record.circleId || studentObj?.circleId || '',
       date: recDate,
       status: finalStatus,
       earlyPrepCardSent: isAbsent ? false : !!record.earlyPrepCardSent,
@@ -2048,19 +2297,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       recordedAt: new Date().toISOString()
     };
 
-    const currentAtt = masterStateRef.current.attendanceRecords || attendanceRecords;
-    const existingIdx = currentAtt.findIndex(
-      (a: AttendanceRecord) => a.id === cleanId || (a.studentId === newRecord.studentId && a.date === newRecord.date)
+    const currentAtt = deduplicateAttendanceRecords<AttendanceRecord>(
+      masterStateRef.current.attendanceRecords || attendanceRecords || []
     );
-    let next: AttendanceRecord[];
-    if (existingIdx >= 0) {
-      next = [...currentAtt];
-      next[existingIdx] = { ...next[existingIdx], ...newRecord };
-    } else {
-      next = [...currentAtt, newRecord];
-    }
+    // Strictly replace any record for this studentId + recDate regardless of ID
+    const filtered = currentAtt.filter(
+      (a: AttendanceRecord) => !(a.studentId === newRecord.studentId && a.date === newRecord.date) && a.id !== cleanId
+    );
+    const next: AttendanceRecord[] = deduplicateAttendanceRecords<AttendanceRecord>([...filtered, newRecord]);
+
     masterStateRef.current.attendanceRecords = next;
     setAttendanceRecords(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_attendance_local_v1', JSON.stringify(next));
+      }
+    } catch {
+      // ignore storage errors
+    }
     const statusMap: Record<string, string> = {
       present: 'حاضرة',
       late: 'متأخرة',
@@ -2079,13 +2333,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const deleteAttendanceRecord = async (id: string) => {
-    const currentAtt: AttendanceRecord[] = masterStateRef.current.attendanceRecords || attendanceRecords;
+    const currentAtt: AttendanceRecord[] = masterStateRef.current.attendanceRecords || attendanceRecords || [];
     const attToDelete = currentAtt.find(a => a.id === id);
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
     const studentObj = currentStudents.find((s: Student) => s.id === attToDelete?.studentId);
-    const next = currentAtt.filter(a => a.id !== id);
+    const next = currentAtt.filter(a => {
+      if (a.id === id) return false;
+      if (attToDelete && a.studentId === attToDelete.studentId && a.date === attToDelete.date) return false;
+      return true;
+    });
     masterStateRef.current.attendanceRecords = next;
     setAttendanceRecords(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_attendance_local_v1', JSON.stringify(next));
+      }
+    } catch {
+      // ignore storage errors
+    }
     const nextLogs = appendAuditEntry(
       'delete',
       'attendance',
@@ -2097,9 +2362,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const saveBulkAttendance = async (records: Partial<AttendanceRecord>[]) => {
-    let next = [...(masterStateRef.current.attendanceRecords || attendanceRecords)];
+    let next = deduplicateAttendanceRecords<AttendanceRecord>(
+      masterStateRef.current.attendanceRecords || attendanceRecords || []
+    );
     records.forEach(rec => {
-      const recDate = rec.date || new Date().toISOString().split('T')[0];
+      const recDate = rec.date || selectedDate || getTodayISO();
       const cleanId = rec.id || `att_${rec.studentId}_${recDate}`;
       const finalStatus = rec.status || 'present';
       const isAbsent = finalStatus === 'absent_unexcused' || finalStatus === 'absent_excused';
@@ -2115,15 +2382,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         recordedBy: currentUser?.name || 'معلمة الحلقة',
         recordedAt: new Date().toISOString()
       };
-      const idx = next.findIndex(
-        a => a.id === cleanId || (a.studentId === newRecord.studentId && a.date === newRecord.date)
-      );
-      if (idx >= 0) next[idx] = { ...next[idx], ...newRecord };
-      else next.push(newRecord);
+      next = [
+        ...next.filter(a => !(a.studentId === newRecord.studentId && a.date === newRecord.date) && a.id !== cleanId),
+        newRecord
+      ];
     });
+    next = deduplicateAttendanceRecords(next);
     masterStateRef.current.attendanceRecords = next;
     setAttendanceRecords(next);
-    const batchDate = records[0]?.date || new Date().toISOString().split('T')[0];
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_attendance_local_v1', JSON.stringify(next));
+      }
+    } catch {
+      // ignore storage errors
+    }
+    const batchDate = records[0]?.date || selectedDate || getTodayISO();
     const nextLogs = appendAuditEntry(
       'update',
       'attendance',
@@ -2386,14 +2660,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     masterStateRef.current.studentChallengeSubmissions = next;
     setStudentChallengeSubmissions(next);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(CHALLENGE_SUBS_LOCAL_KEY, JSON.stringify(next));
+      } catch {}
+    }
+
+    // Challenge-Driven Attendance: automatically mark student as "حاضرة" (Present) for today, Thursday, and selectedDate
+    const todayIso = getTodayISO();
+    const thursdayIso = getThisWeekThursdayISO(todayIso);
+    const datesToSync = Array.from(new Set([todayIso, thursdayIso, selectedDate].filter(Boolean)));
+    const nextAtt = newSub.studentId
+      ? upsertAttendanceForDates(
+          newSub.studentId,
+          datesToSync,
+          studentObj?.circleId,
+          isEarlyCompleted ? true : undefined,
+          true
+        )
+      : (masterStateRef.current.attendanceRecords || attendanceRecords);
+
     const nextLogs = appendAuditEntry(
       'grade',
       'challenge',
-      `رصد نتيجة التحدي والمراجعة الثنائية للطالبة ${studentObj?.name || newSub.studentId} (${newSub.totalPointsEarned} نقطة)`,
+      `رصد نتيجة التحدي والمراجعة الثنائية للطالبة ${studentObj?.name || newSub.studentId} (${newSub.totalPointsEarned} نقطة) + تسجيل حضور الخميس تلقائياً ✅`,
       cleanId
     );
-    persistState({ studentChallengeSubmissions: next, auditLogs: nextLogs });
-    showToast('تم رصد نتيجة التحدي والمراجعة الثنائية');
+    persistState({ studentChallengeSubmissions: next, attendanceRecords: nextAtt, auditLogs: nextLogs });
+    showToast('تم رصد نتيجة التحدي وتسجيل حضور الطالبة ليوم الخميس تلقائياً ✅');
   };
 
   const toggleChallengeEarlyAchievement = async (challengeId: string, studentId: string) => {
@@ -2484,21 +2778,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next: StudentChallengeSubmission[] = [...filtered, finalizedSub];
     masterStateRef.current.studentChallengeSubmissions = next;
     setStudentChallengeSubmissions(next);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(CHALLENGE_SUBS_LOCAL_KEY, JSON.stringify(next));
+      } catch {}
+    }
+
+    // Sync Challenge Early Achievement with Thursday/Today/SelectedDate Attendance & Early Prep sheet
+    const todayIso = getTodayISO();
+    const thursdayIso = getThisWeekThursdayISO(todayIso);
+    const datesToSync = Array.from(new Set([todayIso, thursdayIso, selectedDate].filter(Boolean)));
+    const nextAtt = upsertAttendanceForDates(
+      studentId,
+      datesToSync,
+      studentObj?.circleId,
+      nextAwarded,
+      nextAwarded
+    );
 
     const studentName = studentObj?.name || studentId;
     const nextLogs = appendAuditEntry(
       'grade',
       'challenge',
       nextAwarded
-        ? `منح نقطتي (+2) الإنجاز المبكر في التحدي للطالبة ${studentName}`
+        ? `منح نقطتي (+2) الإنجاز المبكر في التحدي للطالبة ${studentName} + تسجيل حضور وتحضير مبكر تلقائياً ✅`
         : `إلغاء نقطتي الإنجاز المبكر في التحدي للطالبة ${studentName}`,
       stableId
     );
 
-    persistState({ studentChallengeSubmissions: next, auditLogs: nextLogs });
+    persistState({ studentChallengeSubmissions: next, attendanceRecords: nextAtt, auditLogs: nextLogs });
     showToast(
       nextAwarded
-        ? `تم منح ${studentName} نقطتي (+2) الإنجاز المبكر بنجاح ⭐`
+        ? `تم منح ${studentName} (+2 نقاط) وتسجيل حضورها وتحضيرها المبكر تلقائياً ⭐✅`
         : `تم إلغاء نقطتي الإنجاز المبكر لـ ${studentName} بنجاح`
     );
   };
@@ -2746,6 +3057,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const resetSampleData = async () => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem(ATTENDANCE_LOCAL_KEY);
+        localStorage.removeItem(DAILY_RECORDS_LOCAL_KEY);
+        localStorage.removeItem(CHALLENGE_SUBS_LOCAL_KEY);
+        localStorage.removeItem(TRACKS_LOCAL_KEY);
+        localStorage.removeItem(CIRCLES_LOCAL_KEY);
+        localStorage.removeItem(SUBSCRIPTIONS_LOCAL_KEY);
+      } catch {}
+    }
     masterStateRef.current = {};
     applyState({ ...initialData, _deletedEntities: {} });
     const nextLogs = appendAuditEntry('update', 'settings', 'إعادة ضبط النظام إلى البيانات النموذجية الأصلية', 'system-reset');
@@ -3050,11 +3371,83 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     atqiniAssignmentList: AtqiniAssignment[],
     gradingConfig: TrackGradingConfig | undefined
   ): StudentScoreSummary => {
-    const presentCount = sAttendance.filter(a => a.status === 'present').length;
-    const lateCount = sAttendance.filter(a => a.status === 'late').length;
-    const absentUnexcusedCount = sAttendance.filter(a => a.status === 'absent_unexcused').length;
-    const absentExcusedCount = sAttendance.filter(a => a.status === 'absent_excused').length;
-    const earlyPrepCount = sAttendance.filter(a => a.earlyPrepCardSent && (a.status === 'present' || a.status === 'late')).length;
+    // Unify attendance records with completed DailyRecitations (Sun-Wed) and evaluated Challenges (Thu)
+    const attendanceByDate = new Map<string, AttendanceRecord>();
+    sAttendance.forEach(a => {
+      if (a.date) attendanceByDate.set(a.date, a);
+    });
+    sDaily.forEach(dr => {
+      if (!dr.date) return;
+      const existing = attendanceByDate.get(dr.date);
+      if (dr.status === 'completed' || (dr.recitationScore ?? 0) > 0) {
+        if (!existing || existing.status === 'unrecorded') {
+          attendanceByDate.set(dr.date, {
+            id: existing?.id || `att_${studentId}_${dr.date}`,
+            studentId,
+            circleId: dr.circleId || existing?.circleId || '',
+            date: dr.date,
+            status: 'present',
+            earlyPrepCardSent: existing?.earlyPrepCardSent ?? false,
+            recordedBy: existing?.recordedBy || dr.recordedBy || 'تلقائي (التسميع)',
+            recordedAt: existing?.recordedAt || dr.recordedAt || new Date().toISOString()
+          });
+        }
+      } else if (dr.status === 'absent' && !existing) {
+        attendanceByDate.set(dr.date, {
+          id: `att_${studentId}_${dr.date}`,
+          studentId,
+          circleId: dr.circleId || '',
+          date: dr.date,
+          status: 'absent_unexcused',
+          earlyPrepCardSent: false,
+          recordedBy: dr.recordedBy || 'تلقائي (التسميع)',
+          recordedAt: dr.recordedAt || new Date().toISOString()
+        });
+      } else if (dr.status === 'excused' && !existing) {
+        attendanceByDate.set(dr.date, {
+          id: `att_${studentId}_${dr.date}`,
+          studentId,
+          circleId: dr.circleId || '',
+          date: dr.date,
+          status: 'absent_excused',
+          earlyPrepCardSent: false,
+          recordedBy: dr.recordedBy || 'تلقائي (التسميع)',
+          recordedAt: dr.recordedAt || new Date().toISOString()
+        });
+      }
+    });
+    sChallenges.forEach(sub => {
+      const hasActivity = (sub.totalPointsEarned ?? 0) > 0 || (sub.earlyPrepPointsEarned ?? 0) > 0 || !!sub.earlyAchievementCompleted || !!sub.peerReviewEvaluation?.jointRevisionCompleted;
+      if (!hasActivity) return;
+      const rawDate = (sub.evaluatedAt || sub.updatedAt || '').split('T')[0] || new Date().toISOString().split('T')[0];
+      const thursdayDate = getThisWeekThursdayISO(rawDate);
+      const existing = attendanceByDate.get(thursdayDate);
+      const isEarly = (sub.earlyPrepPointsEarned ?? 0) > 0 || !!sub.earlyAchievementCompleted;
+      if (!existing || existing.status === 'unrecorded') {
+        attendanceByDate.set(thursdayDate, {
+          id: existing?.id || `att_${studentId}_${thursdayDate}`,
+          studentId,
+          circleId: existing?.circleId || '',
+          date: thursdayDate,
+          status: 'present',
+          earlyPrepCardSent: (existing?.earlyPrepCardSent ?? false) || isEarly,
+          recordedBy: existing?.recordedBy || 'تلقائي (تحديات الخميس)',
+          recordedAt: existing?.recordedAt || sub.updatedAt || new Date().toISOString()
+        });
+      } else if (isEarly && !existing.earlyPrepCardSent) {
+        attendanceByDate.set(thursdayDate, {
+          ...existing,
+          earlyPrepCardSent: true
+        });
+      }
+    });
+
+    const effectiveAttendance = Array.from(attendanceByDate.values());
+    const presentCount = effectiveAttendance.filter(a => a.status === 'present').length;
+    const lateCount = effectiveAttendance.filter(a => a.status === 'late').length;
+    const absentUnexcusedCount = effectiveAttendance.filter(a => a.status === 'absent_unexcused').length;
+    const absentExcusedCount = effectiveAttendance.filter(a => a.status === 'absent_excused').length;
+    const earlyPrepCount = effectiveAttendance.filter(a => a.earlyPrepCardSent && (a.status === 'present' || a.status === 'late')).length;
     const totalRecordedDays = presentCount + lateCount + absentUnexcusedCount + absentExcusedCount;
     const rules = gradingConfig?.attendanceRules || {
       presentScore: 5,
@@ -3490,6 +3883,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         toggleChallengeEarlyAchievement,
         selectedTrackId,
         setSelectedTrackId,
+        selectedCircleId,
+        setSelectedCircleId,
+        selectedDate,
+        setSelectedDate,
         createMonthlyExam,
         updateMonthlyExam,
         deleteMonthlyExam,

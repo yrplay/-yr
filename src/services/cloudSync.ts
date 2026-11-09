@@ -1,6 +1,15 @@
 import { doc, getDoc, onSnapshot, runTransaction } from 'firebase/firestore';
 import { db, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID } from '../firebase';
-import { mergeArrayByKey, mergeDeletedEntities, sanitizeCloudState, deduplicateAtqiniSubmissions, deduplicateChallengeSubmissions, type DeletedEntities } from './cloudSyncHelpers';
+import {
+  mergeArrayByKey,
+  mergeDeletedEntities,
+  sanitizeCloudState,
+  deduplicateAtqiniSubmissions,
+  deduplicateChallengeSubmissions,
+  deduplicateAttendanceRecords,
+  deduplicateDailyRecords,
+  type DeletedEntities
+} from './cloudSyncHelpers';
 
 export type CloudSyncStatus = 'connected' | 'syncing' | 'offline' | 'error';
 
@@ -92,6 +101,10 @@ export const pushStateToCloud = async (statePayload: any): Promise<void> => {
         mergedItems = deduplicateAtqiniSubmissions(mergedItems);
       } else if (collection === 'studentChallengeSubmissions') {
         mergedItems = deduplicateChallengeSubmissions(mergedItems);
+      } else if (collection === 'attendanceRecords') {
+        mergedItems = deduplicateAttendanceRecords(mergedItems);
+      } else if (collection === 'dailyRecords') {
+        mergedItems = deduplicateDailyRecords(mergedItems);
       }
       finalPayload[collection] = mergedItems;
     }

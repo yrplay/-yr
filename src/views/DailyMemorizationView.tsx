@@ -194,8 +194,9 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
   const { 
     students, circles, tracks, currentUser, 
     dailyRecords, saveDailyRecord, deleteDailyRecord, settings,
+    attendanceRecords, saveAttendance,
     studentPlans, updateTrack, updateTrackSystemRules, showToast, allStudentScores,
-    selectedTrackId
+    selectedTrackId, selectedCircleId, setSelectedCircleId, selectedDate, setSelectedDate
   } = useApp();
 
   const availableCircles = useMemo(() => {
@@ -203,8 +204,6 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     return circles.filter(c => !c.isArchived && c.trackId === selectedTrackId);
   }, [circles, selectedTrackId]);
 
-  const [selectedCircleId, setSelectedCircleId] = useState<string>(availableCircles[0]?.id || circles[0]?.id || '');
-  const [selectedDate, setSelectedDate] = useState<string>(getTodayISO());
   const [searchQuery, setSearchQuery] = useState('');
   const [activeModalStudentId, setActiveModalStudentId] = useState<string | null>(null);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
@@ -214,7 +213,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     if (availableCircles.length > 0 && !availableCircles.some(c => c.id === selectedCircleId)) {
       setSelectedCircleId(availableCircles[0].id);
     }
-  }, [availableCircles, selectedCircleId]);
+  }, [availableCircles, selectedCircleId, setSelectedCircleId]);
 
   // حالة فتح كشف سجل الطالبة الشامل
   const [viewingStudentRecord, setViewingStudentRecord] = useState<Student | null>(null);
@@ -638,19 +637,78 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     setActiveModalStudentId(null);
   };
 
+  // تبديل التحضير المبكر بنقرة واحدة مباشرة من سجل التسميع ومزامنته مع سجل الحضور
+  const handleQuickToggleEarlyPrep = async (student: Student) => {
+    const existingAtt = (attendanceRecords || []).find(
+      a => a.studentId === student.id && a.date === selectedDate
+    );
+    const nextEarly = !existingAtt?.earlyPrepCardSent;
+
+    await saveAttendance({
+      ...(existingAtt || {}),
+      studentId: student.id,
+      circleId: selectedCircleId || student.circleId || '',
+      date: selectedDate,
+      status: 'present',
+      earlyPrepCardSent: nextEarly
+    });
+  };
+
+  // تبديل حالة الحضور السريع للطالبة مباشرة من صف التسميع
+  const handleQuickTogglePresent = async (student: Student) => {
+    const existingAtt = (attendanceRecords || []).find(
+      a => a.studentId === student.id && a.date === selectedDate
+    );
+    const isCurrentlyPresent = existingAtt?.status === 'present';
+
+    await saveAttendance({
+      ...(existingAtt || {}),
+      studentId: student.id,
+      circleId: selectedCircleId || student.circleId || '',
+      date: selectedDate,
+      status: isCurrentlyPresent ? 'unrecorded' : 'present',
+      earlyPrepCardSent: isCurrentlyPresent ? false : !!existingAtt?.earlyPrepCardSent
+    });
+  };
+
+  const isSelectedDateThursday = useMemo(() => {
+    const d = new Date(`${selectedDate}T12:00:00`);
+    if (!Number.isNaN(d.getTime()) && d.getDay() === 4) return true;
+    const hijriWeekday = getHijriParts(selectedDate).weekday || '';
+    return hijriWeekday.includes('الخميس');
+  }, [selectedDate]);
+
+  const dayPresentCount = useMemo(() => {
+    return circleStudents.filter(st => {
+      const att = (attendanceRecords || []).find(a => a.studentId === st.id && a.date === selectedDate);
+      const rec = (dailyRecords || []).find(r => r.studentId === st.id && r.date === selectedDate);
+      return att?.status === 'present' || !!rec;
+    }).length;
+  }, [circleStudents, attendanceRecords, dailyRecords, selectedDate]);
+
+  const dayEarlyPrepCount = useMemo(() => {
+    return circleStudents.filter(st => {
+      const att = (attendanceRecords || []).find(a => a.studentId === st.id && a.date === selectedDate);
+      return !!att?.earlyPrepCardSent;
+    }).length;
+  }, [circleStudents, attendanceRecords, selectedDate]);
+
   return (
     <div className="space-y-6 text-right pb-12" dir="rtl">
       {/* شريط رأس الصفحة */}
       <div className="bg-white dark:bg-stone-900 p-6 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-2xl">📖</span>
             <h1 className="text-xl font-bold text-stone-800 dark:text-stone-100 font-quran">
-              سجل التسميع والمراجعة اليومية
+              سجل التسميع والمراجعة اليومية (الأحد – الأربعاء)
             </h1>
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold">
+              حضور وتحضير مبكر تلقائي ⚡
+            </span>
           </div>
           <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
-            رصد الحفظ الجديد، وتفاصيل المراجعة الصغرى والتمكين مع احتساب الأوجه تلقائياً
+            رصد الحفظ الجديد والمراجعة يسجّل الطالبة «حاضرة» تلقائياً، مع زر «⚡ تحضير مبكر» المباشر في كل صف
           </p>
         </div>
 
@@ -676,16 +734,36 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         </div>
       </div>
 
+      {/* تنبيه سير عمل يوم الخميس (التحديات والمراجعة الثنائية) */}
+      {isSelectedDateThursday && (
+        <div className="bg-emerald-50/90 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2 text-emerald-900 dark:text-emerald-200 font-bold">
+            <span className="text-base">🏆</span>
+            <span>
+              يوم الخميس مخصص حصرياً لـ «التحديات والمراجعة الثنائية» — لا يُطلب إدخال تسميع يومي منفصل هنا، ويتم تسجيل حضور الخميس تلقائياً عند تقييم التحدي أو منح (+2 نقاط) في قسم التحديات.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* قائمة الطالبات */}
       <div className="bg-white dark:bg-stone-900 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 overflow-hidden shadow-xs space-y-3">
-        <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
             <h3 className="font-bold text-sm text-stone-800 dark:text-stone-100">
               طالبات حلقة ({selectedCircle?.name || 'المحددة'}) — تاريخ: {formatHijriDate(selectedDate)}
             </h3>
-            <span className="text-xs text-stone-500 mt-0.5 block">
-              إجمالي طالبات الحلقة: {circleStudents.length} طالبة
-            </span>
+            <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-stone-500">
+              <span>إجمالي طالبات الحلقة: <strong>{circleStudents.length}</strong> طالبة</span>
+              <span>•</span>
+              <span className="text-emerald-700 dark:text-emerald-400 font-bold">
+                الحاضرات: {dayPresentCount} / {circleStudents.length} ✅
+              </span>
+              <span>•</span>
+              <span className="text-emerald-700 dark:text-emerald-400 font-bold">
+                ⚡ تحضير مبكر: {dayEarlyPrepCount}
+              </span>
+            </div>
           </div>
 
           <div className="relative w-full sm:w-64">
@@ -705,6 +783,11 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
             const record = (dailyRecords || []).find(
               r => r.studentId === st.id && r.date === selectedDate
             );
+            const attRecord = (attendanceRecords || []).find(
+              a => a.studentId === st.id && a.date === selectedDate
+            );
+            const isEarlyPrep = !!attRecord?.earlyPrepCardSent;
+            const isPresent = attRecord?.status === 'present' || !!record;
 
             return (
               <div 
@@ -720,11 +803,26 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                     <span className="privacy-student-name">{st.name.charAt(0)}</span>
                   </div>
                   <div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <h4 className="font-bold text-stone-900 dark:text-stone-100 text-sm group-hover:text-[#8E5364] dark:group-hover:text-[#E8BDC8] transition flex items-center gap-1">
                         <span className="privacy-student-name">{st.name}</span>
                         <FileText className="w-3.5 h-3.5 text-stone-400 group-hover:text-[#8E5364] transition opacity-70" />
                       </h4>
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          handleQuickTogglePresent(st);
+                        }}
+                        title={isPresent ? 'الطالبة مسجلة حاضرة — انقري لتغيير الحالة' : 'انقري لتسجيل الطالبة حاضرة مباشرة'}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition cursor-pointer ${
+                          isPresent
+                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200/70 dark:border-emerald-800/50'
+                            : 'bg-stone-100 dark:bg-stone-800 text-stone-500 border-stone-200 dark:border-stone-700 hover:border-emerald-300 hover:text-emerald-700'
+                        }`}
+                      >
+                        {isPresent ? 'حاضرة ✅' : 'تسجيل حضور +'}
+                      </button>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-[11px] text-stone-400 font-mono">
@@ -737,7 +835,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
                   {record ? (
                     <div className="flex items-center gap-3 text-left">
                       <div className="text-xs text-stone-500 text-right">
@@ -753,20 +851,45 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                         تم الرصد ✅
                       </div>
                     </div>
+                  ) : isSelectedDateThursday ? (
+                    <span className="px-3 py-1 rounded-xl bg-[#FAF6F2] dark:bg-stone-800 text-[#8E5364] dark:text-[#E8BDC8] border border-[#E8DFD8] dark:border-stone-700 text-xs font-bold">
+                      يوم التحديات والمراجعة الثنائية 🏆
+                    </span>
                   ) : (
-                    <span className="text-xs text-stone-400">لم يُرصد التسميع اليوم</span>
+                    <span className="text-xs text-stone-400">بانتظار رصد التسميع</span>
                   )}
 
                   <div className="flex items-center gap-1.5">
+                    {/* زر التحضير المبكر السريع بنقرة واحدة (أخضر ممتلئ عند التفعيل، إطار محايد عند عدم التفعيل) */}
                     <button
                       type="button"
-                      onClick={() => handleOpenModal(st.id)}
-                      className="px-4 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
-                      title={record ? 'تعديل هذا الرصد' : 'رصد التسميع اليومي'}
+                      onClick={() => handleQuickToggleEarlyPrep(st)}
+                      title={
+                        isEarlyPrep
+                          ? 'مفعّل: الطالبة مسجلة حاضرة + تحضير مبكر — انقري للإلغاء'
+                          : 'انقري لتسجيل الطالبة حاضرة + تحضير مبكر فوراً'
+                      }
+                      className={`px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer active:scale-95 select-none border ${
+                        isEarlyPrep
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/20'
+                          : 'bg-white dark:bg-stone-800 hover:bg-emerald-50 text-stone-600 dark:text-stone-300 hover:text-emerald-700 border-stone-300 dark:border-stone-700 hover:border-emerald-400'
+                      }`}
                     >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>{record ? 'تعديل الرصد' : 'رصد التسميع'}</span>
+                      <span>⚡ تحضير مبكر</span>
+                      {isEarlyPrep && <span>✓</span>}
                     </button>
+
+                    {(!isSelectedDateThursday || record) && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenModal(st.id)}
+                        className="px-4 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                        title={record ? 'تعديل هذا الرصد' : 'رصد التسميع اليومي (يسجل الطالبة حاضرة تلقائياً)'}
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>{record ? 'تعديل الرصد' : 'رصد التسميع'}</span>
+                      </button>
+                    )}
 
                     {record && (
                       <button
@@ -804,12 +927,31 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                   <span>📖</span>
                   <span>رصد تسميع: {modalStudent.name}</span>
                 </h3>
-                <span className="text-[11px] text-stone-400 font-bold">{formatHijriDate(selectedDate)}</span>
+                <span className="text-[11px] text-stone-400 font-bold">
+                  {formatHijriDate(selectedDate)} • يُسجَّل الحضور تلقائياً عند الحفظ ✅
+                </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-stone-500 font-bold">
-                  {modalTrack?.name || 'مشكاة الغيم'}
-                </span>
+                {(() => {
+                  const modalAtt = (attendanceRecords || []).find(
+                    a => a.studentId === modalStudent.id && a.date === selectedDate
+                  );
+                  const modalEarly = !!modalAtt?.earlyPrepCardSent;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => handleQuickToggleEarlyPrep(modalStudent)}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer border ${
+                        modalEarly
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs ring-2 ring-emerald-500/20'
+                          : 'bg-white text-stone-600 border-stone-300 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-400'
+                      }`}
+                    >
+                      <span>⚡ تحضير مبكر</span>
+                      {modalEarly && <span>✓</span>}
+                    </button>
+                  );
+                })()}
                 <button 
                   onClick={() => setActiveModalStudentId(null)}
                   className="p-1 rounded-xl text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 cursor-pointer"

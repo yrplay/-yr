@@ -6,14 +6,14 @@ import {
   Printer, X, AlertCircle
 } from 'lucide-react';
 import { Challenge, ChallengeType, hasFullAccess, StudentChallengeSubmission } from '../types';
-import { formatHijriShort, formatHijriDateTime } from '../utils/hijriDate';
+import { formatHijriShort, formatHijriDateTime, getTodayISO } from '../utils/hijriDate';
 
 export const ChallengesView: React.FC = () => {
   const {
     challenges, studentChallengeSubmissions, students, circles, tracks,
     createChallenge, updateChallenge, deleteChallenge,
     saveChallengeSubmission, toggleChallengeEarlyAchievement, currentUser, quickModalAction, clearQuickModal, settings,
-    selectedTrackId
+    attendanceRecords, selectedTrackId, selectedDate
   } = useApp();
 
   const availableChallenges = React.useMemo(() => {
@@ -609,7 +609,7 @@ export const ChallengesView: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs text-stone-500 mt-1">
-                يمكنكِ منح أو إلغاء نقاط الإنجاز المبكر (+{currentChallenge?.earlyPrepPoints || 2} نقاط) بنقرة واحدة مباشرة من داخل الجدول، أو رصد التقييم الكامل للتحدي.
+                عند رصد نتيجة التحدي أو منح (+{currentChallenge?.earlyPrepPoints || 2} نقاط) للإنجاز المبكر، يتم تسجيل الطالبة <strong>«حاضرة ✅»</strong> تلقائياً في كشف حضور الخميس دون الحاجة لتكرار الرصد في سجل التسميع اليومي.
               </p>
             </div>
 
@@ -722,6 +722,14 @@ export const ChallengesView: React.FC = () => {
                     const progressPercent = Math.min(100, Math.round((totalPoints / maxPoints) * 100));
                     const studentCircle = circles.find(c => c.id === student.circleId);
 
+                    const todayIso = getTodayISO();
+                    const isSyncedPresent =
+                      !!sub ||
+                      isAwarded ||
+                      (attendanceRecords || []).some(
+                        a => a.studentId === student.id && (a.date === todayIso || a.date === selectedDate) && a.status === 'present'
+                      );
+
                     return (
                       <tr
                         key={student.id}
@@ -730,8 +738,16 @@ export const ChallengesView: React.FC = () => {
                         <td className="p-3.5 font-semibold text-stone-400">{idx + 1}</td>
                         <td className="p-3.5 font-bold text-stone-900">
                           <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <span className="privacy-student-name">{student.name}</span>
+                              {isSyncedPresent && (
+                                <span
+                                  className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/70 text-[10px] font-bold"
+                                  title="تم تسجيل حضور الطالبة تلقائياً في سجل الحضور"
+                                >
+                                  حاضرة ✅
+                                </span>
+                              )}
                             </div>
                             {studentCircle && (
                               <span className="text-[10px] text-stone-400 font-normal">
@@ -776,13 +792,61 @@ export const ChallengesView: React.FC = () => {
                         </td>
 
                         <td className="p-3.5 text-center">
-                          {sub?.peerReviewEvaluation?.jointRevisionCompleted ? (
-                            <span className="text-emerald-700 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200/60">
-                              تمت بنجاح ✅
-                            </span>
-                          ) : (
-                            <span className="text-stone-400">بانتظار الرصد</span>
-                          )}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!currentChallenge) return;
+                              const nextCompleted = !sub?.peerReviewEvaluation?.jointRevisionCompleted;
+                              const challengeTasks = currentChallenge.tasks || [];
+                              const defaultTasks = challengeTasks.map((t: any) => ({
+                                taskId: t.id,
+                                completed: nextCompleted,
+                                earnedPoints: Number(t.maxPoints ?? t.points ?? 2)
+                              }));
+                              const tasksPoints = nextCompleted
+                                ? defaultTasks.reduce((acc, t) => acc + t.earnedPoints, 0)
+                                : 0;
+                              const earlyPts = sub?.earlyPrepPointsEarned ?? 0;
+                              await saveChallengeSubmission({
+                                ...(sub || {}),
+                                challengeId: currentChallenge.id,
+                                studentId: student.id,
+                                partnerStudentId: student.partnerStudentId,
+                                earlyPrepPointsEarned: earlyPts,
+                                earlyAchievementCompleted: earlyPts > 0 || !!sub?.earlyAchievementCompleted,
+                                tasksCompleted: sub?.tasksCompleted?.length ? sub.tasksCompleted : defaultTasks,
+                                peerReviewEvaluation: {
+                                  jointRevisionCompleted: nextCompleted,
+                                  commitmentScore: sub?.peerReviewEvaluation?.commitmentScore ?? (nextCompleted ? 2 : 0),
+                                  detectedErrorsScore: sub?.peerReviewEvaluation?.detectedErrorsScore ?? (nextCompleted ? 2 : 0),
+                                  correctionScore: sub?.peerReviewEvaluation?.correctionScore ?? (nextCompleted ? 1 : 0),
+                                  collaborationScore: sub?.peerReviewEvaluation?.collaborationScore ?? (nextCompleted ? 1 : 0),
+                                  onTimeScore: sub?.peerReviewEvaluation?.onTimeScore ?? (nextCompleted ? 2 : 0),
+                                  totalEarned: sub?.peerReviewEvaluation?.totalEarned ?? (nextCompleted ? 8 : 0),
+                                  notes: sub?.peerReviewEvaluation?.notes || ''
+                                },
+                                totalPointsEarned: sub?.totalPointsEarned
+                                  ? (nextCompleted ? Math.max(sub.totalPointsEarned, earlyPts + 6) : earlyPts)
+                                  : Math.min(currentChallenge.maxTotalPoints || 10, earlyPts + tasksPoints)
+                              });
+                            }}
+                            title={
+                              sub?.peerReviewEvaluation?.jointRevisionCompleted
+                                ? 'انقري لإلغاء اعتماد المراجعة المشتركة'
+                                : 'انقري لاعتماد إتمام المراجعة المشتركة وتسجيل حضور الخميس تلقائياً'
+                            }
+                            className={`inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer select-none ${
+                              sub?.peerReviewEvaluation?.jointRevisionCompleted
+                                ? 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 shadow-2xs'
+                                : 'text-stone-500 hover:text-[#8E5364] bg-white hover:bg-[#FCF5F7] border border-dashed border-stone-300 hover:border-[#8E5364]/40'
+                            }`}
+                          >
+                            {sub?.peerReviewEvaluation?.jointRevisionCompleted ? (
+                              <span>تمت بنجاح ✅</span>
+                            ) : (
+                              <span>اعتماد المراجعة +</span>
+                            )}
+                          </button>
                         </td>
 
                         <td className="p-3.5">

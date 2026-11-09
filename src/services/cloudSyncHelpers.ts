@@ -144,3 +144,78 @@ export const deduplicateChallengeSubmissions = <T extends Record<string, any>>(l
   return Array.from(map.values());
 };
 
+/**
+ * Deduplicate attendance records by (studentId, date) pair so there is strictly
+ * at most ONE attendance record per student per date, preserving the newest status and earlyPrepCardSent.
+ */
+export const deduplicateAttendanceRecords = <T extends Record<string, any>>(list: T[] = []): T[] => {
+  if (!Array.isArray(list)) return [];
+  const map = new Map<string, T>();
+  const parseTime = (item: any) => {
+    if (!item) return 0;
+    const val = item.updatedAt || item.recordedAt || item.createdAt || item.timestamp;
+    if (typeof val !== 'string') return 0;
+    const t = new Date(val).getTime();
+    return Number.isFinite(t) ? t : 0;
+  };
+
+  for (const item of list) {
+    if (!item || !item.studentId || !item.date) continue;
+    const key = `${item.studentId}_${item.date}`;
+    const canonicalId = `att_${item.studentId}_${item.date}`;
+    const existing = map.get(key);
+    if (!existing) {
+      const isAbsent = item.status === 'absent_unexcused' || item.status === 'absent_excused';
+      map.set(key, {
+        ...item,
+        id: item.id || canonicalId,
+        earlyPrepCardSent: isAbsent ? false : !!item.earlyPrepCardSent
+      });
+    } else {
+      const existingTime = parseTime(existing);
+      const itemTime = parseTime(item);
+      const winner = itemTime >= existingTime ? { ...existing, ...item } : { ...item, ...existing };
+      const isAbsent = winner.status === 'absent_unexcused' || winner.status === 'absent_excused';
+      map.set(key, {
+        ...winner,
+        id: winner.id || canonicalId,
+        earlyPrepCardSent: isAbsent ? false : !!winner.earlyPrepCardSent
+      });
+    }
+  }
+  return Array.from(map.values());
+};
+
+/**
+ * Deduplicate daily recitation records by (studentId, date) pair so there is strictly
+ * at most ONE daily record per student per date, preserving the newest evaluation.
+ */
+export const deduplicateDailyRecords = <T extends Record<string, any>>(list: T[] = []): T[] => {
+  if (!Array.isArray(list)) return [];
+  const map = new Map<string, T>();
+  const parseTime = (item: any) => {
+    if (!item) return 0;
+    const val = item.updatedAt || item.recordedAt || item.createdAt || item.timestamp;
+    if (typeof val !== 'string') return 0;
+    const t = new Date(val).getTime();
+    return Number.isFinite(t) ? t : 0;
+  };
+
+  for (const item of list) {
+    if (!item || !item.studentId || !item.date) continue;
+    const key = `${item.studentId}_${item.date}`;
+    const canonicalId = `dr_${item.studentId}_${item.date}`;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, { ...item, id: item.id || canonicalId });
+    } else {
+      const existingTime = parseTime(existing);
+      const itemTime = parseTime(item);
+      const winner = itemTime >= existingTime ? { ...existing, ...item } : { ...item, ...existing };
+      map.set(key, { ...winner, id: winner.id || canonicalId });
+    }
+  }
+  return Array.from(map.values());
+};
+
+
