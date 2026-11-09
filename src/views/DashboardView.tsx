@@ -9,6 +9,7 @@ import {
 import { AuditLogModal } from '../components/AuditLogModal';
 import { hasFullAccess } from '../types';
 import { formatHijriDate, formatHijriShort, getTodayISO } from '../utils/hijriDate';
+import { RenderEntityIcon } from '../components/CircleIconLibrary';
 
 interface DashboardViewProps {
   onNavigate: (view: ViewType) => void;
@@ -372,7 +373,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-xl">{(circle.icon && circle.icon !== '🪴' && circle.icon !== '🤎') ? circle.icon : '📖'}</span>
+                    <RenderEntityIcon icon={circle.icon} className="text-xl" sproutClassName="w-5 h-5 text-[#96503E]" />
                     <div>
                       <h3 className="font-bold text-stone-900 text-sm">{(circle.name || '').replace(/[🪴🤎]/g, '').trim()}</h3>
                       <p className="text-[11px] text-stone-500">المعلمة: <span className={privacyBlurClass}>{circle.teacherName}</span></p>

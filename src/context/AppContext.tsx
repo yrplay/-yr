@@ -240,16 +240,53 @@ const sanitizeAndSortAuditLogs = (logs: any[]): AuditLog[] => {
 const ensureDefaultTrackIntegrity = (data: any) => {
   if (!data || typeof data !== 'object') return data;
 
+  const normalizeIconVal = (raw?: string) => {
+    if (!raw || raw === '🤎') return '📖';
+    const trimmed = String(raw).trim().toLowerCase();
+    if (trimmed === 'sprout' || trimmed === 'plant' || trimmed === 'نبتة') {
+      return 'sprout';
+    }
+    if (trimmed === 'leaf' || trimmed === 'ورقة') {
+      return 'leaf';
+    }
+    return raw;
+  };
+
   // 1. Ensure track t-1 exists and is named 'مسار مشكاة الغيم', and clean emojis from track names
   if (Array.isArray(data.tracks)) {
-    data.tracks = data.tracks.map((t: any) => {
+    let tracksList = data.tracks.map((t: any) => {
       const cleanedName = String(t.name || '').replace(/[🪴🤎]/g, '').trim();
-      const cleanedIcon = (!t.icon || t.icon === '🪴' || t.icon === '🤎') ? '📖' : t.icon;
+      const cleanedIcon = normalizeIconVal(t.icon);
       if (t.id === 't-1' && (cleanedName === 'مشكاة الغيم للحفظ' || !cleanedName.includes('مشكاة الغيم'))) {
         return { ...t, name: 'مسار مشكاة الغيم', icon: cleanedIcon };
       }
       return { ...t, name: cleanedName || t.name, icon: cleanedIcon };
     });
+    try {
+      if (typeof window !== 'undefined') {
+        const localTracksRaw = localStorage.getItem('ghaith_tracks_local_v1');
+        if (localTracksRaw) {
+          const localTracks: any[] = JSON.parse(localTracksRaw);
+          if (Array.isArray(localTracks) && localTracks.length > 0) {
+            const byId = new Map<string, any>();
+            tracksList.forEach((tr: any) => tr?.id && byId.set(tr.id, tr));
+            localTracks.forEach((loc: any) => {
+              if (!loc?.id) return;
+              const ex = byId.get(loc.id);
+              const locTime = Date.parse(loc.updatedAt || '') || 0;
+              const exTime = ex ? (Date.parse(ex.updatedAt || '') || 0) : -1;
+              if (!ex || locTime >= exTime) {
+                byId.set(loc.id, { ...ex, ...loc, icon: normalizeIconVal(loc.icon || ex?.icon) });
+              }
+            });
+            tracksList = Array.from(byId.values());
+          }
+        }
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    data.tracks = tracksList;
   }
 
   // 2. Ensure all students have a valid trackId (default to t-1)
@@ -262,12 +299,37 @@ const ensureDefaultTrackIntegrity = (data: any) => {
 
   // 3. Ensure all circles have a valid trackId (default to t-1) and clean emojis from circle names
   if (Array.isArray(data.circles)) {
-    data.circles = data.circles.map((c: any) => ({
+    let circlesList = data.circles.map((c: any) => ({
       ...c,
       name: String(c.name || '').replace(/[🪴🤎]/g, '').trim() || c.name,
-      icon: (!c.icon || c.icon === '🪴' || c.icon === '🤎') ? '📖' : c.icon,
+      icon: normalizeIconVal(c.icon),
       trackId: c.trackId || 't-1'
     }));
+    try {
+      if (typeof window !== 'undefined') {
+        const localCirclesRaw = localStorage.getItem('ghaith_circles_local_v1');
+        if (localCirclesRaw) {
+          const localCircles: any[] = JSON.parse(localCirclesRaw);
+          if (Array.isArray(localCircles) && localCircles.length > 0) {
+            const byId = new Map<string, any>();
+            circlesList.forEach((ci: any) => ci?.id && byId.set(ci.id, ci));
+            localCircles.forEach((loc: any) => {
+              if (!loc?.id) return;
+              const ex = byId.get(loc.id);
+              const locTime = Date.parse(loc.updatedAt || '') || 0;
+              const exTime = ex ? (Date.parse(ex.updatedAt || '') || 0) : -1;
+              if (!ex || locTime >= exTime) {
+                byId.set(loc.id, { ...ex, ...loc, icon: normalizeIconVal(loc.icon || ex?.icon) });
+              }
+            });
+            circlesList = Array.from(byId.values());
+          }
+        }
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    data.circles = circlesList;
   }
 
   // 4. Ensure studentSubscriptions have a valid trackId and merge local saved overrides
@@ -1372,6 +1434,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = [...currentTracks.filter((t: Track) => t.id !== newTrack.id), newTrack];
     masterStateRef.current.tracks = next;
     setTracks(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_tracks_local_v1', JSON.stringify(next));
+      }
+    } catch {
+      // ignore storage errors
+    }
     const nextLogs = appendAuditEntry('create', 'track', `إنشاء مسار قرآني جديد: ${newTrack.name}`, newTrack.id);
     persistState({ tracks: next, auditLogs: nextLogs });
     showToast(`تمت إضافة المسار "${newTrack.name}" بنجاح`);
@@ -1384,6 +1453,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = currentTracks.map((t: Track) => t.id === id ? { ...t, ...track, updatedAt: new Date().toISOString() } : t);
     masterStateRef.current.tracks = next;
     setTracks(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_tracks_local_v1', JSON.stringify(next));
+      }
+    } catch {
+      // ignore storage errors
+    }
     const nextLogs = appendAuditEntry('update', 'track', `تحديث بيانات المسار: ${track.name || targetTrack?.name || id}`, id);
     persistState({ tracks: next, auditLogs: nextLogs });
     showToast('تم تحديث المسار بنجاح');
@@ -1493,6 +1569,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = [...currentCircles.filter((c: Circle) => c.id !== newCircle.id), newCircle];
     masterStateRef.current.circles = next;
     setCircles(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_circles_local_v1', JSON.stringify(next));
+      }
+    } catch {
+      // ignore storage errors
+    }
     const nextLogs = appendAuditEntry('create', 'circle', `إضافة حلقة قرآنية جديدة: ${newCircle.name} (المعلمة: ${newCircle.teacherName})`, newCircle.id);
     persistState({ circles: next, auditLogs: nextLogs });
     showToast(`تمت إضافة الحلقة "${newCircle.name}" بنجاح`);
@@ -1517,6 +1600,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
     masterStateRef.current.circles = next;
     setCircles(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_circles_local_v1', JSON.stringify(next));
+      }
+    } catch {
+      // ignore storage errors
+    }
     const nextLogs = appendAuditEntry('update', 'circle', `تحديث بيانات الحلقة: ${circle.name || existingCircle?.name || id}`, id);
     persistState({ circles: next, auditLogs: nextLogs });
     showToast('تم تحديث بيانات الحلقة بنجاح');

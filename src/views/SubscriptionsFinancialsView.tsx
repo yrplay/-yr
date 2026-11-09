@@ -6,6 +6,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { hasFullAccess, StudentSubscription } from '../types';
 import { calculateSubscriptionStats, deduplicateSubscriptionsByCycle } from '../services/subscriptionMath';
+import { RenderEntityIcon } from '../components/CircleIconLibrary';
 
 const HIJRI_MONTHS = [
   'محرم ١٤٤٧هـ',
@@ -262,7 +263,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
       <div className="bg-white dark:bg-stone-900 p-6 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-2xl">{activeTrack?.icon || '💳'}</span>
+            <RenderEntityIcon icon={activeTrack?.icon} className="text-2xl" sproutClassName="w-6 h-6 text-[#96503E]" fallback="credit" />
             <h1 className="text-xl font-bold text-stone-800 dark:text-stone-100 font-quran">
               {activeTrack ? `سجل اشتراكات ${activeTrack.name}` : 'الاشتراكات والمالية العامة (كافة المسارات)'}
             </h1>
@@ -420,7 +421,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2.5">
                       <div className="w-10 h-10 rounded-xl bg-[#8E5364]/10 text-xl flex items-center justify-center border border-[#8E5364]/20 shrink-0">
-                        {t.icon || '📖'}
+                        <RenderEntityIcon icon={t.icon} className="text-xl" sproutClassName="w-5 h-5 text-[#96503E]" />
                       </div>
                       <div>
                         <h4 className="font-bold text-xs sm:text-sm text-stone-900 dark:text-stone-100">

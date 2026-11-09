@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { hasFullAccess, Track, CustomMasteryCriterion, Circle, Student } from '../types';
+import { RenderEntityIcon } from '../components/CircleIconLibrary';
 
 interface TrackDetailViewProps {
   trackId: string;
@@ -314,7 +315,7 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-2xl">{track.icon || '📖'}</span>
+              <RenderEntityIcon icon={track.icon} className="text-2xl" sproutClassName="w-6 h-6 text-[#96503E]" />
               <h1 className="text-xl font-bold text-stone-800 dark:text-stone-100 font-quran">
                 معايير دليل الإتقان — مسار {track.name}
               </h1>
@@ -674,7 +675,7 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
                 <div key={c.id} className="bg-white dark:bg-stone-900 p-5 rounded-2xl border border-[#E2D5CC] dark:border-stone-800 shadow-xs space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-2xl">{(c.icon && c.icon !== '🪴' && c.icon !== '🤎') ? c.icon : '📖'}</span>
+                      <RenderEntityIcon icon={c.icon} className="text-2xl" sproutClassName="w-5 h-5 text-[#96503E]" />
                       <strong className="text-sm font-bold text-stone-800 dark:text-stone-100">{(c.name || '').replace(/[🪴🤎]/g, '').trim()}</strong>
                     </div>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300">

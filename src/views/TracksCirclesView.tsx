@@ -4,15 +4,21 @@ import {
   Layers, Plus, Edit, Archive, Users, Calendar, Clock,
   Sparkles, Trophy, BookOpen, ChevronLeft, CheckCircle2,
   Sliders, UserCheck, Shield, AlertCircle, Trash2, RotateCcw,
-  Eye, EyeOff, AlertTriangle, X, ExternalLink, CreditCard, FolderOpen
+  Eye, EyeOff, AlertTriangle, X, ExternalLink, CreditCard, FolderOpen, Sprout, Leaf
 } from 'lucide-react';
 import { Circle, hasFullAccess, Track, defaultMasteryGuideConfig } from '../types';
-import { CircleIconPicker } from '../components/CircleIconLibrary';
+import {
+  CircleIconPicker,
+  RenderEntityIcon,
+  isSproutIcon,
+  isLeafIcon,
+  normalizeEntityIcon
+} from '../components/CircleIconLibrary';
 import { TrackDetailView } from './TrackDetailView';
 
 const TRACK_EMOJIS = [
-  '📖', '🌸', '🌟', '🌿', '💎', '🕊️', '📜',
-  '🏆', '✨', '🪔', '🌴', '🌙', '🕌', '💫', '🌾',
+  '🪴', '🌱', '🌿', '🌴', '🌸', '📖', '🌟', '💎', '🕊️', '📜',
+  '🏆', '✨', '🪔', '🌙', '🕌', '💫', '🌾',
   '🛡️', '👑', '🎯', '💡', '📿', '🕯️', '⭐️', '🌺'
 ];
 
@@ -134,7 +140,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
         code: track.code,
         description: track.description || '',
         logoUrl: track.logoUrl || '',
-        icon: (track.icon && track.icon !== '🪴' && track.icon !== '🤎') ? track.icon : '📖',
+        icon: normalizeEntityIcon(track.icon, '📖'),
         subscriptionFee: {
           amount: track.subscriptionFee?.amount ?? 250,
           currency: track.subscriptionFee?.currency || 'ر.س',
@@ -190,10 +196,14 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
   const handleSaveTrack = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!trackForm.name.trim()) return;
+    const normalizedPayload = {
+      ...trackForm,
+      icon: normalizeEntityIcon(trackForm.icon, '📖')
+    };
     if (editingTrack) {
-      await updateTrack(editingTrack.id, trackForm);
+      await updateTrack(editingTrack.id, normalizedPayload);
     } else {
-      const created = await createTrack(trackForm);
+      const created = await createTrack(normalizedPayload);
       setSelectedTrackId(created.id);
       setGlobalSelectedTrackId(created.id);
     }
@@ -207,7 +217,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
       setCircleForm({
         name: circle.name,
         trackId: circle.trackId || defaultTrackId,
-        icon: (circle.icon && circle.icon !== '🪴' && circle.icon !== '🤎') ? circle.icon : '📖',
+        icon: normalizeEntityIcon(circle.icon, '📖'),
         teacherId: circle.teacherId,
         supervisorId: circle.supervisorId,
         maxStudents: circle.maxStudents || 15,
@@ -243,6 +253,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     const trackId = circleForm.trackId || currentTrack?.id || activeTracks[0]?.id || tracks[0]?.id || 't-1';
     const payload = {
       ...circleForm,
+      icon: normalizeEntityIcon(circleForm.icon, '📖'),
       trackId,
       teacherName: teacher ? teacher.name : 'غير محدد',
       supervisorName: supervisor ? supervisor.name : 'غير محدد'
@@ -388,6 +399,11 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 : 'bg-white text-stone-700 hover:bg-[#FAF6F2] border border-[#E8DFD8]'
             }`}
           >
+            <RenderEntityIcon
+              icon={track.icon}
+              className="text-sm"
+              sproutClassName={`w-4 h-4 ${selectedTrackId === track.id ? 'text-white' : 'text-[#96503E]'}`}
+            />
             <span>{(track.name || '').replace(/[🪴🤎]/g, '').trim()}</span>
             <span className={`text-[10px] px-2 py-0.5 rounded-full ${
               selectedTrackId === track.id ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-600'
@@ -409,7 +425,12 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 </div>
               ) : (
                 <div className="w-12 h-12 rounded-2xl bg-[#FAF0F3] border border-[#E8D5D8] flex items-center justify-center text-xl shrink-0">
-                  {(currentTrack.icon && currentTrack.icon !== '🪴' && currentTrack.icon !== '🤎') ? currentTrack.icon : <BookOpen className="w-5 h-5 text-[#8E5364]" />}
+                  <RenderEntityIcon
+                    icon={currentTrack.icon}
+                    className="text-xl"
+                    sproutClassName="w-6 h-6 text-[#96503E]"
+                    fallback="lucide-book"
+                  />
                 </div>
               )}
               <div>
@@ -595,7 +616,13 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2.5">
-                      <span className="text-2xl">{(circle.icon && circle.icon !== '🪴' && circle.icon !== '🤎') ? circle.icon : '📖'}</span>
+                      <span className="w-10 h-10 rounded-2xl bg-[#FAF6F2] border border-[#E8DFD8] flex items-center justify-center shrink-0">
+                        <RenderEntityIcon
+                          icon={circle.icon}
+                          className="text-2xl"
+                          sproutClassName="w-5 h-5 text-[#96503E]"
+                        />
+                      </span>
                       <div>
                         <h4 className="font-bold text-stone-900 text-base">{(circle.name || '').replace(/[🪴🤎]/g, '').trim()}</h4>
                         <p className="text-[11px] text-stone-500">
@@ -688,7 +715,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 <div key={c.id} className="p-4 bg-white rounded-2xl border border-stone-200 flex items-center justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span>{c.icon}</span>
+                      <RenderEntityIcon icon={c.icon} className="text-base" sproutClassName="w-4 h-4 text-[#96503E]" />
                       <strong className="text-xs text-stone-800">{c.name}</strong>
                       <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">حلقة مؤرشفة</span>
                     </div>
@@ -708,7 +735,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 <div key={t.id} className="p-4 bg-white rounded-2xl border border-stone-200 flex items-center justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-stone-400" />
+                      <RenderEntityIcon icon={t.icon} className="text-base" sproutClassName="w-4 h-4 text-[#96503E]" />
                       <strong className="text-xs text-stone-800">{t.name}</strong>
                       <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">مسار مؤرشف</span>
                     </div>
@@ -734,7 +761,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 pb-4">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-2xl">{activeCircle.icon}</span>
+                <RenderEntityIcon icon={activeCircle.icon} className="text-2xl" sproutClassName="w-6 h-6 text-[#96503E]" />
                 <h3 className="text-lg font-bold text-stone-900">
                   سجل حلقة {activeCircle.name}
                 </h3>
@@ -993,37 +1020,45 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                     </span>
                   </div>
                   <div className="w-10 h-10 rounded-xl bg-white border border-[#8E5364]/30 shadow-xs flex items-center justify-center text-2xl">
-                    {trackForm.icon || '📖'}
+                    <RenderEntityIcon
+                      icon={trackForm.icon || '📖'}
+                      className="text-2xl"
+                      sproutClassName="w-5 h-5 text-[#96503E]"
+                    />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-8 gap-1.5 p-2 bg-white rounded-xl border border-stone-200 max-h-36 overflow-y-auto">
-                  {TRACK_EMOJIS.map((emoji) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => setTrackForm(prev => ({ ...prev, icon: emoji }))}
-                      className={`h-8 w-8 rounded-lg flex items-center justify-center text-lg transition cursor-pointer hover:scale-115 active:scale-90 ${
-                        trackForm.icon === emoji
-                          ? 'bg-[#8E5364] text-white ring-2 ring-[#8E5364] shadow-xs'
-                          : 'hover:bg-stone-100 text-stone-800'
-                      }`}
-                      title={emoji}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
+                  {TRACK_EMOJIS.map((emoji) => {
+                    const isSelected = trackForm.icon === emoji;
+
+                    return (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => setTrackForm(prev => ({ ...prev, icon: emoji }))}
+                        className={`h-8 w-8 rounded-lg flex items-center justify-center text-lg transition cursor-pointer hover:scale-115 active:scale-90 ${
+                          isSelected
+                            ? 'bg-[#8E5364] text-white ring-2 ring-[#8E5364] shadow-xs'
+                            : 'hover:bg-stone-100 text-stone-800'
+                        }`}
+                        title={emoji === '🪴' ? 'نبتة 🪴' : emoji === '🌱' ? 'فسيلة 🌱' : emoji === '🌿' ? 'ريحان 🌿' : emoji}
+                      >
+                        {emoji}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div className="flex items-center gap-2 pt-1 text-xs text-stone-600">
                   <span>أو اكتبي رمزاً مخصصاً:</span>
                   <input
                     type="text"
-                    maxLength={4}
+                    maxLength={8}
                     value={trackForm.icon}
                     onChange={e => setTrackForm(prev => ({ ...prev, icon: e.target.value }))}
-                    placeholder="📖"
-                    className="w-16 px-2 py-1 text-center border border-stone-200 rounded-lg text-sm bg-white font-bold"
+                    placeholder="🪴"
+                    className="w-20 px-2 py-1 text-center border border-stone-200 rounded-lg text-sm bg-white font-bold"
                   />
                 </div>
               </div>

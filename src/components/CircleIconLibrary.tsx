@@ -1,4 +1,5 @@
 import React from 'react';
+import { Sprout, Leaf, BookOpen } from 'lucide-react';
 
 export interface CircleIconOption {
   id: string;
@@ -8,20 +9,68 @@ export interface CircleIconOption {
   meaning: string;
 }
 
+export const isSproutIcon = (icon?: string): boolean => {
+  if (!icon) return false;
+  const normalized = icon.trim().toLowerCase();
+  return normalized === 'sprout' || normalized === 'plant' || normalized === 'نبتة';
+};
+
+export const isLeafIcon = (icon?: string): boolean => {
+  if (!icon) return false;
+  const normalized = icon.trim().toLowerCase();
+  return normalized === 'leaf' || normalized === 'ورقة';
+};
+
+export const normalizeEntityIcon = (icon?: string, fallback: string = '📖'): string => {
+  if (!icon || icon === '🤎') return fallback;
+  if (isSproutIcon(icon)) return 'sprout';
+  if (isLeafIcon(icon)) return 'leaf';
+  return icon;
+};
+
+export const RenderEntityIcon: React.FC<{
+  icon?: string;
+  className?: string;
+  sproutClassName?: string;
+  fallback?: 'book' | 'credit' | 'lucide-book';
+}> = ({
+  icon,
+  className = 'text-2xl',
+  sproutClassName = 'w-5 h-5 text-[#96503E]',
+  fallback = 'book'
+}) => {
+  if (isSproutIcon(icon)) {
+    return <Sprout className={sproutClassName} />;
+  }
+  if (isLeafIcon(icon)) {
+    return <Leaf className={sproutClassName} />;
+  }
+  const cleaned = icon && icon !== '🤎' ? icon : '';
+  if (!cleaned) {
+    if (fallback === 'lucide-book') {
+      return <BookOpen className={sproutClassName} />;
+    }
+    return <span className={className}>{fallback === 'credit' ? '💳' : '📖'}</span>;
+  }
+  return <span className={className}>{cleaned}</span>;
+};
+
 export const CIRCLE_ICONS: CircleIconOption[] = [
+  // النماء والبركة (تشمل إيموجيات النبتة والفسيلة والريحان في المقدمة)
+  { id: 'potted_plant', name: 'نبتة الغيث', symbol: '🪴', category: 'النماء والبركة', meaning: 'نماء الحفظ ورسوخ الآيات في القلب' },
+  { id: 'seedling', name: 'فسيلة البركة', symbol: '🌱', category: 'النماء والبركة', meaning: 'بذرة الخير المباركة المتنامية بالقرآن' },
+  { id: 'basil', name: 'ريحان الحفظ', symbol: '🌿', category: 'النماء والبركة', meaning: 'الريحان الطيب العبق بآيات الله' },
+  { id: 'palm', name: 'نخلة الرسوخ', symbol: '🌴', category: 'النماء والبركة', meaning: 'المؤمن كالنخلة ثابت الأصل باسق الفرع' },
+  { id: 'flower', name: 'أترجة الإتقان', symbol: '🌸', category: 'النماء والبركة', meaning: 'المؤمن الذي يقرأ القرآن كالأترجة' },
+  { id: 'rose', name: 'زهرة الإخلاص', symbol: '🌹', category: 'النماء والبركة', meaning: 'إخلاص النية لوجه الله تعالى' },
+  { id: 'ghaym', name: 'غيث البركة', symbol: '🌧️', category: 'النماء والبركة', meaning: 'الغيث الذي يحيي القلوب بالقرآن' },
+
   // القرآن والترتيل
   { id: 'mushaf', name: 'مصحف الترتيل', symbol: '📖', category: 'القرآن والترتيل', meaning: 'مدارسة وتلاوة آيات الذكر الحكيم' },
   { id: 'rihal', name: 'رحل الحفظ', symbol: '🪑', category: 'القرآن والترتيل', meaning: 'مجلس مدارسة القرآن الكريم' },
   { id: 'scroll', name: 'صحيفة التمكين', symbol: '📜', category: 'القرآن والترتيل', meaning: 'رسوخ الحفظ وضبط المتشابهات' },
   { id: 'feather', name: 'ريشة الإتقان', symbol: '🪶', category: 'القرآن والترتيل', meaning: 'تدوين العلم وضبط التجويد' },
   { id: 'crown', name: 'تاج الوقار', symbol: '👑', category: 'القرآن والترتيل', meaning: 'يلبسه والدا حافظ القرآن يوم القيامة' },
-
-  // النماء والبركة
-  { id: 'ghaym', name: 'غيث البركة', symbol: '🌧️', category: 'النماء والبركة', meaning: 'الغيث الذي يحيي القلوب بالقرآن' },
-  { id: 'palm', name: 'نخلة الرسوخ', symbol: '🌴', category: 'النماء والبركة', meaning: 'المؤمن كالنخلة ثابت الأصل باسق الفرع' },
-  { id: 'flower', name: 'أترجة الإتقان', symbol: '🌸', category: 'النماء والبركة', meaning: 'المؤمن الذي يقرأ القرآن كالأترجة' },
-  { id: 'basil', name: 'ريحان الحفظ', symbol: '🌿', category: 'النماء والبركة', meaning: 'الريحان الطيب العبق بآيات الله' },
-  { id: 'rose', name: 'زهرة الإخلاص', symbol: '🌹', category: 'النماء والبركة', meaning: 'إخلاص النية لوجه الله تعالى' },
 
   // النور والضياء
   { id: 'siraj', name: 'سراج الهدى', symbol: '🕯️', category: 'النور والضياء', meaning: 'نور الوحي المضيء للدروب' },
@@ -54,7 +103,9 @@ export const CircleIconPicker: React.FC<CircleIconPickerProps> = ({ selectedIcon
     ? CIRCLE_ICONS
     : CIRCLE_ICONS.filter(i => i.category === activeCategory);
 
-  const currentIconObj = CIRCLE_ICONS.find(i => i.symbol === selectedIcon) || CIRCLE_ICONS[0];
+  const currentIconObj =
+    CIRCLE_ICONS.find(i => i.symbol === selectedIcon) ||
+    CIRCLE_ICONS.find(i => i.symbol === normalizeEntityIcon(selectedIcon, '📖'));
 
   return (
     <div className="space-y-3 bg-[#FAF7F5] p-3.5 rounded-2xl border border-[#EFE8E2]">
@@ -63,7 +114,11 @@ export const CircleIconPicker: React.FC<CircleIconPickerProps> = ({ selectedIcon
           اختاري أيقونة ورمز الحلقة المعتمد:
         </label>
         <span className="text-[11px] font-bold text-[#8E5364] flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-stone-200">
-          <span className="text-base">{selectedIcon || '📖'}</span>
+          <RenderEntityIcon
+            icon={selectedIcon || '📖'}
+            className="text-base"
+            sproutClassName="w-4 h-4 text-[#96503E]"
+          />
           <span>{currentIconObj ? currentIconObj.name : 'أيقونة مخصصة'}</span>
         </span>
       </div>
@@ -90,6 +145,7 @@ export const CircleIconPicker: React.FC<CircleIconPickerProps> = ({ selectedIcon
       <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5 max-h-44 overflow-y-auto p-1 bg-white rounded-xl border border-stone-200/80">
         {filteredIcons.map(icon => {
           const isSelected = selectedIcon === icon.symbol;
+
           return (
             <button
               key={icon.id}
@@ -98,12 +154,18 @@ export const CircleIconPicker: React.FC<CircleIconPickerProps> = ({ selectedIcon
               title={`${icon.name}: ${icon.meaning}`}
               className={`p-2 rounded-xl text-center transition flex flex-col items-center justify-center cursor-pointer ${
                 isSelected
-                  ? 'bg-[#FAF0F3] border-2 border-[#8E5364] scale-105 shadow-xs'
+                  ? 'bg-[#FAF0F3] border-2 border-[#8E5364] ring-2 ring-[#8E5364]/20 scale-105 shadow-xs'
                   : 'hover:bg-stone-50 border border-transparent hover:border-stone-200'
               }`}
             >
-              <span className="text-xl select-none">{icon.symbol}</span>
-              <span className="text-[9px] text-stone-500 font-medium truncate w-full mt-0.5">
+              <span className="h-6 flex items-center justify-center select-none">
+                <RenderEntityIcon
+                  icon={icon.symbol}
+                  className="text-xl select-none"
+                  sproutClassName="w-5 h-5 text-[#96503E]"
+                />
+              </span>
+              <span className="text-[9px] text-stone-600 font-bold truncate w-full mt-0.5">
                 {icon.name.split(' ')[0]}
               </span>
             </button>
@@ -113,15 +175,15 @@ export const CircleIconPicker: React.FC<CircleIconPickerProps> = ({ selectedIcon
 
       {/* Custom Write-in or Paste Emoji Option */}
       <div className="flex items-center gap-2 pt-1 border-t border-stone-200/60 text-xs">
-        <span className="text-[11px] text-stone-500">أو رمزا يدويا:</span>
+        <span className="text-[11px] text-stone-500">أو رمزاً يدوياً:</span>
         <input
           type="text"
           value={selectedIcon}
           onChange={e => onSelectIcon(e.target.value)}
           placeholder="ألصقي أي رمز هنا..."
-          className="w-24 px-2 py-1 text-center text-sm font-bold border border-stone-200 rounded-lg bg-white"
+          className="w-28 px-2 py-1 text-center text-sm font-bold border border-stone-200 rounded-lg bg-white"
         />
-        <span className="text-[10px] text-stone-400">مثال: 🌸 أو 📖</span>
+        <span className="text-[10px] text-stone-400">مثال: 🪴 أو 🌱 أو 📖</span>
       </div>
     </div>
   );

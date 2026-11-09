@@ -160,9 +160,12 @@ export const Header: React.FC<HeaderProps> = ({
               <option value="all">كافة المسارات</option>
               {tracks.filter(t => !t.isArchived).map(t => {
                 const cleanTrackName = (t.name || '').replace(/[🪴🤎]/g, '').trim();
+                const iconPrefix = t.icon && t.icon !== '🤎'
+                  ? (t.icon === 'sprout' ? '🪴 ' : t.icon === 'leaf' ? '🌿 ' : `${t.icon} `)
+                  : '';
                 return (
                   <option key={t.id} value={t.id}>
-                    {cleanTrackName}
+                    {`${iconPrefix}${cleanTrackName}`}
                   </option>
                 );
               })}

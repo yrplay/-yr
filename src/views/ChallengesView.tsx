@@ -113,6 +113,11 @@ export const ChallengesView: React.FC = () => {
 
   const activeStudents = students.filter(s => s.status === 'active' && (!selectedTrackId || selectedTrackId === 'all' || s.trackId === selectedTrackId));
 
+  const trackCircles = circles.filter(c => !selectedTrackId || selectedTrackId === 'all' || c.trackId === selectedTrackId);
+  const effectiveCircleFilter = earlyCircleFilter !== 'all' && trackCircles.some(c => c.id === earlyCircleFilter)
+    ? earlyCircleFilter
+    : 'all';
+
   const isEarlyAwardedForStudent = (studentId: string) => {
     const sub = studentChallengeSubmissions.find(
       c => c.challengeId === currentChallenge?.id && c.studentId === studentId
@@ -122,8 +127,15 @@ export const ChallengesView: React.FC = () => {
 
   const awardedEarlyCount = activeStudents.filter(s => isEarlyAwardedForStudent(s.id)).length;
 
-  const filteredEarlyStudents = activeStudents.filter(student => {
-    if (earlyCircleFilter !== 'all' && student.circleId !== earlyCircleFilter) return false;
+  const circleScopedStudents = activeStudents.filter(student => {
+    if (effectiveCircleFilter !== 'all' && student.circleId !== effectiveCircleFilter) return false;
+    return true;
+  });
+
+  const circleAwardedCount = circleScopedStudents.filter(s => isEarlyAwardedForStudent(s.id)).length;
+  const circlePendingCount = circleScopedStudents.length - circleAwardedCount;
+
+  const filteredEarlyStudents = circleScopedStudents.filter(student => {
     const isAwarded = isEarlyAwardedForStudent(student.id);
     if (earlyStatusFilter === 'awarded' && !isAwarded) return false;
     if (earlyStatusFilter === 'pending' && isAwarded) return false;
@@ -579,84 +591,95 @@ export const ChallengesView: React.FC = () => {
         </div>
       )}
 
-      {/* Early Achievement Interactive Student Cards Panel */}
-      {activeTab !== 'peer_review' && currentChallenge && (
-        <div className="bg-white rounded-3xl border border-[#E8DFD8] p-5 sm:p-6 shadow-2xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
+      {/* Roster & Evaluation Table for Challenge (Permanent Clean Table View with Integrated Filters) */}
+      {activeTab !== 'peer_review' ? (
+        <div className="bg-white rounded-3xl border border-[#E8DFD8] shadow-2xs overflow-hidden">
+          {/* Header & Live Summary */}
+          <div className="p-4 sm:p-5 border-b border-stone-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xl">⭐</span>
-                <h3 className="font-bold text-stone-900 text-base font-quran">
-                  «الإنجاز المبكر» في التحدي (Early Achievement)
-                </h3>
-                <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold">
-                  +{currentChallenge.earlyPrepPoints || 2} نقاط مباشرة ⭐
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="font-bold text-stone-900 text-sm sm:text-base font-quran">
+                  سجل نتائج الطالبات في التحدي والمراجعة الثنائية
+                </h4>
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold">
+                  الإنجاز المبكر +{currentChallenge?.earlyPrepPoints || 2} نقاط ⭐
+                </span>
+                <span className="text-xs text-[#8E5364] font-semibold">
+                  • المراجعة الثنائية جزء مدمج داخل التحدي
                 </span>
               </div>
               <p className="text-xs text-stone-500 mt-1">
-                انقري على بطاقة أي طالبة أتمّت الإنجاز المبكر لمنحها نقطتي (+2) مباشرة، أو انقري عليها مجدداً للإلغاء والتراجع.
+                يمكنكِ منح أو إلغاء نقاط الإنجاز المبكر (+{currentChallenge?.earlyPrepPoints || 2} نقاط) بنقرة واحدة مباشرة من داخل الجدول، أو رصد التقييم الكامل للتحدي.
               </p>
             </div>
 
-            {/* Live Stats */}
-            <div className="flex items-center gap-2 bg-[#FAF6F2] p-2 rounded-2xl border border-[#EFE8E2] self-start sm:self-auto">
-              <div className="text-center px-3 border-l border-stone-200">
-                <div className="text-[11px] text-stone-500 font-medium">المنجزات مبكراً</div>
-                <div className="text-sm font-extrabold text-emerald-700">
-                  {awardedEarlyCount} <span className="text-[10px] text-stone-400 font-normal">/ {activeStudents.length}</span>
+            {/* Live Early Achievement Counter Pill */}
+            <div className="flex items-center gap-2 bg-[#FAF6F2] px-3 py-2 rounded-2xl border border-[#EFE8E2] self-start lg:self-auto shrink-0">
+              <div className="text-center px-2.5 border-l border-stone-200">
+                <div className="text-[10px] text-stone-500 font-medium">المنجزات مبكراً</div>
+                <div className="text-xs sm:text-sm font-extrabold text-emerald-700">
+                  {circleAwardedCount} <span className="text-[10px] text-stone-400 font-normal">/ {circleScopedStudents.length}</span>
                 </div>
               </div>
-              <div className="text-center px-3">
-                <div className="text-[11px] text-stone-500 font-medium">مجموع نقاط الإنجاز</div>
-                <div className="text-sm font-extrabold text-[#8E5364]">
-                  +{awardedEarlyCount * (currentChallenge.earlyPrepPoints || 2)} نقطة
+              <div className="text-center px-2.5">
+                <div className="text-[10px] text-stone-500 font-medium">نقاط الإنجاز الممنوحة</div>
+                <div className="text-xs sm:text-sm font-extrabold text-[#8E5364]">
+                  +{circleAwardedCount * (currentChallenge?.earlyPrepPoints || 2)} نقطة
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Filter Bar */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {/* Filter by Circle */}
+          {/* Integrated Filter Bar Connected Directly to the Table */}
+          <div className="px-4 sm:px-5 py-3 bg-[#FCFAF8] border-b border-stone-100 flex flex-wrap items-center gap-2.5 text-xs">
+            {/* Filter by Circle (Halaqah) */}
             <select
-              value={earlyCircleFilter}
+              value={effectiveCircleFilter}
               onChange={e => setEarlyCircleFilter(e.target.value)}
-              className="px-3 py-1.5 border border-stone-200 rounded-xl bg-white text-stone-700 font-medium cursor-pointer"
+              className="px-3 py-1.5 border border-stone-200 rounded-xl bg-white text-stone-700 font-medium cursor-pointer focus:outline-none focus:border-[#8E5364]"
             >
               <option value="all">جميع الحلقات ({activeStudents.length})</option>
-              {circles.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+              {trackCircles.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({activeStudents.filter(s => s.circleId === c.id).length})
+                </option>
               ))}
             </select>
 
-            {/* Filter by Award Status */}
+            {/* Filter Tabs by Early Achievement Status */}
             <div className="flex items-center rounded-xl bg-stone-100 p-0.5 border border-stone-200">
               <button
                 type="button"
                 onClick={() => setEarlyStatusFilter('all')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
-                  earlyStatusFilter === 'all' ? 'bg-white text-stone-900 shadow-2xs' : 'text-stone-500 hover:text-stone-800'
+                className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                  earlyStatusFilter === 'all'
+                    ? 'bg-white text-stone-900 shadow-2xs'
+                    : 'text-stone-500 hover:text-stone-800'
                 }`}
               >
-                الكل ({activeStudents.length})
+                الكل ({circleScopedStudents.length})
               </button>
               <button
                 type="button"
                 onClick={() => setEarlyStatusFilter('awarded')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
-                  earlyStatusFilter === 'awarded' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-stone-500 hover:text-stone-800'
+                className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                  earlyStatusFilter === 'awarded'
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'text-stone-500 hover:text-stone-800'
                 }`}
               >
-                الممنوحة ⭐ ({activeStudents.filter(s => isEarlyAwardedForStudent(s.id)).length})
+                الممنوحة ⭐ ({circleAwardedCount})
               </button>
               <button
                 type="button"
                 onClick={() => setEarlyStatusFilter('pending')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
-                  earlyStatusFilter === 'pending' ? 'bg-amber-600 text-white shadow-2xs' : 'text-stone-500 hover:text-stone-800'
+                className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                  earlyStatusFilter === 'pending'
+                    ? 'bg-amber-600 text-white shadow-2xs'
+                    : 'text-stone-500 hover:text-stone-800'
                 }`}
               >
-                غير ممنوحة ({activeStudents.filter(s => !isEarlyAwardedForStudent(s.id)).length})
+                غير ممنوحة ({circlePendingCount})
               </button>
             </div>
 
@@ -664,173 +687,22 @@ export const ChallengesView: React.FC = () => {
             <div className="mr-auto w-full sm:w-auto">
               <input
                 type="text"
-                placeholder="بحث باسم الطالبة أو الكود..."
+                placeholder="بحث باسم الطالبة أو الكود أو الرفيقة..."
                 value={earlySearchQuery}
                 onChange={e => setEarlySearchQuery(e.target.value)}
-                className="w-full sm:w-52 px-3 py-1.5 border border-stone-200 rounded-xl text-xs bg-white"
+                className="w-full sm:w-60 px-3 py-1.5 border border-stone-200 rounded-xl text-xs bg-white focus:outline-none focus:border-[#8E5364]"
               />
             </div>
           </div>
 
-          {/* Student Cards Grid under Early Achievement */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pt-1">
-            {filteredEarlyStudents.map(student => {
-              const sub = studentChallengeSubmissions.find(
-                c => c.challengeId === currentChallenge.id && c.studentId === student.id
-              );
-              const isAwarded = (sub?.earlyPrepPointsEarned ?? 0) > 0 || !!sub?.earlyAchievementCompleted;
-              const totalPoints = sub?.totalPointsEarned ?? 0;
-              const maxPoints = currentChallenge.maxTotalPoints || 10;
-              const progressPercent = Math.min(100, Math.round((totalPoints / maxPoints) * 100));
-              const studentCircle = circles.find(c => c.id === student.circleId);
-
-              return (
-                <div
-                  key={student.id}
-                  onClick={() => toggleChallengeEarlyAchievement(currentChallenge.id, student.id)}
-                  className={`p-3.5 rounded-2xl border transition text-right cursor-pointer select-none relative group flex flex-col justify-between ${
-                    isAwarded
-                      ? 'bg-gradient-to-br from-emerald-50/80 to-emerald-100/40 border-emerald-400 ring-2 ring-emerald-400/25 shadow-xs'
-                      : 'bg-[#FCFAF8] border-stone-200 hover:border-[#8E5364]/40 hover:bg-[#FAF6F2] hover:shadow-2xs'
-                  }`}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      toggleChallengeEarlyAchievement(currentChallenge.id, student.id);
-                    }
-                  }}
-                  title={isAwarded ? 'انقري لإلغاء وتراجع عن نقطتي الإنجاز المبكر (-2 نقاط)' : 'انقري لمنح نقطتي الإنجاز المبكر مباشرة (+2 نقاط)'}
-                >
-                  {/* Top: Name, Circle, and Active Visual Badge */}
-                  <div>
-                    <div className="flex items-start justify-between gap-1.5 mb-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-xs text-stone-900 truncate block privacy-student-name">
-                            {student.name}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-stone-400 flex items-center gap-1 mt-0.5 truncate">
-                          <span>{studentCircle?.name || 'مقرأة غيث الغيم'}</span>
-                          {student.partnerStudentName && (
-                            <>
-                              <span>•</span>
-                              <span className="text-[#7A4B37] font-semibold truncate">🤝 <span className="privacy-student-name">{student.partnerStudentName}</span></span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Visual Badge & Feedback (+2 نقاط) */}
-                      <div className="shrink-0">
-                        {isAwarded ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[11px] font-extrabold shadow-2xs animate-in zoom-in-95 duration-150">
-                            <Star className="w-3 h-3 fill-amber-300 text-amber-300" />
-                            <span>+2 نقاط</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-stone-100 text-stone-500 text-[10px] font-semibold group-hover:bg-[#FAF0F3] group-hover:text-[#8E5364] transition">
-                            <Plus className="w-2.5 h-2.5" />
-                            <span>+2 نقاط</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Progress Bar & Real-time Total Points */}
-                    <div className="space-y-1.5 my-2.5 bg-white/70 backdrop-blur-xs p-2.5 rounded-xl border border-stone-100">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-stone-500 font-medium">مجموع نقاط التحدي:</span>
-                        <div className="flex items-center gap-1">
-                          <span className="font-extrabold text-sm text-stone-900 privacy-score-digit">
-                            {totalPoints}
-                          </span>
-                          <span className="text-stone-400 text-[10px]">/ {maxPoints}</span>
-                          {isAwarded && (
-                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
-                              +2 مبكر ⭐
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Animated Progress Bar */}
-                      <div className="w-full bg-stone-100 rounded-full h-2.5 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-300 ${
-                            isAwarded ? 'bg-emerald-600' : 'bg-[#8E5364]'
-                          }`}
-                          style={{ width: `${progressPercent}%` }}
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between text-[10px] text-stone-400">
-                        <span>نسبة الإنجاز:</span>
-                        <span className={`font-bold ${isAwarded ? 'text-emerald-700' : 'text-stone-600'}`}>
-                          {progressPercent}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Bottom Action Feedback */}
-                  <div className="pt-2 border-t border-stone-200/50 flex items-center justify-between text-[10px]">
-                    {isAwarded ? (
-                      <>
-                        <span className="text-emerald-700 font-bold flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>معتمد مبكراً (+2 نقاط)</span>
-                        </span>
-                        <span className="text-stone-400 group-hover:text-rose-600 transition font-medium">
-                          انقري للتراجع ↩️
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-stone-400 group-hover:text-[#8E5364] transition">
-                          غير ممنوحة بعد
-                        </span>
-                        <span className="text-[#8E5364] font-bold group-hover:underline">
-                          انقري لمنح +2 نقاط 👈
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {filteredEarlyStudents.length === 0 && (
-            <div className="text-center py-6 text-stone-400 text-xs bg-stone-50 rounded-2xl">
-              لا توجد طالبات مطابقة لمعايير البحث الحالية
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Roster & Evaluation Table for Challenge */}
-      {activeTab !== 'peer_review' ? (
-        <div className="bg-white rounded-3xl border border-[#E8DFD8] shadow-2xs overflow-hidden">
-          <div className="p-4 border-b border-stone-100 flex items-center justify-between">
-            <h4 className="font-bold text-stone-800 text-sm">
-              سجل نتائج الطالبات في التحدي والمراجعة الثنائية
-            </h4>
-            <span className="text-xs text-[#8E5364] font-semibold">
-              المراجعة الثنائية جزء مدمج داخل التحدي
-            </span>
-          </div>
-
           <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs">
+            <table className="w-full text-right text-xs min-w-[920px]">
               <thead>
                 <tr className="bg-[#FAF6F2] text-stone-600 font-bold border-b border-stone-200">
-                  <th className="p-3.5">#</th>
+                  <th className="p-3.5 w-10">#</th>
                   <th className="p-3.5">اسم الطالبة</th>
                   <th className="p-3.5">الرفيقة القرآنية</th>
-                  <th className="p-3.5 text-center">الإنجاز المبكر (+2 نقاط) ⭐</th>
+                  <th className="p-3.5 text-center">الإنجاز المبكر (+{currentChallenge?.earlyPrepPoints || 2} نقاط)</th>
                   <th className="p-3.5 text-center">المراجعة المشتركة</th>
                   <th className="p-3.5">نقاط تعاون الرفيقة</th>
                   <th className="p-3.5">مجموع نقاط التحدي</th>
@@ -839,136 +711,147 @@ export const ChallengesView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
-                {activeStudents.map((student, idx) => {
-                  const sub = studentChallengeSubmissions.find(
-                    c => c.challengeId === currentChallenge?.id && c.studentId === student.id
-                  );
-                  const isAwarded = (sub?.earlyPrepPointsEarned ?? 0) > 0 || !!sub?.earlyAchievementCompleted;
-                  const totalPoints = sub?.totalPointsEarned ?? 0;
-                  const maxPoints = currentChallenge?.maxTotalPoints || 10;
-                  const progressPercent = Math.min(100, Math.round((totalPoints / maxPoints) * 100));
+                {filteredEarlyStudents.length > 0 ? (
+                  filteredEarlyStudents.map((student, idx) => {
+                    const sub = studentChallengeSubmissions.find(
+                      c => c.challengeId === currentChallenge?.id && c.studentId === student.id
+                    );
+                    const isAwarded = (sub?.earlyPrepPointsEarned ?? 0) > 0 || !!sub?.earlyAchievementCompleted;
+                    const totalPoints = sub?.totalPointsEarned ?? 0;
+                    const maxPoints = currentChallenge?.maxTotalPoints || 10;
+                    const progressPercent = Math.min(100, Math.round((totalPoints / maxPoints) * 100));
+                    const studentCircle = circles.find(c => c.id === student.circleId);
 
-                  return (
-                    <tr key={student.id} className="hover:bg-[#FCF9FA] transition">
-                      <td className="p-3.5 font-semibold text-stone-400">{idx + 1}</td>
-                      <td className="p-3.5 font-bold text-stone-900">
-                        <div className="flex items-center gap-1.5">
-                          <span className="privacy-student-name">{student.name}</span>
-                          {isAwarded && (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold border border-emerald-200">
-                              <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-500" />
-                              <span>+2 نقاط</span>
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="p-3.5">
-                        {student.partnerStudentName ? (
-                          <span className="inline-flex items-center gap-1 bg-[#F5ECE8] text-[#7A4B37] px-2 py-0.5 rounded-full text-[11px] font-semibold">
-                            <span>🤝</span> <span className="privacy-student-name">{student.partnerStudentName}</span>
-                          </span>
-                        ) : (
-                          <span className="text-stone-300">غير معينة</span>
-                        )}
-                      </td>
-
-                      {/* Interactive Early Achievement Column in Table */}
-                      <td className="p-3.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() => currentChallenge && toggleChallengeEarlyAchievement(currentChallenge.id, student.id)}
-                          title={isAwarded ? 'انقري لإلغاء وتراجع عن نقطتي الإنجاز المبكر (-2 نقاط)' : 'انقري لمنح نقطتي الإنجاز المبكر مباشرة (+2 نقاط)'}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition shadow-2xs cursor-pointer ${
-                            isAwarded
-                              ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 ring-2 ring-emerald-400/20'
-                              : 'bg-stone-100 hover:bg-emerald-50 text-stone-500 hover:text-emerald-700 border border-dashed border-stone-300 hover:border-emerald-400'
-                          }`}
-                        >
-                          {isAwarded ? (
-                            <>
-                              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
-                              <span>+2 نقاط ⭐ معتمد</span>
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>منح +2 نقاط</span>
-                            </>
-                          )}
-                        </button>
-                      </td>
-
-                      <td className="p-3.5 text-center">
-                        {sub?.peerReviewEvaluation?.jointRevisionCompleted ? (
-                          <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">
-                            تمت بنجاح ✅
-                          </span>
-                        ) : (
-                          <span className="text-stone-300">بانتظار الرصد</span>
-                        )}
-                      </td>
-
-                      <td className="p-3.5">
-                        {sub?.peerReviewEvaluation ? (
-                          <div>
-                            <span className="font-bold text-[#8E5364]">
-                              {sub.peerReviewEvaluation.totalEarned} نقاط
-                            </span>
-                            <div className="text-[10px] text-stone-400">
-                              تصحيح أخطاء وتعاون
+                    return (
+                      <tr
+                        key={student.id}
+                        className="odd:bg-white even:bg-[#FAF6F2]/55 hover:bg-[#FCF5F7] transition-colors"
+                      >
+                        <td className="p-3.5 font-semibold text-stone-400">{idx + 1}</td>
+                        <td className="p-3.5 font-bold text-stone-900">
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="privacy-student-name">{student.name}</span>
                             </div>
-                          </div>
-                        ) : (
-                          <span className="text-stone-300">—</span>
-                        )}
-                      </td>
-
-                      {/* Total Points and Live Progress Bar */}
-                      <td className="p-3.5">
-                        {sub ? (
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1">
-                              <span className="font-extrabold text-sm text-stone-900 privacy-score-digit">
-                                {sub.totalPointsEarned}
+                            {studentCircle && (
+                              <span className="text-[10px] text-stone-400 font-normal">
+                                {studentCircle.name}
                               </span>
-                              <span className="text-[10px] text-stone-400">/ {maxPoints}</span>
-                            </div>
-                            <div className="w-20 bg-stone-100 rounded-full h-1.5 overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all duration-300 ${
-                                  isAwarded ? 'bg-emerald-600' : 'bg-[#8E5364]'
-                                }`}
-                                style={{ width: `${progressPercent}%` }}
-                              />
-                            </div>
+                            )}
                           </div>
-                        ) : (
-                          <span className="text-stone-300">—</span>
-                        )}
-                      </td>
+                        </td>
 
-                      <td className="p-3.5 text-stone-600 max-w-xs">
-                        <div className="truncate privacy-text-blur">{sub?.teacherNotes || '—'}</div>
-                        {(sub?.updatedAt || sub?.evaluatedAt) && (
-                          <div className="text-[10px] text-stone-400 mt-0.5 flex items-center gap-1">
-                            <Clock className="w-2.5 h-2.5 text-[#8E5364]" />
-                            <span>{formatHijriDateTime(sub?.updatedAt || sub?.evaluatedAt)}</span>
-                          </div>
-                        )}
-                      </td>
+                        <td className="p-3.5">
+                          {student.partnerStudentName ? (
+                            <span className="inline-flex items-center gap-1 bg-[#F5ECE8] text-[#7A4B37] px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+                              <span>🤝</span> <span className="privacy-student-name">{student.partnerStudentName}</span>
+                            </span>
+                          ) : (
+                            <span className="text-stone-300">غير معينة</span>
+                          )}
+                        </td>
 
-                      <td className="p-3.5 text-center">
-                        <button
-                          onClick={() => handleOpenEvalModal(student)}
-                          className="px-3 py-1 bg-[#8E5364] hover:bg-[#744251] text-white rounded-lg text-[11px] font-bold transition shadow-2xs cursor-pointer"
-                        >
-                          {sub ? 'تعديل النتيجة' : 'رصد التحدي'}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        {/* Interactive 1-Click Early Achievement Toggle Pill inside Table */}
+                        <td className="p-3.5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => currentChallenge && toggleChallengeEarlyAchievement(currentChallenge.id, student.id)}
+                            title={
+                              isAwarded
+                                ? 'انقري لإلغاء والتراجع عن نقطتي الإنجاز المبكر (-2 نقاط)'
+                                : 'انقري لمنح نقطتي الإنجاز المبكر مباشرة (+2 نقاط)'
+                            }
+                            className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition shadow-2xs cursor-pointer select-none ${
+                              isAwarded
+                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 ring-2 ring-emerald-400/20'
+                                : 'bg-white hover:bg-emerald-50 text-stone-600 hover:text-emerald-700 border border-dashed border-stone-300 hover:border-emerald-400'
+                            }`}
+                          >
+                            {isAwarded ? (
+                              <span>+{currentChallenge?.earlyPrepPoints || 2} نقاط معتمد ⭐</span>
+                            ) : (
+                              <span>منح +{currentChallenge?.earlyPrepPoints || 2} نقاط +</span>
+                            )}
+                          </button>
+                        </td>
+
+                        <td className="p-3.5 text-center">
+                          {sub?.peerReviewEvaluation?.jointRevisionCompleted ? (
+                            <span className="text-emerald-700 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200/60">
+                              تمت بنجاح ✅
+                            </span>
+                          ) : (
+                            <span className="text-stone-400">بانتظار الرصد</span>
+                          )}
+                        </td>
+
+                        <td className="p-3.5">
+                          {sub?.peerReviewEvaluation ? (
+                            <div>
+                              <span className="font-bold text-[#8E5364] privacy-score-digit">
+                                {sub.peerReviewEvaluation.totalEarned} نقاط
+                              </span>
+                              <div className="text-[10px] text-stone-400">
+                                تصحيح أخطاء وتعاون
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-stone-300">—</span>
+                          )}
+                        </td>
+
+                        {/* Total Points and Live Progress Bar */}
+                        <td className="p-3.5">
+                          {sub ? (
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1">
+                                <span className="font-extrabold text-sm text-stone-900 privacy-score-digit">
+                                  {sub.totalPointsEarned}
+                                </span>
+                                <span className="text-[10px] text-stone-400">/ {maxPoints}</span>
+                              </div>
+                              <div className="w-20 bg-stone-100 rounded-full h-1.5 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-300 ${
+                                    isAwarded ? 'bg-emerald-600' : 'bg-[#8E5364]'
+                                  }`}
+                                  style={{ width: `${progressPercent}%` }}
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-stone-300">—</span>
+                          )}
+                        </td>
+
+                        <td className="p-3.5 text-stone-600 max-w-xs">
+                          <div className="truncate privacy-text-blur">{sub?.teacherNotes || '—'}</div>
+                          {(sub?.updatedAt || sub?.evaluatedAt) && (
+                            <div className="text-[10px] text-stone-400 mt-0.5 flex items-center gap-1">
+                              <Clock className="w-2.5 h-2.5 text-[#8E5364]" />
+                              <span>{formatHijriDateTime(sub?.updatedAt || sub?.evaluatedAt)}</span>
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="p-3.5 text-center">
+                          <button
+                            onClick={() => handleOpenEvalModal(student)}
+                            className="px-3 py-1.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-lg text-[11px] font-bold transition shadow-2xs cursor-pointer"
+                          >
+                            {sub ? 'تعديل النتيجة' : 'رصد التحدي'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={9} className="p-8 text-center text-stone-400 text-xs bg-stone-50/40">
+                      لا توجد طالبات مطابقة لتصفية الحلقات أو حالة الإنجاز المبكر الحالية
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
