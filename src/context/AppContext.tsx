@@ -185,6 +185,9 @@ interface AppContextType {
   isDarkMode: boolean;
   toggleTheme: () => void;
   setTheme: (theme: 'light' | 'dark') => void;
+
+  isPrivacyMode: boolean;
+  togglePrivacyMode: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -490,6 +493,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const toggleTheme = () => setThemeState(prev => (prev === 'light' ? 'dark' : 'light'));
   const setTheme = (newTheme: 'light' | 'dark') => setThemeState(newTheme);
   const isDarkMode = theme === 'dark';
+
+  const [isPrivacyMode, setIsPrivacyMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ghaith_privacy_mode') === 'true';
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ghaith_privacy_mode', String(isPrivacyMode));
+    }
+  }, [isPrivacyMode]);
+
+  const togglePrivacyMode = () => setIsPrivacyMode(prev => !prev);
 
   const triggerQuickModal = (type: string) => setQuickModalAction({ type, timestamp: Date.now() });
   const clearQuickModal = () => setQuickModalAction(null);
@@ -3257,7 +3275,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         theme,
         isDarkMode,
         toggleTheme,
-        setTheme
+        setTheme,
+        isPrivacyMode,
+        togglePrivacyMode
       }}
     >
       {children}

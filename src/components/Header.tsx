@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Menu, ChevronDown, Lock, KeyRound, Cloud, RefreshCw, UserCheck, Sparkles, Sun, Moon } from 'lucide-react';
+import { Menu, ChevronDown, Lock, KeyRound, Cloud, RefreshCw, UserCheck, Sparkles, Sun, Moon, Eye, EyeOff } from 'lucide-react';
 import { StaffLoginGate } from './StaffLoginGate';
 import { renderUserAvatarBadge } from './IslamicIconLibrary';
 import { EditTeacherProfileModal } from './EditTeacherProfileModal';
@@ -22,7 +22,7 @@ export const Header: React.FC<HeaderProps> = ({
   onLockSession,
   onNavigateToSettings,
 }) => {
-  const { currentUser, circles, settings, showToast, cloudStatus, syncNow, lastSynced, isDarkMode, toggleTheme } = useApp();
+  const { currentUser, circles, settings, showToast, cloudStatus, syncNow, lastSynced, isDarkMode, toggleTheme, isPrivacyMode, togglePrivacyMode } = useApp();
   const [showSwitchModal, setShowSwitchModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
@@ -134,8 +134,31 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
-        {/* الجزء الأيسر: زر التبديل بين الوضع الليلي والنهاري + القائمة المنسدلة لحساب المعلمة */}
+        {/* الجزء الأيسر: زر وضع الخصوصية + زر التبديل بين الوضع الليلي والنهاري + القائمة المنسدلة لحساب المعلمة */}
         <div className="flex items-center gap-2">
+          {/* زر وضع الخصوصية (إخفاء/إظهار الأرقام والأسماء الحساسة) */}
+          <button
+            type="button"
+            onClick={togglePrivacyMode}
+            title={isPrivacyMode ? 'إلغاء وضع الخصوصية وإظهار البيانات 👁️' : 'تفعيل وضع الخصوصية وتمويه الأرقام والأسماء 🔒'}
+            aria-label="وضع الخصوصية"
+            aria-pressed={isPrivacyMode}
+            className={`p-2 sm:px-3 sm:py-1.5 rounded-2xl border transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 ${
+              isPrivacyMode
+                ? 'bg-[#8E5364] text-white border-[#8E5364] hover:bg-[#744251]'
+                : 'bg-white hover:bg-stone-50 border-[#E8DFD8] text-stone-700'
+            }`}
+          >
+            {isPrivacyMode ? (
+              <EyeOff className="w-4 h-4 text-white" />
+            ) : (
+              <Eye className="w-4 h-4 text-[#8E5364]" />
+            )}
+            <span className={`text-xs font-bold hidden sm:inline ${isPrivacyMode ? 'text-white' : 'text-stone-700'}`}>
+              وضع الخصوصية
+            </span>
+          </button>
+
           {/* زر التبديل السريع بين الوضع النهاري والليلي */}
           <button
             type="button"

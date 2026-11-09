@@ -4,7 +4,7 @@ import { ViewType } from '../components/Sidebar';
 import {
   Users, Layers, Award, CheckCircle2, AlertTriangle, ArrowUpRight,
   TrendingUp, Calendar, Sparkles, BookOpen, Clock, HeartHandshake,
-  UserCheck, UserCog, ShieldAlert, Plus, ChevronLeft, Edit3, Filter, Check, History
+  UserCheck, UserCog, ShieldAlert, Plus, ChevronLeft, Edit3, Filter, Check, History, Eye, EyeOff
 } from 'lucide-react';
 import { AuditLogModal } from '../components/AuditLogModal';
 import { hasFullAccess } from '../types';
@@ -24,8 +24,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     students, circles, tracks, attendanceRecords, dailyRecords,
     studentAtqiniSubmissions, studentChallengeSubmissions,
     allStudentScores, settings, auditLogs, selectedTrackId, setSelectedTrackId,
-    updateSettings, currentUser
+    updateSettings, currentUser, isPrivacyMode, togglePrivacyMode
   } = useApp();
+
+  const privacyBlurClass = isPrivacyMode
+    ? 'blur-[8px] select-none transition-all duration-300'
+    : 'blur-0 transition-all duration-300';
 
   const [auditModalOpen, setAuditModalOpen] = useState(false);
 
@@ -100,7 +104,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   return (
     <div className="space-y-6">
       
-      {/* Welcome Banner */}
+      {/* Welcome Banner (Always sharp and readable, never blurred) */}
       <div
         style={{
           backgroundColor: settings.primaryColor || '#8E5364'
@@ -120,13 +124,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 className="bg-black/25 hover:bg-black/40 text-white font-bold text-xs rounded-xl px-2.5 py-1 border border-white/30 outline-none cursor-pointer transition shadow-2xs"
               >
                 <option value="all" className="bg-stone-800 text-white">
-                  كافة المسارات المجمعة ({students.length} طالبة)
+                  كافة المسارات المجمعة ({isPrivacyMode ? '••' : students.length} طالبة)
                 </option>
                 {tracks.filter(t => !t.isArchived).map(track => {
                   const count = students.filter(s => s.trackId === track.id).length;
                   return (
                     <option key={track.id} value={track.id} className="bg-stone-800 text-white">
-                      {track.name} ({count} طالبة)
+                      {track.name} ({isPrivacyMode ? '••' : count} طالبة)
                     </option>
                   );
                 })}
@@ -156,7 +160,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {settings.welcomeSubtext || `${settings.motto || 'المقرأة القرآنية النموذجية'} — إشراف قائدة المقرأة: ${settings.leaderName}. متابعة الخطط والحلقات والاختبارات المعتمدة.`}
           </p>
           
-          {/* Quick Buttons Bar */}
+          {/* Quick Buttons Bar (Always sharp and readable) */}
           <div className="flex flex-wrap items-center gap-2.5">
             <button
               onClick={() => onOpenQuickModal('student')}
@@ -196,6 +200,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <span>المعلمات والمشرفات</span>
               </button>
             )}
+            <button
+              type="button"
+              onClick={togglePrivacyMode}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition cursor-pointer shadow-xs ${
+                isPrivacyMode
+                  ? 'bg-amber-400 text-stone-900 border-amber-300 hover:bg-amber-300'
+                  : 'bg-white/15 backdrop-blur text-white border-white/25 hover:bg-white/25'
+              }`}
+              title={isPrivacyMode ? 'إلغاء وضع الخصوصية وإظهار الأرقام والأسماء' : 'تفعيل وضع الخصوصية وتمويه الأرقام الحساسة'}
+            >
+              {isPrivacyMode ? (
+                <EyeOff className="w-3.5 h-3.5" />
+              ) : (
+                <Eye className="w-3.5 h-3.5" />
+              )}
+              <span>وضع الخصوصية</span>
+            </button>
           </div>
         </div>
 
@@ -219,12 +240,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <Users className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-xl sm:text-2xl font-bold text-stone-900 mb-1 flex items-baseline">
+          <div className={`text-xl sm:text-2xl font-bold text-stone-900 mb-1 flex items-baseline ${privacyBlurClass}`}>
             <span>{totalStudents}</span>
             <span className="text-xs font-normal text-stone-400 mr-1.5">طالبة</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-stone-500">
-            <span>{activeStudents.length} نشطة في الحلقات</span>
+            <span className={privacyBlurClass}>{activeStudents.length} نشطة في الحلقات</span>
             <ChevronLeft className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-[-2px] transition" />
           </div>
         </div>
@@ -240,12 +261,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <Layers className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-xl sm:text-2xl font-bold text-stone-900 mb-1 flex items-baseline">
+          <div className={`text-xl sm:text-2xl font-bold text-stone-900 mb-1 flex items-baseline ${privacyBlurClass}`}>
             <span>{displayedCircles.length}</span>
             <span className="text-xs font-normal text-stone-400 mr-1.5">حلقة</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-stone-500">
-            <span>{currentTrack ? currentTrack.name : `${tracks.length} مسارات معتمدة`}</span>
+            <span className={privacyBlurClass}>{currentTrack ? currentTrack.name : `${tracks.length} مسارات معتمدة`}</span>
             <ChevronLeft className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-[-2px] transition" />
           </div>
         </div>
@@ -261,7 +282,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-xl sm:text-2xl font-bold text-stone-900 mb-1 flex items-baseline">
+          <div className={`text-xl sm:text-2xl font-bold text-stone-900 mb-1 flex items-baseline ${privacyBlurClass}`}>
             <span>{avgPercentage}%</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-[#2D5A43] font-medium">
@@ -281,11 +302,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <Clock className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-xl sm:text-2xl font-bold text-stone-900 mb-1 flex items-baseline">
+          <div className={`text-xl sm:text-2xl font-bold text-stone-900 mb-1 flex items-baseline ${privacyBlurClass}`}>
             <span>{todayAttendance.length > 0 ? `${presentToday} / ${todayAttendance.length}` : 'سجل اليوم'}</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-stone-500">
-            <span>{earlyPrepToday} بطاقة تحضير مبكر ⭐</span>
+            <span className={privacyBlurClass}>{earlyPrepToday} بطاقة تحضير مبكر ⭐</span>
             <ChevronLeft className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-[-2px] transition" />
           </div>
         </div>
@@ -340,27 +361,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <span className="text-xl">{circle.icon || '🪴'}</span>
                     <div>
                       <h3 className="font-bold text-stone-900 text-sm">{circle.name}</h3>
-                      <p className="text-[11px] text-stone-500">المعلمة: {circle.teacherName}</p>
+                      <p className="text-[11px] text-stone-500">المعلمة: <span className={privacyBlurClass}>{circle.teacherName}</span></p>
                     </div>
                   </div>
-                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#EBF3EE] text-[#2D5A43]">
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full bg-[#EBF3EE] text-[#2D5A43] ${privacyBlurClass}`}>
                     {avgCircleScore}%
                   </span>
                 </div>
 
                 <div className="space-y-1.5 text-xs text-stone-600 mb-3">
                   <div className="flex justify-between text-[11px]">
-                    <span>عدد الطالبات:</span>
-                    <span className="font-semibold text-stone-800">{circleStudents.length} من {circle.maxStudents} طالبة</span>
+                    <span>النصاب وعدد الطالبات:</span>
+                    <span className={`font-semibold text-stone-800 ${privacyBlurClass}`}>{circleStudents.length} من {circle.maxStudents} طالبة</span>
                   </div>
-                  <div className="w-full bg-[#EFEAE5] h-1.5 rounded-full overflow-hidden">
+                  <div className={`w-full bg-[#EFEAE5] h-1.5 rounded-full overflow-hidden ${privacyBlurClass}`}>
                     <div
                       className="bg-[#8E5364] h-full rounded-full transition-all"
                       style={{ width: `${Math.min(100, (circleStudents.length / circle.maxStudents) * 100)}%` }}
                     />
                   </div>
                   <div className="flex justify-between text-[11px] text-stone-400 pt-1">
-                    <span>المشرفة: {circle.supervisorName}</span>
+                    <span>المشرفة: <span className={privacyBlurClass}>{circle.supervisorName}</span></span>
                     <span>{circle.scheduleDays.join('، ')}</span>
                   </div>
                 </div>
@@ -410,10 +431,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       {idx + 1}
                     </span>
                     <div>
-                      <div className="font-bold text-xs sm:text-sm text-stone-900 group-hover:text-[#9E5B6D] transition">
+                      <div className={`font-bold text-xs sm:text-sm text-stone-900 group-hover:text-[#9E5B6D] transition ${privacyBlurClass}`}>
                         {student.name}
                       </div>
-                      <div className="text-[11px] text-stone-400">
+                      <div className={`text-[11px] text-stone-400 ${privacyBlurClass}`}>
                         {circle?.name} • رفيقتها: {student.partnerStudentName || 'لم تعين'}
                       </div>
                     </div>
@@ -421,7 +442,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                   <div className="flex items-center gap-2">
                     <span
-                      className="text-xs font-bold px-3 py-1 rounded-xl text-white shadow-2xs font-mono border border-white/20 select-none inline-flex items-center gap-1"
+                      className={`text-xs font-bold px-3 py-1 rounded-xl text-white shadow-2xs font-mono border border-white/20 select-none inline-flex items-center gap-1 ${privacyBlurClass}`}
                       style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
                     >
                       <span>{score?.finalPercentage}%</span>
@@ -446,7 +467,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <p className="text-[11px] text-stone-400">طالبات بحاجة إلى رعاية وتواصل من المشرفة</p>
               </div>
             </div>
-            <span className="text-xs font-bold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full">
+            <span className={`text-xs font-bold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full ${privacyBlurClass}`}>
               {atRiskAbsence.length + (incompleteDailyLogs.length > 0 ? 1 : 0)} تنبيه
             </span>
           </div>
@@ -458,7 +479,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 const circle = circles.find(c => c.id === st.circleId);
                 return (
                   <div key={st.id} className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200/80 flex items-center justify-between text-xs">
-                    <div>
+                    <div className={privacyBlurClass}>
                       <div className="font-bold text-amber-900">{st.name}</div>
                       <div className="text-amber-700 text-[11px]">
                         {circle?.name} • غياب دون عذر: <strong className="text-rose-700">{score?.absentUnexcusedCount} مرات</strong>
@@ -487,7 +508,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-amber-700" />
                 <div>
-                  <div className="font-bold text-stone-800">
+                  <div className={`font-bold text-stone-800 ${privacyBlurClass}`}>
                     هناك {incompleteDailyLogs.length} طالبة لم يكتمل تسجيل إنجازهن اليومي
                   </div>
                   <div className="text-[11px] text-stone-500">
@@ -506,7 +527,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           {/* Quick link to Audit trail */}
           <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500">
-            <span className="truncate max-w-[240px]">آخر عملية: {auditLogs[0]?.details || 'تهيئة النظام'}</span>
+            <span className={`truncate max-w-[240px] ${privacyBlurClass}`}>آخر عملية: {auditLogs[0]?.details || 'تهيئة النظام'}</span>
             <button
               type="button"
               onClick={() => setAuditModalOpen(true)}
