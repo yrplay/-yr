@@ -15,29 +15,24 @@ export function summarizeDailyPageProgress(records: readonly DailyRecord[]): Dai
   return records.reduce<DailyPageProgress>((totals, record) => {
     if (record.status !== 'completed') return totals;
 
-    const hasNewMemorizationConditions = record.newMemorizationWithConditions !== undefined
-      ? Boolean(record.newMemorizationWithConditions)
-      : (record.newMemorizationCompleted !== false && (
-          Boolean(record.conditions?.masteryRepetition)
-          || Boolean(record.conditions?.listenedToReader)
-          || Boolean(record.conditions?.recitedLooking)
-          || Boolean(record.criteriaRepeatCount && record.criteriaRepeatCount > 0)
-          || (record.recitationScore !== undefined && record.recitationScore >= 8)
-        ));
-
-    const minorPages = nonNegativeNumber(record.minorRevisionPortion?.pagesCount);
-    const tamkeenPages = nonNegativeNumber(record.tamkeenRevisionPortion?.pagesCount);
+    const newPages = nonNegativeNumber(record.newMemorizationPages);
+    const minorPages = nonNegativeNumber(
+      record.minorRevisionPortion?.pagesCount ?? (record as any).minorPages
+    );
+    const tamkeenPages = nonNegativeNumber(
+      record.tamkeenRevisionPortion?.pagesCount ?? (record as any).majorPages
+    );
     const recordedRevisionPages = nonNegativeNumber(record.revisionPages);
     const revisionTotal = Math.max(recordedRevisionPages, minorPages + tamkeenPages);
 
     return {
-      newMemorizationPagesDone: totals.newMemorizationPagesDone
-        + (hasNewMemorizationConditions ? nonNegativeNumber(record.newMemorizationPages) : 0),
-      revisionPagesDone: totals.revisionPagesDone + revisionTotal,
-      minorRevisionPagesDone: totals.minorRevisionPagesDone + minorPages,
-      tamkeenRevisionPagesDone: totals.tamkeenRevisionPagesDone + tamkeenPages,
-      unclassifiedRevisionPagesDone: totals.unclassifiedRevisionPagesDone
-        + Math.max(0, revisionTotal - minorPages - tamkeenPages)
+      newMemorizationPagesDone: Math.round((totals.newMemorizationPagesDone + newPages) * 100) / 100,
+      revisionPagesDone: Math.round((totals.revisionPagesDone + revisionTotal) * 100) / 100,
+      minorRevisionPagesDone: Math.round((totals.minorRevisionPagesDone + minorPages) * 100) / 100,
+      tamkeenRevisionPagesDone: Math.round((totals.tamkeenRevisionPagesDone + tamkeenPages) * 100) / 100,
+      unclassifiedRevisionPagesDone: Math.round(
+        (totals.unclassifiedRevisionPagesDone + Math.max(0, revisionTotal - minorPages - tamkeenPages)) * 100
+      ) / 100
     };
   }, {
     newMemorizationPagesDone: 0,

@@ -346,9 +346,9 @@ const AppContent: React.FC = () => {
             />
           )}
 
-          {currentView === 'monthly_plans' && (
+          <div className={currentView === 'monthly_plans' ? 'block' : 'hidden'}>
             <MonthlyPlansView />
-          )}
+          </div>
 
           <div className={currentView === 'attendance' ? 'block' : 'hidden'}>
             <AttendanceView />

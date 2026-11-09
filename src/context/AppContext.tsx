@@ -210,6 +210,7 @@ const CHALLENGE_SUBS_LOCAL_KEY = 'ghaith_challenge_subs_local_v1';
 const TRACKS_LOCAL_KEY = 'ghaith_tracks_local_v1';
 const CIRCLES_LOCAL_KEY = 'ghaith_circles_local_v1';
 const SUBSCRIPTIONS_LOCAL_KEY = 'ghaith_subscriptions_local_v1';
+const STUDENT_PLANS_LOCAL_KEY = 'ghaith_student_plans_local_v1';
 
 const FAKE_DEMO_IDS = new Set(['u-1', 'u-2', 'u-3', 'u-4', 'u-5', 'u-leader']);
 const FAKE_DEMO_EMAILS = new Set(['rifa@ghaym.org', 'khadija@ghaym.org', 'maryam@ghaym.org', 'fatima@ghaym.org', 'hind@ghaym.org', 'leader@ghaym.org']);
@@ -466,6 +467,35 @@ const ensureDefaultTrackIntegrity = (data: any) => {
 
   if (Array.isArray(data.studentAtqiniSubmissions)) {
     data.studentAtqiniSubmissions = deduplicateAtqiniSubmissions(data.studentAtqiniSubmissions);
+  }
+
+  if (Array.isArray(data.studentPlans)) {
+    let spList = [...data.studentPlans];
+    try {
+      if (typeof window !== 'undefined') {
+        const localSpRaw = localStorage.getItem(STUDENT_PLANS_LOCAL_KEY);
+        if (localSpRaw) {
+          const localSp: any[] = JSON.parse(localSpRaw);
+          if (Array.isArray(localSp) && localSp.length > 0) {
+            spList = [...spList, ...localSp];
+          }
+        }
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    const spMap = new Map<string, any>();
+    for (const sp of spList) {
+      if (!sp || !sp.studentId) continue;
+      const key = `${sp.studentId}_${sp.monthlyPlanId || 'mp-1'}`;
+      const existing = spMap.get(key);
+      if (!existing) {
+        spMap.set(key, sp);
+      } else {
+        spMap.set(key, { ...existing, ...sp, id: sp.id || existing.id });
+      }
+    }
+    data.studentPlans = Array.from(spMap.values());
   }
 
   return data;
@@ -1356,6 +1386,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           localStorage.setItem('ghaith_attendance_local_v1', JSON.stringify(rawPayload.attendanceRecords));
           localStorage.setItem('ghaith_daily_records_local_v1', JSON.stringify(rawPayload.dailyRecords));
           localStorage.setItem('ghaith_challenge_subs_local_v1', JSON.stringify(rawPayload.studentChallengeSubmissions));
+          localStorage.setItem(STUDENT_PLANS_LOCAL_KEY, JSON.stringify(rawPayload.studentPlans));
         }
       } catch (storageError) {
         console.warn('LocalStorage save failed; continuing with cloud sync:', storageError);
@@ -2029,37 +2060,73 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
     const studentObj = currentStudents.find((s: Student) => s.id === studentId);
 
+    const currentPlans: StudentMonthlyPlan[] = masterStateRef.current.studentPlans?.length
+      ? masterStateRef.current.studentPlans
+      : studentPlans;
+    const existingIdx = currentPlans.findIndex(
+      p => p.id === cleanId || (p.studentId === studentId && p.monthlyPlanId === monthlyPlanId)
+    );
+    const existingPlan = existingIdx >= 0 ? currentPlans[existingIdx] : undefined;
+
     const newPlan: StudentMonthlyPlan = {
-      id: cleanId,
+      ...(existingPlan || {}),
+      id: existingPlan?.id || cleanId,
       studentId,
       monthlyPlanId,
-      status: plan.status || 'active',
-      newMemorization: plan.newMemorization || {
+      status: plan.status || existingPlan?.status || 'active',
+      newMemorization: plan.newMemorization || existingPlan?.newMemorization || {
+        enabled: true,
         fromSurah: 2,
         fromAyah: 1,
         toSurah: 2,
         toAyah: 50,
         targetPages: 8,
         actualPages: 0,
-        targetDailyAmount: 'نصف وجه يومياً'
+        dailyAmountPages: 0.5,
+        targetDailyAmount: '0.5 (نصف وجه)'
       },
-      revision: plan.revision || {
+      minorRevision: plan.minorRevision || existingPlan?.minorRevision || {
+        enabled: true,
         fromSurah: 2,
         fromAyah: 1,
         toSurah: 2,
         toAyah: 25,
         targetPages: 4,
         actualPages: 0,
+        dailyAmountPages: 1.0,
+        targetDailyAmount: '1.0 (وجه)',
+        revisionType: 'صغرى',
+        status: 'in_progress'
+      },
+      tamkeenRevision: plan.tamkeenRevision || existingPlan?.tamkeenRevision || {
+        enabled: true,
+        fromSurah: 1,
+        fromAyah: 1,
+        toSurah: 2,
+        toAyah: 25,
+        targetPages: 4,
+        actualPages: 0,
+        dailyAmountPages: 1.0,
+        targetDailyAmount: '1.0 (وجه)',
         revisionType: 'تمكين',
         status: 'in_progress'
       },
-      ...plan
+      revision: plan.revision || existingPlan?.revision || {
+        enabled: true,
+        fromSurah: 2,
+        fromAyah: 1,
+        toSurah: 2,
+        toAyah: 25,
+        targetPages: 4,
+        actualPages: 0,
+        dailyAmountPages: 1.0,
+        targetDailyAmount: '1.0 (وجه)',
+        revisionType: 'تمكين',
+        status: 'in_progress'
+      },
+      ...plan,
+      updatedAt: new Date().toISOString()
     };
-
-    const currentPlans: StudentMonthlyPlan[] = masterStateRef.current.studentPlans || [];
-    const existingIdx = currentPlans.findIndex(
-      p => p.id === cleanId || (p.studentId === newPlan.studentId && p.monthlyPlanId === newPlan.monthlyPlanId)
-    );
 
     let next: StudentMonthlyPlan[];
     if (existingIdx >= 0) {
@@ -2071,6 +2138,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     masterStateRef.current.studentPlans = next;
     setStudentPlans(next);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(STUDENT_PLANS_LOCAL_KEY, JSON.stringify(next));
+      } catch {}
+    }
     const nextLogs = appendAuditEntry(
       existingIdx >= 0 ? 'update' : 'create',
       'studentPlan',
@@ -2078,7 +2150,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       cleanId
     );
     persistState({ studentPlans: next, auditLogs: nextLogs });
-    showToast('تم حفظ خطة الطالبة وتحديث المقرر بنجاح');
   };
 
   const getThisWeekThursdayISO = (baseDateIso?: string): string => {
@@ -3065,6 +3136,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         localStorage.removeItem(TRACKS_LOCAL_KEY);
         localStorage.removeItem(CIRCLES_LOCAL_KEY);
         localStorage.removeItem(SUBSCRIPTIONS_LOCAL_KEY);
+        localStorage.removeItem(STUDENT_PLANS_LOCAL_KEY);
       } catch {}
     }
     masterStateRef.current = {};

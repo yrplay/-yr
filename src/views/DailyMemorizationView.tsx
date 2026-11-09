@@ -245,39 +245,31 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     return allStudentScores ? allStudentScores[viewingStudentRecord.id] : null;
   }, [viewingStudentRecord, allStudentScores]);
 
-  // التحقق مما إذا كان سجل الحفظ الجديد مسجلاً ومستوفياً لشروط الإتقان
-  const isRecordWithConditions = (r: any): boolean => {
-    if (r.newMemorizationWithConditions !== undefined) {
-      return Boolean(r.newMemorizationWithConditions);
-    }
-    return Boolean(
-      r.newMemorizationCompleted !== false && (
-        r.conditions?.masteryRepetition ||
-        r.conditions?.listenedToReader ||
-        r.conditions?.recitedLooking ||
-        (r.criteriaRepeatCount && r.criteriaRepeatCount > 0) ||
-        (r.recitationScore !== undefined && r.recitationScore >= 8)
-      )
-    );
-  };
+  const modalStudentPlan = useMemo(() => {
+    if (!modalStudent) return undefined;
+    return (studentPlans || []).find(p => p.studentId === modalStudent.id && p.status === 'active')
+      || (studentPlans || []).find(p => p.studentId === modalStudent.id);
+  }, [modalStudent, studentPlans]);
+
+  const isNewMemPlanEnabled = modalStudentPlan ? modalStudentPlan.newMemorization?.enabled !== false : true;
+  const isMinorRevPlanEnabled = modalStudentPlan ? modalStudentPlan.minorRevision?.enabled !== false : true;
+  const isTamkeenRevPlanEnabled = modalStudentPlan
+    ? (modalStudentPlan.tamkeenRevision?.enabled ?? modalStudentPlan.revision?.enabled) !== false
+    : true;
 
   const studentStats = useMemo(() => {
     if (!studentRecords.length) {
       return { totalPages: 0, totalUnconditionedPages: 0, avgScore: 10, totalSessions: 0, totalMistakes: 0 };
     }
-    // فقط ما يُرصد كمنجز بشروط على مدار الشهر يُحسب في مجموع الأوجه المعتمدة
-    const totalPages = studentRecords
-      .filter(r => isRecordWithConditions(r))
-      .reduce((acc, r) => acc + (r.newMemorizationPages || 0), 0);
-    const totalUnconditionedPages = studentRecords
-      .filter(r => !isRecordWithConditions(r))
-      .reduce((acc, r) => acc + (r.newMemorizationPages || 0), 0);
+    const totalPages = Math.round(
+      studentRecords.reduce((acc, r) => acc + (r.newMemorizationPages || 0), 0) * 100
+    ) / 100;
     const totalScore = studentRecords.reduce((acc, r) => acc + (r.recitationScore || 0), 0);
     const avgScore = Math.round((totalScore / studentRecords.length) * 10) / 10;
     const totalMistakes = studentRecords.reduce((acc, r) => acc + (r.memorizationMistakes || 0), 0);
     return {
       totalPages,
-      totalUnconditionedPages,
+      totalUnconditionedPages: 0,
       avgScore,
       totalSessions: studentRecords.length,
       totalMistakes
@@ -438,7 +430,14 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       r => r.studentId === studentId && r.date === targetDate
     );
 
-    const studentPlan = (studentPlans || []).find(p => p.studentId === studentId);
+    const studentPlan = (studentPlans || []).find(p => p.studentId === studentId && p.status === 'active')
+      || (studentPlans || []).find(p => p.studentId === studentId);
+
+    const planNewEnabled = studentPlan ? studentPlan.newMemorization?.enabled !== false : true;
+    const planMinorEnabled = studentPlan ? studentPlan.minorRevision?.enabled !== false : true;
+    const planTamkeenEnabled = studentPlan
+      ? (studentPlan.tamkeenRevision?.enabled ?? studentPlan.revision?.enabled) !== false
+      : true;
 
     // تجهيز أعداد مرات المعايير المنجزة يدويًا
     const initCounts: Record<string, number> = {};
@@ -466,8 +465,8 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         newFromAyah: existing.newFromAyah ?? 1,
         newToSurah: existing.newToSurah ?? 2,
         newToAyah: existing.newToAyah ?? 15,
-        newPages: existing.newMemorizationPages ?? existing.newPages ?? 1,
-        newWithConditions: isRecordWithConditions(existing),
+        newPages: planNewEnabled ? (existing.newMemorizationPages ?? existing.newPages ?? 1) : 0,
+        newWithConditions: true,
         recitedPortion: existing.requiredPortionText ?? existing.recitedPortion ?? '',
         hifzErrors: existing.memorizationMistakes ?? existing.hifzErrors ?? 0,
         alerts: existing.hintsCount ?? existing.alerts ?? 0,
@@ -478,15 +477,15 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         minorFromAyah: existing.minorRevisionPortion?.fromAyah ?? existing.minorFromAyah ?? 1,
         minorToSurah: existing.minorToSurah ?? existing.minorRevisionPortion?.surahNumber ?? 2,
         minorToAyah: existing.minorRevisionPortion?.toAyah ?? existing.minorToAyah ?? 25,
-        minorPages: existing.minorRevisionPortion?.pagesCount ?? existing.minorPages ?? 3,
-        minorDone: existing.minorDone ?? existing.conditions?.minorRevision ?? true,
+        minorPages: planMinorEnabled ? (existing.minorRevisionPortion?.pagesCount ?? existing.minorPages ?? 1) : 0,
+        minorDone: planMinorEnabled ? (existing.minorDone ?? existing.conditions?.minorRevision ?? true) : false,
 
         majorFromSurah: existing.tamkeenRevisionPortion?.surahNumber ?? existing.majorFromSurah ?? 11,
         majorFromAyah: existing.tamkeenRevisionPortion?.fromAyah ?? existing.majorFromAyah ?? 36,
         majorToSurah: existing.majorToSurah ?? existing.tamkeenRevisionPortion?.surahNumber ?? 11,
         majorToAyah: existing.tamkeenRevisionPortion?.toAyah ?? existing.majorToAyah ?? 50,
-        majorPages: existing.tamkeenRevisionPortion?.pagesCount ?? existing.majorPages ?? 2,
-        majorDone: existing.majorDone ?? existing.conditions?.tamkeenRevision ?? true,
+        majorPages: planTamkeenEnabled ? (existing.tamkeenRevisionPortion?.pagesCount ?? existing.majorPages ?? 1) : 0,
+        majorDone: planTamkeenEnabled ? (existing.majorDone ?? existing.conditions?.tamkeenRevision ?? true) : false,
 
         criteriaListen: existing.conditions?.listenedToReader ?? existing.criteriaListen ?? true,
         criteriaRecite: existing.conditions?.recitedLooking ?? existing.criteriaRecite ?? true,
@@ -494,39 +493,64 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         hasMedal: existing.conditions?.achievedDistinction ?? existing.hasMedal ?? false
       });
     } else {
-      // إعداد القيم الافتراضية
+      // إعداد القيم الافتراضية من الخطة الشهرية للطالبة
       const defFromS = studentPlan?.newMemorization?.fromSurah || 2;
       const defFromA = studentPlan?.newMemorization?.fromAyah || 1;
       const defToS = studentPlan?.newMemorization?.toSurah || 2;
       const defToA = studentPlan?.newMemorization?.toAyah || 15;
-      const initialPages = calculatePortionPages(defFromS, defFromA, defToS, defToA);
+      const initialNewPages = planNewEnabled
+        ? (typeof studentPlan?.newMemorization?.dailyAmountPages === 'number' && studentPlan.newMemorization.dailyAmountPages > 0
+            ? studentPlan.newMemorization.dailyAmountPages
+            : calculatePortionPages(defFromS, defFromA, defToS, defToA))
+        : 0;
+
+      const minFromS = studentPlan?.minorRevision?.fromSurah || 2;
+      const minFromA = studentPlan?.minorRevision?.fromAyah || 1;
+      const minToS = studentPlan?.minorRevision?.toSurah || 2;
+      const minToA = studentPlan?.minorRevision?.toAyah || 25;
+      const initialMinorPages = planMinorEnabled
+        ? (typeof studentPlan?.minorRevision?.dailyAmountPages === 'number' && studentPlan.minorRevision.dailyAmountPages > 0
+            ? studentPlan.minorRevision.dailyAmountPages
+            : calculatePortionPages(minFromS, minFromA, minToS, minToA))
+        : 0;
+
+      const tamkSource = studentPlan?.tamkeenRevision || studentPlan?.revision;
+      const majFromS = tamkSource?.fromSurah || 11;
+      const majFromA = tamkSource?.fromAyah || 36;
+      const majToS = tamkSource?.toSurah || 11;
+      const majToA = tamkSource?.toAyah || 50;
+      const initialMajorPages = planTamkeenEnabled
+        ? (typeof tamkSource?.dailyAmountPages === 'number' && tamkSource.dailyAmountPages > 0
+            ? tamkSource.dailyAmountPages
+            : calculatePortionPages(majFromS, majFromA, majToS, majToA))
+        : 0;
 
       setForm({
         newFromSurah: defFromS,
         newFromAyah: defFromA,
         newToSurah: defToS,
         newToAyah: defToA,
-        newPages: initialPages,
+        newPages: initialNewPages,
         newWithConditions: true,
-        recitedPortion: formatPortionText(defFromS, defFromA, defToS, defToA),
+        recitedPortion: planNewEnabled ? formatPortionText(defFromS, defFromA, defToS, defToA) : 'خطة الحفظ الجديد معطّلة لهذا الشهر',
         hifzErrors: 0,
         alerts: 0,
         tajweedErrors: 0,
         notes: '',
 
-        minorFromSurah: 2,
-        minorFromAyah: 1,
-        minorToSurah: 2,
-        minorToAyah: 25,
-        minorPages: calculatePortionPages(2, 1, 2, 25),
-        minorDone: true,
+        minorFromSurah: minFromS,
+        minorFromAyah: minFromA,
+        minorToSurah: minToS,
+        minorToAyah: minToA,
+        minorPages: initialMinorPages,
+        minorDone: planMinorEnabled,
 
-        majorFromSurah: 11,
-        majorFromAyah: 36,
-        majorToSurah: 11,
-        majorToAyah: 50,
-        majorPages: calculatePortionPages(11, 36, 11, 50),
-        majorDone: true,
+        majorFromSurah: majFromS,
+        majorFromAyah: majFromA,
+        majorToSurah: majToS,
+        majorToAyah: majToA,
+        majorPages: initialMajorPages,
+        majorDone: planTamkeenEnabled,
 
         criteriaListen: true,
         criteriaRecite: true,
@@ -584,6 +608,12 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     const reciteCount = criteriaCounts['crit-recite'] ?? (activeCriteriaList[1] ? criteriaCounts[activeCriteriaList[1].id] : 0) ?? 0;
     const repeatCount = criteriaCounts['crit-repeat'] ?? (activeCriteriaList[2] ? criteriaCounts[activeCriteriaList[2].id] : 0) ?? 0;
 
+    const effectiveNewPages = isNewMemPlanEnabled ? Number(form.newPages || 0) : 0;
+    const effectiveMinorPages = isMinorRevPlanEnabled ? Number(form.minorPages || 0) : 0;
+    const effectiveMajorPages = isTamkeenRevPlanEnabled ? Number(form.majorPages || 0) : 0;
+    const effectiveMinorDone = isMinorRevPlanEnabled ? form.minorDone : false;
+    const effectiveMajorDone = isTamkeenRevPlanEnabled ? form.majorDone : false;
+
     await saveDailyRecord({
       ...(editingRecordId ? { id: editingRecordId } : {}),
       studentId: activeModalStudentId,
@@ -594,32 +624,32 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       memorizationMistakes: form.hifzErrors,
       hintsCount: form.alerts,
       tajweedErrorsCount: form.tajweedErrors,
-      newMemorizationPages: form.newPages,
-      newMemorizationCompleted: true,
-      newMemorizationWithConditions: form.newWithConditions,
-      requiredPortionText: form.recitedPortion,
-      revisionCompleted: form.minorDone || form.majorDone,
-      revisionPages: form.minorPages + form.majorPages,
+      newMemorizationPages: effectiveNewPages,
+      newMemorizationCompleted: isNewMemPlanEnabled,
+      newMemorizationWithConditions: true,
+      requiredPortionText: isNewMemPlanEnabled ? form.recitedPortion : 'مراجعة فقط (الحفظ الجديد معطّل)',
+      revisionCompleted: effectiveMinorDone || effectiveMajorDone,
+      revisionPages: effectiveMinorPages + effectiveMajorPages,
       minorRevisionPortion: {
         surahNumber: form.minorFromSurah,
         fromAyah: Number(form.minorFromAyah) || 1,
         toAyah: Number(form.minorToAyah) || 1,
-        pagesCount: form.minorPages,
-        status: form.minorDone ? 'excellent' : 'needs_repetition'
+        pagesCount: effectiveMinorPages,
+        status: effectiveMinorDone ? 'excellent' : 'unrecited'
       },
       tamkeenRevisionPortion: {
         surahNumber: form.majorFromSurah,
         fromAyah: Number(form.majorFromAyah) || 1,
         toAyah: Number(form.majorToAyah) || 1,
-        pagesCount: form.majorPages,
-        status: form.majorDone ? 'excellent' : 'needs_repetition'
+        pagesCount: effectiveMajorPages,
+        status: effectiveMajorDone ? 'excellent' : 'unrecited'
       },
       conditions: {
         listenedToReader: listenCount > 0,
         recitedLooking: reciteCount > 0,
         masteryRepetition: repeatCount > 0,
-        minorRevision: form.minorDone,
-        tamkeenRevision: form.majorDone,
+        minorRevision: effectiveMinorDone,
+        tamkeenRevision: effectiveMajorDone,
         achievedDistinction: form.hasMedal
       },
       criteriaCounts,
@@ -630,7 +660,13 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       notes: form.notes,
       recordedBy: currentUser?.name || 'معلمة الحلقة',
       recordedAt: new Date().toISOString(),
-      ...(form as any)
+      ...(form as any),
+      newPages: effectiveNewPages,
+      minorPages: effectiveMinorPages,
+      majorPages: effectiveMajorPages,
+      minorDone: effectiveMinorDone,
+      majorDone: effectiveMajorDone,
+      newWithConditions: true
     });
 
     setEditingRecordId(null);
@@ -1010,78 +1046,51 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                 />
               </div>
 
-              {/* مقرر الحفظ الجديد */}
-              <div className="p-3.5 bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
-                    <Bookmark className="w-3.5 h-3.5 text-[#8E5364]" />
-                    <span>مقرر الحفظ الجديد:</span>
-                  </span>
-                  
-                  <div className="flex items-center gap-1.5 bg-[#FAF7F5] dark:bg-stone-800 px-2.5 py-1 rounded-xl border border-[#E2D5CC] dark:border-stone-700">
-                    <span className="text-[11px] text-stone-500 font-bold">الأوجه المقررة:</span>
+              {/* مقرر الحفظ الجديد (يتزامن مع تفعيل/تعطيل القسم في الخطة الشهرية) */}
+              {isNewMemPlanEnabled ? (
+                <div className="p-3.5 bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                      <Bookmark className="w-3.5 h-3.5 text-[#8E5364]" />
+                      <span>مقرر الحفظ الجديد:</span>
+                    </span>
+                    
+                    <div className="flex items-center gap-1.5 bg-[#FAF7F5] dark:bg-stone-800 px-2.5 py-1 rounded-xl border border-[#E2D5CC] dark:border-stone-700">
+                      <span className="text-[11px] text-stone-500 font-bold">الأوجه المنجزة:</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="2"
+                        step="0.25"
+                        value={form.newPages}
+                        onChange={e => setForm({ ...form, newPages: Math.min(2, Math.max(0, parseFloat(e.target.value) || 0)) })}
+                        className="w-16 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* نص المقرر التسميعي - كتابة وتعديل يدوي */}
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-stone-600 dark:text-stone-400">
+                      المقرر الذي تم تسميعه:
+                    </label>
                     <input
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      value={form.newPages}
-                      onChange={e => setForm({ ...form, newPages: parseFloat(e.target.value) || 0 })}
-                      className="w-14 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364]"
+                      type="text"
+                      value={form.recitedPortion}
+                      onChange={e => setForm({ ...form, recitedPortion: e.target.value })}
+                      placeholder="مثال: من سورة البقرة آية ١ إلى ٢٥"
+                      className="w-full px-3.5 py-2.5 bg-[#FAF7F5] dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 rounded-xl text-xs text-stone-800 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-[#8E5364]"
                     />
                   </div>
                 </div>
-
-                {/* نص المقرر التسميعي - كتابة وتعديل يدوي */}
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-bold text-stone-600 dark:text-stone-400">
-                    المقرر الذي تم تسميعه:
-                  </label>
-                  <input
-                    type="text"
-                    value={form.recitedPortion}
-                    onChange={e => setForm({ ...form, recitedPortion: e.target.value })}
-                    placeholder="مثال: من سورة البقرة آية ١ إلى ٢٥"
-                    className="w-full px-3.5 py-2.5 bg-[#FAF7F5] dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 rounded-xl text-xs text-stone-800 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-[#8E5364]"
-                  />
+              ) : (
+                <div className="p-3.5 bg-stone-100/80 dark:bg-stone-800/50 rounded-2xl border border-stone-200 dark:border-stone-700 flex items-center justify-between text-xs text-stone-500">
+                  <span className="font-bold">١. خطة ومقرر الحفظ الجديد</span>
+                  <span className="px-2.5 py-1 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300 text-[11px] font-bold">
+                    معطّل لهذا الشهر في الخطة الشهرية 🔒
+                  </span>
                 </div>
-
-                {/* حالة رصد الحفظ الجديد: منجز بشروط أو غير مستوفٍ للشروط */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-[#FAF7F5] dark:bg-stone-800/80 border border-[#E2D5CC] dark:border-stone-700">
-                  <div>
-                    <span className="block text-[11px] font-bold text-stone-800 dark:text-stone-200">
-                      حالة رصد واعتماد الحفظ الجديد:
-                    </span>
-                    <span className="text-[10px] text-stone-500 dark:text-stone-400">
-                      (فقط ما يُرصد كـ "منجز بشروط" يُحتسب ويُجمع في كشف الشهر وملف الإنجاز)
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setForm(f => ({ ...f, newWithConditions: true }))}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-                        form.newWithConditions
-                          ? 'bg-emerald-700 text-white shadow-xs'
-                          : 'bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700 hover:bg-stone-100'
-                      }`}
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>منجز بشروط ✅</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setForm(f => ({ ...f, newWithConditions: false }))}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-                        !form.newWithConditions
-                          ? 'bg-amber-600 text-white shadow-xs'
-                          : 'bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700 hover:bg-stone-100'
-                      }`}
-                    >
-                      <span>غير مستوفٍ للشروط ⚠️</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
+              )}
 
               {/* ملاحظات وتوجيهات للمعلمة */}
               <div className="space-y-1">
@@ -1099,152 +1108,170 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
             </div>
 
             {/* ===================== 2. المراجعة الصغرى (الربط القريب) ===================== */}
-            <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="font-bold text-xs text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
-                  <span>🔄</span>
-                  <span>المراجعة الصغرى (الربط القريب):</span>
-                </h4>
+            {isMinorRevPlanEnabled ? (
+              <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-xs text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                    <span>🔄</span>
+                    <span>المراجعة الصغرى (الربط القريب):</span>
+                  </h4>
 
-                {/* الأوجه المنجزة للمراجعة الصغرى */}
-                <div className="flex items-center gap-1.5 bg-white dark:bg-stone-800 px-2.5 py-1 rounded-xl border border-stone-200 dark:border-stone-700">
-                  <span className="text-[11px] text-stone-500 font-bold">الأوجه المنجزة:</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    value={form.minorPages}
-                    onChange={e => setForm({ ...form, minorPages: parseFloat(e.target.value) || 0 })}
-                    className="w-14 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364]"
-                  />
+                  {/* الأوجه المنجزة للمراجعة الصغرى */}
+                  <div className="flex items-center gap-1.5 bg-white dark:bg-stone-800 px-2.5 py-1 rounded-xl border border-stone-200 dark:border-stone-700">
+                    <span className="text-[11px] text-stone-500 font-bold">الأوجه المنجزة:</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.25"
+                      value={form.minorPages}
+                      onChange={e => setForm({ ...form, minorPages: Math.max(0, parseFloat(e.target.value) || 0) })}
+                      className="w-16 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364]"
+                    />
+                  </div>
+                </div>
+
+                {/* من سورة ومن آية إلى سورة وإلى آية */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">من سورة</label>
+                    <select
+                      value={form.minorFromSurah}
+                      onChange={e => handleMinorPortionChange('minorFromSurah', Number(e.target.value))}
+                      className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                    >
+                      {QURAN_SURAHS.map(s => (
+                        <option key={s.number} value={s.number}>{s.number}. {s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">من آية</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={form.minorFromAyah}
+                      onChange={e => handleMinorPortionChange('minorFromAyah', Number(e.target.value))}
+                      className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">إلى سورة</label>
+                    <select
+                      value={form.minorToSurah}
+                      onChange={e => handleMinorPortionChange('minorToSurah', Number(e.target.value))}
+                      className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                    >
+                      {QURAN_SURAHS.map(s => (
+                        <option key={s.number} value={s.number}>{s.number}. {s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">إلى آية</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={form.minorToAyah}
+                      onChange={e => handleMinorPortionChange('minorToAyah', Number(e.target.value))}
+                      className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                    />
+                  </div>
                 </div>
               </div>
-
-              {/* من سورة ومن آية إلى سورة وإلى آية */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                <div>
-                  <label className="block text-[11px] text-stone-500 mb-1">من سورة</label>
-                  <select
-                    value={form.minorFromSurah}
-                    onChange={e => handleMinorPortionChange('minorFromSurah', Number(e.target.value))}
-                    className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
-                  >
-                    {QURAN_SURAHS.map(s => (
-                      <option key={s.number} value={s.number}>{s.number}. {s.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-stone-500 mb-1">من آية</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={form.minorFromAyah}
-                    onChange={e => handleMinorPortionChange('minorFromAyah', Number(e.target.value))}
-                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-stone-500 mb-1">إلى سورة</label>
-                  <select
-                    value={form.minorToSurah}
-                    onChange={e => handleMinorPortionChange('minorToSurah', Number(e.target.value))}
-                    className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
-                  >
-                    {QURAN_SURAHS.map(s => (
-                      <option key={s.number} value={s.number}>{s.number}. {s.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-stone-500 mb-1">إلى آية</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={form.minorToAyah}
-                    onChange={e => handleMinorPortionChange('minorToAyah', Number(e.target.value))}
-                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
-                  />
-                </div>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-stone-100/80 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 flex items-center justify-between text-xs text-stone-500">
+                <span className="font-bold">٢. خطة المراجعة الصغرى (الربط القريب)</span>
+                <span className="px-2.5 py-1 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300 text-[11px] font-bold">
+                  معطّل لهذا الشهر في الخطة الشهرية 🔒
+                </span>
               </div>
-            </div>
+            )}
 
             {/* ===================== 3. مراجعة التمكين (المراجعة الكبرى) ===================== */}
-            <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="font-bold text-xs text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
-                  <span>✨</span>
-                  <span>مراجعة التمكين (المراجعة الكبرى):</span>
-                </h4>
+            {isTamkeenRevPlanEnabled ? (
+              <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-xs text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                    <span>✨</span>
+                    <span>مراجعة التمكين (المراجعة الكبرى):</span>
+                  </h4>
 
-                {/* الأوجه المنجزة لمراجعة التمكين */}
-                <div className="flex items-center gap-1.5 bg-white dark:bg-stone-800 px-2.5 py-1 rounded-xl border border-stone-200 dark:border-stone-700">
-                  <span className="text-[11px] text-stone-500 font-bold">الأوجه المنجزة:</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    value={form.majorPages}
-                    onChange={e => setForm({ ...form, majorPages: parseFloat(e.target.value) || 0 })}
-                    className="w-14 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364]"
-                  />
+                  {/* الأوجه المنجزة لمراجعة التمكين */}
+                  <div className="flex items-center gap-1.5 bg-white dark:bg-stone-800 px-2.5 py-1 rounded-xl border border-stone-200 dark:border-stone-700">
+                    <span className="text-[11px] text-stone-500 font-bold">الأوجه المنجزة:</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.25"
+                      value={form.majorPages}
+                      onChange={e => setForm({ ...form, majorPages: Math.max(0, parseFloat(e.target.value) || 0) })}
+                      className="w-16 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364]"
+                    />
+                  </div>
+                </div>
+
+                {/* من سورة ومن آية إلى سورة وإلى آية */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">من سورة</label>
+                    <select
+                      value={form.majorFromSurah}
+                      onChange={e => handleMajorPortionChange('majorFromSurah', Number(e.target.value))}
+                      className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                    >
+                      {QURAN_SURAHS.map(s => (
+                        <option key={s.number} value={s.number}>{s.number}. {s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">من آية</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={form.majorFromAyah}
+                      onChange={e => handleMajorPortionChange('majorFromAyah', Number(e.target.value))}
+                      className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">إلى سورة</label>
+                    <select
+                      value={form.majorToSurah}
+                      onChange={e => handleMajorPortionChange('majorToSurah', Number(e.target.value))}
+                      className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                    >
+                      {QURAN_SURAHS.map(s => (
+                        <option key={s.number} value={s.number}>{s.number}. {s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-stone-500 mb-1">إلى آية</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={form.majorToAyah}
+                      onChange={e => handleMajorPortionChange('majorToAyah', Number(e.target.value))}
+                      className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                    />
+                  </div>
                 </div>
               </div>
-
-              {/* من سورة ومن آية إلى سورة وإلى آية */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                <div>
-                  <label className="block text-[11px] text-stone-500 mb-1">من سورة</label>
-                  <select
-                    value={form.majorFromSurah}
-                    onChange={e => handleMajorPortionChange('majorFromSurah', Number(e.target.value))}
-                    className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
-                  >
-                    {QURAN_SURAHS.map(s => (
-                      <option key={s.number} value={s.number}>{s.number}. {s.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-stone-500 mb-1">من آية</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={form.majorFromAyah}
-                    onChange={e => handleMajorPortionChange('majorFromAyah', Number(e.target.value))}
-                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-stone-500 mb-1">إلى سورة</label>
-                  <select
-                    value={form.majorToSurah}
-                    onChange={e => handleMajorPortionChange('majorToSurah', Number(e.target.value))}
-                    className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
-                  >
-                    {QURAN_SURAHS.map(s => (
-                      <option key={s.number} value={s.number}>{s.number}. {s.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-stone-500 mb-1">إلى آية</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={form.majorToAyah}
-                    onChange={e => handleMajorPortionChange('majorToAyah', Number(e.target.value))}
-                    className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
-                  />
-                </div>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-stone-100/80 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 flex items-center justify-between text-xs text-stone-500">
+                <span className="font-bold">٣. خطة مراجعة التمكين (المراجعة الكبرى)</span>
+                <span className="px-2.5 py-1 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300 text-[11px] font-bold">
+                  معطّل لهذا الشهر في الخطة الشهرية 🔒
+                </span>
               </div>
-            </div>
+            )}
 
             {/* ===================== 4. معايير التحضير والإتقان ===================== */}
             <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-3">
@@ -1481,20 +1508,99 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                     </div>
                   );
                 })}
-
-                {/* وسام التميز لليوم */}
-                <label className="col-span-full flex items-center gap-2 p-2.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/60 cursor-pointer hover:border-amber-400 transition">
-                  <input
-                    type="checkbox"
-                    checked={form.hasMedal}
-                    onChange={e => setForm({ ...form, hasMedal: e.target.checked })}
-                    className="accent-amber-500 w-4 h-4 cursor-pointer"
-                  />
-                  <span className="text-amber-800 dark:text-amber-300 font-bold text-xs">
-                    ⭐ نيل وسام التميز والتفوق لليوم
-                  </span>
-                </label>
               </div>
+
+              {/* التقييم التحفيزي المباشر لمعايير التحضير والإتقان */}
+              {(() => {
+                const totalCrit = activeCriteriaList.length;
+                const fullCritCount = activeCriteriaList.filter(c => (criteriaCounts[c.id] ?? 0) >= c.count).length;
+                const anyCritCount = activeCriteriaList.filter(c => (criteriaCounts[c.id] ?? 0) > 0).length;
+                const prepStatus: 'full' | 'partial' | 'needs_care' =
+                  totalCrit > 0 && fullCritCount === totalCrit
+                    ? 'full'
+                    : anyCritCount > 0
+                      ? 'partial'
+                      : 'needs_care';
+
+                return (
+                  <div className="p-3 rounded-2xl bg-white dark:bg-stone-800 border border-[#E2D5CC] dark:border-stone-700 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-stone-600 dark:text-stone-300">
+                        تقييم التحضير اليومي (الاستماع • التلاوة • التكرار):
+                      </span>
+                      {prepStatus === 'full' && (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold animate-in fade-in">
+                          +1 تشجيع الإتقان الكامل 🎉
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next: Record<string, number> = {};
+                          activeCriteriaList.forEach(c => { next[c.id] = c.count; });
+                          setCriteriaCounts(next);
+                        }}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                          prepStatus === 'full'
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/20'
+                            : 'bg-[#FAF7F5] dark:bg-stone-900 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-emerald-300'
+                        }`}
+                      >
+                        <span>تحضير كامل ومتقن ⭐</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next: Record<string, number> = {};
+                          activeCriteriaList.forEach(c => {
+                            next[c.id] = Math.max(1, Math.floor(c.count / 2));
+                          });
+                          setCriteriaCounts(next);
+                        }}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                          prepStatus === 'partial'
+                            ? 'bg-amber-500 text-white border-amber-500 shadow-xs ring-2 ring-amber-400/20'
+                            : 'bg-[#FAF7F5] dark:bg-stone-900 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-amber-300'
+                        }`}
+                      >
+                        <span>تحضير جزئي ⏳</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next: Record<string, number> = {};
+                          activeCriteriaList.forEach(c => { next[c.id] = 0; });
+                          setCriteriaCounts(next);
+                        }}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                          prepStatus === 'needs_care'
+                            ? 'bg-rose-600 text-white border-rose-600 shadow-xs ring-2 ring-rose-500/20'
+                            : 'bg-[#FAF7F5] dark:bg-stone-900 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-rose-300'
+                        }`}
+                      >
+                        <span>يحتاج إلى عناية واهتمام 💡</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* وسام التميز لليوم */}
+              <label className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/60 cursor-pointer hover:border-amber-400 transition">
+                <input
+                  type="checkbox"
+                  checked={form.hasMedal}
+                  onChange={e => setForm({ ...form, hasMedal: e.target.checked })}
+                  className="accent-amber-500 w-4 h-4 cursor-pointer"
+                />
+                <span className="text-amber-800 dark:text-amber-300 font-bold text-xs">
+                  ⭐ نيل وسام التميز والتفوق لليوم
+                </span>
+              </label>
             </div>
 
             {/* ===================== أزرار الحفظ والإلغاء ===================== */}
@@ -1563,15 +1669,10 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
               {/* بطاقات المؤشرات السريعة لكشف الطالبة */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 <div className="bg-[#FAF7F5] dark:bg-stone-800/60 p-3.5 rounded-2xl border border-[#E2D5CC] dark:border-stone-700/60">
-                  <span className="text-[10px] text-stone-500 font-bold block">الحفظ الجديد المنجز بشروط</span>
+                  <span className="text-[10px] text-stone-500 font-bold block">إجمالي الحفظ الجديد المنجز</span>
                   <p className="text-base sm:text-lg font-bold text-[#8E5364] dark:text-[#E8BDC8] mt-0.5">
-                    {studentStats.totalPages} <span className="text-xs font-normal">أوجه معتمدة</span>
+                    {studentStats.totalPages} <span className="text-xs font-normal">أوجه منجزة</span>
                   </p>
-                  {studentStats.totalUnconditionedPages > 0 && (
-                    <span className="text-[9.5px] text-amber-600 block mt-0.5">
-                      ({studentStats.totalUnconditionedPages} أوجه غير مشروطة مستبعدة)
-                    </span>
-                  )}
                 </div>
                 <div className="bg-[#FAF7F5] dark:bg-stone-800/60 p-3.5 rounded-2xl border border-[#E2D5CC] dark:border-stone-700/60">
                   <span className="text-[10px] text-stone-500 font-bold block">متوسط درجات التسميع</span>
@@ -1621,7 +1722,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                           <tr>
                             <th className="p-2.5">التاريخ واليوم</th>
                             <th className="p-2.5">المقرر المطلوب</th>
-                            <th className="p-2.5 text-center">أوجه الجديد (المشروطة)</th>
+                            <th className="p-2.5 text-center">أوجه الحفظ الجديد</th>
                             <th className="p-2.5 text-center">أخطاء / تنبيهات</th>
                             <th className="p-2.5 text-center">الدرجة</th>
                             <th className="p-2.5">المراجعة والتمكين</th>
@@ -1631,7 +1732,6 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                         </thead>
                         <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
                           {studentRecords.map(r => {
-                            const withCond = isRecordWithConditions(r);
                             return (
                               <tr key={r.id || r.date} className="hover:bg-stone-50/60 dark:hover:bg-stone-800/40">
                                 <td className="p-2.5 font-bold whitespace-nowrap">
@@ -1643,18 +1743,9 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                                 </td>
                                 <td className="p-2.5 text-center font-mono font-bold">
                                   <div className="flex flex-col items-center justify-center gap-0.5">
-                                    <span className={withCond ? "text-[#8E5364] dark:text-[#E8BDC8]" : "text-stone-400 line-through"}>
+                                    <span className="text-[#8E5364] dark:text-[#E8BDC8]">
                                       {r.newMemorizationPages ?? 1} ص
                                     </span>
-                                    {withCond ? (
-                                      <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-300 px-1.5 py-0.5 rounded-md inline-flex items-center gap-0.5">
-                                        منجز بشروط ✅
-                                      </span>
-                                    ) : (
-                                      <span className="text-[9px] font-bold text-amber-700 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 px-1.5 py-0.5 rounded-md inline-flex items-center gap-0.5" title="لم يستوفِ الشروط ولن يُحتسب في كشف الإنجاز">
-                                        بدون شروط ⚠️
-                                      </span>
-                                    )}
                                   </div>
                                 </td>
                                 <td className="p-2.5 text-center whitespace-nowrap">

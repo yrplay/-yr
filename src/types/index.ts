@@ -191,35 +191,40 @@ export interface MonthlyPlan {
   createdAt: string;
 }
 
+export interface PlanBranchConfig {
+  enabled?: boolean; // مفعّل / معطّل لهذا الشهر
+  fromSurah: number;
+  fromAyah: number;
+  toSurah: number;
+  toAyah: number;
+  targetPages: number;
+  actualPages?: number;
+  dailyAmountPages?: number; // مقدار الصفحات اليومي عبر أزرار الأسهم (0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0...)
+  targetDailyAmount: string; // مقدار الحفظ/المراجعة المطلوب يومياً
+  actualDailyAmount?: string;
+  revisionType?: 'صغرى' | 'تمكين' | string;
+  status?: 'completed' | 'in_progress' | 'pending' | string;
+  teacherNotes?: string;
+}
+
 export interface StudentMonthlyPlan {
   id: string;
   studentId: string;
   monthlyPlanId: string;
-  // الحفظ الجديد
-  newMemorization: {
-    fromSurah: number;
-    fromAyah: number;
-    toSurah: number;
-    toAyah: number;
-    targetPages: number;
-    actualPages: number;
-    targetDailyAmount: string; // مقدار الحفظ المطلوب يومياً
-    actualDailyAmount?: string; // مقدار الحفظ الفعلي
-    teacherNotes?: string;
-  };
-  // المراجعة
-  revision: {
-    fromSurah: number;
-    fromAyah: number;
-    toSurah: number;
-    toAyah: number;
-    targetPages: number;
-    actualPages: number;
+  createdAt?: string;
+  updatedAt?: string;
+  // 1. خطة ومقرر الحفظ الجديد
+  newMemorization: PlanBranchConfig;
+  // 2. خطة المراجعة الصغرى (الربط القريب)
+  minorRevision?: PlanBranchConfig;
+  // 3. خطة مراجعة التمكين (المراجعة الكبرى)
+  tamkeenRevision?: PlanBranchConfig;
+  // حقل المراجعة الموحد للتوافق مع السجلات السابقة
+  revision: PlanBranchConfig & {
     revisionType: 'صغرى' | 'تمكين' | string;
-    status: 'completed' | 'in_progress' | 'pending';
-    teacherNotes?: string;
+    status: 'completed' | 'in_progress' | 'pending' | string;
   };
-  status: 'active' | 'completed' | 'paused';
+  status: 'active' | 'completed' | 'paused' | 'on_hold';
 }
 
 // 3. سجلات اشتراكات ودفع الطالبات

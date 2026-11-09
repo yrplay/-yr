@@ -185,29 +185,33 @@ export interface MonthlyPlan {
   updatedAt?: string;
 }
 
+export interface PlanBranchConfig {
+  enabled?: boolean;
+  fromSurah: number;
+  fromAyah: number;
+  toSurah: number;
+  toAyah: number;
+  targetPages: number;
+  actualPages?: number;
+  dailyAmountPages?: number;
+  targetDailyAmount: string;
+  actualDailyAmount?: string;
+  revisionType?: 'صغرى' | 'تمكين' | string;
+  status?: 'completed' | 'in_progress' | 'pending' | string;
+  teacherNotes?: string;
+}
+
 export interface StudentMonthlyPlan {
   id: string;
   studentId: string;
   monthlyPlanId: string;
-  status: 'active' | 'completed' | 'on_hold';
+  status: 'active' | 'completed' | 'paused' | 'on_hold';
   createdAt?: string;
   updatedAt?: string;
-  newMemorization: {
-    fromSurah: number;
-    fromAyah: number;
-    toSurah: number;
-    toAyah: number;
-    targetPages: number;
-    actualPages: number;
-    targetDailyAmount: string;
-  };
-  revision: {
-    fromSurah: number;
-    fromAyah: number;
-    toSurah: number;
-    toAyah: number;
-    targetPages: number;
-    actualPages: number;
+  newMemorization: PlanBranchConfig;
+  minorRevision?: PlanBranchConfig;
+  tamkeenRevision?: PlanBranchConfig;
+  revision: PlanBranchConfig & {
     revisionType: string;
     status: string;
   };

@@ -1,25 +1,71 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { QURAN_SURAHS, getSurahByNumber, getAyahCount } from '../data/quranData';
 import {
-  Calendar, Plus, Copy, BookOpen, CheckCircle2, Clock,
-  ChevronLeft, ChevronDown, Award, FileText, Sparkles, AlertCircle, Edit
+  Plus, Copy, CheckCircle2,
+  ChevronDown, ChevronUp, Edit, Lock
 } from 'lucide-react';
-import { MonthlyPlan, StudentMonthlyPlan } from '../types';
+import { MonthlyPlan, PlanBranchConfig } from '../types';
+import { summarizeDailyPageProgress } from '../services/recitationProgress';
+
+// قيم العداد التدريجي (Stepper) للمقدار اليومي المطلوب
+const NEW_MEM_STEPS = [0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0];
+const REVIEW_STEPS = [0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+
+export const formatDailyStepLabel = (val: number, isNewMemorization = false): string => {
+  const num = Number(val) || 0;
+  if (num === 0) return '0 (غير محدد)';
+  if (num === 0.25) return '0.25 (ربع وجه)';
+  if (num === 0.5) return '0.5 (نصف وجه)';
+  if (num === 0.75) return '0.75 (ثلاثة أرباع وجه)';
+  if (num === 1) return '1.0 (وجه)';
+  if (num === 1.5) return '1.5 (وجه ونصف)';
+  if (num === 2) return isNewMemorization ? '2.0 (وجهين كحد أقصى)' : '2.0 (وجهين)';
+  if (num === 2.5) return '2.5 (وجهين ونصف)';
+  if (num === 3) return '3.0 (٣ أوجه)';
+  if (num === 4) return '4.0 (٤ أوجه)';
+  if (num === 5) return '5.0 (٥ أوجه - ربع حزب)';
+  if (num === 6) return '6.0 (٦ أوجه)';
+  if (num === 7) return '7.0 (٧ أوجه)';
+  if (num === 8) return '8.0 (٨ أوجه)';
+  if (num === 9) return '9.0 (٩ أوجه)';
+  if (num === 10) return '10.0 (١٠ أوجه - نصف جزء)';
+  return `${num} وجه`;
+};
+
+const parseDailyStepFromLegacy = (branch: any, fallback: number, isNewMem: boolean): number => {
+  const allowed = isNewMem ? NEW_MEM_STEPS : REVIEW_STEPS;
+  if (typeof branch?.dailyAmountPages === 'number' && Number.isFinite(branch.dailyAmountPages)) {
+    const clamped = isNewMem ? Math.min(2.0, Math.max(0, branch.dailyAmountPages)) : Math.min(10.0, Math.max(0, branch.dailyAmountPages));
+    // Snap to closest step
+    return allowed.reduce((prev, curr) => Math.abs(curr - clamped) < Math.abs(prev - clamped) ? curr : prev, allowed[0]);
+  }
+  const text = String(branch?.targetDailyAmount || '');
+  if (!text) return fallback;
+  if (text.includes('0.25') || text.includes('ربع')) return 0.25;
+  if (text.includes('0.75') || text.includes('ثلاثة أرباع')) return 0.75;
+  if (text.includes('1.5') || text.includes('ونصف')) return 1.5;
+  if (text.includes('0.5') || text.includes('نصف')) return 0.5;
+  if (text.includes('2') || text.includes('وجهين') || text.includes('صفحتين')) return 2.0;
+  if (text.includes('3') || text.includes('٣')) return isNewMem ? 2.0 : 3.0;
+  if (text.includes('5') || text.includes('٥')) return isNewMem ? 2.0 : 5.0;
+  if (text.includes('1') || text.includes('وجه') || text.includes('صفحة')) return 1.0;
+  return fallback;
+};
 
 export const MonthlyPlansView: React.FC = () => {
   const {
-    monthlyPlans, studentPlans, students, circles, tracks,
+    monthlyPlans, studentPlans, students, circles, tracks, dailyRecords,
     createMonthlyPlan, updateMonthlyPlan, duplicateMonthlyPlan, saveStudentPlan,
-    currentUser, allStudentScores, showToast, selectedTrackId
+    showToast, selectedTrackId
   } = useApp();
 
-  const availablePlans = React.useMemo(() => {
+  const availablePlans = useMemo(() => {
     if (!selectedTrackId || selectedTrackId === 'all') return monthlyPlans;
     return monthlyPlans.filter(p => !p.trackId || p.trackId === selectedTrackId);
   }, [monthlyPlans, selectedTrackId]);
 
-  const availableStudents = React.useMemo(() => {
+  const availableStudents = useMemo(() => {
     if (!selectedTrackId || selectedTrackId === 'all') return students;
     return students.filter(s => s.trackId === selectedTrackId);
   }, [students, selectedTrackId]);
@@ -28,7 +74,6 @@ export const MonthlyPlansView: React.FC = () => {
   const [selectedStudentId, setSelectedStudentId] = useState<string>(availableStudents[0]?.id || students[0]?.id || 's-1');
   const [isStudentDropdownOpen, setIsStudentDropdownOpen] = useState(false);
 
-  // Keep selection in sync when active track changes
   React.useEffect(() => {
     if (availablePlans.length > 0 && !availablePlans.some(p => p.id === selectedPlanId)) {
       setSelectedPlanId(availablePlans[0].id);
@@ -41,11 +86,9 @@ export const MonthlyPlansView: React.FC = () => {
     }
   }, [availableStudents, selectedStudentId]);
 
-  // Modals state
   const [planModalOpen, setPlanModalOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<MonthlyPlan | null>(null);
 
-  // New/Edit Plan form
   const [planForm, setPlanForm] = useState({
     title: '',
     trackId: (selectedTrackId && selectedTrackId !== 'all') ? selectedTrackId : (tracks[0]?.id || 't-1'),
@@ -60,63 +103,159 @@ export const MonthlyPlansView: React.FC = () => {
 
   const currentPlan = availablePlans.find(p => p.id === selectedPlanId) || availablePlans[0] || monthlyPlans[0];
   const selectedStudent = availableStudents.find(s => s.id === selectedStudentId) || availableStudents[0] || students[0];
-  const studentPlan = studentPlans.find(sp => sp.studentId === selectedStudent?.id && sp.monthlyPlanId === currentPlan?.id) || studentPlans.find(sp => sp.studentId === selectedStudent?.id);
 
-  // Student plan edit form state
+  // حساب الصفحات المنجزة تلقائياً من سجل الحفظ والتسميع للطالبة المحددة
+  const autoProgress = useMemo(() => {
+    if (!selectedStudent) {
+      return {
+        newMemorizationPagesDone: 0,
+        minorRevisionPagesDone: 0,
+        tamkeenRevisionPagesDone: 0,
+        revisionPagesDone: 0
+      };
+    }
+    const studentDailyRecords = (dailyRecords || []).filter(
+      r => r.studentId === selectedStudent.id && r.status === 'completed'
+    );
+    return summarizeDailyPageProgress(studentDailyRecords);
+  }, [dailyRecords, selectedStudent]);
+
+  // حالة تعديل مقرر الطالبة الفردي (الفروع الثلاثة المستقلة)
   const [editingStudentPlan, setEditingStudentPlan] = useState(false);
   const [studentPlanForm, setStudentPlanForm] = useState<{
-    newMemorization: {
-      fromSurah: number;
-      fromAyah: number;
-      toSurah: number;
-      toAyah: number;
-      targetPages: number;
-      actualPages: number;
-      targetDailyAmount: string;
-      actualDailyAmount?: string;
-      teacherNotes?: string;
-    };
-    revision: {
-      fromSurah: number;
-      fromAyah: number;
-      toSurah: number;
-      toAyah: number;
-      targetPages: number;
-      actualPages: number;
-      revisionType: 'صغرى' | 'تمكين' | string;
-      status: 'completed' | 'in_progress' | 'pending';
-      teacherNotes?: string;
-    };
+    newMemorization: PlanBranchConfig;
+    minorRevision: PlanBranchConfig;
+    tamkeenRevision: PlanBranchConfig;
   }>({
     newMemorization: {
+      enabled: true,
       fromSurah: 2,
       fromAyah: 1,
       toSurah: 2,
       toAyah: 50,
       targetPages: 8,
-      actualPages: 8,
-      targetDailyAmount: 'صفحة واحدة يومياً',
-      actualDailyAmount: 'صفحة واحدة يومياً',
+      dailyAmountPages: 1.0,
+      targetDailyAmount: formatDailyStepLabel(1.0, true),
       teacherNotes: ''
     },
-    revision: {
+    minorRevision: {
+      enabled: true,
+      fromSurah: 2,
+      fromAyah: 1,
+      toSurah: 2,
+      toAyah: 25,
+      targetPages: 4,
+      dailyAmountPages: 1.0,
+      targetDailyAmount: formatDailyStepLabel(1.0, false),
+      revisionType: 'صغرى',
+      teacherNotes: ''
+    },
+    tamkeenRevision: {
+      enabled: true,
       fromSurah: 1,
       fromAyah: 1,
       toSurah: 2,
       toAyah: 25,
       targetPages: 4,
-      actualPages: 4,
+      dailyAmountPages: 1.0,
+      targetDailyAmount: formatDailyStepLabel(1.0, false),
       revisionType: 'تمكين',
-      status: 'completed',
       teacherNotes: ''
     }
   });
 
-  // Track student and plan changes so active edits aren't wiped out by background re-renders
   const lastSelectedStudentIdRef = React.useRef(selectedStudentId);
   const lastPlanIdRef = React.useRef(currentPlan?.id);
 
-  // When selected student changes, populate studentPlanForm
+  const buildBranchesFromExisting = React.useCallback((existing: any) => {
+    if (!existing) {
+      return {
+        newMemorization: {
+          enabled: true,
+          fromSurah: 2,
+          fromAyah: 1,
+          toSurah: 2,
+          toAyah: 25,
+          targetPages: 5,
+          dailyAmountPages: 0.5,
+          targetDailyAmount: formatDailyStepLabel(0.5, true),
+          teacherNotes: ''
+        },
+        minorRevision: {
+          enabled: true,
+          fromSurah: 2,
+          fromAyah: 1,
+          toSurah: 2,
+          toAyah: 25,
+          targetPages: 4,
+          dailyAmountPages: 1.0,
+          targetDailyAmount: formatDailyStepLabel(1.0, false),
+          revisionType: 'صغرى',
+          teacherNotes: ''
+        },
+        tamkeenRevision: {
+          enabled: true,
+          fromSurah: 1,
+          fromAyah: 1,
+          toSurah: 2,
+          toAyah: 25,
+          targetPages: 4,
+          dailyAmountPages: 1.0,
+          targetDailyAmount: formatDailyStepLabel(1.0, false),
+          revisionType: 'تمكين',
+          teacherNotes: ''
+        }
+      };
+    }
+
+    const newStep = parseDailyStepFromLegacy(existing.newMemorization, 1.0, true);
+    const rawMinor = existing.minorRevision || (existing.revision?.revisionType === 'صغرى' ? existing.revision : null);
+    const rawTamkeen = existing.tamkeenRevision || (existing.revision?.revisionType !== 'صغرى' ? existing.revision : null);
+
+    const minorStep = parseDailyStepFromLegacy(rawMinor, 1.0, false);
+    const tamkeenStep = parseDailyStepFromLegacy(rawTamkeen, 1.0, false);
+
+    return {
+      newMemorization: {
+        enabled: existing.newMemorization?.enabled !== false,
+        fromSurah: existing.newMemorization?.fromSurah || 2,
+        fromAyah: existing.newMemorization?.fromAyah || 1,
+        toSurah: existing.newMemorization?.toSurah || 2,
+        toAyah: existing.newMemorization?.toAyah || 50,
+        targetPages: existing.newMemorization?.targetPages ?? 8,
+        dailyAmountPages: newStep,
+        targetDailyAmount: formatDailyStepLabel(newStep, true),
+        teacherNotes: existing.newMemorization?.teacherNotes || ''
+      },
+      minorRevision: {
+        enabled: existing.minorRevision ? existing.minorRevision.enabled !== false : true,
+        fromSurah: rawMinor?.fromSurah || 2,
+        fromAyah: rawMinor?.fromAyah || 1,
+        toSurah: rawMinor?.toSurah || 2,
+        toAyah: rawMinor?.toAyah || 25,
+        targetPages: rawMinor?.targetPages ?? 4,
+        dailyAmountPages: minorStep,
+        targetDailyAmount: formatDailyStepLabel(minorStep, false),
+        revisionType: 'صغرى',
+        teacherNotes: rawMinor?.teacherNotes || ''
+      },
+      tamkeenRevision: {
+        enabled: existing.tamkeenRevision
+          ? existing.tamkeenRevision.enabled !== false
+          : (existing.revision?.enabled !== false),
+        fromSurah: rawTamkeen?.fromSurah || 1,
+        fromAyah: rawTamkeen?.fromAyah || 1,
+        toSurah: rawTamkeen?.toSurah || 2,
+        toAyah: rawTamkeen?.toAyah || 25,
+        targetPages: rawTamkeen?.targetPages ?? 4,
+        dailyAmountPages: tamkeenStep,
+        targetDailyAmount: formatDailyStepLabel(tamkeenStep, false),
+        revisionType: 'تمكين',
+        teacherNotes: rawTamkeen?.teacherNotes || ''
+      }
+    };
+  }, []);
+
   React.useEffect(() => {
     const studentChanged = lastSelectedStudentIdRef.current !== selectedStudentId;
     const planChanged = lastPlanIdRef.current !== currentPlan?.id;
@@ -126,7 +265,6 @@ export const MonthlyPlansView: React.FC = () => {
     if (studentChanged || planChanged) {
       setEditingStudentPlan(false);
     } else if (editingStudentPlan) {
-      // User is actively editing this student's syllabus; do NOT overwrite!
       return;
     }
 
@@ -134,42 +272,137 @@ export const MonthlyPlansView: React.FC = () => {
       sp => sp.studentId === selectedStudentId && sp.monthlyPlanId === currentPlan?.id
     );
     const existing = currentMonthPlan || studentPlans.find(sp => sp.studentId === selectedStudentId);
+    setStudentPlanForm(buildBranchesFromExisting(existing));
+  }, [selectedStudentId, currentPlan?.id, studentPlans, editingStudentPlan, buildBranchesFromExisting]);
 
-    if (existing) {
-      setStudentPlanForm({
-        newMemorization: { ...existing.newMemorization },
-        revision: { 
-          ...existing.revision,
-          status: (['completed', 'in_progress', 'pending'].includes(existing.revision?.status) ? existing.revision.status : 'in_progress') as any
-        }
-      });
-    } else {
-      setStudentPlanForm({
-        newMemorization: {
-          fromSurah: 2,
-          fromAyah: 1,
-          toSurah: 2,
-          toAyah: 25,
-          targetPages: 5,
-          actualPages: 0,
-          targetDailyAmount: 'نصف صفحة إلى صفحة يومياً',
-          actualDailyAmount: '',
-          teacherNotes: ''
-        },
-        revision: {
-          fromSurah: 1,
-          fromAyah: 1,
-          toSurah: 1,
-          toAyah: 7,
-          targetPages: 1,
-          actualPages: 1,
-          revisionType: 'صغرى',
-          status: 'in_progress',
-          teacherNotes: ''
-        }
-      });
+  // حفظ فوري لخطة الطالبة في AppContext و localStorage
+  const persistBranchesImmediately = async (
+    nextBranches: {
+      newMemorization: PlanBranchConfig;
+      minorRevision: PlanBranchConfig;
+      tamkeenRevision: PlanBranchConfig;
+    },
+    toastMsg?: string
+  ) => {
+    if (!selectedStudent || !currentPlan) return;
+    const currentMonthPlan = studentPlans.find(
+      sp => sp.studentId === selectedStudent.id && sp.monthlyPlanId === currentPlan.id
+    );
+
+    const combinedRevisionTarget =
+      (nextBranches.minorRevision.enabled !== false ? (nextBranches.minorRevision.targetPages || 0) : 0) +
+      (nextBranches.tamkeenRevision.enabled !== false ? (nextBranches.tamkeenRevision.targetPages || 0) : 0);
+
+    await saveStudentPlan({
+      id: currentMonthPlan?.id,
+      studentId: selectedStudent.id,
+      monthlyPlanId: currentPlan.id,
+      newMemorization: {
+        ...nextBranches.newMemorization,
+        actualPages: autoProgress.newMemorizationPagesDone
+      },
+      minorRevision: {
+        ...nextBranches.minorRevision,
+        actualPages: autoProgress.minorRevisionPagesDone,
+        revisionType: 'صغرى'
+      },
+      tamkeenRevision: {
+        ...nextBranches.tamkeenRevision,
+        actualPages: autoProgress.tamkeenRevisionPagesDone,
+        revisionType: 'تمكين'
+      },
+      revision: {
+        ...nextBranches.tamkeenRevision,
+        enabled: nextBranches.minorRevision.enabled !== false || nextBranches.tamkeenRevision.enabled !== false,
+        targetPages: combinedRevisionTarget || 4,
+        actualPages: autoProgress.revisionPagesDone,
+        revisionType: 'تمكين',
+        status: 'in_progress'
+      },
+      status: 'active'
+    });
+
+    if (toastMsg) {
+      showToast(toastMsg, 'success');
     }
-  }, [selectedStudentId, currentPlan?.id, studentPlans, editingStudentPlan]);
+  };
+
+  // تبديل تفعيل/تعطيل أي فرع بنقرة واحدة مع حفظ فوري
+  const handleToggleBranch = async (branchKey: 'newMemorization' | 'minorRevision' | 'tamkeenRevision') => {
+    const currentEnabled = studentPlanForm[branchKey].enabled !== false;
+    const nextEnabled = !currentEnabled;
+    const branchTitle =
+      branchKey === 'newMemorization'
+        ? 'خطة ومقرر الحفظ الجديد'
+        : branchKey === 'minorRevision'
+          ? 'خطة المراجعة الصغرى'
+          : 'خطة مراجعة التمكين';
+
+    const nextForm = {
+      ...studentPlanForm,
+      [branchKey]: {
+        ...studentPlanForm[branchKey],
+        enabled: nextEnabled
+      }
+    };
+    setStudentPlanForm(nextForm);
+    await persistBranchesImmediately(
+      nextForm,
+      nextEnabled
+        ? `تم تفعيل «${branchTitle}» للطالبة ${selectedStudent?.name || ''} ✅`
+        : `تم تعطيل «${branchTitle}» لهذا الشهر للطالبة ${selectedStudent?.name || ''} 🔒`
+    );
+  };
+
+  // تحريك سهم المقدار اليومي المطلوب (▲ / ▼) مع حفظ فوري
+  const handleStepDailyAmount = async (
+    branchKey: 'newMemorization' | 'minorRevision' | 'tamkeenRevision',
+    direction: 'up' | 'down'
+  ) => {
+    const branch = studentPlanForm[branchKey];
+    if (branch.enabled === false) return;
+
+    const isNewMem = branchKey === 'newMemorization';
+    const steps = isNewMem ? NEW_MEM_STEPS : REVIEW_STEPS;
+    const currentVal = typeof branch.dailyAmountPages === 'number' ? branch.dailyAmountPages : 1.0;
+
+    // Find closest index in steps array
+    let currentIdx = steps.findIndex(s => Math.abs(s - currentVal) < 0.001);
+    if (currentIdx === -1) {
+      currentIdx = steps.reduce(
+        (bestIdx, curr, idx) => Math.abs(curr - currentVal) < Math.abs(steps[bestIdx] - currentVal) ? idx : bestIdx,
+        0
+      );
+    }
+
+    const nextIdx = direction === 'up'
+      ? Math.min(steps.length - 1, currentIdx + 1)
+      : Math.max(0, currentIdx - 1);
+
+    const nextVal = steps[nextIdx];
+    if (nextVal === currentVal) return;
+
+    const nextLabel = formatDailyStepLabel(nextVal, isNewMem);
+    const nextForm = {
+      ...studentPlanForm,
+      [branchKey]: {
+        ...branch,
+        dailyAmountPages: nextVal,
+        targetDailyAmount: nextLabel
+      }
+    };
+    setStudentPlanForm(nextForm);
+    await persistBranchesImmediately(nextForm);
+  };
+
+  const handleSaveStudentPlan = async () => {
+    if (!selectedStudent || !currentPlan) return;
+    await persistBranchesImmediately(
+      studentPlanForm,
+      `تم حفظ وتحديث مقرر الطالبة (${selectedStudent.name}) بنجاح ✅`
+    );
+    setEditingStudentPlan(false);
+  };
 
   const handleOpenPlanModal = (plan?: MonthlyPlan) => {
     if (plan) {
@@ -213,34 +446,368 @@ export const MonthlyPlansView: React.FC = () => {
     setPlanModalOpen(false);
   };
 
-  const handleSaveStudentPlan = async () => {
-    if (!selectedStudent || !currentPlan) return;
-    const currentMonthPlan = studentPlans.find(
-      sp => sp.studentId === selectedStudent.id && sp.monthlyPlanId === currentPlan.id
+  // الحسابات التلقائية لنسب الإنجاز لكل فرع
+  const isNewEnabled = studentPlanForm.newMemorization.enabled !== false;
+  const isMinorEnabled = studentPlanForm.minorRevision.enabled !== false;
+  const isTamkeenEnabled = studentPlanForm.tamkeenRevision.enabled !== false;
+
+  const newTarget = isNewEnabled ? Math.max(1, studentPlanForm.newMemorization.targetPages || 1) : 0;
+  const minorTarget = isMinorEnabled ? Math.max(1, studentPlanForm.minorRevision.targetPages || 1) : 0;
+  const tamkeenTarget = isTamkeenEnabled ? Math.max(1, studentPlanForm.tamkeenRevision.targetPages || 1) : 0;
+
+  const newDone = autoProgress.newMemorizationPagesDone;
+  const minorDone = autoProgress.minorRevisionPagesDone;
+  const tamkeenDone = autoProgress.tamkeenRevisionPagesDone;
+
+  const newPercent = isNewEnabled ? Math.min(100, Math.round((newDone / newTarget) * 100)) : 0;
+  const minorPercent = isMinorEnabled ? Math.min(100, Math.round((minorDone / minorTarget) * 100)) : 0;
+  const tamkeenPercent = isTamkeenEnabled ? Math.min(100, Math.round((tamkeenDone / tamkeenTarget) * 100)) : 0;
+
+  const totalEnabledTarget = (isNewEnabled ? newTarget : 0) + (isMinorEnabled ? minorTarget : 0) + (isTamkeenEnabled ? tamkeenTarget : 0);
+  const totalEnabledDone = (isNewEnabled ? newDone : 0) + (isMinorEnabled ? minorDone : 0) + (isTamkeenEnabled ? tamkeenDone : 0);
+  const overallPercent = totalEnabledTarget > 0 ? Math.min(100, Math.round((totalEnabledDone / totalEnabledTarget) * 100)) : 0;
+
+  // دالة مساعدة لرسم قسم خطة فرعية متكامل مع زر التفعيل/التعطيل وأسهم المقدار اليومي
+  const renderPlanBranchCard = (
+    branchKey: 'newMemorization' | 'minorRevision' | 'tamkeenRevision',
+    title: string,
+    subtitle: string,
+    accentColor: string,
+    badgeBg: string,
+    donePages: number,
+    targetPages: number,
+    percent: number,
+    isNewMem: boolean
+  ) => {
+    const branch = studentPlanForm[branchKey];
+    const isEnabled = branch.enabled !== false;
+    const steps = isNewMem ? NEW_MEM_STEPS : REVIEW_STEPS;
+    const currentStepVal = typeof branch.dailyAmountPages === 'number' ? branch.dailyAmountPages : 1.0;
+    const isAtMin = currentStepVal <= steps[0];
+    const isAtMax = currentStepVal >= steps[steps.length - 1];
+
+    const fromMaxVerses = getAyahCount(branch.fromSurah);
+    const toMaxVerses = getAyahCount(branch.toSurah);
+
+    return (
+      <div
+        className={`border rounded-3xl p-5 space-y-4 transition-all duration-200 ${
+          isEnabled
+            ? 'bg-white border-[#E8DFD8] shadow-2xs'
+            : 'bg-stone-100/75 border-stone-200/90 opacity-75'
+        }`}
+      >
+        {/* شريط رأس القسم + زر التقفيل والتعطيل */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className="w-3 h-3 rounded-full shrink-0"
+              style={{ backgroundColor: isEnabled ? accentColor : '#9CA3AF' }}
+            />
+            <h4 className={`font-bold text-sm sm:text-base ${isEnabled ? 'text-stone-900' : 'text-stone-500 line-through'}`}>
+              {title}
+            </h4>
+            {!isEnabled ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-stone-200 text-stone-700 text-[11px] font-bold">
+                <Lock className="w-3 h-3" />
+                <span>معطّل لهذا الشهر</span>
+              </span>
+            ) : (
+              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${badgeBg}`}>
+                مفعّل ✅
+              </span>
+            )}
+            <span className="text-[11px] text-stone-400 hidden md:inline">• {subtitle}</span>
+          </div>
+
+          {/* مفتاح التفعيل / التعطيل التفاعلي */}
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <button
+              type="button"
+              onClick={() => handleToggleBranch(branchKey)}
+              className={`relative inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl text-xs font-bold border transition cursor-pointer active:scale-95 select-none ${
+                isEnabled
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                  : 'bg-stone-200 text-stone-600 border-stone-300 hover:bg-stone-300'
+              }`}
+              title={isEnabled ? 'انقري لتعطيل هذا القسم لهذا الشهر' : 'انقري لتفعيل هذا القسم لهذا الشهر'}
+            >
+              <span
+                className={`w-7 h-4 rounded-full p-0.5 transition-colors flex items-center ${
+                  isEnabled ? 'bg-emerald-600 justify-start' : 'bg-stone-400 justify-end'
+                }`}
+              >
+                <span className="w-3 h-3 rounded-full bg-white shadow-2xs" />
+              </span>
+              <span>{isEnabled ? 'مفعّل لهذا الشهر' : 'معطّل لهذا الشهر'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* جسم القسم (يُقفل ويصبح باهتاً عند التعطيل) */}
+        <div className={!isEnabled ? 'pointer-events-none select-none opacity-55 grayscale' : ''}>
+          {editingStudentPlan ? (
+            <div className="space-y-4">
+              {/* اختيار من سورة / آية إلى سورة / آية */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">من سورة:</label>
+                  <select
+                    disabled={!isEnabled}
+                    value={branch.fromSurah}
+                    onChange={e => {
+                      const num = Number(e.target.value);
+                      setStudentPlanForm(prev => ({
+                        ...prev,
+                        [branchKey]: {
+                          ...prev[branchKey],
+                          fromSurah: num,
+                          fromAyah: 1
+                        }
+                      }));
+                    }}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100"
+                  >
+                    {QURAN_SURAHS.map(s => (
+                      <option key={s.number} value={s.number}>
+                        {s.number}. سورة {s.name} ({s.versesCount} آية)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">من آية:</label>
+                  <select
+                    disabled={!isEnabled}
+                    value={branch.fromAyah}
+                    onChange={e =>
+                      setStudentPlanForm(prev => ({
+                        ...prev,
+                        [branchKey]: {
+                          ...prev[branchKey],
+                          fromAyah: Number(e.target.value)
+                        }
+                      }))
+                    }
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100"
+                  >
+                    {Array.from({ length: fromMaxVerses }, (_, i) => i + 1).map(num => (
+                      <option key={num} value={num}>آية {num}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">إلى سورة:</label>
+                  <select
+                    disabled={!isEnabled}
+                    value={branch.toSurah}
+                    onChange={e => {
+                      const num = Number(e.target.value);
+                      setStudentPlanForm(prev => ({
+                        ...prev,
+                        [branchKey]: {
+                          ...prev[branchKey],
+                          toSurah: num,
+                          toAyah: Math.min(prev[branchKey].toAyah, getAyahCount(num))
+                        }
+                      }));
+                    }}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100"
+                  >
+                    {QURAN_SURAHS.map(s => (
+                      <option key={s.number} value={s.number}>
+                        {s.number}. سورة {s.name} ({s.versesCount} آية)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">إلى آية:</label>
+                  <select
+                    disabled={!isEnabled}
+                    value={branch.toAyah}
+                    onChange={e =>
+                      setStudentPlanForm(prev => ({
+                        ...prev,
+                        [branchKey]: {
+                          ...prev[branchKey],
+                          toAyah: Number(e.target.value)
+                        }
+                      }))
+                    }
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100"
+                  >
+                    {Array.from({ length: toMaxVerses }, (_, i) => i + 1).map(num => (
+                      <option key={num} value={num}>آية {num}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* الصفحات المستهدفة + عداد الأسهم للمقدار اليومي + الإنجاز التلقائي */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    إجمالي الصفحات المستهدف للشهر
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    disabled={!isEnabled}
+                    value={branch.targetPages}
+                    onChange={e =>
+                      setStudentPlanForm(prev => ({
+                        ...prev,
+                        [branchKey]: {
+                          ...prev[branchKey],
+                          targetPages: Math.max(1, Number(e.target.value) || 1)
+                        }
+                      }))
+                    }
+                    className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-xs font-bold bg-white disabled:bg-stone-100"
+                  />
+                </div>
+
+                {/* عداد الأسهم الذكي (▲ / ▼) للمقدار المطلوب يومياً */}
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    المقدار المطلوب يومياً {isNewMem ? '(الحد الأقصى وجهان)' : '(بالأوجه)'}
+                  </label>
+                  <div className="flex items-center justify-between bg-[#FAF6F2] border border-[#E2D5CC] rounded-xl px-3 py-1.5">
+                    <span className="text-xs font-extrabold text-stone-900">
+                      {formatDailyStepLabel(currentStepVal, isNewMem)}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={!isEnabled || isAtMax}
+                        onClick={() => handleStepDailyAmount(branchKey, 'up')}
+                        className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                        title="زيادة المقدار اليومي (▲)"
+                      >
+                        <ChevronUp className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!isEnabled || isAtMin}
+                        onClick={() => handleStepDailyAmount(branchKey, 'down')}
+                        className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                        title="إنقاص المقدار اليومي (▼)"
+                      >
+                        <ChevronDown className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* الصفحات المنجزة تلقائياً من سجل التسميع */}
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    الصفحات المنجزة (تلقائياً من سجل التسميع)
+                  </label>
+                  <div className="px-3 py-2 rounded-xl bg-emerald-50/70 border border-emerald-200/80 flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-emerald-900">
+                      <span className="privacy-score-digit">{donePages}</span> من <span className="privacy-score-digit">{branch.targetPages}</span> صفحة
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
+                      {percent}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">ملاحظات المعلمة على هذا القسم</label>
+                <input
+                  type="text"
+                  disabled={!isEnabled}
+                  value={branch.teacherNotes || ''}
+                  onChange={e =>
+                    setStudentPlanForm(prev => ({
+                      ...prev,
+                      [branchKey]: {
+                        ...prev[branchKey],
+                        teacherNotes: e.target.value
+                      }
+                    }))
+                  }
+                  placeholder="ملاحظات توجيهية للطالبة..."
+                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2]">
+                  <span className="text-stone-400 block text-[11px]">نطاق السور والآيات:</span>
+                  <span className="font-bold text-stone-800 block mt-0.5">
+                    من سورة {getSurahByNumber(branch.fromSurah)?.name} (آية {branch.fromAyah}) إلى سورة {getSurahByNumber(branch.toSurah)?.name} (آية {branch.toAyah})
+                  </span>
+                </div>
+
+                {/* المقدار المطلوب يومياً مع أزرار الأسهم المباشرة (▲ / ▼) */}
+                <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2] flex items-center justify-between gap-2">
+                  <div>
+                    <span className="text-stone-400 block text-[11px]">المقدار المطلوب يومياً:</span>
+                    <span className="font-extrabold text-stone-900 block mt-0.5">
+                      {formatDailyStepLabel(currentStepVal, isNewMem)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      disabled={!isEnabled || isAtMax}
+                      onClick={() => handleStepDailyAmount(branchKey, 'up')}
+                      className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                      title="زيادة المقدار اليومي (▲)"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!isEnabled || isAtMin}
+                      onClick={() => handleStepDailyAmount(branchKey, 'down')}
+                      className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                      title="إنقاص المقدار اليومي (▼)"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2]">
+                  <span className="text-stone-400 block text-[11px]">الصفحات المنجزة (تلقائياً):</span>
+                  <span className="font-extrabold block mt-0.5" style={{ color: accentColor }}>
+                    <span className="privacy-score-digit">{donePages}</span> منجز من أصل <span className="privacy-score-digit">{targetPages}</span> صفحة
+                  </span>
+                </div>
+
+                <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2]">
+                  <div className="flex items-center justify-between text-[11px] mb-1.5">
+                    <span className="text-stone-400">نسبة الإنجاز التلقائية:</span>
+                    <span className="font-extrabold text-stone-800">{isEnabled ? `${percent}%` : 'معطّل'}</span>
+                  </div>
+                  <div className="w-full bg-stone-200/80 h-2 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-300"
+                      style={{
+                        width: `${isEnabled ? percent : 0}%`,
+                        backgroundColor: accentColor
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     );
-
-    await saveStudentPlan({
-      id: currentMonthPlan?.id,
-      studentId: selectedStudent.id,
-      monthlyPlanId: currentPlan.id,
-      newMemorization: { ...studentPlanForm.newMemorization },
-      revision: { ...studentPlanForm.revision },
-      status: 'active'
-    });
-    setEditingStudentPlan(false);
-    showToast(`تم حفظ وتحديث مقرر الطالبة (${selectedStudent.name}) بنجاح ✅`, 'success');
   };
-
-  // Helper calculations for Surah verses
-  const fromSurahMaxVerses = getAyahCount(studentPlanForm.newMemorization.fromSurah);
-  const toSurahMaxVerses = getAyahCount(studentPlanForm.newMemorization.toSurah);
-  const revFromSurahMaxVerses = getAyahCount(studentPlanForm.revision.fromSurah);
-  const revToSurahMaxVerses = getAyahCount(studentPlanForm.revision.toSurah);
-
-  const fromSurahInfo = getSurahByNumber(studentPlanForm.newMemorization.fromSurah);
-  const toSurahInfo = getSurahByNumber(studentPlanForm.newMemorization.toSurah);
-
-  const studentScore = allStudentScores[selectedStudent?.id];
 
   return (
     <div className="space-y-6">
@@ -253,7 +820,7 @@ export const MonthlyPlansView: React.FC = () => {
             <h2 className="text-xl font-bold text-stone-900 font-quran">الخطط الشهرية للحفظ والمراجعة</h2>
           </div>
           <p className="text-xs text-stone-500">
-            تحديد مواعيد البداية والنهاية، أيام الحفظ والتسميع، وتعيين مقرر السور والآيات بدقة
+            تقسيم ثلاثي مستقل (الحفظ الجديد • المراجعة الصغرى • مراجعة التمكين) مع التحكم بالتفعيل والمقدار اليومي واحتساب الإنجاز تلقائياً من سجل التسميع
           </p>
         </div>
 
@@ -327,7 +894,6 @@ export const MonthlyPlansView: React.FC = () => {
             </button>
           </div>
 
-          {/* Schedule Rules Grid (as specified in prompt) */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="p-3.5 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2]">
               <div className="text-[11px] text-stone-600 mb-0.5 font-medium">بداية الخطة:</div>
@@ -360,7 +926,7 @@ export const MonthlyPlansView: React.FC = () => {
         </div>
       )}
 
-      {/* Student Specific Syllabus & Quran Selection Section */}
+      {/* Student Specific Syllabus & 3 Independent Branches */}
       <div className="bg-white p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-6">
         
         {/* Student Selector Bar */}
@@ -430,402 +996,114 @@ export const MonthlyPlansView: React.FC = () => {
           <div className="flex items-center gap-2">
             {!editingStudentPlan ? (
               <button
+                type="button"
                 onClick={() => setEditingStudentPlan(true)}
-                className="px-4 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+                className="px-4 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
               >
                 <Edit className="w-3.5 h-3.5" />
-                <span>تعديل مقرر الطالبة</span>
+                <span>تعديل مقرر السور والصفحات</span>
               </button>
             ) : (
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => setEditingStudentPlan(false)}
-                  className="px-3 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-200"
+                  className="px-3 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-200 cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
+                  type="button"
                   onClick={handleSaveStudentPlan}
-                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition shadow-xs"
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1"
                 >
-                  حفظ المقرر المحدث
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>حفظ المقرر المحدث</span>
                 </button>
               </div>
             )}
           </div>
         </div>
 
-        {/* Plan Progress Indicator */}
-        <div className="bg-[#FCFAF8] p-4 rounded-2xl border border-[#EFE8E2]">
-          <div className="flex items-center justify-between text-xs font-bold text-stone-800 mb-2">
-            <span>مؤشر إنجاز الخطة الشهرية للطالبة (<span className="privacy-student-name">{selectedStudent?.name}</span>)</span>
-            <span className="text-[#8E5364]">
-              {studentScore?.newMemorizationPagesDone} من أصل {studentScore?.newMemorizationPagesTarget} صفحات منجزة
+        {/* Automated Plan Progress Indicator */}
+        <div className="bg-[#FCFAF8] p-4 rounded-2xl border border-[#EFE8E2] space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-stone-800">
+            <div className="flex items-center gap-2">
+              <span>📊 مؤشر إنجاز الخطة الشهرية التلقائي للطالبة (<span className="privacy-student-name">{selectedStudent?.name}</span>)</span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                يُحتسب تلقائياً من سجل التسميع ⚡
+              </span>
+            </div>
+            <span className="text-[#8E5364] font-extrabold">
+              <span className="privacy-score-digit">{totalEnabledDone}</span> من أصل <span className="privacy-score-digit">{totalEnabledTarget}</span> صفحة منجزة ({overallPercent}%)
             </span>
           </div>
           <div className="w-full bg-[#EFEAE5] h-3 rounded-full overflow-hidden">
             <div
               className="bg-gradient-to-r from-[#9E5B6D] to-[#2D5A43] h-full rounded-full transition-all duration-300"
-              style={{
-                width: `${Math.min(100, ((studentScore?.newMemorizationPagesDone || 0) / (studentScore?.newMemorizationPagesTarget || 1)) * 100)}%`
-              }}
+              style={{ width: `${overallPercent}%` }}
             />
           </div>
-          <div className="flex justify-between text-[11px] text-stone-400 mt-2">
-            <span>بداية المقرر: {fromSurahInfo?.name} (صفحة {fromSurahInfo?.startPage})</span>
-            <span>نهاية المقرر: {toSurahInfo?.name} (صفحة {toSurahInfo?.startPage})</span>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
+            <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white border border-stone-200/70">
+              <span className="text-stone-600 font-bold">١. الحفظ الجديد:</span>
+              <span className="font-extrabold text-[#8E5364]">
+                {isNewEnabled ? `${newDone} / ${newTarget} وجه (${newPercent}%)` : 'معطّل لهذا الشهر'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white border border-stone-200/70">
+              <span className="text-stone-600 font-bold">٢. المراجعة الصغرى:</span>
+              <span className="font-extrabold text-[#96503E]">
+                {isMinorEnabled ? `${minorDone} / ${minorTarget} وجه (${minorPercent}%)` : 'معطّل لهذا الشهر'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white border border-stone-200/70">
+              <span className="text-stone-600 font-bold">٣. مراجعة التمكين:</span>
+              <span className="font-extrabold text-[#2D5A43]">
+                {isTamkeenEnabled ? `${tamkeenDone} / ${tamkeenTarget} وجه (${tamkeenPercent}%)` : 'معطّل لهذا الشهر'}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Section A: New Memorization (خطة الحفظ الجديد) */}
-        <div className="border border-[#E8DFD8] rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-stone-100 pb-2">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#8E5364]"></span>
-              <h4 className="font-bold text-stone-900 text-sm">أ. خطة ومقرر الحفظ الجديد</h4>
-            </div>
-            <span className="text-[11px] text-stone-500">
-              جميع سور القرآن (١١٤ سورة) مصنفة من البقرة إلى الناس
-            </span>
-          </div>
+        {/* 1. خطة ومقرر الحفظ الجديد */}
+        {renderPlanBranchCard(
+          'newMemorization',
+          '١. خطة ومقرر الحفظ الجديد',
+          'بحد أقصى وجهان يومياً — يُجمع الإنجاز تلقائياً من سجل التسميع',
+          '#8E5364',
+          'bg-[#FAF0F3] text-[#8E5364]',
+          newDone,
+          studentPlanForm.newMemorization.targetPages || 8,
+          newPercent,
+          true
+        )}
 
-          {editingStudentPlan ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {/* From Surah */}
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">من سورة:</label>
-                  <select
-                    value={studentPlanForm.newMemorization.fromSurah}
-                    onChange={e => {
-                      const num = Number(e.target.value);
-                      setStudentPlanForm({
-                        ...studentPlanForm,
-                        newMemorization: {
-                          ...studentPlanForm.newMemorization,
-                          fromSurah: num,
-                          fromAyah: 1
-                        }
-                      });
-                    }}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white"
-                  >
-                    {QURAN_SURAHS.map(s => (
-                      <option key={s.number} value={s.number}>
-                        {s.number}. سورة {s.name} ({s.versesCount} آية)
-                      </option>
-                    ))}
-                  </select>
-                </div>
+        {/* 2. خطة المراجعة الصغرى (الربط القريب) */}
+        {renderPlanBranchCard(
+          'minorRevision',
+          '٢. خطة المراجعة الصغرى (الربط القريب)',
+          'تثبيت المحفوظ القريب وربطه بالحفظ الجديد',
+          '#96503E',
+          'bg-amber-50 text-amber-800',
+          minorDone,
+          studentPlanForm.minorRevision.targetPages || 4,
+          minorPercent,
+          false
+        )}
 
-                {/* From Ayah */}
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">من آية:</label>
-                  <select
-                    value={studentPlanForm.newMemorization.fromAyah}
-                    onChange={e => setStudentPlanForm({
-                      ...studentPlanForm,
-                      newMemorization: {
-                        ...studentPlanForm.newMemorization,
-                        fromAyah: Number(e.target.value)
-                      }
-                    })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white"
-                  >
-                    {Array.from({ length: fromSurahMaxVerses }, (_, i) => i + 1).map(num => (
-                      <option key={num} value={num}>آية {num}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* To Surah */}
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">إلى سورة:</label>
-                  <select
-                    value={studentPlanForm.newMemorization.toSurah}
-                    onChange={e => {
-                      const num = Number(e.target.value);
-                      setStudentPlanForm({
-                        ...studentPlanForm,
-                        newMemorization: {
-                          ...studentPlanForm.newMemorization,
-                          toSurah: num,
-                          toAyah: Math.min(studentPlanForm.newMemorization.toAyah, getAyahCount(num))
-                        }
-                      });
-                    }}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white"
-                  >
-                    {QURAN_SURAHS.map(s => (
-                      <option key={s.number} value={s.number}>
-                        {s.number}. سورة {s.name} ({s.versesCount} آية)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* To Ayah */}
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">إلى آية:</label>
-                  <select
-                    value={studentPlanForm.newMemorization.toAyah}
-                    onChange={e => setStudentPlanForm({
-                      ...studentPlanForm,
-                      newMemorization: {
-                        ...studentPlanForm.newMemorization,
-                        toAyah: Number(e.target.value)
-                      }
-                    })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white"
-                  >
-                    {Array.from({ length: toSurahMaxVerses }, (_, i) => i + 1).map(num => (
-                      <option key={num} value={num}>آية {num}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">عدد الصفحات المستهدف</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={studentPlanForm.newMemorization.targetPages}
-                    onChange={e => setStudentPlanForm({
-                      ...studentPlanForm,
-                      newMemorization: { ...studentPlanForm.newMemorization, targetPages: Number(e.target.value) }
-                    })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">الصفحات المنجزة فعلياً</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={studentPlanForm.newMemorization.actualPages}
-                    onChange={e => setStudentPlanForm({
-                      ...studentPlanForm,
-                      newMemorization: { ...studentPlanForm.newMemorization, actualPages: Number(e.target.value) }
-                    })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">المقدار المطلوب يومياً</label>
-                  <input
-                    type="text"
-                    value={studentPlanForm.newMemorization.targetDailyAmount}
-                    onChange={e => setStudentPlanForm({
-                      ...studentPlanForm,
-                      newMemorization: { ...studentPlanForm.newMemorization, targetDailyAmount: e.target.value }
-                    })}
-                    placeholder="مثال: صفحة واحدة يومياً"
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">ملاحظات المعلمة على الحفظ</label>
-                <input
-                  type="text"
-                  value={studentPlanForm.newMemorization.teacherNotes || ''}
-                  onChange={e => setStudentPlanForm({
-                    ...studentPlanForm,
-                    newMemorization: { ...studentPlanForm.newMemorization, teacherNotes: e.target.value }
-                  })}
-                  placeholder="ملاحظات توجيهية للطالبة..."
-                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs"
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div className="p-3 bg-[#FAF6F2] rounded-xl">
-                <span className="text-stone-400 block text-[11px]">بداية المقرر:</span>
-                <span className="font-bold text-stone-800">
-                  سورة {getSurahByNumber(studentPlanForm.newMemorization.fromSurah)?.name} (آية {studentPlanForm.newMemorization.fromAyah})
-                </span>
-              </div>
-              <div className="p-3 bg-[#FAF6F2] rounded-xl">
-                <span className="text-stone-400 block text-[11px]">نهاية المقرر:</span>
-                <span className="font-bold text-stone-800">
-                  سورة {getSurahByNumber(studentPlanForm.newMemorization.toSurah)?.name} (آية {studentPlanForm.newMemorization.toAyah})
-                </span>
-              </div>
-              <div className="p-3 bg-[#FAF6F2] rounded-xl">
-                <span className="text-stone-400 block text-[11px]">عدد الصفحات:</span>
-                <span className="font-bold text-[#8E5364]">
-                  {studentPlanForm.newMemorization.actualPages} منجز من {studentPlanForm.newMemorization.targetPages} صفحة
-                </span>
-              </div>
-              <div className="p-3 bg-[#FAF6F2] rounded-xl">
-                <span className="text-stone-400 block text-[11px]">المقدار اليومي:</span>
-                <span className="font-bold text-stone-800">
-                  {studentPlanForm.newMemorization.targetDailyAmount}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Section B: Revision Plan (خطة المراجعة والتمكين) */}
-        <div className="border border-[#E8DFD8] rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-stone-100 pb-2">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#2D5A43]"></span>
-              <h4 className="font-bold text-stone-900 text-sm">ب. خطة المراجعة والتمكين</h4>
-            </div>
-            <span className="text-[11px] text-stone-500">
-              مراجعة صغرى للمقرر القريب ومراجعة تمكين للمحفوظ البعيد
-            </span>
-          </div>
-
-          {editingStudentPlan ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {/* Rev From Surah */}
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">من سورة:</label>
-                  <select
-                    value={studentPlanForm.revision.fromSurah}
-                    onChange={e => setStudentPlanForm({
-                      ...studentPlanForm,
-                      revision: { ...studentPlanForm.revision, fromSurah: Number(e.target.value), fromAyah: 1 }
-                    })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white"
-                  >
-                    {QURAN_SURAHS.map(s => (
-                      <option key={s.number} value={s.number}>{s.number}. سورة {s.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Rev From Ayah */}
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">من آية:</label>
-                  <select
-                    value={studentPlanForm.revision.fromAyah}
-                    onChange={e => setStudentPlanForm({
-                      ...studentPlanForm,
-                      revision: { ...studentPlanForm.revision, fromAyah: Number(e.target.value) }
-                    })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white"
-                  >
-                    {Array.from({ length: revFromSurahMaxVerses }, (_, i) => i + 1).map(num => (
-                      <option key={num} value={num}>آية {num}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Rev To Surah */}
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">إلى سورة:</label>
-                  <select
-                    value={studentPlanForm.revision.toSurah}
-                    onChange={e => setStudentPlanForm({
-                      ...studentPlanForm,
-                      revision: { ...studentPlanForm.revision, toSurah: Number(e.target.value), toAyah: 1 }
-                    })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white"
-                  >
-                    {QURAN_SURAHS.map(s => (
-                      <option key={s.number} value={s.number}>{s.number}. سورة {s.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Rev To Ayah */}
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">إلى آية:</label>
-                  <select
-                    value={studentPlanForm.revision.toAyah}
-                    onChange={e => setStudentPlanForm({
-                      ...studentPlanForm,
-                      revision: { ...studentPlanForm.revision, toAyah: Number(e.target.value) }
-                    })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white"
-                  >
-                    {Array.from({ length: revToSurahMaxVerses }, (_, i) => i + 1).map(num => (
-                      <option key={num} value={num}>آية {num}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">نوع المراجعة</label>
-                  <select
-                    value={studentPlanForm.revision.revisionType}
-                    onChange={e => setStudentPlanForm({
-                      ...studentPlanForm,
-                      revision: { ...studentPlanForm.revision, revisionType: e.target.value }
-                    })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white"
-                  >
-                    <option value="تمكين">تمكين (تثبيت المحفوظ القديم)</option>
-                    <option value="صغرى">صغرى (مقرر الأسبوع الماضي)</option>
-                    <option value="تثبيت المتشابهات">تثبيت المتشابهات</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">عدد صفحات المراجعة</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={studentPlanForm.revision.targetPages}
-                    onChange={e => setStudentPlanForm({
-                      ...studentPlanForm,
-                      revision: { ...studentPlanForm.revision, targetPages: Number(e.target.value) }
-                    })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">حالة إنجاز المراجعة</label>
-                  <select
-                    value={studentPlanForm.revision.status}
-                    onChange={e => setStudentPlanForm({
-                      ...studentPlanForm,
-                      revision: { ...studentPlanForm.revision, status: e.target.value as any }
-                    })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white"
-                  >
-                    <option value="completed">منجزة بالكامل ✅</option>
-                    <option value="in_progress">قيد المراجعة والتمكين</option>
-                    <option value="pending">مجدولة لاحقاً</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div className="p-3 bg-[#FAF6F2] rounded-xl">
-                <span className="text-stone-400 block text-[11px]">مقرر المراجعة:</span>
-                <span className="font-bold text-stone-800">
-                  سورة {getSurahByNumber(studentPlanForm.revision.fromSurah)?.name} (آية {studentPlanForm.revision.fromAyah}) إلى سورة {getSurahByNumber(studentPlanForm.revision.toSurah)?.name} (آية {studentPlanForm.revision.toAyah})
-                </span>
-              </div>
-              <div className="p-3 bg-[#FAF6F2] rounded-xl">
-                <span className="text-stone-400 block text-[11px]">النوع:</span>
-                <span className="font-bold text-[#2D5A43]">{studentPlanForm.revision.revisionType}</span>
-              </div>
-              <div className="p-3 bg-[#FAF6F2] rounded-xl">
-                <span className="text-stone-400 block text-[11px]">عدد الصفحات:</span>
-                <span className="font-bold text-stone-800">{studentPlanForm.revision.targetPages} صفحات</span>
-              </div>
-              <div className="p-3 bg-[#FAF6F2] rounded-xl">
-                <span className="text-stone-400 block text-[11px]">الحالة:</span>
-                <span className="font-bold text-emerald-800">
-                  {studentPlanForm.revision.status === 'completed' ? 'منجزة بالكامل ✅' : 'قيد التمكين'}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
+        {/* 3. خطة مراجعة التمكين (المراجعة الكبرى) */}
+        {renderPlanBranchCard(
+          'tamkeenRevision',
+          '٣. خطة مراجعة التمكين (المراجعة الكبرى)',
+          'مراجعة المحفوظ السابق وتثبيت الأجزاء',
+          '#2D5A43',
+          'bg-emerald-50 text-emerald-800',
+          tamkeenDone,
+          studentPlanForm.tamkeenRevision.targetPages || 4,
+          tamkeenPercent,
+          false
+        )}
 
       </div>
 
