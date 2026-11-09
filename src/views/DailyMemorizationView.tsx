@@ -194,15 +194,27 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
   const { 
     students, circles, tracks, currentUser, 
     dailyRecords, saveDailyRecord, deleteDailyRecord, settings,
-    studentPlans, updateTrack, updateTrackSystemRules, showToast, allStudentScores
+    studentPlans, updateTrack, updateTrackSystemRules, showToast, allStudentScores,
+    selectedTrackId
   } = useApp();
 
-  const [selectedCircleId, setSelectedCircleId] = useState<string>(circles[0]?.id || '');
+  const availableCircles = useMemo(() => {
+    if (!selectedTrackId || selectedTrackId === 'all') return circles.filter(c => !c.isArchived);
+    return circles.filter(c => !c.isArchived && c.trackId === selectedTrackId);
+  }, [circles, selectedTrackId]);
+
+  const [selectedCircleId, setSelectedCircleId] = useState<string>(availableCircles[0]?.id || circles[0]?.id || '');
   const [selectedDate, setSelectedDate] = useState<string>(getTodayISO());
   const [searchQuery, setSearchQuery] = useState('');
   const [activeModalStudentId, setActiveModalStudentId] = useState<string | null>(null);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [recordToDelete, setRecordToDelete] = useState<any>(null);
+
+  useEffect(() => {
+    if (availableCircles.length > 0 && !availableCircles.some(c => c.id === selectedCircleId)) {
+      setSelectedCircleId(availableCircles[0].id);
+    }
+  }, [availableCircles, selectedCircleId]);
 
   // حالة فتح كشف سجل الطالبة الشامل
   const [viewingStudentRecord, setViewingStudentRecord] = useState<Student | null>(null);
@@ -654,7 +666,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
               onChange={e => setSelectedCircleId(e.target.value)}
               className="bg-transparent text-xs font-bold text-stone-800 dark:text-stone-100 outline-hidden cursor-pointer"
             >
-              {circles.map(c => (
+              {availableCircles.map(c => (
                 <option key={c.id} value={c.id} className="dark:bg-stone-900">
                   {c.name}
                 </option>

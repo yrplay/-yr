@@ -11,12 +11,35 @@ export const MonthlyPlansView: React.FC = () => {
   const {
     monthlyPlans, studentPlans, students, circles, tracks,
     createMonthlyPlan, updateMonthlyPlan, duplicateMonthlyPlan, saveStudentPlan,
-    currentUser, allStudentScores, showToast
+    currentUser, allStudentScores, showToast, selectedTrackId
   } = useApp();
 
-  const [selectedPlanId, setSelectedPlanId] = useState<string>(monthlyPlans[0]?.id || 'mp-1');
-  const [selectedStudentId, setSelectedStudentId] = useState<string>(students[0]?.id || 's-1');
+  const availablePlans = React.useMemo(() => {
+    if (!selectedTrackId || selectedTrackId === 'all') return monthlyPlans;
+    return monthlyPlans.filter(p => !p.trackId || p.trackId === selectedTrackId);
+  }, [monthlyPlans, selectedTrackId]);
+
+  const availableStudents = React.useMemo(() => {
+    if (!selectedTrackId || selectedTrackId === 'all') return students;
+    return students.filter(s => s.trackId === selectedTrackId);
+  }, [students, selectedTrackId]);
+
+  const [selectedPlanId, setSelectedPlanId] = useState<string>(availablePlans[0]?.id || monthlyPlans[0]?.id || 'mp-1');
+  const [selectedStudentId, setSelectedStudentId] = useState<string>(availableStudents[0]?.id || students[0]?.id || 's-1');
   const [isStudentDropdownOpen, setIsStudentDropdownOpen] = useState(false);
+
+  // Keep selection in sync when active track changes
+  React.useEffect(() => {
+    if (availablePlans.length > 0 && !availablePlans.some(p => p.id === selectedPlanId)) {
+      setSelectedPlanId(availablePlans[0].id);
+    }
+  }, [availablePlans, selectedPlanId]);
+
+  React.useEffect(() => {
+    if (availableStudents.length > 0 && !availableStudents.some(s => s.id === selectedStudentId)) {
+      setSelectedStudentId(availableStudents[0].id);
+    }
+  }, [availableStudents, selectedStudentId]);
 
   // Modals state
   const [planModalOpen, setPlanModalOpen] = useState(false);
@@ -25,7 +48,7 @@ export const MonthlyPlansView: React.FC = () => {
   // New/Edit Plan form
   const [planForm, setPlanForm] = useState({
     title: '',
-    trackId: tracks[0]?.id || 't-1',
+    trackId: (selectedTrackId && selectedTrackId !== 'all') ? selectedTrackId : (tracks[0]?.id || 't-1'),
     hijriMonth: 'ربيع الآخر - جمادى الأولى',
     hijriYear: '1446',
     startDateHijri: '٣٠ ربيع الآخر',
@@ -35,9 +58,9 @@ export const MonthlyPlansView: React.FC = () => {
     thursdayFocus: 'مخصص للتحديات والمراجعة الثنائية بحسب التحدي المعتمد'
   });
 
-  const currentPlan = monthlyPlans.find(p => p.id === selectedPlanId) || monthlyPlans[0];
-  const selectedStudent = students.find(s => s.id === selectedStudentId) || students[0];
-  const studentPlan = studentPlans.find(sp => sp.studentId === selectedStudentId && sp.monthlyPlanId === currentPlan?.id) || studentPlans.find(sp => sp.studentId === selectedStudentId);
+  const currentPlan = availablePlans.find(p => p.id === selectedPlanId) || availablePlans[0] || monthlyPlans[0];
+  const selectedStudent = availableStudents.find(s => s.id === selectedStudentId) || availableStudents[0] || students[0];
+  const studentPlan = studentPlans.find(sp => sp.studentId === selectedStudent?.id && sp.monthlyPlanId === currentPlan?.id) || studentPlans.find(sp => sp.studentId === selectedStudent?.id);
 
   // Student plan edit form state
   const [editingStudentPlan, setEditingStudentPlan] = useState(false);
@@ -257,7 +280,7 @@ export const MonthlyPlansView: React.FC = () => {
 
       {/* Monthly Plan Selection Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        {monthlyPlans.map(plan => (
+        {availablePlans.map(plan => (
           <button
             key={plan.id}
             type="button"
@@ -373,7 +396,7 @@ export const MonthlyPlansView: React.FC = () => {
                       onClick={() => setIsStudentDropdownOpen(false)}
                     />
                     <div className="absolute top-full right-0 mt-1 w-80 max-h-60 overflow-y-auto bg-white border border-stone-200 rounded-2xl shadow-xl z-50 py-1 divide-y divide-stone-100">
-                      {students.map(s => {
+                      {availableStudents.map(s => {
                         const circle = circles.find(c => c.id === s.circleId);
                         const isSelected = s.id === selectedStudentId;
                         return (

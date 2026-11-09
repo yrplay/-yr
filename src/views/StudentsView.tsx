@@ -20,7 +20,8 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
   const {
     students, circles, tracks, allStudentScores,
     createStudent, updateStudent, archiveStudent, deleteStudent, assignPartner,
-    currentUser, quickModalAction, clearQuickModal, settings
+    currentUser, quickModalAction, clearQuickModal, settings,
+    selectedTrackId
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -59,6 +60,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 
   // Filtered & sorted students
   const filteredStudents = students.filter(st => {
+    if (selectedTrackId && selectedTrackId !== 'all' && st.trackId !== selectedTrackId) return false;
     if (selectedCircleId !== 'all' && st.circleId !== selectedCircleId) return false;
     if (selectedStatus !== 'all' && st.status !== selectedStatus) return false;
     if (searchQuery.trim()) {
@@ -82,7 +84,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
   const handleOpenStudentModal = (student?: any) => {
     if (student) {
       const circle = circles.find(c => c.id === student.circleId);
-      const currentTrackId = student.trackId || circle?.trackId || tracks[0]?.id || '';
+      const currentTrackId = student.trackId || circle?.trackId || (selectedTrackId && selectedTrackId !== 'all' ? selectedTrackId : (tracks[0]?.id || 't-1'));
       setEditingStudent(student);
       setStudentForm({
         name: student.name,
@@ -96,7 +98,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
         joinDate: student.joinDate || new Date().toISOString().split('T')[0]
       });
     } else {
-      const defaultTrackId = tracks[0]?.id || '';
+      const defaultTrackId = (selectedTrackId && selectedTrackId !== 'all') ? selectedTrackId : (tracks[0]?.id || 't-1');
       const availableCirclesInTrack = circles.filter(c => !c.trackId || c.trackId === defaultTrackId);
       setEditingStudent(null);
       setStudentForm({
@@ -193,10 +195,17 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
               onChange={e => setSelectedCircleId(e.target.value)}
               className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
             >
-              <option value="all">جميع الحلقات ({circles.length})</option>
-              {circles.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
+              <option value="all">
+                {selectedTrackId && selectedTrackId !== 'all'
+                  ? `حلقات المسار (${circles.filter(c => !c.isArchived && c.trackId === selectedTrackId).length})`
+                  : `جميع الحلقات (${circles.filter(c => !c.isArchived).length})`
+                }
+              </option>
+              {circles
+                .filter(c => !c.isArchived && (!selectedTrackId || selectedTrackId === 'all' || c.trackId === selectedTrackId))
+                .map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
             </select>
           </div>
 

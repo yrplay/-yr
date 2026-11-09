@@ -237,6 +237,66 @@ const sanitizeAndSortAuditLogs = (logs: any[]): AuditLog[] => {
   return result.slice(0, 500);
 };
 
+const ensureDefaultTrackIntegrity = (data: any) => {
+  if (!data || typeof data !== 'object') return data;
+
+  // 1. Ensure track t-1 exists and is named 'مسار مشكاة الغيم'
+  if (Array.isArray(data.tracks)) {
+    data.tracks = data.tracks.map((t: any) => {
+      if (t.id === 't-1' && (t.name === 'مشكاة الغيم للحفظ' || !t.name.includes('مشكاة الغيم'))) {
+        return { ...t, name: 'مسار مشكاة الغيم' };
+      }
+      return t;
+    });
+  }
+
+  // 2. Ensure all students have a valid trackId (default to t-1)
+  if (Array.isArray(data.students)) {
+    data.students = data.students.map((s: any) => ({
+      ...s,
+      trackId: s.trackId || 't-1'
+    }));
+  }
+
+  // 3. Ensure all circles have a valid trackId (default to t-1)
+  if (Array.isArray(data.circles)) {
+    data.circles = data.circles.map((c: any) => ({
+      ...c,
+      trackId: c.trackId || 't-1'
+    }));
+  }
+
+  // 4. Ensure studentSubscriptions have a valid trackId
+  if (Array.isArray(data.studentSubscriptions)) {
+    const studentTrackMap = new Map<string, string>();
+    if (Array.isArray(data.students)) {
+      data.students.forEach((s: any) => {
+        if (s.id && s.trackId) studentTrackMap.set(s.id, s.trackId);
+      });
+    }
+    data.studentSubscriptions = data.studentSubscriptions.map((sub: any) => ({
+      ...sub,
+      trackId: (sub.trackId && sub.trackId !== 'general') ? sub.trackId : (studentTrackMap.get(sub.studentId) || 't-1')
+    }));
+  }
+
+  // 5. Ensure monthlyPlans, challenges, atqiniAssignments, monthlyExams have trackId
+  if (Array.isArray(data.monthlyPlans)) {
+    data.monthlyPlans = data.monthlyPlans.map((p: any) => ({ ...p, trackId: p.trackId || 't-1' }));
+  }
+  if (Array.isArray(data.challenges)) {
+    data.challenges = data.challenges.map((ch: any) => ({ ...ch, trackId: ch.trackId || 't-1' }));
+  }
+  if (Array.isArray(data.atqiniAssignments)) {
+    data.atqiniAssignments = data.atqiniAssignments.map((a: any) => ({ ...a, trackId: a.trackId || 't-1' }));
+  }
+  if (Array.isArray(data.monthlyExams)) {
+    data.monthlyExams = data.monthlyExams.map((e: any) => ({ ...e, trackId: e.trackId || 't-1' }));
+  }
+
+  return data;
+};
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const defaultDeveloper: User = {
     id: 'u-dev',
@@ -331,8 +391,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
-          const parsed = JSON.parse(raw);
+          let parsed = JSON.parse(raw);
           if (parsed && typeof parsed === 'object') {
+            parsed = ensureDefaultTrackIntegrity(parsed);
             if (Array.isArray(parsed.users)) {
               parsed.users = sanitizeUsersList(parsed.users);
             } else {
@@ -808,12 +869,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const applyState = (incomingData: any) => {
     if (!incomingData || typeof incomingData !== 'object') return;
+    const sanitizedIncoming = ensureDefaultTrackIntegrity(incomingData);
 
     const deletedEntities = mergeDeletedEntityMaps(
       masterStateRef.current._deletedEntities,
-      incomingData._deletedEntities
+      sanitizedIncoming._deletedEntities
     );
-    const data = { ...incomingData, _deletedEntities: deletedEntities };
+    const data = { ...sanitizedIncoming, _deletedEntities: deletedEntities };
     if (Array.isArray(data.users)) {
       data.users = data.users.filter((u: any) => !isFakeDemoUser(u));
       if (data.users.length === 0) data.users = [defaultDeveloper];
@@ -1548,12 +1610,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const cycleMonth = sub.cycleMonth || settings.currentHijriMonth || 'جمادى الأولى';
     const cleanId = sub.id || `sub_${studentId}_${cycleMonth.replace(/\s+/g, '_')}`;
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
-    const studentObj = currentStudents.find((s: Student) => s.id === studentId);
+    const resolvedTrackId = (sub.trackId && sub.trackId !== 'general')
+      ? sub.trackId
+      : (studentObj?.trackId || (selectedTrackId && selectedTrackId !== 'all' ? selectedTrackId : (tracks[0]?.id || 't-1')));
 
     const newSub: StudentSubscription = {
       id: cleanId,
       studentId,
-      trackId: sub.trackId || (studentObj?.trackId || tracks[0]?.id || 't-1'),
+      trackId: resolvedTrackId,
       cycleMonth,
       requiredAmount: sub.requiredAmount ?? 150,
       paidAmount: sub.paidAmount ?? 0,

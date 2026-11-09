@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { 
   DollarSign, Users, CreditCard, FileText, CheckCircle2, 
-  AlertCircle, Search, ArrowRight, ShieldAlert, Check, Edit3, Settings, Calendar, Filter
+  AlertCircle, Search, ArrowRight, ShieldAlert, Check, Edit3, Settings, Calendar, Filter, RotateCcw, Layers
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { hasFullAccess, StudentSubscription } from '../types';
@@ -31,7 +31,8 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
 }) => {
   const { 
     students, circles, tracks, currentUser,
-    studentSubscriptions, saveStudentSubscription, settings, updateSettings 
+    studentSubscriptions, saveStudentSubscription, settings, updateSettings,
+    selectedTrackId, setSelectedTrackId
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -98,10 +99,22 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
     );
   }
 
-  // جميع الطالبات المسجلات في المنظومة
+  // تحديد المسار النشط إن وجد عزل
+  const activeTrack = useMemo(() => {
+    if (!selectedTrackId || selectedTrackId === 'all') return null;
+    return tracks.find(t => t.id === selectedTrackId) || null;
+  }, [tracks, selectedTrackId]);
+
+  // رسم الاشتراك المعتمد للمسار النشط أو العام
+  const effectiveFee = activeTrack?.subscriptionFee?.amount ?? defaultFee;
+
+  // الطالبات الخاضعات للعرض المالي (معزولة بالمسار عند تحديده، أو كافة الطالبات)
   const allStudents = useMemo(() => {
+    if (activeTrack) {
+      return (students || []).filter(s => s.trackId === activeTrack.id);
+    }
     return students || [];
-  }, [students]);
+  }, [students, activeTrack]);
 
   const filteredStudents = useMemo(() => {
     if (!searchQuery.trim()) return allStudents;
@@ -110,21 +123,47 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
     );
   }, [allStudents, searchQuery]);
 
-  // الإحصاءات المالية المباشرة وفق الفلتر المحدد
+  // الإحصاءات المالية المباشرة وفق المسار النشط والفلتر المحدد
   const stats = useMemo(
-    () => calculateSubscriptionStats(allStudents, studentSubscriptions || [], currentCycle, selectedCycleFilter, defaultFee),
-    [allStudents, studentSubscriptions, defaultFee, selectedCycleFilter, currentCycle]
+    () => calculateSubscriptionStats(allStudents, studentSubscriptions || [], currentCycle, selectedCycleFilter, effectiveFee),
+    [allStudents, studentSubscriptions, effectiveFee, selectedCycleFilter, currentCycle]
   );
 
+  // سجلات الحسابات المالية المستقلة لكل مسار للعرض الإداري المجمّع
+  const trackLedgers = useMemo(() => {
+    return tracks.filter(t => !t.isArchived).map(t => {
+      const trackStudents = (students || []).filter(s => s.trackId === t.id);
+      const fee = t.subscriptionFee?.amount ?? defaultFee;
+      const trackStats = calculateSubscriptionStats(
+        trackStudents,
+        studentSubscriptions || [],
+        currentCycle,
+        selectedCycleFilter,
+        fee
+      );
+      return {
+        track: t,
+        studentsCount: trackStudents.length,
+        fee,
+        stats: trackStats
+      };
+    });
+  }, [tracks, students, studentSubscriptions, currentCycle, selectedCycleFilter, defaultFee]);
+
   const handleOpenPayment = (studentId: string) => {
+    const student = students.find(s => s.id === studentId);
+    const assignedTrackId = student?.trackId || (activeTrack?.id || tracks[0]?.id || 't-1');
+    const targetTrack = tracks.find(t => t.id === assignedTrackId);
+    const studentFee = targetTrack?.subscriptionFee?.amount ?? effectiveFee;
+
     // عند عرض جميع الدورات، يظل السداد موجهاً للدورة الحالية ولا يُفتح سجل قديم عشوائياً.
     const writeCycle = selectedCycleFilter === 'all' ? currentCycle : selectedCycleFilter;
     const existing = getStudentSubscriptions(studentId, writeCycle)[0];
     setSelectedSub(existing || {
       studentId,
-      trackId: 'general',
+      trackId: assignedTrackId,
       cycleMonth: writeCycle,
-      requiredAmount: defaultFee,
+      requiredAmount: studentFee,
       paidAmount: 0,
       status: 'pending',
       paymentMethod: 'bank_transfer'
@@ -187,25 +226,44 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
 
   return (
     <div className="space-y-6 text-right pb-12" dir="rtl">
-      {/* رأس الصفحة */}
+      {/* رأس الصفحة مع شارة المسار أو الملخص المجمّع */}
       <div className="bg-white dark:bg-stone-900 p-6 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-2xl">💳</span>
+            <span className="text-2xl">{activeTrack?.icon || '💳'}</span>
             <h1 className="text-xl font-bold text-stone-800 dark:text-stone-100 font-quran">
-              الاشتراكات والمالية العامة
+              {activeTrack ? `سجل اشتراكات ${activeTrack.name}` : 'الاشتراكات والمالية العامة (كافة المسارات المجمعة)'}
             </h1>
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#FAF7F5] dark:bg-stone-800 text-[#8E5364] dark:text-[#E8BDC8] font-bold">
-              خاص بالإدارة العليا
+            <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold ${
+              activeTrack
+                ? 'bg-[#8E5364]/10 text-[#722F37] border border-[#8E5364]/20'
+                : 'bg-[#FAF7F5] dark:bg-stone-800 text-[#8E5364] dark:text-[#E8BDC8]'
+            }`}>
+              {activeTrack ? 'سجل مالي معزول' : 'ملخص إداري مجمّع'}
             </span>
           </div>
           <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
-            سجل تحصيل ومتابعة رسوم واشتراكات طالبات المقرأة مباشرة مع إصدار وتوثيق سندات السداد
+            {activeTrack 
+              ? `إدارة وتحصيل اشتراكات الطالبات المسجلات حصراً في ${activeTrack.name} (الرسم المقرر: ${effectiveFee} ${currency})`
+              : 'سجل تحصيل ومتابعة رسوم واشتراكات طالبات المقرأة مباشرة مع إصدار وتوثيق سندات السداد لكافة المسارات'
+            }
           </p>
         </div>
 
-        {/* القسم الأيمن في الترويسة: فلتر دورة التحصيل بحسب الأشهر وزر التعديل */}
+        {/* القسم الأيمن في الترويسة: فلتر دورة التحصيل بحسب الأشهر وزر التعديل أو العودة */}
         <div className="flex flex-wrap items-center gap-2">
+          {activeTrack && (
+            <button
+              type="button"
+              onClick={() => setSelectedTrackId(null)}
+              className="px-3.5 py-2 bg-white dark:bg-stone-800 hover:bg-stone-100 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-200 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+              title="عرض الملخص الإداري لكافة المسارات"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-[#8E5364]" />
+              <span>كافة المسارات المجمعة</span>
+            </button>
+          )}
+
           <div className="bg-[#FAF7F5] dark:bg-stone-800 px-3.5 py-2 rounded-2xl border border-[#E2D5CC] dark:border-stone-700 flex items-center gap-2 shadow-2xs">
             <Calendar className="w-3.5 h-3.5 text-[#8E5364] shrink-0" />
             <span className="text-xs text-stone-500 dark:text-stone-400 font-bold whitespace-nowrap">
@@ -231,7 +289,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
           <button
             type="button"
             onClick={() => {
-              setEditingDefaultFee(defaultFee);
+              setEditingDefaultFee(effectiveFee);
               setEditingCycle(currentCycle);
               setEditingCurrency(currency);
               setShowFeeSettingsModal(true);
@@ -251,7 +309,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
         <div className="bg-white dark:bg-stone-900 p-4 rounded-2xl border border-[#E2D5CC] dark:border-stone-800">
           <span className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5 font-bold">
             <Users className="w-3.5 h-3.5 text-[#8E5364]" />
-            إجمالي الطالبات
+            {activeTrack ? `طالبات ${activeTrack.name}` : 'إجمالي كافة الطالبات'}
           </span>
           <p className="text-xl font-bold text-stone-800 dark:text-stone-100 mt-1">{allStudents.length}</p>
         </div>
@@ -260,7 +318,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
         <div className="bg-white dark:bg-stone-900 p-4 rounded-2xl border border-[#E2D5CC] dark:border-stone-800 shadow-2xs">
           <span className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5 font-bold">
             <DollarSign className="w-3.5 h-3.5 text-amber-600" />
-            المبلغ المتوقع
+            {activeTrack ? 'المتوقع للمسار' : 'إجمالي المتوقع المجمّع'}
           </span>
           <p className="text-xl font-bold text-stone-800 dark:text-stone-100 mt-1">
             {stats.totalExpected} <span className="text-xs font-normal text-stone-500">{currency}</span>
@@ -271,7 +329,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
         <div className="bg-white dark:bg-stone-900 p-4 rounded-2xl border border-[#E2D5CC] dark:border-stone-800">
           <span className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5 font-bold">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            المحصل فعلياً
+            {activeTrack ? 'المحصل للمسار' : 'إجمالي الإيرادات المحصلة'}
           </span>
           <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400 mt-1">
             {stats.totalCollected} <span className="text-xs font-normal text-stone-500">{currency}</span>
@@ -282,7 +340,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
         <div className="bg-white dark:bg-stone-900 p-4 rounded-2xl border border-[#E2D5CC] dark:border-stone-800">
           <span className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5 font-bold">
             <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-            المتبقي للتحصيل
+            {activeTrack ? 'المتبقي للمسار' : 'المتبقي لكافة المسارات'}
           </span>
           <p className="text-xl font-bold text-rose-700 dark:text-rose-400 mt-1">
             {stats.totalRemaining} <span className="text-xs font-normal text-stone-500">{currency}</span>
@@ -290,13 +348,103 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
         </div>
       </div>
 
+      {/* التقرير الإداري التنفيذي: تفصيل السجلات المالية لكل مسار مستقل عند اختيار كافة المسارات */}
+      {!activeTrack && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-sm text-stone-800 dark:text-stone-100 flex items-center gap-2">
+              <span className="text-base">📊</span>
+              <span>الملخص التنفيذي للمسارات (سجلات مالية مستقلة)</span>
+            </h3>
+            <span className="text-xs text-stone-500">
+              إجمالي {trackLedgers.length} مسارات معتمدة
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {trackLedgers.map(({ track: t, studentsCount, fee, stats: tStats }) => {
+              const collectionRate = tStats.totalExpected > 0
+                ? Math.min(100, Math.round((tStats.totalCollected / tStats.totalExpected) * 100))
+                : 0;
+
+              return (
+                <div
+                  key={t.id}
+                  className="bg-white dark:bg-stone-900 p-4 rounded-2xl border border-[#E2D5CC] dark:border-stone-800 shadow-2xs hover:shadow-sm transition flex flex-col justify-between gap-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-10 h-10 rounded-xl bg-[#8E5364]/10 text-xl flex items-center justify-center border border-[#8E5364]/20 shrink-0">
+                        {t.icon || '🪴'}
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-xs sm:text-sm text-stone-900 dark:text-stone-100">
+                          {t.name}
+                        </h4>
+                        <span className="text-[11px] text-stone-500 block">
+                          الرسم: <strong className="text-stone-800 dark:text-stone-200">{fee} {currency}</strong> ({t.subscriptionFee?.period === 'term' ? 'فصلياً' : 'شهرياً'})
+                        </span>
+                      </div>
+                    </div>
+
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300">
+                      {studentsCount} طالبة
+                    </span>
+                  </div>
+
+                  {/* شريط الإنجاز ونسبة التحصيل */}
+                  <div>
+                    <div className="flex items-center justify-between text-[11px] mb-1">
+                      <span className="text-stone-500 font-bold">نسبة التحصيل:</span>
+                      <span className="font-mono font-bold text-emerald-600">{collectionRate}%</span>
+                    </div>
+                    <div className="w-full bg-stone-100 dark:bg-stone-800 h-2 rounded-full overflow-hidden">
+                      <div
+                        className="bg-emerald-600 h-full rounded-full transition-all duration-300"
+                        style={{ width: `${collectionRate}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* إحصائيات الأرقام */}
+                  <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-stone-100 dark:border-stone-800 text-center text-[10px]">
+                    <div className="p-1.5 bg-stone-50 dark:bg-stone-800/60 rounded-xl">
+                      <span className="text-stone-400 block text-[9px]">المحصل</span>
+                      <span className="font-bold font-mono text-emerald-600">{tStats.totalCollected}</span>
+                    </div>
+                    <div className="p-1.5 bg-stone-50 dark:bg-stone-800/60 rounded-xl">
+                      <span className="text-stone-400 block text-[9px]">المتوقع</span>
+                      <span className="font-bold font-mono text-stone-700 dark:text-stone-300">{tStats.totalExpected}</span>
+                    </div>
+                    <div className="p-1.5 bg-stone-50 dark:bg-stone-800/60 rounded-xl">
+                      <span className="text-stone-400 block text-[9px]">المتبقي</span>
+                      <span className="font-bold font-mono text-rose-600">{tStats.totalRemaining}</span>
+                    </div>
+                  </div>
+
+                  {/* زر التبديل إلى سجل هذا المسار المنعزل */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTrackId(t.id)}
+                    className="w-full py-2 bg-[#8E5364]/10 hover:bg-[#8E5364] text-[#722F37] hover:text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer mt-1 active:scale-95"
+                  >
+                    <span>عزل وعرض سجل {t.name}</span>
+                    <ArrowRight className="w-3.5 h-3.5 rotate-180" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* جدول كشف حسابات الطالبات */}
       <div className="bg-white dark:bg-stone-900 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 overflow-hidden shadow-xs space-y-3">
         <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h3 className="font-bold text-sm text-stone-800 dark:text-stone-100 flex items-center gap-2">
               <FileText className="w-4 h-4 text-[#8E5364]" />
-              كشف سداد الطالبات ({allStudents.length} طالبة)
+              <span>كشف سداد الطالبات {activeTrack ? `(خاص بـ ${activeTrack.name})` : '(كافة المسارات)'} ({allStudents.length} طالبة)</span>
             </h3>
             <span className="text-xs text-stone-500 mt-0.5 block">
               المسددات: {stats.paidCount} • المتبقيات: {stats.pendingCount} • المعفيات: {stats.exemptCount}
@@ -321,6 +469,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
               <tr>
                 <th className="p-3.5">#</th>
                 <th className="p-3.5">الطالبة</th>
+                {!activeTrack && <th className="p-3.5">المسار القرآني</th>}
                 <th className="p-3.5">الحلقة</th>
                 <th className="p-3.5">المطلوب</th>
                 <th className="p-3.5">المسدد</th>
@@ -331,14 +480,16 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
             <tbody className="divide-y divide-stone-100 dark:divide-stone-800 text-stone-700 dark:text-stone-200">
               {filteredStudents.map((st, idx) => {
                 const circle = circles.find(c => c.id === st.circleId);
+                const studentTrack = tracks.find(t => t.id === st.trackId) || tracks[0];
+                const studentTrackFee = studentTrack?.subscriptionFee?.amount ?? effectiveFee;
                 const subscriptions = getStudentSubscriptions(st.id);
                 const reqAmount = subscriptions.length
-                  ? subscriptions.reduce((sum, subscription) => sum + (subscription.requiredAmount ?? defaultFee), 0)
-                  : defaultFee;
+                  ? subscriptions.reduce((sum, subscription) => sum + (subscription.requiredAmount ?? studentTrackFee), 0)
+                  : studentTrackFee;
                 const amountDue = subscriptions.length
                   ? subscriptions.filter(subscription => subscription.status !== 'exempt')
-                    .reduce((sum, subscription) => sum + (subscription.requiredAmount ?? defaultFee), 0)
-                  : defaultFee;
+                    .reduce((sum, subscription) => sum + (subscription.requiredAmount ?? studentTrackFee), 0)
+                  : studentTrackFee;
                 const paidAmount = subscriptions.reduce((sum, subscription) => sum + (subscription.paidAmount ?? 0), 0);
                 const isExempt = subscriptions.length > 0 && subscriptions.every(subscription => subscription.status === 'exempt');
                 const isPaid = !isExempt && paidAmount >= amountDue && amountDue > 0;
@@ -353,6 +504,14 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                       </strong>
                       <span className="text-[10px] text-stone-400 font-mono privacy-phone">{st.code}</span>
                     </td>
+                    {!activeTrack && (
+                      <td className="p-3.5">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#8E5364]/10 text-[#722F37] border border-[#8E5364]/20">
+                          <span>{studentTrack?.icon || '🪴'}</span>
+                          <span>{studentTrack?.name}</span>
+                        </span>
+                      </td>
+                    )}
                     <td className="p-3.5 text-stone-500">{circle?.name || 'غير محدد'}</td>
                     <td className="p-3.5 font-mono">{reqAmount} {currency}</td>
                     <td className="p-3.5 font-mono font-bold text-emerald-600">{paidAmount} {currency}</td>
@@ -368,7 +527,6 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                     </td>
                     <td className="p-3.5 text-center">
                       <div className="flex items-center justify-center">
-                        {/* زر سند السداد فقط (تم حذف زر التعديل من الكشف بناءً على طلب الإدارة) */}
                         <button
                           type="button"
                           onClick={() => handleOpenPayment(st.id)}
@@ -386,8 +544,8 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
 
               {filteredStudents.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-stone-400 text-xs">
-                    لا توجد طالبات مسجلات في المنظومة حتى الآن.
+                  <td colSpan={activeTrack ? 7 : 8} className="p-8 text-center text-stone-400 text-xs">
+                    {activeTrack ? `لا توجد طالبات مسجلات في ${activeTrack.name} حالياً.` : 'لا توجد طالبات مسجلات في المنظومة حتى الآن.'}
                   </td>
                 </tr>
               )}

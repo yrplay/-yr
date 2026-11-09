@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Layers, Plus, Edit, Archive, Users, Calendar, Clock,
   Sparkles, Trophy, BookOpen, ChevronLeft, CheckCircle2,
   Sliders, UserCheck, Shield, AlertCircle, Trash2, RotateCcw,
-  Eye, EyeOff, AlertTriangle, X, ExternalLink
+  Eye, EyeOff, AlertTriangle, X, ExternalLink, CreditCard
 } from 'lucide-react';
-import { Circle, hasFullAccess, Track } from '../types';
+import { Circle, hasFullAccess, Track, defaultMasteryGuideConfig } from '../types';
 import { CircleIconPicker } from '../components/CircleIconLibrary';
 import { TrackDetailView } from './TrackDetailView';
 
@@ -31,12 +31,21 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     tracks, circles, students, users, allStudentScores,
     createTrack, updateTrack, archiveTrack, restoreTrack, deleteTrack,
     createCircle, updateCircle, archiveCircle, restoreCircle, deleteCircle,
-    currentUser, quickModalAction, clearQuickModal, settings
+    currentUser, quickModalAction, clearQuickModal, settings,
+    selectedTrackId: globalSelectedTrackId, setSelectedTrackId: setGlobalSelectedTrackId
   } = useApp();
 
-  const [selectedTrackId, setSelectedTrackId] = useState<string>(tracks[0]?.id || 't-1');
+  const [selectedTrackId, setSelectedTrackId] = useState<string>(
+    (globalSelectedTrackId && globalSelectedTrackId !== 'all') ? globalSelectedTrackId : (tracks[0]?.id || 't-1')
+  );
   const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+
+  useEffect(() => {
+    if (globalSelectedTrackId && globalSelectedTrackId !== 'all') {
+      setSelectedTrackId(globalSelectedTrackId);
+    }
+  }, [globalSelectedTrackId]);
 
   // حالة فتح صفحة تفاصيل المسار المستقلة
   const [selectedTrackDetailId, setSelectedTrackDetailId] = useState<string | null>(null);
@@ -62,7 +71,21 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     code: '',
     description: '',
     logoUrl: '',
-    icon: '🪴'
+    icon: '🪴',
+    subscriptionFee: {
+      amount: 250,
+      currency: 'ر.س',
+      period: 'monthly' as 'monthly' | 'term' | 'annual',
+      notes: ''
+    },
+    systemRules: {
+      earlyPreparation: true,
+      atqiniHomeworkRequired: true,
+      thursdayChallenges: true,
+      customPlansAllowed: true,
+      detailedWorkflowText: '',
+      masteryGuide: { ...defaultMasteryGuideConfig }
+    }
   });
   const [circleForm, setCircleForm] = useState({
     name: '', trackId: '', icon: '🪴', teacherId: '', supervisorId: '',
@@ -111,7 +134,21 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
         code: track.code,
         description: track.description || '',
         logoUrl: track.logoUrl || '',
-        icon: track.icon || '🪴'
+        icon: track.icon || '🪴',
+        subscriptionFee: {
+          amount: track.subscriptionFee?.amount ?? 250,
+          currency: track.subscriptionFee?.currency || 'ر.س',
+          period: track.subscriptionFee?.period || 'monthly',
+          notes: track.subscriptionFee?.notes || ''
+        },
+        systemRules: {
+          earlyPreparation: track.systemRules?.earlyPreparation ?? true,
+          atqiniHomeworkRequired: track.systemRules?.atqiniHomeworkRequired ?? true,
+          thursdayChallenges: track.systemRules?.thursdayChallenges ?? true,
+          customPlansAllowed: track.systemRules?.customPlansAllowed ?? true,
+          detailedWorkflowText: track.systemRules?.detailedWorkflowText || '',
+          masteryGuide: track.systemRules?.masteryGuide || { ...defaultMasteryGuideConfig }
+        }
       });
     } else {
       setEditingTrack(null);
@@ -120,7 +157,21 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
         code: `MG-${Date.now().toString().slice(-3)}`,
         description: '',
         logoUrl: '',
-        icon: '🪴'
+        icon: '🪴',
+        subscriptionFee: {
+          amount: 250,
+          currency: 'ر.س',
+          period: 'monthly',
+          notes: ''
+        },
+        systemRules: {
+          earlyPreparation: true,
+          atqiniHomeworkRequired: true,
+          thursdayChallenges: true,
+          customPlansAllowed: true,
+          detailedWorkflowText: '',
+          masteryGuide: { ...defaultMasteryGuideConfig }
+        }
       });
     }
     setTrackModalOpen(true);
@@ -144,6 +195,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     } else {
       const created = await createTrack(trackForm);
       setSelectedTrackId(created.id);
+      setGlobalSelectedTrackId(created.id);
     }
     setTrackModalOpen(false);
   };
@@ -325,7 +377,11 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
         {activeTracks.map((track) => (
           <button
             key={track.id}
-            onClick={() => { setSelectedTrackId(track.id); setSelectedCircleId(null); }}
+            onClick={() => { 
+              setSelectedTrackId(track.id); 
+              setSelectedCircleId(null); 
+              setGlobalSelectedTrackId(track.id);
+            }}
             className={`px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 shrink-0 ${
               selectedTrackId === track.id
                 ? 'bg-[#8E5364] text-white shadow-xs'
@@ -1004,6 +1060,143 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                       className="w-8 h-8 rounded-lg object-contain border border-stone-200"
                     />
                   )}
+                </div>
+              {/* رسوم الاشتراك المالي المستقل للمسار */}
+              <div className="p-3.5 bg-[#FCFAF8] rounded-2xl border border-stone-200 space-y-2.5">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-stone-800">
+                  <CreditCard className="w-4 h-4 text-[#8E5364]" />
+                  <span>رسوم الاشتراك المالي الخاصة بالمسار</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-600 mb-1">مبلغ الاشتراك (ر.س) *</label>
+                    <input
+                      type="number"
+                      min="0"
+                      required
+                      value={trackForm.subscriptionFee.amount}
+                      onChange={e => setTrackForm(prev => ({
+                        ...prev,
+                        subscriptionFee: {
+                          ...prev.subscriptionFee,
+                          amount: Number(e.target.value) || 0
+                        }
+                      }))}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white font-mono font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-600 mb-1">دورية التحصيل</label>
+                    <select
+                      value={trackForm.subscriptionFee.period}
+                      onChange={e => setTrackForm(prev => ({
+                        ...prev,
+                        subscriptionFee: {
+                          ...prev.subscriptionFee,
+                          period: e.target.value as any
+                        }
+                      }))}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white font-bold"
+                    >
+                      <option value="monthly">شهرياً (لكل شهر هجري)</option>
+                      <option value="term">فصلياً (لكل فصل دراسي)</option>
+                      <option value="annual">سنوياً</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-stone-600 mb-1">ملاحظات وشروط رسوم المسار</label>
+                  <input
+                    type="text"
+                    placeholder="مثال: يشمل الحقيبة ومتابعة التسميع اليومي والشهادة المعتمدة"
+                    value={trackForm.subscriptionFee.notes || ''}
+                    onChange={e => setTrackForm(prev => ({
+                      ...prev,
+                      subscriptionFee: {
+                        ...prev.subscriptionFee,
+                        notes: e.target.value
+                      }
+                    }))}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* متطلبات الواجبات ونظام وسير عمل المسار */}
+              <div className="p-3.5 bg-[#FCFAF8] rounded-2xl border border-stone-200 space-y-2.5">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-stone-800">
+                  <Sliders className="w-4 h-4 text-[#8E5364]" />
+                  <span>متطلبات الواجبات وسير العمل بالمسار</span>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-stone-200 cursor-pointer hover:bg-stone-50 transition">
+                    <input
+                      type="checkbox"
+                      checked={trackForm.systemRules.atqiniHomeworkRequired}
+                      onChange={e => setTrackForm(prev => ({
+                        ...prev,
+                        systemRules: {
+                          ...prev.systemRules,
+                          atqiniHomeworkRequired: e.target.checked
+                        }
+                      }))}
+                      className="rounded text-[#8E5364] focus:ring-[#8E5364]"
+                    />
+                    <span className="font-bold text-stone-700">اشتراط واجبات أتقني التجويدية لهذا المسار</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-stone-200 cursor-pointer hover:bg-stone-50 transition">
+                    <input
+                      type="checkbox"
+                      checked={trackForm.systemRules.earlyPreparation}
+                      onChange={e => setTrackForm(prev => ({
+                        ...prev,
+                        systemRules: {
+                          ...prev.systemRules,
+                          earlyPreparation: e.target.checked
+                        }
+                      }))}
+                      className="rounded text-[#8E5364] focus:ring-[#8E5364]"
+                    />
+                    <span className="font-bold text-stone-700">إلزامية بطاقة التحضير المبكر قبل بدء الحلقة</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-stone-200 cursor-pointer hover:bg-stone-50 transition">
+                    <input
+                      type="checkbox"
+                      checked={trackForm.systemRules.thursdayChallenges}
+                      onChange={e => setTrackForm(prev => ({
+                        ...prev,
+                        systemRules: {
+                          ...prev.systemRules,
+                          thursdayChallenges: e.target.checked
+                        }
+                      }))}
+                      className="rounded text-[#8E5364] focus:ring-[#8E5364]"
+                    />
+                    <span className="font-bold text-stone-700">تفعيل تحديات الخميس التنافسية والمراجعة الثنائية</span>
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-stone-600 mb-1">تفاصيل آلية وسير العمل اليومية للمسار</label>
+                  <textarea
+                    rows={2}
+                    placeholder="شرح الخطوات اليومية للتسميع والمراجعة والواجبات الخاصة بهذا المسار..."
+                    value={trackForm.systemRules.detailedWorkflowText || ''}
+                    onChange={e => setTrackForm(prev => ({
+                      ...prev,
+                      systemRules: {
+                        ...prev.systemRules,
+                        detailedWorkflowText: e.target.value
+                      }
+                    }))}
+                    className="w-full p-2.5 border border-stone-200 rounded-xl text-xs bg-white resize-none"
+                  />
                 </div>
               </div>
 

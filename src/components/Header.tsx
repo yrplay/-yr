@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Menu, ChevronDown, Lock, KeyRound, Cloud, RefreshCw, UserCheck, Sparkles, Sun, Moon, Eye, EyeOff, Calendar } from 'lucide-react';
+import { Menu, ChevronDown, Lock, KeyRound, Cloud, RefreshCw, UserCheck, Sparkles, Sun, Moon, Eye, EyeOff, Calendar, Layers } from 'lucide-react';
 import { StaffLoginGate } from './StaffLoginGate';
 import { renderUserAvatarBadge } from './IslamicIconLibrary';
 import { EditTeacherProfileModal } from './EditTeacherProfileModal';
@@ -23,7 +23,11 @@ export const Header: React.FC<HeaderProps> = ({
   onLockSession,
   onNavigateToSettings,
 }) => {
-  const { currentUser, circles, settings, showToast, cloudStatus, syncNow, lastSynced, isDarkMode, toggleTheme, isPrivacyMode, togglePrivacyMode } = useApp();
+  const { 
+    currentUser, circles, settings, showToast, cloudStatus, syncNow, 
+    lastSynced, isDarkMode, toggleTheme, isPrivacyMode, togglePrivacyMode,
+    tracks, students, selectedTrackId, setSelectedTrackId
+  } = useApp();
   const [showSwitchModal, setShowSwitchModal] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
@@ -138,6 +142,36 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-white border border-[#E8DFD8] text-xs font-bold text-stone-700 shadow-2xs">
             <Calendar className="w-3.5 h-3.5 text-[#8E5364]" />
             <span>{formatHijriDate(new Date(), { includeWeekday: true })}</span>
+          </div>
+
+          {/* محدد المسارات القرآني العام الشامل */}
+          <div className="relative flex items-center">
+            <div className="relative">
+              <select
+                value={selectedTrackId || 'all'}
+                onChange={(e) => setSelectedTrackId(e.target.value === 'all' ? null : e.target.value)}
+                aria-label="تحديد المسار القرآني العام"
+                title="تحديد المسار القرآني لعزل البيانات وعرض سجلاته"
+                className={`text-xs font-bold rounded-2xl pr-7 pl-3 py-1.5 border transition appearance-none cursor-pointer shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#8E5364]/30 max-w-[190px] sm:max-w-none truncate ${
+                  selectedTrackId && selectedTrackId !== 'all'
+                    ? 'bg-[#8E5364]/10 text-[#722F37] border-[#8E5364]/40 font-extrabold ring-1 ring-[#8E5364]/20'
+                    : 'bg-white hover:bg-stone-50 border-[#E8DFD8] text-stone-700'
+                }`}
+              >
+                <option value="all">🪴 كافة المسارات المجمعة ({students.length} طالبة)</option>
+                {tracks.filter(t => !t.isArchived).map(t => {
+                  const count = students.filter(s => s.trackId === t.id && s.status === 'active').length;
+                  return (
+                    <option key={t.id} value={t.id}>
+                      {t.icon || '🪴'} {t.name} ({count} طالبة)
+                    </option>
+                  );
+                })}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-stone-500">
+                <Layers className="w-3.5 h-3.5 text-[#8E5364]" />
+              </div>
+            </div>
           </div>
         </div>
 

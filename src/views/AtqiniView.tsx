@@ -13,11 +13,21 @@ export const AtqiniView: React.FC = () => {
     atqiniAssignments, studentAtqiniSubmissions, students, circles, tracks,
     createAtqiniAssignment, updateAtqiniAssignment, deleteAtqiniAssignment,
     saveAtqiniSubmission, deleteStudentAtqiniSubmission, currentUser,
-    quickModalAction, clearQuickModal, showToast
+    quickModalAction, clearQuickModal, showToast, selectedTrackId
   } = useApp();
 
+  const availableAssignments = React.useMemo(() => {
+    if (!selectedTrackId || selectedTrackId === 'all') return atqiniAssignments;
+    return atqiniAssignments.filter(a => !a.trackId || a.trackId === selectedTrackId);
+  }, [atqiniAssignments, selectedTrackId]);
+
+  const availableStudents = React.useMemo(() => {
+    if (!selectedTrackId || selectedTrackId === 'all') return students;
+    return students.filter(s => s.trackId === selectedTrackId);
+  }, [students, selectedTrackId]);
+
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>(
-    atqiniAssignments[0]?.id || ''
+    availableAssignments[0]?.id || atqiniAssignments[0]?.id || ''
   );
 
   // Modals state
@@ -42,10 +52,10 @@ export const AtqiniView: React.FC = () => {
 
   // Keep selectedAssignmentId pointing to a valid assignment
   React.useEffect(() => {
-    if (atqiniAssignments.length > 0 && !atqiniAssignments.find(a => a.id === selectedAssignmentId)) {
-      setSelectedAssignmentId(atqiniAssignments[0].id);
+    if (availableAssignments.length > 0 && !availableAssignments.some(a => a.id === selectedAssignmentId)) {
+      setSelectedAssignmentId(availableAssignments[0].id);
     }
-  }, [atqiniAssignments, selectedAssignmentId]);
+  }, [availableAssignments, selectedAssignmentId]);
 
   // Tajweed Templates for instant 1-click creation
   const TAJWEED_TEMPLATES = [
@@ -374,7 +384,7 @@ export const AtqiniView: React.FC = () => {
 
       {/* Assignments Selection Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        {atqiniAssignments.map(as => (
+        {availableAssignments.map(as => (
           <button
             key={as.id}
             onClick={() => setSelectedAssignmentId(as.id)}
