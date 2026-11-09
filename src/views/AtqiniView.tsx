@@ -11,7 +11,8 @@ export const AtqiniView: React.FC = () => {
   const {
     atqiniAssignments, studentAtqiniSubmissions, students, circles, tracks,
     createAtqiniAssignment, updateAtqiniAssignment, deleteAtqiniAssignment,
-    saveAtqiniSubmission, currentUser, quickModalAction, clearQuickModal, showToast
+    saveAtqiniSubmission, deleteStudentAtqiniSubmission, currentUser,
+    quickModalAction, clearQuickModal, showToast
   } = useApp();
 
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>(
@@ -28,6 +29,7 @@ export const AtqiniView: React.FC = () => {
 
   const [evalModalOpen, setEvalModalOpen] = useState(false);
   const [evalStudent, setEvalStudent] = useState<any>(null);
+  const [submissionToDelete, setSubmissionToDelete] = useState<{ id: string; studentName: string } | null>(null);
 
   // Automatically open modal when quickModalAction is triggered
   React.useEffect(() => {
@@ -273,10 +275,14 @@ export const AtqiniView: React.FC = () => {
   const handleSaveSubmission = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!evalStudent || !currentAssignment) return;
+    const existing = studentAtqiniSubmissions.find(
+      s => s.assignmentId === currentAssignment.id && s.studentId === evalStudent.id
+    );
     await saveAtqiniSubmission({
+      id: existing?.id,
       assignmentId: currentAssignment.id,
       studentId: evalStudent.id,
-      status: subForm.status,
+      status: subForm.isCompletedCorrectly ? 'completed' : 'not_started',
       isCompletedCorrectly: subForm.isCompletedCorrectly,
       extractedExamplesDone: subForm.extractedExamplesDone,
       appliedDuringRecitation: subForm.appliedDuringRecitation,
@@ -285,6 +291,60 @@ export const AtqiniView: React.FC = () => {
       teacherNotes: subForm.teacherNotes
     });
     setEvalModalOpen(false);
+  };
+
+  const handleToggleHomeworkStatus = async (studentId: string) => {
+    if (!currentAssignment) return;
+    const existing = studentAtqiniSubmissions.find(
+      s => s.assignmentId === currentAssignment.id && s.studentId === studentId
+    );
+    const newCompleted = !existing?.isCompletedCorrectly;
+    const maxScore = currentAssignment.maxScore || 10;
+    
+    await saveAtqiniSubmission({
+      id: existing?.id,
+      assignmentId: currentAssignment.id,
+      studentId: studentId,
+      status: newCompleted ? 'completed' : 'not_started',
+      isCompletedCorrectly: newCompleted,
+      extractedExamplesDone: newCompleted ? true : (existing?.extractedExamplesDone ?? false),
+      appliedDuringRecitation: newCompleted ? true : (existing?.appliedDuringRecitation ?? false),
+      rating: newCompleted ? (existing?.rating && existing.rating !== 'لم يُنجز' ? existing.rating : 'ممتاز') : 'لم يُنجز',
+      score: newCompleted ? (existing?.score && existing.score > 0 ? existing.score : maxScore) : 0,
+      teacherNotes: existing?.teacherNotes || ''
+    });
+  };
+
+  const handleToggleExamplesStatus = async (studentId: string) => {
+    if (!currentAssignment) return;
+    const existing = studentAtqiniSubmissions.find(
+      s => s.assignmentId === currentAssignment.id && s.studentId === studentId
+    );
+    const nextVal = !existing?.extractedExamplesDone;
+    await saveAtqiniSubmission({
+      id: existing?.id,
+      assignmentId: currentAssignment.id,
+      studentId: studentId,
+      extractedExamplesDone: nextVal,
+      isCompletedCorrectly: existing?.isCompletedCorrectly ?? nextVal,
+      status: (existing?.isCompletedCorrectly ?? nextVal) ? 'completed' : 'not_started'
+    });
+  };
+
+  const handleToggleApplicationStatus = async (studentId: string) => {
+    if (!currentAssignment) return;
+    const existing = studentAtqiniSubmissions.find(
+      s => s.assignmentId === currentAssignment.id && s.studentId === studentId
+    );
+    const nextVal = !existing?.appliedDuringRecitation;
+    await saveAtqiniSubmission({
+      id: existing?.id,
+      assignmentId: currentAssignment.id,
+      studentId: studentId,
+      appliedDuringRecitation: nextVal,
+      isCompletedCorrectly: existing?.isCompletedCorrectly ?? nextVal,
+      status: (existing?.isCompletedCorrectly ?? nextVal) ? 'completed' : 'not_started'
+    });
   };
 
   return (
@@ -484,27 +544,58 @@ export const AtqiniView: React.FC = () => {
                       </td>
 
                       <td className="p-3.5 text-center">
-                        {sub?.isCompletedCorrectly ? (
-                          <span className="text-[#2D5A43] font-semibold">نعم ✅</span>
-                        ) : (
-                          <span className="text-stone-300">لم ينجز</span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleHomeworkStatus(student.id)}
+                          title={sub?.isCompletedCorrectly ? 'انقري لتغيير الحالة إلى: لم ينجز' : 'انقري لتسجيل إتمام الواجب بنجاح'}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs active:scale-95 flex items-center justify-center gap-1.5 mx-auto ${
+                            sub?.isCompletedCorrectly
+                              ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300'
+                              : 'bg-stone-100 text-stone-500 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 border border-stone-200'
+                          }`}
+                        >
+                          {sub?.isCompletedCorrectly ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>أتمت الواجب ✅</span>
+                            </>
+                          ) : (
+                            <>
+                              <X className="w-3.5 h-3.5 text-stone-400" />
+                              <span>لم يُنجز ❌</span>
+                            </>
+                          )}
+                        </button>
                       </td>
 
                       <td className="p-3.5 text-center">
-                        {sub?.extractedExamplesDone ? (
-                          <span className="text-[#2D5A43] font-semibold">استخرجت ✅</span>
-                        ) : (
-                          <span className="text-stone-300">لم تستخرج</span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleExamplesStatus(student.id)}
+                          title="انقري لتبديل حالة استخراج الأمثلة"
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                            sub?.extractedExamplesDone
+                              ? 'text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100 border border-emerald-200'
+                              : 'text-stone-400 bg-stone-50 hover:bg-stone-100 border border-stone-200'
+                          }`}
+                        >
+                          {sub?.extractedExamplesDone ? 'استخرجت ✅' : 'لم تستخرج'}
+                        </button>
                       </td>
 
                       <td className="p-3.5 text-center">
-                        {sub?.appliedDuringRecitation ? (
-                          <span className="text-[#2D5A43] font-semibold">طبقت ✅</span>
-                        ) : (
-                          <span className="text-stone-300">بانتظار التسميع</span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleApplicationStatus(student.id)}
+                          title="انقري لتبديل حالة تطبيق الحكم أثناء التسميع"
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                            sub?.appliedDuringRecitation
+                              ? 'text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100 border border-emerald-200'
+                              : 'text-stone-400 bg-stone-50 hover:bg-stone-100 border border-stone-200'
+                          }`}
+                        >
+                          {sub?.appliedDuringRecitation ? 'طبقت ✅' : 'بانتظار التسميع'}
+                        </button>
                       </td>
 
                       <td className="p-3.5">
@@ -532,12 +623,32 @@ export const AtqiniView: React.FC = () => {
                       </td>
 
                       <td className="p-3.5 text-center">
-                        <button
-                          onClick={() => handleOpenEvalModal(student)}
-                          className="px-3 py-1 bg-[#8E5364] hover:bg-[#744251] text-white rounded-lg text-[11px] font-bold transition shadow-2xs cursor-pointer active:scale-95"
-                        >
-                          {sub ? 'تعديل التصحيح' : 'تصحيح الواجب'}
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEvalModal(student)}
+                            className="px-2.5 py-1 bg-[#8E5364] hover:bg-[#744251] text-white rounded-lg text-[11px] font-bold transition shadow-2xs cursor-pointer active:scale-95 flex items-center gap-1"
+                          >
+                            {sub ? (
+                              <>
+                                <Edit className="w-3 h-3" />
+                                <span>تعديل</span>
+                              </>
+                            ) : (
+                              <span>تصحيح</span>
+                            )}
+                          </button>
+                          {sub && (
+                            <button
+                              type="button"
+                              onClick={() => setSubmissionToDelete({ id: sub.id, studentName: student.name })}
+                              className="p-1 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                              title="حذف تصحيح الواجب"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -548,41 +659,95 @@ export const AtqiniView: React.FC = () => {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Confirmation Modal for Assignment */}
       {deleteConfirmOpen && assignmentToDelete && (
         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-rose-100 space-y-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-rose-100 space-y-4 text-right" dir="rtl">
             <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
-              <AlertTriangle className="w-6 h-6" />
+              <Trash2 className="w-6 h-6" />
             </div>
 
             <div className="text-center space-y-1">
-              <h3 className="font-bold text-stone-900 text-base">
+              <h3 className="font-bold text-stone-900 text-base font-quran">
                 تأكيد حذف واجب «أتقني» للتجويد
               </h3>
-              <p className="text-xs text-stone-600 font-bold">
+              <p className="text-sm font-bold text-rose-700">
+                هل أنت متأكد من حذف هذا السجل؟
+              </p>
+              <p className="text-xs text-stone-600 font-bold mt-1">
                 «{assignmentToDelete.title}»
               </p>
             </div>
 
-            <p className="text-xs text-stone-500 leading-relaxed bg-[#FCFAF8] p-3 rounded-2xl border border-stone-200">
-              سيتم حذف الواجب وسجلات تصحيح الطالبات المرتبطة به نهائياً. هل أنتِ متأكدة من الاستمرار؟
+            <p className="text-xs text-stone-500 leading-relaxed bg-[#FCFAF8] p-3 rounded-2xl border border-stone-200 text-center">
+              سيتم حذف الواجب وسجلات تصحيح الطالبات المرتبطة به نهائياً وتحديث السحابة فوراً.
             </p>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
               <button
                 type="button"
                 onClick={() => setDeleteConfirmOpen(false)}
-                className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100 font-semibold cursor-pointer"
+                className="px-4 py-2 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 cursor-pointer"
               >
-                إلغاء التراجع
+                إلغاء
               </button>
               <button
                 type="button"
                 onClick={executeDeleteAssignment}
-                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
               >
-                تأكيد الحذف الآن
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal for Student Submission */}
+      {submissionToDelete && (
+        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-rose-100 space-y-4 text-right" dir="rtl">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-stone-900 text-base font-quran">
+                تأكيد حذف تصحيح الواجب
+              </h3>
+              <p className="text-sm font-bold text-rose-700">
+                هل أنت متأكد من حذف هذا السجل؟
+              </p>
+              <p className="text-xs text-stone-600 font-bold mt-1">
+                للطالبة: «{submissionToDelete.studentName}»
+              </p>
+            </div>
+
+            <p className="text-xs text-stone-500 leading-relaxed bg-[#FCFAF8] p-3 rounded-2xl border border-stone-200 text-center">
+              سيتم مسح درجة وتقييم الطالبة لهذا الواجب وتحديث النتائج سحابياً فوراً.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setSubmissionToDelete(null)}
+                className="px-4 py-2 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const targetId = submissionToDelete.id;
+                  setSubmissionToDelete(null);
+                  await deleteStudentAtqiniSubmission(targetId);
+                  showToast?.('تم حذف تقييم الواجب بنجاح ومزامنة التغييرات سحابياً 🗑️');
+                }}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف</span>
               </button>
             </div>
           </div>
@@ -755,7 +920,7 @@ export const AtqiniView: React.FC = () => {
                     type="submit"
                     className="px-5 py-2 bg-[#8E5364] text-white text-xs font-bold rounded-xl hover:bg-[#744251] shadow-xs active:scale-95 transition cursor-pointer"
                   >
-                    {editingAssignment ? 'حفظ التعديلات' : 'نشر الواجب فوراً'}
+                    حفظ
                   </button>
                 </div>
               </div>
@@ -783,7 +948,16 @@ export const AtqiniView: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={subForm.isCompletedCorrectly}
-                    onChange={e => setSubForm({ ...subForm, isCompletedCorrectly: e.target.checked })}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setSubForm(prev => ({
+                        ...prev,
+                        isCompletedCorrectly: checked,
+                        status: checked ? 'completed' : 'not_started',
+                        score: checked ? (prev.score > 0 ? prev.score : (currentAssignment?.maxScore || 10)) : 0,
+                        rating: checked ? (prev.rating !== 'لم يُنجز' ? prev.rating : 'ممتاز') : 'لم يُنجز'
+                      }));
+                    }}
                     className="rounded text-[#8E5364]"
                   />
                   <span>أتمت الواجب بالشكل المطلوب كاملاً ✅</span>
@@ -816,7 +990,17 @@ export const AtqiniView: React.FC = () => {
                   <label className="block text-xs font-bold text-stone-700 mb-1">التقدير اللفظي</label>
                   <select
                     value={subForm.rating}
-                    onChange={e => setSubForm({ ...subForm, rating: e.target.value as AtqiniRating })}
+                    onChange={e => {
+                      const newRating = e.target.value as AtqiniRating;
+                      const isNotDone = newRating === 'لم يُنجز';
+                      setSubForm(prev => ({
+                        ...prev,
+                        rating: newRating,
+                        isCompletedCorrectly: !isNotDone,
+                        status: isNotDone ? 'not_started' : 'completed',
+                        score: isNotDone ? 0 : (prev.score > 0 ? prev.score : (currentAssignment?.maxScore || 10))
+                      }));
+                    }}
                     className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white font-bold"
                   >
                     <option value="ممتاز">ممتاز ⭐⭐⭐</option>
@@ -864,9 +1048,9 @@ export const AtqiniView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#8E5364] text-white text-xs font-bold rounded-xl hover:bg-[#744251] shadow-xs active:scale-95 transition"
+                  className="px-5 py-2 bg-[#8E5364] text-white text-xs font-bold rounded-xl hover:bg-[#744251] shadow-xs active:scale-95 transition cursor-pointer"
                 >
-                  اعتماد التقييم والرصد
+                  حفظ
                 </button>
               </div>
             </form>

@@ -29,8 +29,8 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
 }) => {
   const {
     tracks, circles, students, users, allStudentScores,
-    createTrack, updateTrack, archiveTrack, restoreTrack,
-    createCircle, updateCircle, archiveCircle, restoreCircle,
+    createTrack, updateTrack, archiveTrack, restoreTrack, deleteTrack,
+    createCircle, updateCircle, archiveCircle, restoreCircle, deleteCircle,
     currentUser, quickModalAction, clearQuickModal, settings
   } = useApp();
 
@@ -65,7 +65,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     icon: '🪴'
   });
   const [circleForm, setCircleForm] = useState({
-    name: '', icon: '🪴', teacherId: '', supervisorId: '',
+    name: '', trackId: '', icon: '🪴', teacherId: '', supervisorId: '',
     maxStudents: 15, scheduleDays: ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء'],
     startTime: '16:00', endTime: '18:00', earlyPrepCutoffTime: '15:45'
   });
@@ -149,10 +149,12 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
   };
 
   const handleOpenCircleModal = (circle?: Circle) => {
+    const defaultTrackId = currentTrack?.id || activeTracks[0]?.id || tracks[0]?.id || '';
     if (circle) {
       setEditingCircle(circle);
       setCircleForm({
         name: circle.name,
+        trackId: circle.trackId || defaultTrackId,
         icon: circle.icon || '🪴',
         teacherId: circle.teacherId,
         supervisorId: circle.supervisorId,
@@ -166,6 +168,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
       setEditingCircle(null);
       setCircleForm({
         name: '',
+        trackId: defaultTrackId,
         icon: '🪴',
         teacherId: teachers[0]?.id || '',
         supervisorId: supervisors[0]?.id || '',
@@ -185,10 +188,10 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     const teacher = users.find(u => u.id === circleForm.teacherId);
     const supervisor = users.find(u => u.id === circleForm.supervisorId);
 
-    const trackFallbackId = currentTrack?.id || activeTracks[0]?.id || tracks[0]?.id || 't-1';
+    const trackId = circleForm.trackId || currentTrack?.id || activeTracks[0]?.id || tracks[0]?.id || 't-1';
     const payload = {
       ...circleForm,
-      trackId: trackFallbackId,
+      trackId,
       teacherName: teacher ? teacher.name : 'غير محدد',
       supervisorName: supervisor ? supervisor.name : 'غير محدد'
     };
@@ -234,6 +237,25 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
       setCircleModalOpen(false);
     } else if (confirmDelete.type === 'track') {
       await archiveTrack(confirmDelete.id);
+      const remainingTracks = activeTracks.filter(t => t.id !== confirmDelete.id);
+      if (remainingTracks.length > 0) {
+        setSelectedTrackId(remainingTracks[0].id);
+      }
+      setTrackModalOpen(false);
+    }
+    setConfirmDelete(null);
+  };
+
+  const executePermanentDelete = async () => {
+    if (!confirmDelete) return;
+    if (confirmDelete.type === 'circle') {
+      await deleteCircle(confirmDelete.id);
+      if (selectedCircleId === confirmDelete.id) {
+        setSelectedCircleId(null);
+      }
+      setCircleModalOpen(false);
+    } else if (confirmDelete.type === 'track') {
+      await deleteTrack(confirmDelete.id);
       const remainingTracks = activeTracks.filter(t => t.id !== confirmDelete.id);
       if (remainingTracks.length > 0) {
         setSelectedTrackId(remainingTracks[0].id);
@@ -791,42 +813,49 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
             </div>
 
             <div className="text-center space-y-1">
-              <h3 className="font-bold text-stone-900 text-base">
-                تأكيد حذف / أرشفة {confirmDelete.type === 'circle' ? 'الحلقة' : 'المسار'}
+              <h3 className="font-bold text-stone-900 text-base font-quran">
+                تأكيد حذف {confirmDelete.type === 'circle' ? 'الحلقة' : 'المسار'}
               </h3>
-              <p className="text-xs text-stone-600 font-bold">
+              <p className="text-sm font-bold text-rose-700">
+                هل أنت متأكد من حذف هذا السجل؟
+              </p>
+              <p className="text-xs text-stone-600 font-bold mt-0.5">
                 «{confirmDelete.name}»
               </p>
             </div>
 
-            <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-1.5 leading-relaxed">
-              <p className="font-bold flex items-center gap-1.5">
-                <Shield className="w-4 h-4 text-amber-700" />
-                <span>حماية بيانات الطالبات والأمان:</span>
-              </p>
+            <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-1.5 leading-relaxed text-center">
               <p>
-                سيتم نقل {confirmDelete.type === 'circle' ? 'الحلقة' : 'المسار'} إلى الأرشيف بأمان. لن تُحذف سجلات التسميع أو درجات الطالبات
+                سيتم حذف {confirmDelete.type === 'circle' ? 'الحلقة' : 'المسار'} فوراً وتحديث القائمة والمزامنة سحابياً
                 {confirmDelete.studentsCount ? ` (يوجد ${confirmDelete.studentsCount} طالبة مسجلة)` : ''}.
-              </p>
-              <p className="text-[11px] text-amber-700">
-                يمكنكِ استعادة الحلقة أو المسار في أي وقت من قسم «عرض الأرشيف».
               </p>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-stone-100">
               <button
                 type="button"
                 onClick={() => setConfirmDelete(null)}
-                className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100 font-semibold"
+                className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100 font-bold cursor-pointer"
               >
-                إلغاء التراجع
+                إلغاء
               </button>
               <button
                 type="button"
                 onClick={executeConfirmDelete}
-                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition"
+                className="px-3.5 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                title="نقل للأرشيف بدلاً من الحذف النهائي"
               >
-                تأكيد الحذف والأرشفة
+                <Archive className="w-3.5 h-3.5" />
+                <span>أرشفة مؤقتة</span>
+              </button>
+              <button
+                type="button"
+                onClick={executePermanentDelete}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                title="حذف نهائي فوري من قاعدة البيانات السحابية"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف</span>
               </button>
             </div>
           </div>
@@ -1043,16 +1072,30 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveCircle} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">اسم الحلقة *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="مثال: حلقة راسخات (٤) 🪴"
-                  value={circleForm.name}
-                  onChange={e => setCircleForm({ ...circleForm, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-2 focus:ring-[#8E5364]"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">اسم الحلقة *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: حلقة راسخات (٤) 🪴"
+                    value={circleForm.name}
+                    onChange={e => setCircleForm({ ...circleForm, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-2 focus:ring-[#8E5364]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">المسار التابعة له *</label>
+                  <select
+                    value={circleForm.trackId}
+                    onChange={e => setCircleForm({ ...circleForm, trackId: e.target.value })}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
+                  >
+                    {tracks.filter(t => !t.isArchived).map(t => (
+                      <option key={t.id} value={t.id}>{t.icon || '🪴'} {t.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <CircleIconPicker
@@ -1158,7 +1201,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                     style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
                     className="px-6 py-2.5 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 active:scale-95 cursor-pointer touch-manipulation"
                   >
-                    حفظ بيانات الحلقة
+                    حفظ
                   </button>
                 </div>
               </div>

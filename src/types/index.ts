@@ -336,6 +336,7 @@ export interface StudentAtqiniSubmission {
   teacherNotes: string;
   submittedAt?: string;
   evaluatedBy?: string;
+  updatedAt?: string;
 }
 
 // قسم التحديات القرآنية
@@ -392,6 +393,7 @@ export interface StudentChallengeSubmission {
     earnedPoints: number;
   }[];
   earlyPrepPointsEarned: number;
+  earlyAchievementCompleted?: boolean;
   peerReviewEvaluation?: {
     jointRevisionCompleted: boolean;
     commitmentScore: number;
@@ -406,6 +408,7 @@ export interface StudentChallengeSubmission {
   teacherNotes: string;
   evaluatedBy?: string;
   evaluatedAt?: string;
+  updatedAt?: string;
 }
 
 // الاختبارات الشهرية والختامية

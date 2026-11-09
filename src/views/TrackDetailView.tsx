@@ -6,7 +6,7 @@ import {
   Award, Calendar, MessageSquareQuote
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { hasFullAccess, Track, CustomMasteryCriterion } from '../types';
+import { hasFullAccess, Track, CustomMasteryCriterion, Circle, Student } from '../types';
 
 interface TrackDetailViewProps {
   trackId: string;
@@ -21,11 +21,34 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
 }) => {
   const { 
     tracks, circles, students, currentUser,
-    updateTrack, updateTrackSystemRules
+    updateTrack, updateTrackSystemRules,
+    updateCircle, deleteCircle,
+    updateStudent, deleteStudent
   } = useApp();
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'mastery' | 'rules' | 'circles' | 'students'>('mastery');
+
+  // إدارة تعديل وحذف الحلقات والطالبات داخل تفاصيل المسار
+  const [editingCircle, setEditingCircle] = useState<Circle | null>(null);
+  const [circleForm, setCircleForm] = useState({
+    name: '',
+    trackId: '',
+    teacherName: '',
+    supervisorName: '',
+    maxStudents: 15,
+    scheduleDays: [] as string[]
+  });
+  const [circleToDelete, setCircleToDelete] = useState<Circle | null>(null);
+
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [studentForm, setStudentForm] = useState({
+    name: '',
+    trackId: '',
+    circleId: '',
+    phone: ''
+  });
+  const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
 
   // صلاحية تعديل معايير المسار
   const canEditCriteria = hasFullAccess(currentUser) || !!currentUser?.permissions?.canEditTrackCriteria;
@@ -193,6 +216,68 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
     });
 
     setShowEditModal(false);
+  };
+
+  const handleOpenEditCircle = (c: Circle) => {
+    setEditingCircle(c);
+    setCircleForm({
+      name: c.name || '',
+      trackId: c.trackId || track?.id || '',
+      teacherName: c.teacherName || '',
+      supervisorName: c.supervisorName || '',
+      maxStudents: c.maxStudents || 15,
+      scheduleDays: c.scheduleDays ? [...c.scheduleDays] : ['الأحد', 'الثلاثاء', 'الخميس']
+    });
+  };
+
+  const handleSaveCircle = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCircle || !circleForm.name.trim()) return;
+    await updateCircle(editingCircle.id, {
+      name: circleForm.name.trim(),
+      trackId: circleForm.trackId || editingCircle.trackId,
+      teacherName: circleForm.teacherName.trim(),
+      supervisorName: circleForm.supervisorName.trim(),
+      maxStudents: Number(circleForm.maxStudents) || 15,
+      scheduleDays: circleForm.scheduleDays
+    });
+    setEditingCircle(null);
+  };
+
+  const handleDeleteCircle = async () => {
+    if (!circleToDelete) return;
+    const cid = circleToDelete.id;
+    setCircleToDelete(null);
+    await deleteCircle(cid);
+  };
+
+  const handleOpenEditStudent = (s: Student) => {
+    setEditingStudent(s);
+    setStudentForm({
+      name: s.name || '',
+      trackId: s.trackId || track?.id || '',
+      circleId: s.circleId || '',
+      phone: s.phone || ''
+    });
+  };
+
+  const handleSaveStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStudent || !studentForm.name.trim()) return;
+    await updateStudent(editingStudent.id, {
+      name: studentForm.name.trim(),
+      trackId: studentForm.trackId,
+      circleId: studentForm.circleId,
+      phone: studentForm.phone.trim()
+    });
+    setEditingStudent(null);
+  };
+
+  const handleDeleteStudent = async () => {
+    if (!studentToDelete) return;
+    const sid = studentToDelete.id;
+    setStudentToDelete(null);
+    await deleteStudent(sid);
   };
 
   if (!track) {
@@ -602,6 +687,28 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
                     <div>المشرفة: <strong className="text-stone-700 dark:text-stone-300">{c.supervisorName}</strong></div>
                     <div>الأيام: {c.scheduleDays.join('، ')}</div>
                   </div>
+
+                  <div className="flex items-center justify-between pt-2.5 border-t border-stone-100 dark:border-stone-800">
+                    <span className="text-[11px] text-stone-400 font-medium">إجراءات الحلقة:</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditCircle(c)}
+                        title="تعديل الحلقة"
+                        className="p-1.5 text-stone-500 hover:text-[#8E5364] hover:bg-[#FAF6F2] dark:hover:bg-stone-800 rounded-lg transition cursor-pointer"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCircleToDelete(c)}
+                        title="حذف الحلقة"
+                        className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               );
             })}
@@ -637,7 +744,8 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
                   <th className="p-3.5">اسم الطالبة</th>
                   <th className="p-3.5">الحلقة القرآنية</th>
                   <th className="p-3.5">المعلمة</th>
-                  <th className="p-3.5">الرفيقة</th>
+                  <th className="p-3.5">رقم التواصل</th>
+                  <th className="p-3.5 text-center">الإجراءات</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100 dark:divide-stone-800 text-stone-700 dark:text-stone-200">
@@ -650,14 +758,34 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
                       <td className="p-3.5 font-bold text-stone-900 dark:text-stone-100">{st.name}</td>
                       <td className="p-3.5 text-stone-600 dark:text-stone-300">{circle?.name || 'غير محدد'}</td>
                       <td className="p-3.5 text-stone-500">{circle?.teacherName || '—'}</td>
-                      <td className="p-3.5 text-stone-500">{st.partnerStudentName || '—'}</td>
+                      <td className="p-3.5 font-mono text-stone-500">{st.phone || '—'}</td>
+                      <td className="p-3.5 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditStudent(st)}
+                            title="تعديل بيانات الطالبة"
+                            className="p-1.5 text-stone-500 hover:text-[#8E5364] hover:bg-[#FAF6F2] dark:hover:bg-stone-800 rounded-lg transition cursor-pointer"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setStudentToDelete(st)}
+                            title="حذف الطالبة"
+                            className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
 
                 {trackStudents.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-stone-400 text-xs">
+                    <td colSpan={7} className="p-8 text-center text-stone-400 text-xs">
                       لا توجد طالبات مسجلات في هذا المسار حالياً.
                     </td>
                   </tr>
@@ -898,6 +1026,292 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
                 className="px-4 py-2.5 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-xl text-xs font-bold cursor-pointer"
               >
                 إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة تعديل بيانات الحلقة */}
+      {editingCircle && (
+        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-stone-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-200 dark:border-stone-800 space-y-4" dir="rtl">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
+              <h3 className="font-bold text-stone-900 dark:text-stone-100 text-base font-quran flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-[#8E5364]" />
+                <span>تعديل بيانات الحلقة القرآنية</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingCircle(null)}
+                className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCircle} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">اسم الحلقة</label>
+                <input
+                  type="text"
+                  required
+                  value={circleForm.name}
+                  onChange={e => setCircleForm({ ...circleForm, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">المسار التابع له</label>
+                <select
+                  value={circleForm.trackId}
+                  onChange={e => setCircleForm({ ...circleForm, trackId: e.target.value })}
+                  className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden"
+                >
+                  {tracks.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">المعلمة</label>
+                  <input
+                    type="text"
+                    required
+                    value={circleForm.teacherName}
+                    onChange={e => setCircleForm({ ...circleForm, teacherName: e.target.value })}
+                    className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">المشرفة</label>
+                  <input
+                    type="text"
+                    value={circleForm.supervisorName}
+                    onChange={e => setCircleForm({ ...circleForm, supervisorName: e.target.value })}
+                    className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">الحد الأقصى للطالبات</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={circleForm.maxStudents}
+                  onChange={e => setCircleForm({ ...circleForm, maxStudents: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden font-bold"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100 dark:border-stone-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingCircle(null)}
+                  className="px-4 py-2 text-stone-600 dark:text-stone-300 text-xs font-bold rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#8E5364] hover:bg-[#744251] text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+                >
+                  حفظ
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة تأكيد حذف الحلقة */}
+      {circleToDelete && (
+        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-stone-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-rose-100 dark:border-rose-950 space-y-4 text-right" dir="rtl">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-stone-900 dark:text-stone-100 text-base font-quran">
+                تأكيد حذف الحلقة القرآنية
+              </h3>
+              <p className="text-sm font-bold text-rose-700 dark:text-rose-400">
+                هل أنت متأكد من حذف هذا السجل؟
+              </p>
+              <p className="text-xs text-stone-600 dark:text-stone-300 font-bold mt-1">
+                «{circleToDelete.name}»
+              </p>
+            </div>
+
+            <p className="text-xs text-stone-500 dark:text-stone-400 leading-relaxed bg-[#FAF7F5] dark:bg-stone-800/60 p-3 rounded-2xl border border-stone-200 dark:border-stone-700 text-center">
+              سيتم حذف الحلقة سحابياً بصورة فورية ومزامنة التغيير في الوقت الفعلي عبر كافة الأجهزة.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100 dark:border-stone-800">
+              <button
+                type="button"
+                onClick={() => setCircleToDelete(null)}
+                className="px-4 py-2 text-stone-600 dark:text-stone-300 text-xs font-bold rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteCircle}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة تعديل بيانات الطالبة */}
+      {editingStudent && (
+        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-stone-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-200 dark:border-stone-800 space-y-4" dir="rtl">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
+              <h3 className="font-bold text-stone-900 dark:text-stone-100 text-base font-quran flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-[#8E5364]" />
+                <span>تعديل بيانات الطالبة</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingStudent(null)}
+                className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStudent} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">اسم الطالبة</label>
+                <input
+                  type="text"
+                  required
+                  value={studentForm.name}
+                  onChange={e => setStudentForm({ ...studentForm, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">المسار</label>
+                <select
+                  value={studentForm.trackId}
+                  onChange={e => {
+                    const newTrackId = e.target.value;
+                    const matchingCircle = circles.find(c => c.trackId === newTrackId);
+                    setStudentForm({ 
+                      ...studentForm, 
+                      trackId: newTrackId, 
+                      circleId: matchingCircle ? matchingCircle.id : '' 
+                    });
+                  }}
+                  className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden"
+                >
+                  {tracks.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">الحلقة القرآنية</label>
+                <select
+                  value={studentForm.circleId}
+                  onChange={e => setStudentForm({ ...studentForm, circleId: e.target.value })}
+                  className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden"
+                >
+                  <option value="">— اختيار الحلقة —</option>
+                  {circles
+                    .filter(c => !studentForm.trackId || c.trackId === studentForm.trackId)
+                    .map(c => (
+                      <option key={c.id} value={c.id}>{c.name} ({c.teacherName})</option>
+                    ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">رقم الهاتف / التواصل</label>
+                <input
+                  type="text"
+                  dir="ltr"
+                  placeholder="05xxxxxxxx"
+                  value={studentForm.phone}
+                  onChange={e => setStudentForm({ ...studentForm, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden font-mono text-right"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100 dark:border-stone-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingStudent(null)}
+                  className="px-4 py-2 text-stone-600 dark:text-stone-300 text-xs font-bold rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#8E5364] hover:bg-[#744251] text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+                >
+                  حفظ
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة تأكيد حذف الطالبة */}
+      {studentToDelete && (
+        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-stone-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-rose-100 dark:border-rose-950 space-y-4 text-right" dir="rtl">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-stone-900 dark:text-stone-100 text-base font-quran">
+                تأكيد حذف الطالبة
+              </h3>
+              <p className="text-sm font-bold text-rose-700 dark:text-rose-400">
+                هل أنت متأكد من حذف هذا السجل؟
+              </p>
+              <p className="text-xs text-stone-600 dark:text-stone-300 font-bold mt-1">
+                «{studentToDelete.name}»
+              </p>
+            </div>
+
+            <p className="text-xs text-stone-500 dark:text-stone-400 leading-relaxed bg-[#FAF7F5] dark:bg-stone-800/60 p-3 rounded-2xl border border-stone-200 dark:border-stone-700 text-center">
+              سيتم حذف سجل الطالبة وجميع بياناتها سحابياً ومزامنة المنصة في الوقت الفعلي.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100 dark:border-stone-800">
+              <button
+                type="button"
+                onClick={() => setStudentToDelete(null)}
+                className="px-4 py-2 text-stone-600 dark:text-stone-300 text-xs font-bold rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteStudent}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف</span>
               </button>
             </div>
           </div>

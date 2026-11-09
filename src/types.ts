@@ -310,6 +310,7 @@ export interface StudentAtqiniSubmission {
   teacherNotes?: string;
   submittedAt: string;
   evaluatedBy: string;
+  updatedAt?: string;
 }
 
 // 12. التحديات والمراجعة الثنائية
@@ -357,12 +358,14 @@ export interface StudentChallengeSubmission {
   partnerStudentName?: string;
   tasksCompleted: string[] | any;
   earlyPrepPointsEarned: number;
+  earlyAchievementCompleted?: boolean;
   totalPointsEarned: number;
   peerReviewEvaluation?: any;
   peerReviewDetails?: any;
   teacherNotes?: string;
   evaluatedBy: string;
   evaluatedAt: string;
+  updatedAt?: string;
 }
 
 // 13. الاختبارات الشهرية

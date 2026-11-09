@@ -2,19 +2,20 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   CheckSquare, Calendar, Users, Clock, CheckCircle2, XCircle,
-  AlertCircle, Star, Sparkles, Filter, Save, ChevronLeft, ChevronRight
+  AlertCircle, Star, Sparkles, Filter, Save, ChevronLeft, ChevronRight, Trash2
 } from 'lucide-react';
 import { AttendanceRecord } from '../types';
 
 export const AttendanceView: React.FC = () => {
   const {
     students, circles, attendanceRecords, saveAttendance, saveBulkAttendance,
-    currentUser, allStudentScores
+    deleteAttendanceRecord, showToast, currentUser, allStudentScores
   } = useApp();
 
   const [selectedCircleId, setSelectedCircleId] = useState<string>(circles[0]?.id || 'c-1');
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [reasonInputs, setReasonInputs] = useState<Record<string, string>>({});
+  const [attendanceToDelete, setAttendanceToDelete] = useState<{ studentId: string; studentName: string; recordId: string } | null>(null);
 
   const activeCircle = circles.find(c => c.id === selectedCircleId) || circles[0];
   const circleStudents = students.filter(s => s.circleId === activeCircle?.id && s.status === 'active');
@@ -52,6 +53,16 @@ export const AttendanceView: React.FC = () => {
       date: selectedDate,
       earlyPrepCardSent: !rec.earlyPrepCardSent
     });
+  };
+
+  const handleDeleteAttendance = (studentId: string, studentName: string, recordId?: string) => {
+    if (!recordId) {
+      const existing = attendanceRecords.find(a => a.studentId === studentId && a.date === selectedDate);
+      if (!existing) return;
+      setAttendanceToDelete({ studentId, studentName, recordId: existing.id });
+      return;
+    }
+    setAttendanceToDelete({ studentId, studentName, recordId });
   };
 
   const handleBulkPresent = async () => {
@@ -211,19 +222,32 @@ export const AttendanceView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Mobile Early Prep Button */}
-                <button
-                  type="button"
-                  onClick={() => handleToggleEarlyPrep(student.id)}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer touch-manipulation ${
-                    rec.earlyPrepCardSent
-                      ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
-                      : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
-                  }`}
-                >
-                  <Star className={`w-4 h-4 ${rec.earlyPrepCardSent ? 'text-amber-600 fill-amber-500' : ''}`} />
-                  <span>{rec.earlyPrepCardSent ? 'مبكر ⭐' : 'تحضير مبكر؟'}</span>
-                </button>
+                {/* Mobile Early Prep & Delete Buttons */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleEarlyPrep(student.id)}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer touch-manipulation ${
+                      rec.earlyPrepCardSent
+                        ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
+                        : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
+                    }`}
+                  >
+                    <Star className={`w-4 h-4 ${rec.earlyPrepCardSent ? 'text-amber-600 fill-amber-500' : ''}`} />
+                    <span>{rec.earlyPrepCardSent ? 'مبكر ⭐' : 'تحضير مبكر؟'}</span>
+                  </button>
+
+                  {rec.id && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteAttendance(student.id, student.name, rec.id)}
+                      className="p-2 text-stone-400 hover:text-rose-600 rounded-xl hover:bg-rose-50 transition cursor-pointer border border-stone-200"
+                      title="حذف وإلغاء رصد الحضور لهذا اليوم"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Status Action Buttons (Touch-friendly 44px min height) */}
@@ -299,6 +323,7 @@ export const AttendanceView: React.FC = () => {
                 <th className="p-3.5">سبب الغياب (إن وُجد)</th>
                 <th className="p-3.5">الإحصائية التراكمية</th>
                 <th className="p-3.5">المسؤول ووقت الرصد</th>
+                <th className="p-3.5 text-center">الإجراءات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
@@ -406,6 +431,22 @@ export const AttendanceView: React.FC = () => {
                         {rec.recordedAt ? new Date(rec.recordedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }) : '—'}
                       </div>
                     </td>
+
+                    {/* Actions: Delete Record */}
+                    <td className="p-3.5 text-center">
+                      {rec.id ? (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAttendance(student.id, student.name, rec.id)}
+                          className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                          title="حذف وإلغاء رصد الحضور لهذا اليوم"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <span className="text-stone-300 text-[10px]">—</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -413,6 +454,61 @@ export const AttendanceView: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Delete Confirmation Alert Modal for Attendance */}
+      {attendanceToDelete && (
+        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-200 text-right space-y-4" dir="rtl">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-stone-900 text-base font-quran">
+                تأكيد حذف سجل الحضور
+              </h3>
+              <p className="text-sm font-bold text-rose-700">
+                هل أنت متأكد من حذف هذا السجل؟
+              </p>
+              <p className="text-xs text-stone-600 font-semibold mt-1">
+                للطالبة: «{attendanceToDelete.studentName}» • تاريخ: {selectedDate}
+              </p>
+            </div>
+
+            <p className="text-xs text-stone-500 leading-relaxed bg-[#FCFAF8] p-3 rounded-2xl border border-stone-200 text-center">
+              سيتم مسح سجل الحضور والتحضير المبكر لهذا اليوم فوراً وتحديث نسب الحضور سحابياً.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setAttendanceToDelete(null)}
+                className="px-4 py-2 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 transition cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const target = attendanceToDelete;
+                  setAttendanceToDelete(null);
+                  await deleteAttendanceRecord(target.recordId);
+                  setReasonInputs(prev => {
+                    const next = { ...prev };
+                    delete next[target.studentId];
+                    return next;
+                  });
+                  showToast?.('تم حذف سجل الحضور بنجاح ومزامنة التغييرات سحابياً 🗑️');
+                }}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

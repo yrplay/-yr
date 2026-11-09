@@ -8,6 +8,7 @@ import {
 } from '../types';
 import initialData from '../data/initialData';
 import { subscribeToCloudDatabase, pushStateToCloud, fetchCloudDatabaseOnce, CloudSyncStatus } from '../services/cloudSync';
+import { deduplicateAtqiniSubmissions, deduplicateChallengeSubmissions } from '../services/cloudSyncHelpers';
 import { summarizeDailyPageProgress } from '../services/recitationProgress';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
@@ -100,10 +101,12 @@ interface AppContextType {
   updateTrackSystemRules: (trackId: string, rules: Partial<TrackSystemRules>, silent?: boolean) => Promise<void>;
   archiveTrack: (id: string) => Promise<void>;
   restoreTrack: (id: string) => Promise<void>;
+  deleteTrack: (id: string) => Promise<void>;
   createCircle: (circle: Partial<Circle>) => Promise<Circle>;
   updateCircle: (id: string, circle: Partial<Circle>) => Promise<void>;
   archiveCircle: (id: string) => Promise<void>;
   restoreCircle: (id: string) => Promise<void>;
+  deleteCircle: (id: string) => Promise<void>;
   
   createStudent: (student: Partial<Student>) => Promise<Student>;
   updateStudent: (id: string, student: Partial<Student>) => Promise<void>;
@@ -117,8 +120,10 @@ interface AppContextType {
   saveStudentPlan: (plan: Partial<StudentMonthlyPlan>) => Promise<void>;
   
   saveDailyRecord: (record: Partial<DailyRecord>) => Promise<void>;
+  deleteDailyRecord: (id: string) => Promise<void>;
   saveDailyRecitation?: (record: any) => Promise<void>;
   saveAttendance: (record: Partial<AttendanceRecord>) => Promise<void>;
+  deleteAttendanceRecord: (id: string) => Promise<void>;
   saveBulkAttendance: (records: Partial<AttendanceRecord>[]) => Promise<void>;
   
   saveStudentSubscription: (sub: Partial<StudentSubscription>) => Promise<void>;
@@ -127,11 +132,13 @@ interface AppContextType {
   updateAtqiniAssignment: (id: string, assignment: Partial<AtqiniAssignment>) => Promise<void>;
   deleteAtqiniAssignment: (id: string) => Promise<void>;
   saveAtqiniSubmission: (sub: Partial<StudentAtqiniSubmission>) => Promise<void>;
+  deleteStudentAtqiniSubmission: (id: string) => Promise<void>;
   
   createChallenge: (challenge: Partial<Challenge>) => Promise<Challenge>;
   updateChallenge: (id: string, challenge: Partial<Challenge>) => Promise<void>;
   deleteChallenge: (id: string) => Promise<void>;
   saveChallengeSubmission: (sub: Partial<StudentChallengeSubmission>) => Promise<void>;
+  toggleChallengeEarlyAchievement: (challengeId: string, studentId: string) => Promise<void>;
   
   createMonthlyExam: (exam: Partial<MonthlyExam>) => Promise<MonthlyExam>;
   updateMonthlyExam: (id: string, exam: Partial<MonthlyExam>) => Promise<void>;
@@ -672,12 +679,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (!inc) {
         map.set(key, loc);
       } else {
-        const locTime = (loc.updatedAt || loc.recordedAt || loc.createdAt)
-          ? new Date(loc.updatedAt || loc.recordedAt || loc.createdAt).getTime()
-          : 0;
-        const incTime = (inc.updatedAt || inc.recordedAt || inc.createdAt)
-          ? new Date(inc.updatedAt || inc.recordedAt || inc.createdAt).getTime()
-          : 0;
+        const parseTime = (item: any) => {
+          if (!item) return 0;
+          const val = item.updatedAt || item.submittedAt || item.recordedAt || item.evaluatedAt || item.createdAt || item.timestamp;
+          if (typeof val !== 'string') return 0;
+          const t = new Date(val).getTime();
+          return Number.isFinite(t) ? t : 0;
+        };
+        const locTime = parseTime(loc);
+        const incTime = parseTime(inc);
         const base = locTime >= incTime ? { ...inc, ...loc } : { ...loc, ...inc };
         
         // Preserve passcode on entities (users) so cloud updates never clear a set passcode
@@ -933,7 +943,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     if (Array.isArray(incomingAtqSubmissions)) {
-      const mergedAtqSubs = mergeEntities(masterStateRef.current.studentAtqiniSubmissions, incomingAtqSubmissions);
+      const cleanIncoming = deduplicateAtqiniSubmissions<StudentAtqiniSubmission>(incomingAtqSubmissions);
+      const currentAtqSubs = deduplicateAtqiniSubmissions<StudentAtqiniSubmission>(masterStateRef.current.studentAtqiniSubmissions || []);
+      const mergedAtqSubs = deduplicateAtqiniSubmissions<StudentAtqiniSubmission>(mergeEntities(currentAtqSubs, cleanIncoming));
       masterStateRef.current.studentAtqiniSubmissions = mergedAtqSubs;
       setStudentAtqiniSubmissions(mergedAtqSubs);
     }
@@ -945,7 +957,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     if (Array.isArray(incomingChSubmissions)) {
-      const mergedChSubs = mergeEntities(masterStateRef.current.studentChallengeSubmissions, incomingChSubmissions);
+      const cleanIncoming = deduplicateChallengeSubmissions<StudentChallengeSubmission>(incomingChSubmissions);
+      const currentChSubs = deduplicateChallengeSubmissions<StudentChallengeSubmission>(masterStateRef.current.studentChallengeSubmissions || []);
+      const mergedChSubs = deduplicateChallengeSubmissions<StudentChallengeSubmission>(mergeEntities(currentChSubs, cleanIncoming));
       masterStateRef.current.studentChallengeSubmissions = mergedChSubs;
       setStudentChallengeSubmissions(mergedChSubs);
     }
@@ -1308,6 +1322,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('تمت استعادة المسار بنجاح');
   };
 
+  const deleteTrack = async (id: string) => {
+    const currentTracks = masterStateRef.current.tracks?.length ? masterStateRef.current.tracks : tracks;
+    const targetTrack = currentTracks.find((t: Track) => t.id === id);
+    const next = currentTracks.filter((t: Track) => t.id !== id);
+    masterStateRef.current.tracks = next;
+    setTracks(next);
+    const nextLogs = appendAuditEntry('delete', 'track', `حذف المسار نهائياً: ${targetTrack?.name || id}`, id);
+    persistState({ tracks: next, auditLogs: nextLogs, _deletedEntities: addDeletedEntity('tracks', id) });
+    showToast(`تم حذف المسار "${targetTrack?.name || ''}" نهائياً من المقرأة بنجاح`);
+  };
+
   const createCircle = async (circle: Partial<Circle>) => {
     const currentUsers = masterStateRef.current.users?.length ? masterStateRef.current.users : users;
     const teacherObj = currentUsers.find((u: User) => u.id === circle.teacherId);
@@ -1384,6 +1409,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const nextLogs = appendAuditEntry('update', 'circle', `استعادة الحلقة من الأرشيف: ${existingCircle?.name || id}`, id);
     persistState({ circles: next, auditLogs: nextLogs });
     showToast('تمت استعادة الحلقة');
+  };
+
+  const deleteCircle = async (id: string) => {
+    const currentCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
+    const circleToDelete = currentCircles.find((c: Circle) => c.id === id);
+    const next = currentCircles.filter((c: Circle) => c.id !== id);
+    masterStateRef.current.circles = next;
+    setCircles(next);
+    const nextLogs = appendAuditEntry('delete', 'circle', `حذف الحلقة نهائياً: ${circleToDelete?.name || id}`, id);
+    persistState({ circles: next, auditLogs: nextLogs, _deletedEntities: addDeletedEntity('circles', id) });
+    showToast(`تم حذف الحلقة "${circleToDelete?.name || ''}" نهائياً من المقرأة بنجاح`);
   };
 
   const createStudent = async (student: Partial<Student>) => {
@@ -1713,6 +1749,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('تم رصد التسميع وتحديث درجات الطالبة 📖');
   };
 
+  const deleteDailyRecord = async (id: string) => {
+    const currentRecords: DailyRecord[] = masterStateRef.current.dailyRecords || [];
+    const recToDelete = currentRecords.find(d => d.id === id);
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === recToDelete?.studentId);
+    const next = currentRecords.filter(d => d.id !== id);
+    masterStateRef.current.dailyRecords = next;
+    setDailyRecords(next);
+    const nextLogs = appendAuditEntry(
+      'delete',
+      'dailyRecord',
+      `حذف سجل تسميع الطالبة ${studentObj?.name || recToDelete?.studentId || ''} بتاريخ ${recToDelete?.date || ''}`,
+      id
+    );
+    persistState({ dailyRecords: next, auditLogs: nextLogs, _deletedEntities: addDeletedEntity('dailyRecords', id) });
+    showToast('تم حذف سجل التسميع بنجاح 🗑️');
+  };
+
   const saveAttendance = async (record: Partial<AttendanceRecord>) => {
     const recDate = record.date || new Date().toISOString().split('T')[0];
     const cleanId = record.id || `att_${record.studentId}_${recDate}`;
@@ -1760,6 +1814,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
     persistState({ attendanceRecords: next, auditLogs: nextLogs });
     showToast('تم تسجيل الحضور والتحضير بنجاح ✅');
+  };
+
+  const deleteAttendanceRecord = async (id: string) => {
+    const currentAtt: AttendanceRecord[] = masterStateRef.current.attendanceRecords || attendanceRecords;
+    const attToDelete = currentAtt.find(a => a.id === id);
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === attToDelete?.studentId);
+    const next = currentAtt.filter(a => a.id !== id);
+    masterStateRef.current.attendanceRecords = next;
+    setAttendanceRecords(next);
+    const nextLogs = appendAuditEntry(
+      'delete',
+      'attendance',
+      `حذف سجل حضور للطالبة ${studentObj?.name || attToDelete?.studentId || ''} بتاريخ ${attToDelete?.date || ''}`,
+      id
+    );
+    persistState({ attendanceRecords: next, auditLogs: nextLogs, _deletedEntities: addDeletedEntity('attendanceRecords', id) });
+    showToast('تم حذف سجل الحضور بنجاح 🗑️');
   };
 
   const saveBulkAttendance = async (records: Partial<AttendanceRecord>[]) => {
@@ -1849,46 +1921,97 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const saveAtqiniSubmission = async (sub: Partial<StudentAtqiniSubmission>) => {
-    const cleanId = sub.id || `atqs_${sub.assignmentId}_${sub.studentId}`;
-    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
-    const studentObj = currentStudents.find((s: Student) => s.id === sub.studentId);
-
-    const newSub: StudentAtqiniSubmission = {
-      id: cleanId,
-      assignmentId: sub.assignmentId || '',
-      studentId: sub.studentId || '',
-      status: sub.status || 'completed',
-      isCompletedCorrectly: !!sub.isCompletedCorrectly,
-      extractedExamplesDone: !!sub.extractedExamplesDone,
-      appliedDuringRecitation: !!sub.appliedDuringRecitation,
-      rating: sub.rating || 'ممتاز',
-      score: sub.score ?? 10,
-      teacherNotes: sub.teacherNotes || '',
-      submittedAt: new Date().toISOString(),
-      evaluatedBy: currentUser?.name || 'معلمة الحلقة',
-      ...sub
-    };
-    const currentSubs = masterStateRef.current.studentAtqiniSubmissions || studentAtqiniSubmissions;
-    const existingIdx = currentSubs.findIndex(
-      (s: StudentAtqiniSubmission) => s.id === cleanId || (s.assignmentId === newSub.assignmentId && s.studentId === newSub.studentId)
+    const currentSubs = deduplicateAtqiniSubmissions<StudentAtqiniSubmission>(
+      Array.isArray(masterStateRef.current.studentAtqiniSubmissions)
+        ? masterStateRef.current.studentAtqiniSubmissions
+        : (Array.isArray(studentAtqiniSubmissions) ? studentAtqiniSubmissions : [])
     );
-    let next: StudentAtqiniSubmission[];
-    if (existingIdx >= 0) {
-      next = [...currentSubs];
-      next[existingIdx] = { ...next[existingIdx], ...newSub };
-    } else {
-      next = [...currentSubs, newSub];
-    }
+
+    // Locate existing submission by id OR by (assignmentId + studentId)
+    const existingSub = currentSubs.find(
+      (s: StudentAtqiniSubmission) =>
+        (sub.id && s.id === sub.id) ||
+        (s.assignmentId === sub.assignmentId && s.studentId === sub.studentId)
+    );
+
+    const stableId = existingSub?.id || sub.id || `atqs_${sub.assignmentId}_${sub.studentId}`;
+    const nowIso = new Date().toISOString();
+
+    const isCompleted = sub.isCompletedCorrectly !== undefined
+      ? !!sub.isCompletedCorrectly
+      : (sub.status ? sub.status === 'completed' : (existingSub?.isCompletedCorrectly ?? false));
+
+    const statusVal: 'completed' | 'not_started' | 'in_progress' | 'late' | 'pending' = sub.status || (isCompleted ? 'completed' : 'not_started');
+    const scoreVal = sub.score !== undefined ? Number(sub.score) : (isCompleted ? 10 : 0);
+    const ratingVal = sub.rating || (isCompleted ? 'ممتاز' : 'لم يُنجز');
+
+    const finalizedSub: StudentAtqiniSubmission = {
+      ...existingSub,
+      ...sub,
+      id: stableId,
+      assignmentId: sub.assignmentId || existingSub?.assignmentId || '',
+      studentId: sub.studentId || existingSub?.studentId || '',
+      status: statusVal,
+      isCompletedCorrectly: isCompleted,
+      extractedExamplesDone: sub.extractedExamplesDone !== undefined
+        ? !!sub.extractedExamplesDone
+        : (isCompleted ? true : (existingSub?.extractedExamplesDone ?? false)),
+      appliedDuringRecitation: sub.appliedDuringRecitation !== undefined
+        ? !!sub.appliedDuringRecitation
+        : (isCompleted ? true : (existingSub?.appliedDuringRecitation ?? false)),
+      rating: ratingVal,
+      score: scoreVal,
+      teacherNotes: sub.teacherNotes !== undefined ? sub.teacherNotes : (existingSub?.teacherNotes || ''),
+      submittedAt: existingSub?.submittedAt || nowIso,
+      evaluatedBy: currentUser?.name || existingSub?.evaluatedBy || 'معلمة الحلقة',
+      updatedAt: nowIso
+    };
+
+    // Immutably remove any old/duplicate versions of this record
+    const filtered = currentSubs.filter(
+      (s: StudentAtqiniSubmission) =>
+        s.id !== stableId &&
+        !(s.assignmentId === finalizedSub.assignmentId && s.studentId === finalizedSub.studentId)
+    );
+
+    const next: StudentAtqiniSubmission[] = [...filtered, finalizedSub];
     masterStateRef.current.studentAtqiniSubmissions = next;
     setStudentAtqiniSubmissions(next);
+
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === finalizedSub.studentId);
+
     const nextLogs = appendAuditEntry(
       'grade',
       'atqiniSubmission',
-      `رصد تقييم واجب «أتقني» للطالبة ${studentObj?.name || newSub.studentId} (التقدير: ${newSub.rating} — الدرجة: ${newSub.score})`,
-      cleanId
+      `تحديث واجب «أتقني» للطالبة ${studentObj?.name || finalizedSub.studentId}: ${isCompleted ? 'مكتمل ✅' : 'لم يُنجز ❌'} (الدرجة: ${finalizedSub.score})`,
+      stableId
     );
+
     persistState({ studentAtqiniSubmissions: next, auditLogs: nextLogs });
-    showToast('تم رصد تقييم واجب «أتقني» للتجويد');
+    showToast(isCompleted ? 'تم حفظ إنجاز الواجب بنجاح ✅' : 'تم تحديث حالة الواجب: لم يُنجز');
+  };
+
+  const deleteStudentAtqiniSubmission = async (id: string) => {
+    const currentSubs = masterStateRef.current.studentAtqiniSubmissions || studentAtqiniSubmissions;
+    const subToDelete = currentSubs.find((s: StudentAtqiniSubmission) => s.id === id);
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === subToDelete?.studentId);
+    const next = currentSubs.filter((s: StudentAtqiniSubmission) => {
+      if (s.id === id) return false;
+      if (subToDelete && s.assignmentId === subToDelete.assignmentId && s.studentId === subToDelete.studentId) return false;
+      return true;
+    });
+    masterStateRef.current.studentAtqiniSubmissions = next;
+    setStudentAtqiniSubmissions(next);
+    const nextLogs = appendAuditEntry(
+      'delete',
+      'atqiniSubmission',
+      `حذف تقييم واجب «أتقني» للطالبة ${studentObj?.name || subToDelete?.studentId || ''}`,
+      id
+    );
+    persistState({ studentAtqiniSubmissions: next, auditLogs: nextLogs, _deletedEntities: addDeletedEntity('studentAtqiniSubmissions', id) });
+    showToast('تم حذف تقييم واجب التجويد بنجاح 🗑️');
   };
 
   const createChallenge = async (challenge: Partial<Challenge>) => {
@@ -1947,35 +2070,56 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const saveChallengeSubmission = async (sub: Partial<StudentChallengeSubmission>) => {
-    const cleanId = sub.id || `cs_${sub.challengeId}_${sub.studentId}`;
+    const currentSubs = deduplicateChallengeSubmissions<StudentChallengeSubmission>(
+      Array.isArray(masterStateRef.current.studentChallengeSubmissions)
+        ? masterStateRef.current.studentChallengeSubmissions
+        : (Array.isArray(studentChallengeSubmissions) ? studentChallengeSubmissions : [])
+    );
+
+    const existingSub = currentSubs.find(
+      (s: StudentChallengeSubmission) =>
+        (sub.id && s.id === sub.id) ||
+        (s.challengeId === sub.challengeId && s.studentId === sub.studentId)
+    );
+
+    const cleanId = existingSub?.id || sub.id || `cs_${sub.challengeId}_${sub.studentId}`;
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
     const studentObj = currentStudents.find((s: Student) => s.id === sub.studentId);
+    const nowIso = new Date().toISOString();
+
+    const earlyPoints = sub.earlyPrepPointsEarned !== undefined
+      ? Number(sub.earlyPrepPointsEarned)
+      : (existingSub?.earlyPrepPointsEarned || 0);
+
+    const isEarlyCompleted = sub.earlyAchievementCompleted !== undefined
+      ? !!sub.earlyAchievementCompleted
+      : (earlyPoints > 0);
 
     const newSub: StudentChallengeSubmission = {
+      ...existingSub,
+      ...sub,
       id: cleanId,
-      challengeId: sub.challengeId || '',
-      studentId: sub.studentId || '',
-      partnerStudentId: sub.partnerStudentId,
-      partnerStudentName: sub.partnerStudentName,
-      tasksCompleted: sub.tasksCompleted || [],
-      earlyPrepPointsEarned: sub.earlyPrepPointsEarned || 0,
-      totalPointsEarned: sub.totalPointsEarned || 0,
-      teacherNotes: sub.teacherNotes || '',
-      evaluatedBy: currentUser?.name || 'معلمة الحلقة',
-      evaluatedAt: new Date().toISOString(),
-      ...sub
+      challengeId: sub.challengeId || existingSub?.challengeId || '',
+      studentId: sub.studentId || existingSub?.studentId || '',
+      partnerStudentId: sub.partnerStudentId ?? existingSub?.partnerStudentId,
+      partnerStudentName: sub.partnerStudentName ?? existingSub?.partnerStudentName,
+      tasksCompleted: sub.tasksCompleted ?? existingSub?.tasksCompleted ?? [],
+      earlyPrepPointsEarned: earlyPoints,
+      earlyAchievementCompleted: isEarlyCompleted,
+      totalPointsEarned: sub.totalPointsEarned !== undefined ? Number(sub.totalPointsEarned) : (existingSub?.totalPointsEarned || 0),
+      teacherNotes: sub.teacherNotes !== undefined ? sub.teacherNotes : (existingSub?.teacherNotes || ''),
+      evaluatedBy: currentUser?.name || existingSub?.evaluatedBy || 'معلمة الحلقة',
+      evaluatedAt: existingSub?.evaluatedAt || nowIso,
+      updatedAt: nowIso
     };
-    const currentSubs = masterStateRef.current.studentChallengeSubmissions || studentChallengeSubmissions;
-    const existingIdx = currentSubs.findIndex(
-      (s: StudentChallengeSubmission) => s.id === cleanId || (s.challengeId === newSub.challengeId && s.studentId === newSub.studentId)
+
+    const filtered = currentSubs.filter(
+      (s: StudentChallengeSubmission) =>
+        s.id !== cleanId &&
+        !(s.challengeId === newSub.challengeId && s.studentId === newSub.studentId)
     );
-    let next: StudentChallengeSubmission[];
-    if (existingIdx >= 0) {
-      next = [...currentSubs];
-      next[existingIdx] = { ...next[existingIdx], ...newSub };
-    } else {
-      next = [...currentSubs, newSub];
-    }
+    const next: StudentChallengeSubmission[] = [...filtered, newSub];
+
     masterStateRef.current.studentChallengeSubmissions = next;
     setStudentChallengeSubmissions(next);
     const nextLogs = appendAuditEntry(
@@ -1986,6 +2130,113 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
     persistState({ studentChallengeSubmissions: next, auditLogs: nextLogs });
     showToast('تم رصد نتيجة التحدي والمراجعة الثنائية');
+  };
+
+  const toggleChallengeEarlyAchievement = async (challengeId: string, studentId: string) => {
+    const currentSubs = deduplicateChallengeSubmissions<StudentChallengeSubmission>(
+      Array.isArray(masterStateRef.current.studentChallengeSubmissions)
+        ? masterStateRef.current.studentChallengeSubmissions
+        : (Array.isArray(studentChallengeSubmissions) ? studentChallengeSubmissions : [])
+    );
+
+    const targetChallenge = (masterStateRef.current.challenges || challenges).find((c: Challenge) => c.id === challengeId);
+    const maxPoints = targetChallenge?.maxTotalPoints || 10;
+    const earlyBonus = targetChallenge?.earlyPrepPoints || 2;
+
+    const existingSub = currentSubs.find(
+      (s: StudentChallengeSubmission) =>
+        s.challengeId === challengeId && s.studentId === studentId
+    );
+
+    const stableId = existingSub?.id || `cs_${challengeId}_${studentId}`;
+    const nowIso = new Date().toISOString();
+
+    const isCurrentlyAwarded = (existingSub?.earlyPrepPointsEarned ?? 0) > 0 || !!existingSub?.earlyAchievementCompleted;
+    const nextAwarded = !isCurrentlyAwarded;
+    const nextEarlyPoints = nextAwarded ? earlyBonus : 0;
+
+    let updatedTasks = existingSub?.tasksCompleted ? [...existingSub.tasksCompleted] : [];
+    if (targetChallenge?.tasks && targetChallenge.tasks.length > 0) {
+      if (updatedTasks.length === 0) {
+        updatedTasks = targetChallenge.tasks.map((t: any) => ({
+          taskId: t.id,
+          completed: false,
+          earnedPoints: 0
+        }));
+      }
+      const earlyTaskIndex = updatedTasks.findIndex((t: any) => {
+        const def = targetChallenge.tasks.find((ct: any) => ct.id === t.taskId);
+        return def && (def.name?.includes('المبكر') || def.name?.includes('الإنجاز') || def.name?.includes('التحضير'));
+      });
+      if (earlyTaskIndex >= 0) {
+        const taskDef = targetChallenge.tasks.find((ct: any) => ct.id === updatedTasks[earlyTaskIndex].taskId);
+        const taskMax = taskDef?.maxPoints ?? earlyBonus;
+        updatedTasks[earlyTaskIndex] = {
+          ...updatedTasks[earlyTaskIndex],
+          completed: nextAwarded,
+          earnedPoints: nextAwarded ? taskMax : 0
+        };
+      }
+    }
+
+    let nextTotalPoints = 0;
+    if (existingSub) {
+      if (nextAwarded) {
+        nextTotalPoints = Math.min(maxPoints, (existingSub.totalPointsEarned || 0) + earlyBonus);
+      } else {
+        nextTotalPoints = Math.max(0, (existingSub.totalPointsEarned || earlyBonus) - earlyBonus);
+      }
+    } else {
+      nextTotalPoints = nextAwarded ? earlyBonus : 0;
+    }
+
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === studentId);
+
+    const finalizedSub: StudentChallengeSubmission = {
+      ...existingSub,
+      id: stableId,
+      challengeId,
+      studentId,
+      partnerStudentId: studentObj?.partnerStudentId || existingSub?.partnerStudentId,
+      partnerStudentName: studentObj?.partnerStudentName || existingSub?.partnerStudentName,
+      tasksCompleted: updatedTasks,
+      earlyPrepPointsEarned: nextEarlyPoints,
+      earlyAchievementCompleted: nextAwarded,
+      peerReviewEvaluation: existingSub?.peerReviewEvaluation,
+      totalPointsEarned: Number(nextTotalPoints.toFixed(1)),
+      teacherNotes: existingSub?.teacherNotes || '',
+      evaluatedBy: currentUser?.name || existingSub?.evaluatedBy || 'معلمة الحلقة',
+      evaluatedAt: existingSub?.evaluatedAt || nowIso,
+      updatedAt: nowIso
+    };
+
+    const filtered = currentSubs.filter(
+      (s: StudentChallengeSubmission) =>
+        s.id !== stableId &&
+        !(s.challengeId === challengeId && s.studentId === studentId)
+    );
+
+    const next: StudentChallengeSubmission[] = [...filtered, finalizedSub];
+    masterStateRef.current.studentChallengeSubmissions = next;
+    setStudentChallengeSubmissions(next);
+
+    const studentName = studentObj?.name || studentId;
+    const nextLogs = appendAuditEntry(
+      'grade',
+      'challenge',
+      nextAwarded
+        ? `منح نقطتي (+2) الإنجاز المبكر في التحدي للطالبة ${studentName}`
+        : `إلغاء نقطتي الإنجاز المبكر في التحدي للطالبة ${studentName}`,
+      stableId
+    );
+
+    persistState({ studentChallengeSubmissions: next, auditLogs: nextLogs });
+    showToast(
+      nextAwarded
+        ? `تم منح ${studentName} نقطتي (+2) الإنجاز المبكر بنجاح ⭐`
+        : `تم إلغاء نقطتي الإنجاز المبكر لـ ${studentName} بنجاح`
+    );
   };
 
   const createMonthlyExam = async (exam: Partial<MonthlyExam>) => {
@@ -2941,10 +3192,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateTrackSystemRules,
         archiveTrack,
         restoreTrack,
+        deleteTrack,
         createCircle,
         updateCircle,
         archiveCircle,
         restoreCircle,
+        deleteCircle,
         createStudent,
         updateStudent,
         archiveStudent,
@@ -2955,18 +3208,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         duplicateMonthlyPlan,
         saveStudentPlan,
         saveDailyRecord,
+        deleteDailyRecord,
         saveDailyRecitation: saveDailyRecord,
         saveAttendance,
+        deleteAttendanceRecord,
         saveBulkAttendance,
         saveStudentSubscription,
         createAtqiniAssignment,
         updateAtqiniAssignment,
         deleteAtqiniAssignment,
         saveAtqiniSubmission,
+        deleteStudentAtqiniSubmission,
         createChallenge,
         updateChallenge,
         deleteChallenge,
         saveChallengeSubmission,
+        toggleChallengeEarlyAchievement,
         selectedTrackId,
         setSelectedTrackId,
         createMonthlyExam,

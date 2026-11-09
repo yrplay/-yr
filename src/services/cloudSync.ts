@@ -1,6 +1,6 @@
 import { doc, getDoc, onSnapshot, runTransaction } from 'firebase/firestore';
 import { db, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID } from '../firebase';
-import { mergeArrayByKey, mergeDeletedEntities, sanitizeCloudState, type DeletedEntities } from './cloudSyncHelpers';
+import { mergeArrayByKey, mergeDeletedEntities, sanitizeCloudState, deduplicateAtqiniSubmissions, deduplicateChallengeSubmissions, type DeletedEntities } from './cloudSyncHelpers';
 
 export type CloudSyncStatus = 'connected' | 'syncing' | 'offline' | 'error';
 
@@ -82,12 +82,18 @@ export const pushStateToCloud = async (statePayload: any): Promise<void> => {
     };
 
     for (const [collection, key] of arrayCollections) {
-      finalPayload[collection] = mergeArrayByKey(
+      let mergedItems = mergeArrayByKey(
         remoteData[collection] || [],
         incomingState[collection] || [],
         key,
         deletedEntities[collection] || []
       );
+      if (collection === 'studentAtqiniSubmissions') {
+        mergedItems = deduplicateAtqiniSubmissions(mergedItems);
+      } else if (collection === 'studentChallengeSubmissions') {
+        mergedItems = deduplicateChallengeSubmissions(mergedItems);
+      }
+      finalPayload[collection] = mergedItems;
     }
 
     transaction.set(docRef, finalPayload);

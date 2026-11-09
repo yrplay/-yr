@@ -48,8 +48,8 @@ export const mergeArrayByKey = (
       const parsed = new Date(value).getTime();
       return Number.isFinite(parsed) ? parsed : 0;
     };
-    const existingTime = parseTime(existing.recordedAt || existing.updatedAt || existing.evaluatedAt || existing.createdAt || existing.timestamp);
-    const incomingTime = parseTime(item.recordedAt || item.updatedAt || item.evaluatedAt || item.createdAt || item.timestamp);
+    const existingTime = parseTime(existing.updatedAt || existing.submittedAt || existing.recordedAt || existing.evaluatedAt || existing.createdAt || existing.timestamp);
+    const incomingTime = parseTime(item.updatedAt || item.submittedAt || item.recordedAt || item.evaluatedAt || item.createdAt || item.timestamp);
     const base = incomingTime >= existingTime ? { ...existing, ...item } : { ...item, ...existing };
     
     // For user items or items with passcode, never overwrite a set passcode with an empty or missing one
@@ -67,3 +67,80 @@ export const mergeArrayByKey = (
   }
   return merged;
 };
+
+/**
+ * Deduplicate homework submissions by (assignmentId, studentId) pair so there is strictly
+ * at most ONE submission record per student per assignment, preserving the newest data and stable ID.
+ */
+export const deduplicateAtqiniSubmissions = <T extends Record<string, any>>(list: T[] = []): T[] => {
+  if (!Array.isArray(list)) return [];
+  const map = new Map<string, T>();
+  const parseTime = (item: any) => {
+    if (!item) return 0;
+    const val = item.updatedAt || item.submittedAt || item.recordedAt || item.evaluatedAt || item.createdAt;
+    if (typeof val !== 'string') return 0;
+    const t = new Date(val).getTime();
+    return Number.isFinite(t) ? t : 0;
+  };
+
+  for (const item of list) {
+    if (!item) continue;
+    const key = (item.assignmentId && item.studentId)
+      ? `${item.assignmentId}_${item.studentId}`
+      : String(item.id || Math.random());
+
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, item);
+    } else {
+      const existingTime = parseTime(existing);
+      const itemTime = parseTime(item);
+      const stableId = existing.id || item.id;
+      if (itemTime >= existingTime) {
+        map.set(key, { ...existing, ...item, id: stableId });
+      } else {
+        map.set(key, { ...item, ...existing, id: stableId });
+      }
+    }
+  }
+  return Array.from(map.values());
+};
+
+/**
+ * Deduplicate challenge submissions by (challengeId, studentId) pair so there is strictly
+ * at most ONE submission record per student per challenge, preserving newest score and stable ID.
+ */
+export const deduplicateChallengeSubmissions = <T extends Record<string, any>>(list: T[] = []): T[] => {
+  if (!Array.isArray(list)) return [];
+  const map = new Map<string, T>();
+  const parseTime = (item: any) => {
+    if (!item) return 0;
+    const val = item.updatedAt || item.evaluatedAt || item.submittedAt || item.createdAt;
+    if (typeof val !== 'string') return 0;
+    const t = new Date(val).getTime();
+    return Number.isFinite(t) ? t : 0;
+  };
+
+  for (const item of list) {
+    if (!item) continue;
+    const key = (item.challengeId && item.studentId)
+      ? `${item.challengeId}_${item.studentId}`
+      : String(item.id || Math.random());
+
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, item);
+    } else {
+      const existingTime = parseTime(existing);
+      const itemTime = parseTime(item);
+      const stableId = existing.id || item.id;
+      if (itemTime >= existingTime) {
+        map.set(key, { ...existing, ...item, id: stableId });
+      } else {
+        map.set(key, { ...item, ...existing, id: stableId });
+      }
+    }
+  }
+  return Array.from(map.values());
+};
+

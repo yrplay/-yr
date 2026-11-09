@@ -192,7 +192,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
 }) => {
   const { 
     students, circles, tracks, currentUser, 
-    dailyRecords, saveDailyRecord, settings,
+    dailyRecords, saveDailyRecord, deleteDailyRecord, settings,
     studentPlans, updateTrack, updateTrackSystemRules, showToast, allStudentScores
   } = useApp();
 
@@ -202,6 +202,8 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
   );
   const [searchQuery, setSearchQuery] = useState('');
   const [activeModalStudentId, setActiveModalStudentId] = useState<string | null>(null);
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
+  const [recordToDelete, setRecordToDelete] = useState<any>(null);
 
   // حالة فتح كشف سجل الطالبة الشامل
   const [viewingStudentRecord, setViewingStudentRecord] = useState<Student | null>(null);
@@ -414,10 +416,16 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     return list;
   }, [students, selectedCircleId, searchQuery]);
 
-  // فتح نافذة الرصد
-  const handleOpenModal = (studentId: string) => {
-    const existing: any = (dailyRecords || []).find(
-      r => r.studentId === studentId && r.date === selectedDate
+  // فتح نافذة الرصد مع دعم تعديل السجلات السابقة
+  const handleOpenModal = (studentId: string, customRecord?: any) => {
+    if (customRecord?.date) {
+      setSelectedDate(customRecord.date);
+    }
+    setEditingRecordId(customRecord?.id || null);
+
+    const targetDate = customRecord?.date || selectedDate;
+    const existing: any = customRecord || (dailyRecords || []).find(
+      r => r.studentId === studentId && r.date === targetDate
     );
 
     const studentPlan = (studentPlans || []).find(p => p.studentId === studentId);
@@ -567,6 +575,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     const repeatCount = criteriaCounts['crit-repeat'] ?? (activeCriteriaList[2] ? criteriaCounts[activeCriteriaList[2].id] : 0) ?? 0;
 
     await saveDailyRecord({
+      ...(editingRecordId ? { id: editingRecordId } : {}),
       studentId: activeModalStudentId,
       circleId: selectedCircleId,
       date: selectedDate,
@@ -614,6 +623,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       ...(form as any)
     });
 
+    setEditingRecordId(null);
     setActiveModalStudentId(null);
   };
 
@@ -739,13 +749,28 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                     <span className="text-xs text-stone-400">لم يُرصد التسميع اليوم</span>
                   )}
 
-                  <button
-                    onClick={() => handleOpenModal(st.id)}
-                    className="px-4 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>{record ? 'تعديل الرصد' : 'رصد التسميع'}</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenModal(st.id)}
+                      className="px-4 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                      title={record ? 'تعديل هذا الرصد' : 'رصد التسميع اليومي'}
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>{record ? 'تعديل الرصد' : 'رصد التسميع'}</span>
+                    </button>
+
+                    {record && (
+                      <button
+                        type="button"
+                        onClick={() => setRecordToDelete(record)}
+                        className="p-2 text-stone-400 hover:text-rose-600 rounded-xl hover:bg-rose-50 transition cursor-pointer border border-stone-200 dark:border-stone-800"
+                        title="حذف هذا الرصد"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -1451,6 +1476,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                             <th className="p-2.5 text-center">الدرجة</th>
                             <th className="p-2.5">المراجعة والتمكين</th>
                             <th className="p-2.5">ملاحظات المعلمة</th>
+                            <th className="p-2.5 text-center">الإجراءات</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
@@ -1507,6 +1533,30 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                                 <td className="p-2.5 text-[10px] text-stone-500 italic max-w-[140px] truncate">
                                   {r.notes || '—'}
                                 </td>
+                                <td className="p-2.5 text-center whitespace-nowrap">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const sid = viewingStudentRecord.id;
+                                        setViewingStudentRecord(null);
+                                        handleOpenModal(sid, r);
+                                      }}
+                                      className="p-1.5 text-stone-500 hover:text-[#8E5364] hover:bg-[#FAF0F3] rounded-lg transition cursor-pointer"
+                                      title="تعديل هذا السجل السابق"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setRecordToDelete(r)}
+                                      className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                      title="حذف هذا السجل"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
                               </tr>
                             );
                           })}
@@ -1558,6 +1608,56 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                 className="px-4 py-2 bg-stone-200 dark:bg-stone-700 hover:bg-stone-300 dark:hover:bg-stone-600 text-stone-700 dark:text-stone-200 rounded-xl text-xs font-bold cursor-pointer transition"
               >
                 إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Alert Modal for Recitation Record */}
+      {recordToDelete && (
+        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-stone-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-200 dark:border-stone-800 text-right space-y-4" dir="rtl">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-stone-900 dark:text-stone-100 text-base font-quran">
+                تأكيد حذف سجل التسميع
+              </h3>
+              <p className="text-sm font-bold text-rose-700 dark:text-rose-400">
+                هل أنت متأكد من حذف هذا السجل؟
+              </p>
+              <p className="text-xs text-stone-600 dark:text-stone-400 font-semibold mt-1">
+                تاريخ: {recordToDelete.date} • {recordToDelete.requiredPortionText || 'مقرر التسميع'}
+              </p>
+            </div>
+
+            <p className="text-xs text-stone-500 dark:text-stone-400 leading-relaxed bg-[#FCFAF8] dark:bg-stone-800/60 p-3 rounded-2xl border border-stone-200 dark:border-stone-700 text-center">
+              سيتم حذف سجل التسميع فوراً وتحديث درجات الطالبة سحابياً.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100 dark:border-stone-800">
+              <button
+                type="button"
+                onClick={() => setRecordToDelete(null)}
+                className="px-4 py-2 text-stone-600 dark:text-stone-300 text-xs font-bold rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 transition cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const rid = recordToDelete.id;
+                  setRecordToDelete(null);
+                  await deleteDailyRecord(rid);
+                  showToast?.('تم حذف سجل التسميع ومزامنة التغييرات سحابياً 🗑️');
+                }}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف</span>
               </button>
             </div>
           </div>

@@ -30,6 +30,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
   // Modals state
   const [studentModalOpen, setStudentModalOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<any>(null);
+  const [studentToDelete, setStudentToDelete] = useState<any>(null);
   const [partnerModalOpen, setPartnerModalOpen] = useState(false);
   const [selectedStudentForPartner, setSelectedStudentForPartner] = useState<any>(null);
   const [targetPartnerId, setTargetPartnerId] = useState<string>('');
@@ -40,6 +41,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
     code: '',
     phone: '',
     email: '',
+    trackId: '',
     circleId: '',
     status: 'active' as StudentStatus,
     notes: '',
@@ -78,25 +80,31 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 
   const handleOpenStudentModal = (student?: any) => {
     if (student) {
+      const circle = circles.find(c => c.id === student.circleId);
+      const currentTrackId = student.trackId || circle?.trackId || tracks[0]?.id || '';
       setEditingStudent(student);
       setStudentForm({
         name: student.name,
         code: student.code,
         phone: student.phone || '',
         email: student.email || '',
+        trackId: currentTrackId,
         circleId: student.circleId,
         status: student.status,
         notes: student.notes || '',
         joinDate: student.joinDate || new Date().toISOString().split('T')[0]
       });
     } else {
+      const defaultTrackId = tracks[0]?.id || '';
+      const availableCirclesInTrack = circles.filter(c => !c.trackId || c.trackId === defaultTrackId);
       setEditingStudent(null);
       setStudentForm({
         name: '',
         code: `GH-${Math.floor(100 + Math.random() * 900)}`,
         phone: '05',
         email: '',
-        circleId: circles[0]?.id || '',
+        trackId: defaultTrackId,
+        circleId: availableCirclesInTrack[0]?.id || circles[0]?.id || '',
         status: 'active',
         notes: '',
         joinDate: new Date().toISOString().split('T')[0]
@@ -109,7 +117,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
     e.preventDefault();
     if (!studentForm.name.trim()) return;
     const circle = circles.find(c => c.id === studentForm.circleId);
-    const trackId = circle?.trackId || tracks[0]?.id;
+    const trackId = studentForm.trackId || circle?.trackId || tracks[0]?.id;
 
     const payload = {
       ...studentForm,
@@ -359,25 +367,21 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                           ملف الإنجاز
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleOpenStudentModal(student)}
-                          className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-100"
+                          className="p-1.5 text-stone-500 hover:text-[#8E5364] rounded-lg hover:bg-[#FAF0F3] transition cursor-pointer"
                           title="تعديل بيانات الطالبة"
                         >
                           <Edit className="w-3.5 h-3.5" />
                         </button>
-                        {hasFullAccess(currentUser) && (
-                          <button
-                            onClick={() => {
-                              if (window.confirm(`هل أنتِ متأكدة من حذف الطالبة "${student.name}" نهائياً من المقرأة بدون أرشفة؟ سيتم حذف كافة بياناتها وسجلاتها بشكل نهائي.`)) {
-                                deleteStudent(student.id);
-                              }
-                            }}
-                            className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition cursor-pointer"
-                            title="حذف نهائي بدون أرشفة"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setStudentToDelete(student)}
+                          className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition cursor-pointer"
+                          title="حذف الطالبة"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -397,7 +401,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
             </h3>
             <form onSubmit={handleSaveStudent} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">اسم الطالبة الرباعي</label>
+                <label className="block text-xs font-bold text-stone-700 mb-1">اسم الطالبة الرباعي *</label>
                 <input
                   type="text"
                   required
@@ -406,6 +410,58 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                   onChange={e => setStudentForm({ ...studentForm, name: e.target.value })}
                   className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs focus:ring-2 focus:ring-[#8E5364]"
                 />
+              </div>
+
+              {/* Track and Halaqah Selection */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">المسار القرآني *</label>
+                  <select
+                    value={studentForm.trackId}
+                    onChange={e => {
+                      const newTrackId = e.target.value;
+                      const circlesInTrack = circles.filter(c => c.trackId === newTrackId && !c.isArchived);
+                      setStudentForm({
+                        ...studentForm,
+                        trackId: newTrackId,
+                        circleId: circlesInTrack[0]?.id || studentForm.circleId
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
+                  >
+                    {tracks.filter(t => !t.isArchived).map(t => (
+                      <option key={t.id} value={t.id}>{t.icon || '🪴'} {t.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">الحلقة المخصصة *</label>
+                  <select
+                    value={studentForm.circleId}
+                    onChange={e => {
+                      const selectedC = circles.find(c => c.id === e.target.value);
+                      setStudentForm({
+                        ...studentForm,
+                        circleId: e.target.value,
+                        trackId: selectedC?.trackId || studentForm.trackId
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
+                  >
+                    {circles
+                      .filter(c => !c.isArchived && (!studentForm.trackId || c.trackId === studentForm.trackId))
+                      .map(c => (
+                        <option key={c.id} value={c.id}>{c.name} ({c.teacherName})</option>
+                      ))}
+                    {/* Fallback to all circles if current track has none */}
+                    {circles.filter(c => !c.isArchived && (!studentForm.trackId || c.trackId === studentForm.trackId)).length === 0 && (
+                      circles.filter(c => !c.isArchived).map(c => (
+                        <option key={c.id} value={c.id}>{c.name} ({c.teacherName})</option>
+                      ))
+                    )}
+                  </select>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -420,21 +476,6 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">الحلقة المخصصة</label>
-                  <select
-                    value={studentForm.circleId}
-                    onChange={e => setStudentForm({ ...studentForm, circleId: e.target.value })}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
-                  >
-                    {circles.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} ({c.teacherName})</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
                   <label className="block text-xs font-bold text-stone-700 mb-1">رقم الجوال للتواصل</label>
                   <input
                     type="tel"
@@ -444,6 +485,9 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                     className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs"
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-stone-700 mb-1">حالة القيد</label>
                   <select
@@ -456,6 +500,15 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                     <option value="withdrawn">منسحبة</option>
                     <option value="archived">مؤرشفة</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">تاريخ الانضمام</label>
+                  <input
+                    type="date"
+                    value={studentForm.joinDate}
+                    onChange={e => setStudentForm({ ...studentForm, joinDate: e.target.value })}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white"
+                  />
                 </div>
               </div>
 
@@ -483,10 +536,59 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                   style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
                   className="px-6 py-2.5 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 active:scale-95 cursor-pointer touch-manipulation"
                 >
-                  حفظ السجل
+                  حفظ
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Alert Modal */}
+      {studentToDelete && (
+        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-200 text-right space-y-4" dir="rtl">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-stone-900 text-base font-quran">
+                تأكيد حذف الطالبة
+              </h3>
+              <p className="text-sm font-bold text-rose-700">
+                هل أنت متأكد من حذف هذا السجل؟
+              </p>
+              <p className="text-xs text-stone-600 font-semibold mt-1">
+                «{studentToDelete.name}» ({studentToDelete.code})
+              </p>
+            </div>
+
+            <p className="text-xs text-stone-500 leading-relaxed bg-[#FCFAF8] p-3 rounded-2xl border border-stone-200 text-center">
+              سيتم حذف الطالبة وكافة بياناتها نهائياً ومزامنة ذلك عبر السحابة فوراً.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setStudentToDelete(null)}
+                className="px-4 py-2 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 transition cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const sid = studentToDelete.id;
+                  setStudentToDelete(null);
+                  await deleteStudent(sid);
+                }}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
