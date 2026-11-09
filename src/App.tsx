@@ -27,6 +27,7 @@ import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 import { UpdateNotification } from './components/UpdateNotification';
 import { isLocalDemoMode } from './demoMode';
 import { hasFullAccess } from './types';
+import { syncInstitutionLogoAsPWAAppIcon } from './services/pwaIconSync';
 
 const VIEW_TYPES: ViewType[] = [
   'dashboard', 'tracks_circles', 'track_detail', 'students', 'subscriptions',
@@ -177,32 +178,15 @@ const AppContent: React.FC = () => {
     }
   }, [settings?.primaryColor, settings?.secondaryColor, settings?.buttonRadius, settings?.fontFamily]);
 
-  // تطبيق الشعار المختار للمقرأة في صفحة الويب وتبويب المتصفح (Favicon + Apple Touch Icon + Tab Title)
+  // تطبيق الشعار المختار للمقرأة في صفحة الويب، تبويب المتصفح، وأيقونة تثبيت التطبيق على الجهاز (PWA Manifest + Apple Touch Icon + Favicon)
   React.useEffect(() => {
     if (typeof document !== 'undefined') {
       const siteName = settings?.name || 'مقرأة غيث الغيم';
       const siteSubtitle = settings?.subtitle || 'منصة الإدارة والمقرأة القرآنية';
       document.title = `${siteName} | ${siteSubtitle}`;
-
-      const logo = settings?.logoUrl;
-      if (logo) {
-        // تحديث أيقونة الموقع (Favicon) وروابط الأيقونات في ترويسة صفحة الويب فوراً
-        const updateFaviconLink = (rel: string) => {
-          let link = document.querySelector(`link[rel='${rel}']`) as HTMLLinkElement | null;
-          if (!link) {
-            link = document.createElement('link');
-            link.rel = rel;
-            document.head.appendChild(link);
-          }
-          link.href = logo;
-        };
-
-        updateFaviconLink('icon');
-        updateFaviconLink('shortcut icon');
-        updateFaviconLink('apple-touch-icon');
-      }
+      syncInstitutionLogoAsPWAAppIcon(settings);
     }
-  }, [settings?.logoUrl, settings?.name, settings?.subtitle]);
+  }, [settings?.logoUrl, settings?.name, settings?.subtitle, settings?.primaryColor]);
 
   const handleLockSession = () => {
     if (typeof window !== 'undefined') {

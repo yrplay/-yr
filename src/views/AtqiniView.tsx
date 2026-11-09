@@ -1019,8 +1019,8 @@ export const AtqiniView: React.FC = () => {
                     className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white font-bold"
                   >
                     <option value="ممتاز">ممتاز ⭐⭐⭐</option>
-                    <option value="جيد جدًا">جيد جدًا ⭐</option>
-                    <option value="جيد">جيد</option>
+                    <option value="جيد جدًا">جيد جدًا ⭐⭐</option>
+                    <option value="جيد">جيد ⭐</option>
                     <option value="يحتاج إلى تحسين">يحتاج إلى تحسين</option>
                     <option value="لم يُنجز">لم يُنجز</option>
                   </select>

@@ -11,6 +11,7 @@ import { PWAInstallButton } from '../components/PWAInstallButton';
 import { AuditLogModal } from '../components/AuditLogModal';
 import { DeveloperDeploymentPanel } from '../components/DeveloperDeploymentPanel';
 import { defaultMasteryGuideConfig, hasFullAccess } from '../types';
+import { syncInstitutionLogoAsPWAAppIcon } from '../services/pwaIconSync';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -107,7 +108,8 @@ export const SettingsView: React.FC = () => {
       const dataUrl = ev.target?.result as string;
       setForm(prev => ({ ...prev, logoUrl: dataUrl }));
       updateSettings({ logoUrl: dataUrl });
-      showToast('تم حفظ شعار المقرأة بنجاح 🖼️');
+      syncInstitutionLogoAsPWAAppIcon({ ...settings, ...form, logoUrl: dataUrl });
+      showToast('تم حفظ شعار المقرأة واعتماده كأيقونة لتثبيت التطبيق على الجهاز بنجاح 🖼️📲');
     };
     reader.readAsDataURL(file);
   };
@@ -684,25 +686,43 @@ export const SettingsView: React.FC = () => {
           <div className="flex items-center justify-between border-b border-stone-100 pb-3">
             <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
               <ImageIcon className="w-4 h-4 text-[#8E5364]" />
-              <span>٢. شعار المقرأة الرسمي (رفع من الجهاز):</span>
+              <span>٢. شعار المقرأة الرسمي وأيقونة التطبيق عند التثبيت:</span>
             </h3>
-            <span className="text-[11px] text-stone-400">يظهر في الترويسة والشهادات والتقارير المعتمدة</span>
+            <span className="text-[11px] text-stone-400">يظهر في الترويسة، الشهادات، وكأيقونة للتطبيق على شاشة الجوال والحاسوب</span>
           </div>
 
           <div className="flex flex-col sm:flex-row items-center gap-5 p-4 bg-[#FCFAF8] rounded-2xl border border-stone-200">
-            <div className="w-24 h-24 rounded-2xl bg-white border border-stone-200 shadow-2xs flex items-center justify-center p-2 shrink-0 overflow-hidden">
-              {form.logoUrl ? (
-                <img
-                  src={form.logoUrl}
-                  alt="شعار المقرأة"
-                  className="w-full h-full object-contain"
-                />
-              ) : (
-                <div className="text-center text-stone-400">
-                  <Cloud className="w-8 h-8 mx-auto text-stone-300 mb-1" />
-                  <span className="text-[9px] block">الشعار الافتراضي</span>
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="w-24 h-24 rounded-2xl bg-white border border-stone-200 shadow-2xs flex items-center justify-center p-2 overflow-hidden">
+                {form.logoUrl ? (
+                  <img
+                    src={form.logoUrl}
+                    alt="شعار المقرأة"
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <img
+                    src="/pwa-192x192.png"
+                    alt="الشعار الافتراضي"
+                    className="w-full h-full object-contain"
+                  />
+                )}
+              </div>
+
+              {/* معاينة شكل أيقونة التطبيق على شاشة الجوال */}
+              <div className="flex flex-col items-center gap-1 px-3 py-2 rounded-2xl bg-stone-100/80 border border-stone-200/80">
+                <div className="w-14 h-14 rounded-[18px] bg-white border border-stone-200 shadow-sm flex items-center justify-center p-1.5 overflow-hidden">
+                  <img
+                    src={form.logoUrl || '/pwa-192x192.png'}
+                    alt="أيقونة التطبيق"
+                    className="w-full h-full object-contain"
+                  />
                 </div>
-              )}
+                <span className="text-[10px] font-bold text-stone-700 max-w-[76px] truncate">
+                  {(form.name || 'غيث الغيم').replace(/^مقرأة\s+/, '')}
+                </span>
+                <span className="text-[9px] text-[#8E5364] font-semibold">أيقونة التثبيت 📲</span>
+              </div>
             </div>
 
             <div className="space-y-2 flex-1 text-center sm:text-right">
@@ -721,7 +741,12 @@ export const SettingsView: React.FC = () => {
                 {form.logoUrl && (
                   <button
                     type="button"
-                    onClick={() => setForm(prev => ({ ...prev, logoUrl: '' }))}
+                    onClick={() => {
+                      setForm(prev => ({ ...prev, logoUrl: '' }));
+                      updateSettings({ logoUrl: '' });
+                      syncInstitutionLogoAsPWAAppIcon({ ...settings, ...form, logoUrl: '' });
+                      showToast('تمت إزالة الشعار المرفوع والعودة للشعار الافتراضي');
+                    }}
                     className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -730,7 +755,7 @@ export const SettingsView: React.FC = () => {
                 )}
               </div>
               <p className="text-[11px] text-stone-500 leading-relaxed">
-                يدعم صيغ PNG أو JPG أو SVG. يُفضل استخدام صورة مربعة أو أفقية بخلفية شفافة لتظهر بأبهى حلة في كامل شاشات المقرأة.
+                الشعار الذي ترفعينه هنا يُعتمد تلقائياً في ترويسة الموقع، وتبويب المتصفح، و<strong>أيقونة التطبيق الرسمية عند تثبيته على شاشة الجوال (الآيفون والأندرويد) أو سطح المكتب</strong>.
               </p>
             </div>
           </div>

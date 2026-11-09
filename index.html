@@ -47,10 +47,10 @@
       })();
     </script>
     <title>غيث الغيم | منصة الإدارة والمقرأة القرآنية</title>
-    <meta name="description" content="المنصة الإدارية المتكاملة لمقرأة غيث الغيم لإدارة الحلقات والمسارات والخطط الشهرية والحفظ والمراجعة وأتقني والتحديات والدرجات بقيادة ريفة المنصوري" />
+    <meta name="description" content="المنصة الإدارية المتكاملة لمقرأة غيث الغيم لإدارة الحلقات والمسارات والخطط الشهرية والحفظ والمراجعة وأتقني والتحديات والدرجات بقيادة الأستاذة ريفة المنصوري _ غفر الله لها" />
     <meta name="author" content="ياسر التاج · yr_alhosine" />
     <meta property="og:title" content="غيث الغيم | منصة الإدارة والمقرأة القرآنية" />
-    <meta property="og:description" content="المنصة الإدارية المتكاملة لمقرأة غيث الغيم لإدارة الحلقات والمسارات والخطط الشهرية والحفظ والمراجعة وأتقني والتحديات والدرجات بقيادة ريفة المنصوري" />
+    <meta property="og:description" content="المنصة الإدارية المتكاملة لمقرأة غيث الغيم لإدارة الحلقات والمسارات والخطط الشهرية والحفظ والمراجعة وأتقني والتحديات والدرجات بقيادة الأستاذة ريفة المنصوري _ غفر الله لها" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
 
@@ -60,9 +60,25 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="غيث الغيم" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
     <link rel="shortcut icon" href="/favicon.ico" />
+    <script>
+      (function() {
+        try {
+          var raw = localStorage.getItem('ghaith_pwa_icon_cache_v1');
+          if (!raw) return;
+          var cached = JSON.parse(raw);
+          if (!cached || !cached.icon180 || !cached.icon192 || !cached.icon512) return;
+          var appleIcon = document.querySelector("link[rel='apple-touch-icon']");
+          if (appleIcon) appleIcon.href = cached.icon180;
+          var favIcon = document.querySelector("link[rel='icon']");
+          if (favIcon) favIcon.href = cached.icon192;
+          var shortIcon = document.querySelector("link[rel='shortcut icon']");
+          if (shortIcon) shortIcon.href = cached.icon192;
+        } catch (e) {}
+      })();
+    </script>
 
     <!-- Google Fonts for Secondary/Backup: Tajawal & Amiri -->
     <link rel="preconnect" href="https://fonts.googleapis.com">

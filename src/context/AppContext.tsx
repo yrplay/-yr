@@ -843,13 +843,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const map = new Map<string, AttendanceRecord>();
     for (const inc of incomingAtt) {
       const key = inc.id || `att_${inc.studentId}_${inc.date}`;
-      map.set(key, inc);
+      const isAbsent = inc.status === 'absent_unexcused' || inc.status === 'absent_excused';
+      map.set(key, { ...inc, earlyPrepCardSent: isAbsent ? false : !!inc.earlyPrepCardSent });
     }
     for (const loc of localAtt) {
       const key = loc.id || `att_${loc.studentId}_${loc.date}`;
       const inc = map.get(key);
-      if (!inc) map.set(key, loc);
-      else map.set(key, { ...inc, ...loc });
+      const merged = !inc ? loc : { ...inc, ...loc };
+      const isAbsent = merged.status === 'absent_unexcused' || merged.status === 'absent_excused';
+      map.set(key, { ...merged, earlyPrepCardSent: isAbsent ? false : !!merged.earlyPrepCardSent });
     }
     return Array.from(map.values());
   };
@@ -1860,17 +1862,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
     const studentObj = currentStudents.find((s: Student) => s.id === record.studentId);
 
+    const finalStatus = record.status || 'present';
+    const isAbsent = finalStatus === 'absent_unexcused' || finalStatus === 'absent_excused';
+
     const newRecord: AttendanceRecord = {
+      ...record,
       id: cleanId,
       studentId: record.studentId || '',
       circleId: record.circleId || '',
       date: recDate,
-      status: record.status || 'present',
-      earlyPrepCardSent: !!record.earlyPrepCardSent,
+      status: finalStatus,
+      earlyPrepCardSent: isAbsent ? false : !!record.earlyPrepCardSent,
       reason: record.reason,
       recordedBy: currentUser?.name || 'معلمة الحلقة',
-      recordedAt: new Date().toISOString(),
-      ...record
+      recordedAt: new Date().toISOString()
     };
 
     const currentAtt = masterStateRef.current.attendanceRecords || attendanceRecords;
@@ -1926,17 +1931,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     records.forEach(rec => {
       const recDate = rec.date || new Date().toISOString().split('T')[0];
       const cleanId = rec.id || `att_${rec.studentId}_${recDate}`;
+      const finalStatus = rec.status || 'present';
+      const isAbsent = finalStatus === 'absent_unexcused' || finalStatus === 'absent_excused';
       const newRecord: AttendanceRecord = {
+        ...rec,
         id: cleanId,
         studentId: rec.studentId || '',
         circleId: rec.circleId || '',
         date: recDate,
-        status: rec.status || 'present',
-        earlyPrepCardSent: !!rec.earlyPrepCardSent,
+        status: finalStatus,
+        earlyPrepCardSent: isAbsent ? false : !!rec.earlyPrepCardSent,
         reason: rec.reason,
         recordedBy: currentUser?.name || 'معلمة الحلقة',
-        recordedAt: new Date().toISOString(),
-        ...rec
+        recordedAt: new Date().toISOString()
       };
       const idx = next.findIndex(
         a => a.id === cleanId || (a.studentId === newRecord.studentId && a.date === newRecord.date)
