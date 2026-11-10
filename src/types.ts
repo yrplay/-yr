@@ -187,6 +187,10 @@ export interface MonthlyPlan {
 
 export interface PlanBranchConfig {
   enabled?: boolean;
+  isNoorania?: boolean;
+  fromLesson?: number;
+  toLesson?: number;
+  customLessonText?: string;
   fromSurah: number;
   fromAyah: number;
   toSurah: number;
@@ -196,7 +200,7 @@ export interface PlanBranchConfig {
   dailyAmountPages?: number;
   targetDailyAmount: string;
   actualDailyAmount?: string;
-  revisionType?: 'صغرى' | 'تمكين' | string;
+  revisionType?: 'صغرى' | 'تمكين' | 'نورانية' | string;
   status?: 'completed' | 'in_progress' | 'pending' | string;
   teacherNotes?: string;
 }
@@ -223,6 +227,8 @@ export interface RevisionPortion {
   fromAyah: number;
   toAyah: number;
   pagesCount?: number;
+  isNoorania?: boolean;
+  nooraniaLessonText?: string;
   status: 'excellent' | 'acceptable' | 'needs_repetition' | 'unrecited';
 }
 

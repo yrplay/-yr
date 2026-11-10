@@ -7,6 +7,7 @@ import {
   Eye, Edit3, Palette, X, RefreshCw, Upload, Trash2, Printer
 } from 'lucide-react';
 import { OfficialSeal } from '../components/OfficialSeal';
+import { isStudentDefaultNoorania } from './MonthlyPlansView';
 
 interface StudentPortfolioViewProps {
   initialStudentId?: string;
@@ -70,11 +71,24 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
     ? (activeStudentPlan as any).newMemorization.enabled !== false
     : true;
 
+  const isNooraniaTrack = Boolean(
+    (activeStudentPlan as any)?.minorRevision?.isNoorania ||
+    (activeStudentPlan as any)?.minorRevision?.revisionType === 'نورانية' ||
+    isStudentDefaultNoorania(student?.name)
+  );
+  const minorSectionLabel = isNooraniaTrack ? 'القاعدة النورانية' : 'المراجعة الصغرى';
+  const targetMinorPages =
+    (activeStudentPlan as any)?.minorRevision?.targetPages ?? (isNooraniaTrack ? 6 : 4);
+
   // الخطة تحدد المستهدف، وملخص السجلات اليومية هو المصدر الوحيد للمنجز.
   const targetNewPages = !isNewMemPlanEnabled
     ? 0
     : ((activeStudentPlan as any)?.newMemorization?.targetPages ?? score?.newMemorizationPagesTarget ?? 8);
-  const targetRevPages = (activeStudentPlan as any)?.revision?.targetPages ?? score?.revisionPagesTarget ?? 4;
+  const targetRevPages =
+    (activeStudentPlan as any)?.tamkeenRevision?.targetPages ??
+    (activeStudentPlan as any)?.revision?.targetPages ??
+    score?.revisionPagesTarget ??
+    4;
   const doneNewPages = score?.newMemorizationPagesDone ?? 0;
   const doneRevPages = score?.revisionPagesDone ?? 0;
   const doneMinorRevisionPages = score?.minorRevisionPagesDone ?? 0;
@@ -570,8 +584,9 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         <div style="font-size: 9px; color: #78716c; margin-top: 2px;">المستهدف: ${targetNewPages} ص</div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">المراجعة الصغرى</div>
-        <div class="stat-value">${doneMinorRevisionPages} ص</div>
+        <div class="stat-label">${minorSectionLabel}</div>
+        <div class="stat-value">${doneMinorRevisionPages} ${isNooraniaTrack ? 'درس/ص' : 'ص'}</div>
+        <div style="font-size: 9px; color: #78716c; margin-top: 2px;">المستهدف: ${targetMinorPages} ${isNooraniaTrack ? 'درس/ص' : 'ص'}</div>
       </div>
       <div class="stat-box">
         <div class="stat-label">مراجعة التمكين</div>
@@ -609,10 +624,10 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           <td>${score?.memorizationScore || 10} / 10</td>
         </tr>` : ''}
         <tr>
-          <td><strong>المراجعة الصغرى</strong></td>
-          <td>حسب خطة المراجعة</td>
-          <td>${doneMinorRevisionPages} صفحات</td>
-          <td>—</td>
+          <td><strong>${minorSectionLabel}</strong></td>
+          <td>${isNooraniaTrack ? `${targetMinorPages} دروس / صفحات` : `${targetMinorPages} صفحات (ربط قريب)`}</td>
+          <td>${doneMinorRevisionPages} ${isNooraniaTrack ? 'دروس / صفحات' : 'صفحات'}</td>
+          <td>${isNooraniaTrack ? 'متقن بالتهجي ✅' : 'متقن ✅'}</td>
         </tr>
         <tr>
           <td><strong>مراجعة التمكين</strong></td>
@@ -1005,8 +1020,10 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                 )}
               </div>
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
-                <span>المراجعة الصغرى المنجزة:</span>
-                <strong className="text-stone-900">{doneMinorRevisionPages} صفحات</strong>
+                <span>{isNooraniaTrack ? 'مسار القاعدة النورانية:' : 'المراجعة الصغرى المنجزة:'}</span>
+                <strong className="text-stone-900">
+                  {doneMinorRevisionPages} من {targetMinorPages} {isNooraniaTrack ? 'دروس / صفحات' : 'صفحات'}
+                </strong>
               </div>
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>مراجعة التمكين:</span>
@@ -1551,8 +1568,13 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                     <span className="text-[9px] text-stone-400 block mt-0.5">المستهدف: {targetNewPages} ص</span>
                   </div>
                   <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
-                    <span className="text-[10px] text-stone-500 block">المراجعة الصغرى</span>
-                    <strong className="text-sm font-bold text-stone-900">{doneMinorRevisionPages} ص</strong>
+                    <span className="text-[10px] text-stone-500 block">{minorSectionLabel}</span>
+                    <strong className="text-sm font-bold text-stone-900">
+                      {doneMinorRevisionPages} {isNooraniaTrack ? 'درس/ص' : 'ص'}
+                    </strong>
+                    <span className="text-[9px] text-stone-400 block mt-0.5">
+                      المستهدف: {targetMinorPages} {isNooraniaTrack ? 'درس/ص' : 'ص'}
+                    </span>
                   </div>
                   <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
                     <span className="text-[10px] text-stone-500 block">مراجعة التمكين</span>
@@ -1593,10 +1615,16 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                         </tr>
                       )}
                       <tr>
-                        <td className="p-2.5 font-bold text-stone-900">المراجعة الصغرى</td>
-                        <td className="p-2.5">حسب برنامج اليوم</td>
-                        <td className="p-2.5">{doneMinorRevisionPages} صفحات</td>
-                        <td className="p-2.5">—</td>
+                        <td className="p-2.5 font-bold text-stone-900">{minorSectionLabel}</td>
+                        <td className="p-2.5">
+                          {isNooraniaTrack ? `${targetMinorPages} دروس / صفحات` : `${targetMinorPages} صفحات (ربط قريب)`}
+                        </td>
+                        <td className="p-2.5">
+                          {doneMinorRevisionPages} {isNooraniaTrack ? 'دروس / صفحات' : 'صفحات'}
+                        </td>
+                        <td className="p-2.5 text-emerald-700 font-bold">
+                          {isNooraniaTrack ? 'متقن بالتهجي ✅' : 'متقن ✅'}
+                        </td>
                       </tr>
                       <tr>
                         <td className="p-2.5 font-bold text-stone-900">مراجعة التمكين</td>

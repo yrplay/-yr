@@ -8,6 +8,7 @@ import { useApp } from '../context/AppContext';
 import { QURAN_SURAHS, SurahInfo } from '../data/quranData';
 import { defaultMasteryGuideConfig, CustomMasteryCriterion, MasteryGuideConfig, Student } from '../types';
 import { HijriDateNavigationBar, formatHijriDate, formatHijriShort, getHijriParts, getTodayISO } from '../utils/hijriDate';
+import { NOORANIA_LESSONS, isStudentDefaultNoorania, formatNooraniaRangeLabel } from './MonthlyPlansView';
 
 /**
  * دالة مساعدة لحساب عدد أوجه القرآن الكريم تقريبياً وبدقة
@@ -294,6 +295,11 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
   const isTamkeenRevPlanEnabled = modalStudentPlan
     ? (modalStudentPlan.tamkeenRevision?.enabled ?? modalStudentPlan.revision?.enabled) !== false
     : true;
+  const isNooraniaTrack = Boolean(
+    modalStudentPlan?.minorRevision?.isNoorania ||
+    modalStudentPlan?.minorRevision?.revisionType === 'نورانية' ||
+    isStudentDefaultNoorania(modalStudent?.name)
+  );
 
   const studentStats = useMemo(() => {
     if (!studentRecords.length) {
@@ -415,11 +421,14 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     tajweedErrors: 0,
     notes: '',
 
-    // المراجعة الصغرى (الربط القريب)
+    // المراجعة الصغرى (الربط القريب) أو مسار القاعدة النورانية
     minorFromSurah: 2,
     minorFromAyah: 1,
     minorToSurah: 2,
     minorToAyah: 25,
+    minorFromLesson: 1,
+    minorToLesson: 1,
+    nooraniaLessonText: '',
     minorPages: 1,
     attemptedMinorPages: 1,
     minorOutcome: 'mastered' as 'mastered' | 'redo' | 'excused',
@@ -582,6 +591,16 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         minorFromAyah: existing.minorRevisionPortion?.fromAyah ?? existing.minorFromAyah ?? 1,
         minorToSurah: existing.minorToSurah ?? existing.minorRevisionPortion?.surahNumber ?? 2,
         minorToAyah: existing.minorRevisionPortion?.toAyah ?? existing.minorToAyah ?? 25,
+        minorFromLesson: existing.minorFromLesson ?? studentPlan?.minorRevision?.fromLesson ?? 1,
+        minorToLesson: existing.minorToLesson ?? studentPlan?.minorRevision?.toLesson ?? 1,
+        nooraniaLessonText:
+          existing.minorRevisionPortion?.nooraniaLessonText ??
+          existing.nooraniaLessonText ??
+          formatNooraniaRangeLabel(
+            existing.minorFromLesson ?? studentPlan?.minorRevision?.fromLesson ?? 1,
+            existing.minorToLesson ?? studentPlan?.minorRevision?.toLesson ?? 1,
+            studentPlan?.minorRevision?.customLessonText
+          ),
         minorPages: planMinorEnabled
           ? (exMinorOutcome === 'mastered' ? (existing.minorRevisionPortion?.pagesCount ?? existing.minorPages ?? 1) : 0)
           : 0,
@@ -653,6 +672,20 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         portionLabel = formatPortionText(defFromS, defFromA, defToS, defToA);
       }
 
+      const targetStudentObj = students.find(s => s.id === studentId);
+      const isTargetNoorania = Boolean(
+        studentPlan?.minorRevision?.isNoorania ||
+        studentPlan?.minorRevision?.revisionType === 'نورانية' ||
+        isStudentDefaultNoorania(targetStudentObj?.name)
+      );
+      const minFromLesson = studentPlan?.minorRevision?.fromLesson || 1;
+      const minToLesson = studentPlan?.minorRevision?.toLesson || (isTargetNoorania ? 2 : 1);
+      const defaultNooraniaText = formatNooraniaRangeLabel(
+        minFromLesson,
+        minToLesson,
+        studentPlan?.minorRevision?.customLessonText
+      );
+
       const minFromS = studentPlan?.minorRevision?.fromSurah || 2;
       const minFromA = studentPlan?.minorRevision?.fromAyah || 1;
       const minToS = studentPlan?.minorRevision?.toSurah || 2;
@@ -660,6 +693,8 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       const initialMinorPages = planMinorEnabled
         ? (typeof studentPlan?.minorRevision?.dailyAmountPages === 'number' && studentPlan.minorRevision.dailyAmountPages > 0
             ? studentPlan.minorRevision.dailyAmountPages
+            : isTargetNoorania
+            ? 1
             : calculatePortionPages(minFromS, minFromA, minToS, minToA))
         : 0;
 
@@ -694,6 +729,9 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         minorFromAyah: minFromA,
         minorToSurah: minToS,
         minorToAyah: minToA,
+        minorFromLesson: minFromLesson,
+        minorToLesson: minToLesson,
+        nooraniaLessonText: defaultNooraniaText,
         minorPages: initialMinorPages,
         attemptedMinorPages: initialMinorPages,
         minorOutcome: 'mastered',
@@ -811,6 +849,10 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         fromAyah: Number(form.minorFromAyah) || 1,
         toAyah: Number(form.minorToAyah) || 1,
         pagesCount: effectiveMinorPages,
+        isNoorania: isNooraniaTrack,
+        nooraniaLessonText: isNooraniaTrack
+          ? (form.nooraniaLessonText || formatNooraniaRangeLabel(form.minorFromLesson, form.minorToLesson))
+          : undefined,
         status: form.minorOutcome === 'mastered'
           ? 'excellent'
           : form.minorOutcome === 'redo'
@@ -1239,14 +1281,20 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
 
                 <div className="p-2.5 rounded-xl bg-white/90 dark:bg-stone-800/90 border border-[#E8DFD8] dark:border-stone-700">
                   <span className="text-[10px] font-bold text-stone-500 dark:text-stone-400 block mb-0.5">
-                    🔄 مقرر المراجعة لليوم:
+                    {isNooraniaTrack ? '🔤 مقرر القاعدة النورانية ومراجعة التمكين لليوم:' : '🔄 مقرر المراجعة لليوم:'}
                   </span>
                   {isMinorRevPlanEnabled || isTamkeenRevPlanEnabled ? (
                     <div className="font-bold text-stone-800 dark:text-stone-100 space-y-0.5 text-[11px]">
                       {isMinorRevPlanEnabled && (
                         <div>
-                          <span className="text-stone-500">صغرى: </span>
-                          <span>{formatPortionText(form.minorFromSurah, form.minorFromAyah, form.minorToSurah, form.minorToAyah)}</span>
+                          <span className="text-amber-700 dark:text-amber-400">
+                            {isNooraniaTrack ? 'القاعدة النورانية: ' : 'صغرى: '}
+                          </span>
+                          <span>
+                            {isNooraniaTrack
+                              ? (form.nooraniaLessonText || formatNooraniaRangeLabel(form.minorFromLesson, form.minorToLesson))
+                              : formatPortionText(form.minorFromSurah, form.minorFromAyah, form.minorToSurah, form.minorToAyah)}
+                          </span>
                         </div>
                       )}
                       {isTamkeenRevPlanEnabled && (
@@ -1510,18 +1558,24 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
               </div>
             </div>
 
-            {/* ===================== 2. المراجعة الصغرى (الربط القريب) ===================== */}
+            {/* ===================== 2. المراجعة الصغرى (الربط القريب) أو مسار القاعدة النورانية ===================== */}
             {isMinorRevPlanEnabled ? (
               <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="font-bold text-xs text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
-                    <span>🔄</span>
-                    <span>المراجعة الصغرى (الربط القريب):</span>
+                    <span>{isNooraniaTrack ? '🔤' : '🔄'}</span>
+                    <span>
+                      {isNooraniaTrack
+                        ? 'القاعدة النورانية (رصد الدرس والصفحات والتهجي):'
+                        : 'المراجعة الصغرى (الربط القريب):'}
+                    </span>
                   </h4>
 
-                  {/* الأوجه المنجزة للمراجعة الصغرى */}
+                  {/* الأوجه / الدروس المنجزة للمراجعة الصغرى أو القاعدة النورانية */}
                   <div className="flex items-center gap-1.5 bg-white dark:bg-stone-800 px-2.5 py-1 rounded-xl border border-stone-200 dark:border-stone-700">
-                    <span className="text-[11px] text-stone-500 font-bold">الأوجه المنجزة:</span>
+                    <span className="text-[11px] text-stone-500 font-bold">
+                      {isNooraniaTrack ? 'الدروس / الصفحات المنجزة:' : 'الأوجه المنجزة:'}
+                    </span>
                     <input
                       type="number"
                       min="0"
@@ -1537,7 +1591,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                   </div>
                 </div>
 
-                {/* أزرار الرصد الذكية للمراجعة الصغرى */}
+                {/* أزرار الرصد الذكية للمراجعة الصغرى / القاعدة النورانية */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <button
                     type="button"
@@ -1595,60 +1649,124 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                   </button>
                 </div>
 
-                {/* من سورة ومن آية إلى سورة وإلى آية */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <div>
-                    <label className="block text-[11px] text-stone-500 mb-1">من سورة</label>
-                    <select
-                      value={form.minorFromSurah}
-                      onChange={e => handleMinorPortionChange('minorFromSurah', Number(e.target.value))}
-                      className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
-                    >
-                      {QURAN_SURAHS.map(s => (
-                        <option key={s.number} value={s.number}>{s.number}. {s.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                {isNooraniaTrack ? (
+                  /* حقول رصد درس وصفحات وتهجي القاعدة النورانية */
+                  <div className="space-y-2.5 text-xs pt-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-stone-500 mb-1">من درس القاعدة النورانية</label>
+                        <select
+                          value={form.minorFromLesson}
+                          onChange={e => {
+                            const fromL = Number(e.target.value);
+                            const toL = Math.max(fromL, form.minorToLesson);
+                            setForm(prev => ({
+                              ...prev,
+                              minorFromLesson: fromL,
+                              minorToLesson: toL,
+                              nooraniaLessonText: formatNooraniaRangeLabel(fromL, toL)
+                            }));
+                          }}
+                          className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                        >
+                          {NOORANIA_LESSONS.map(l => (
+                            <option key={l.number} value={l.number}>{l.number}. {l.title}</option>
+                          ))}
+                        </select>
+                      </div>
 
-                  <div>
-                    <label className="block text-[11px] text-stone-500 mb-1">من آية</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={form.minorFromAyah}
-                      onChange={e => handleMinorPortionChange('minorFromAyah', Number(e.target.value))}
-                      className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
-                    />
-                  </div>
+                      <div>
+                        <label className="block text-[11px] text-stone-500 mb-1">إلى درس القاعدة النورانية</label>
+                        <select
+                          value={form.minorToLesson}
+                          onChange={e => {
+                            const toL = Number(e.target.value);
+                            setForm(prev => ({
+                              ...prev,
+                              minorToLesson: toL,
+                              nooraniaLessonText: formatNooraniaRangeLabel(prev.minorFromLesson, toL)
+                            }));
+                          }}
+                          className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                        >
+                          {NOORANIA_LESSONS.map(l => (
+                            <option key={l.number} value={l.number}>{l.number}. {l.title}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
 
-                  <div>
-                    <label className="block text-[11px] text-stone-500 mb-1">إلى سورة</label>
-                    <select
-                      value={form.minorToSurah}
-                      onChange={e => handleMinorPortionChange('minorToSurah', Number(e.target.value))}
-                      className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
-                    >
-                      {QURAN_SURAHS.map(s => (
-                        <option key={s.number} value={s.number}>{s.number}. {s.name}</option>
-                      ))}
-                    </select>
+                    <div>
+                      <label className="block text-[11px] font-bold text-stone-600 dark:text-stone-400 mb-1">
+                        بيان الدرس والصفحات والتهجي الذي تم رصده اليوم:
+                      </label>
+                      <input
+                        type="text"
+                        value={form.nooraniaLessonText}
+                        onChange={e => setForm(prev => ({ ...prev, nooraniaLessonText: e.target.value }))}
+                        placeholder="مثال: الدرس الرابع (الحروف المتحركة) - صفحة ١١ مع التهجي المتقن"
+                        className="w-full px-3.5 py-2 bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl text-xs text-stone-800 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-[#8E5364]"
+                      />
+                    </div>
                   </div>
+                ) : (
+                  /* من سورة ومن آية إلى سورة وإلى آية */
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                    <div>
+                      <label className="block text-[11px] text-stone-500 mb-1">من سورة</label>
+                      <select
+                        value={form.minorFromSurah}
+                        onChange={e => handleMinorPortionChange('minorFromSurah', Number(e.target.value))}
+                        className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                      >
+                        {QURAN_SURAHS.map(s => (
+                          <option key={s.number} value={s.number}>{s.number}. {s.name}</option>
+                        ))}
+                      </select>
+                    </div>
 
-                  <div>
-                    <label className="block text-[11px] text-stone-500 mb-1">إلى آية</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={form.minorToAyah}
-                      onChange={e => handleMinorPortionChange('minorToAyah', Number(e.target.value))}
-                      className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
-                    />
+                    <div>
+                      <label className="block text-[11px] text-stone-500 mb-1">من آية</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={form.minorFromAyah}
+                        onChange={e => handleMinorPortionChange('minorFromAyah', Number(e.target.value))}
+                        className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] text-stone-500 mb-1">إلى سورة</label>
+                      <select
+                        value={form.minorToSurah}
+                        onChange={e => handleMinorPortionChange('minorToSurah', Number(e.target.value))}
+                        className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                      >
+                        {QURAN_SURAHS.map(s => (
+                          <option key={s.number} value={s.number}>{s.number}. {s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] text-stone-500 mb-1">إلى آية</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={form.minorToAyah}
+                        onChange={e => handleMinorPortionChange('minorToAyah', Number(e.target.value))}
+                        className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             ) : (
               <div className="p-3.5 rounded-2xl bg-stone-100/80 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 flex items-center justify-between text-xs text-stone-500">
-                <span className="font-bold">٢. خطة المراجعة الصغرى (الربط القريب)</span>
+                <span className="font-bold">
+                  {isNooraniaTrack ? '٢. مسار القاعدة النورانية' : '٢. خطة المراجعة الصغرى (الربط القريب)'}
+                </span>
                 <span className="px-2.5 py-1 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300 text-[11px] font-bold">
                   معطّل لهذا الشهر في الخطة الشهرية 🔒
                 </span>

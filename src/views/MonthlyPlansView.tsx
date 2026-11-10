@@ -12,8 +12,61 @@ import { summarizeDailyPageProgress } from '../services/recitationProgress';
 const NEW_MEM_STEPS = [0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0];
 const REVIEW_STEPS = [0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 
-export const formatDailyStepLabel = (val: number, isNewMemorization = false): string => {
+// دروس القاعدة النورانية السبعة عشر المعتمدة
+export const NOORANIA_LESSONS = [
+  { number: 1, title: 'الدرس الأول: حروف الهجاء المفردة' },
+  { number: 2, title: 'الدرس الثاني: حروف الهجاء المركبة' },
+  { number: 3, title: 'الدرس الثالث: الحروف المقطعة' },
+  { number: 4, title: 'الدرس الرابع: الحروف المتحركة (الحركات)' },
+  { number: 5, title: 'الدرس الخامس: الحروف المنونة (التنوين)' },
+  { number: 6, title: 'الدرس السادس: تدريبات على الحركات والتنوين' },
+  { number: 7, title: 'الدرس السابع: الألف الصغيرة والياء الصغيرة والواو الصغيرة' },
+  { number: 8, title: 'الدرس الثامن: حروف المد واللين' },
+  { number: 9, title: 'الدرس التاسع: تدريبات على التنوين وأحرف المد واللين' },
+  { number: 10, title: 'الدرس العاشر: السكون' },
+  { number: 11, title: 'الدرس الحادي عشر: تدريبات على السكون' },
+  { number: 12, title: 'الدرس الثاني عشر: الشدة' },
+  { number: 13, title: 'الدرس الثالث عشر: تدريبات على الشدة' },
+  { number: 14, title: 'الدرس الرابع عشر: تدريبات على الشدة مع السكون' },
+  { number: 15, title: 'الدرس الخامس عشر: تدريبات على الشدتين في كلمة' },
+  { number: 16, title: 'الدرس السادس عشر: تدريبات على الشدة والسكون مع المد' },
+  { number: 17, title: 'الدرس السابع عشر: التدريبات العامة (الأخير)' }
+];
+
+export const isStudentDefaultNoorania = (studentName?: string): boolean => {
+  if (!studentName) return false;
+  const normalized = studentName.trim();
+  return normalized.includes('خولة حميد') || normalized.includes('خولة الحربي') || normalized.includes('خولة');
+};
+
+export const formatNooraniaRangeLabel = (
+  fromLesson?: number,
+  toLesson?: number,
+  customLessonText?: string
+): string => {
+  if (customLessonText && customLessonText.trim()) {
+    return customLessonText.trim();
+  }
+  const f = NOORANIA_LESSONS.find(l => l.number === (fromLesson || 1)) || NOORANIA_LESSONS[0];
+  const t = NOORANIA_LESSONS.find(l => l.number === (toLesson || f.number)) || f;
+  if (f.number === t.number) {
+    return f.title;
+  }
+  return `من ${f.title} إلى ${t.title}`;
+};
+
+export const formatDailyStepLabel = (val: number, isNewMemorization = false, isNoorania = false): string => {
   const num = Number(val) || 0;
+  if (isNoorania) {
+    if (num === 0) return '0 (غير محدد)';
+    if (num === 0.25) return '0.25 (ربع صفحة / سطرين)';
+    if (num === 0.5) return '0.5 (نصف صفحة / نصف درس)';
+    if (num === 0.75) return '0.75 (ثلاثة أرباع صفحة)';
+    if (num === 1) return '1.0 (صفحة / درس يومياً)';
+    if (num === 1.5) return '1.5 (صفحة ونصف)';
+    if (num === 2) return '2.0 (صفحتين / درسين)';
+    return `${num} صفحات / دروس`;
+  }
   if (num === 0) return '0 (غير محدد)';
   if (num === 0.25) return '0.25 (ربع وجه)';
   if (num === 0.5) return '0.5 (نصف وجه)';
@@ -140,6 +193,10 @@ export const MonthlyPlansView: React.FC = () => {
     },
     minorRevision: {
       enabled: true,
+      isNoorania: false,
+      fromLesson: 1,
+      toLesson: 5,
+      customLessonText: '',
       fromSurah: 2,
       fromAyah: 1,
       toSurah: 2,
@@ -167,7 +224,8 @@ export const MonthlyPlansView: React.FC = () => {
   const lastSelectedStudentIdRef = React.useRef(selectedStudentId);
   const lastPlanIdRef = React.useRef(currentPlan?.id);
 
-  const buildBranchesFromExisting = React.useCallback((existing: any) => {
+  const buildBranchesFromExisting = React.useCallback((existing: any, studentName?: string) => {
+    const defaultNoorania = isStudentDefaultNoorania(studentName);
     if (!existing) {
       return {
         newMemorization: {
@@ -183,14 +241,18 @@ export const MonthlyPlansView: React.FC = () => {
         },
         minorRevision: {
           enabled: true,
+          isNoorania: defaultNoorania,
+          fromLesson: 1,
+          toLesson: 6,
+          customLessonText: defaultNoorania ? 'من الدرس الأول إلى الدرس السادس (مع التهجي والصفحات)' : '',
           fromSurah: 2,
           fromAyah: 1,
           toSurah: 2,
           toAyah: 25,
-          targetPages: 4,
+          targetPages: defaultNoorania ? 6 : 4,
           dailyAmountPages: 1.0,
-          targetDailyAmount: formatDailyStepLabel(1.0, false),
-          revisionType: 'صغرى',
+          targetDailyAmount: formatDailyStepLabel(1.0, false, defaultNoorania),
+          revisionType: defaultNoorania ? 'نورانية' : 'صغرى',
           teacherNotes: ''
         },
         tamkeenRevision: {
@@ -209,8 +271,15 @@ export const MonthlyPlansView: React.FC = () => {
     }
 
     const newStep = parseDailyStepFromLegacy(existing.newMemorization, 1.0, true);
-    const rawMinor = existing.minorRevision || (existing.revision?.revisionType === 'صغرى' ? existing.revision : null);
-    const rawTamkeen = existing.tamkeenRevision || (existing.revision?.revisionType !== 'صغرى' ? existing.revision : null);
+    const rawMinor = existing.minorRevision || (existing.revision?.revisionType === 'صغرى' || existing.revision?.revisionType === 'نورانية' ? existing.revision : null);
+    const rawTamkeen = existing.tamkeenRevision || (existing.revision?.revisionType !== 'صغرى' && existing.revision?.revisionType !== 'نورانية' ? existing.revision : null);
+
+    const isMinorNoorania =
+      typeof rawMinor?.isNoorania === 'boolean'
+        ? rawMinor.isNoorania
+        : rawMinor?.revisionType === 'نورانية'
+        ? true
+        : defaultNoorania;
 
     const minorStep = parseDailyStepFromLegacy(rawMinor, 1.0, false);
     const tamkeenStep = parseDailyStepFromLegacy(rawTamkeen, 1.0, false);
@@ -229,14 +298,18 @@ export const MonthlyPlansView: React.FC = () => {
       },
       minorRevision: {
         enabled: existing.minorRevision ? existing.minorRevision.enabled !== false : true,
+        isNoorania: isMinorNoorania,
+        fromLesson: rawMinor?.fromLesson || 1,
+        toLesson: rawMinor?.toLesson || 6,
+        customLessonText: rawMinor?.customLessonText || '',
         fromSurah: rawMinor?.fromSurah || 2,
         fromAyah: rawMinor?.fromAyah || 1,
         toSurah: rawMinor?.toSurah || 2,
         toAyah: rawMinor?.toAyah || 25,
-        targetPages: rawMinor?.targetPages ?? 4,
+        targetPages: rawMinor?.targetPages ?? (isMinorNoorania ? 6 : 4),
         dailyAmountPages: minorStep,
-        targetDailyAmount: formatDailyStepLabel(minorStep, false),
-        revisionType: 'صغرى',
+        targetDailyAmount: formatDailyStepLabel(minorStep, false, isMinorNoorania),
+        revisionType: isMinorNoorania ? 'نورانية' : 'صغرى',
         teacherNotes: rawMinor?.teacherNotes || ''
       },
       tamkeenRevision: {
@@ -272,8 +345,8 @@ export const MonthlyPlansView: React.FC = () => {
       sp => sp.studentId === selectedStudentId && sp.monthlyPlanId === currentPlan?.id
     );
     const existing = currentMonthPlan || studentPlans.find(sp => sp.studentId === selectedStudentId);
-    setStudentPlanForm(buildBranchesFromExisting(existing));
-  }, [selectedStudentId, currentPlan?.id, studentPlans, editingStudentPlan, buildBranchesFromExisting]);
+    setStudentPlanForm(buildBranchesFromExisting(existing, selectedStudent?.name));
+  }, [selectedStudentId, currentPlan?.id, studentPlans, editingStudentPlan, buildBranchesFromExisting, selectedStudent?.name]);
 
   // حفظ فوري لخطة الطالبة في AppContext و localStorage
   const persistBranchesImmediately = async (
@@ -293,6 +366,8 @@ export const MonthlyPlansView: React.FC = () => {
       (nextBranches.minorRevision.enabled !== false ? (nextBranches.minorRevision.targetPages || 0) : 0) +
       (nextBranches.tamkeenRevision.enabled !== false ? (nextBranches.tamkeenRevision.targetPages || 0) : 0);
 
+    const isMinorNoorania = !!nextBranches.minorRevision.isNoorania || nextBranches.minorRevision.revisionType === 'نورانية';
+
     await saveStudentPlan({
       id: currentMonthPlan?.id,
       studentId: selectedStudent.id,
@@ -303,8 +378,9 @@ export const MonthlyPlansView: React.FC = () => {
       },
       minorRevision: {
         ...nextBranches.minorRevision,
+        isNoorania: isMinorNoorania,
         actualPages: autoProgress.minorRevisionPagesDone,
-        revisionType: 'صغرى'
+        revisionType: isMinorNoorania ? 'نورانية' : 'صغرى'
       },
       tamkeenRevision: {
         ...nextBranches.tamkeenRevision,
@@ -327,15 +403,45 @@ export const MonthlyPlansView: React.FC = () => {
     }
   };
 
+  // تبديل القسم الثاني بين "خطة المراجعة الصغرى" و "مسار القاعدة النورانية"
+  const handleToggleNooraniaMode = async () => {
+    const currentIsNoorania = !!studentPlanForm.minorRevision.isNoorania || studentPlanForm.minorRevision.revisionType === 'نورانية';
+    const nextIsNoorania = !currentIsNoorania;
+    const stepVal = typeof studentPlanForm.minorRevision.dailyAmountPages === 'number'
+      ? studentPlanForm.minorRevision.dailyAmountPages
+      : 1.0;
+
+    const nextForm = {
+      ...studentPlanForm,
+      minorRevision: {
+        ...studentPlanForm.minorRevision,
+        enabled: true,
+        isNoorania: nextIsNoorania,
+        fromLesson: studentPlanForm.minorRevision.fromLesson || 1,
+        toLesson: studentPlanForm.minorRevision.toLesson || 6,
+        revisionType: nextIsNoorania ? 'نورانية' : 'صغرى',
+        targetDailyAmount: formatDailyStepLabel(stepVal, false, nextIsNoorania)
+      }
+    };
+    setStudentPlanForm(nextForm);
+    await persistBranchesImmediately(
+      nextForm,
+      nextIsNoorania
+        ? `تم تخصيص القسم الثاني ليكون «مسار القاعدة النورانية» للطالبة ${selectedStudent?.name || ''} 🔤`
+        : `تم إعادة القسم الثاني ليكون «خطة المراجعة الصغرى» للطالبة ${selectedStudent?.name || ''} 🔄`
+    );
+  };
+
   // تبديل تفعيل/تعطيل أي فرع بنقرة واحدة مع حفظ فوري
   const handleToggleBranch = async (branchKey: 'newMemorization' | 'minorRevision' | 'tamkeenRevision') => {
     const currentEnabled = studentPlanForm[branchKey].enabled !== false;
     const nextEnabled = !currentEnabled;
+    const isMinorNoorania = !!studentPlanForm.minorRevision.isNoorania || studentPlanForm.minorRevision.revisionType === 'نورانية';
     const branchTitle =
       branchKey === 'newMemorization'
         ? 'خطة ومقرر الحفظ الجديد'
         : branchKey === 'minorRevision'
-          ? 'خطة المراجعة الصغرى'
+          ? (isMinorNoorania ? 'مسار القاعدة النورانية' : 'خطة المراجعة الصغرى')
           : 'خطة مراجعة التمكين';
 
     const nextForm = {
@@ -363,6 +469,7 @@ export const MonthlyPlansView: React.FC = () => {
     if (branch.enabled === false) return;
 
     const isNewMem = branchKey === 'newMemorization';
+    const isNooraniaBranch = branchKey === 'minorRevision' && (!!branch.isNoorania || branch.revisionType === 'نورانية');
     const steps = isNewMem ? NEW_MEM_STEPS : REVIEW_STEPS;
     const currentVal = typeof branch.dailyAmountPages === 'number' ? branch.dailyAmountPages : 1.0;
 
@@ -382,7 +489,7 @@ export const MonthlyPlansView: React.FC = () => {
     const nextVal = steps[nextIdx];
     if (nextVal === currentVal) return;
 
-    const nextLabel = formatDailyStepLabel(nextVal, isNewMem);
+    const nextLabel = formatDailyStepLabel(nextVal, isNewMem, isNooraniaBranch);
     const nextForm = {
       ...studentPlanForm,
       [branchKey]: {
@@ -450,6 +557,7 @@ export const MonthlyPlansView: React.FC = () => {
   const isNewEnabled = studentPlanForm.newMemorization.enabled !== false;
   const isMinorEnabled = studentPlanForm.minorRevision.enabled !== false;
   const isTamkeenEnabled = studentPlanForm.tamkeenRevision.enabled !== false;
+  const isMinorNoorania = !!studentPlanForm.minorRevision.isNoorania || studentPlanForm.minorRevision.revisionType === 'نورانية';
 
   const newTarget = isNewEnabled ? Math.max(1, studentPlanForm.newMemorization.targetPages || 1) : 0;
   const minorTarget = isMinorEnabled ? Math.max(1, studentPlanForm.minorRevision.targetPages || 1) : 0;
@@ -481,6 +589,7 @@ export const MonthlyPlansView: React.FC = () => {
   ) => {
     const branch = studentPlanForm[branchKey];
     const isEnabled = branch.enabled !== false;
+    const isNooraniaBranch = branchKey === 'minorRevision' && (!!branch.isNoorania || branch.revisionType === 'نورانية');
     const steps = isNewMem ? NEW_MEM_STEPS : REVIEW_STEPS;
     const currentStepVal = typeof branch.dailyAmountPages === 'number' ? branch.dailyAmountPages : 1.0;
     const isAtMin = currentStepVal <= steps[0];
@@ -520,8 +629,23 @@ export const MonthlyPlansView: React.FC = () => {
             <span className="text-[11px] text-stone-400 hidden md:inline">• {subtitle}</span>
           </div>
 
-          {/* مفتاح التفعيل / التعطيل التفاعلي */}
-          <div className="flex items-center gap-2 self-end sm:self-auto">
+          {/* مفتاح التفعيل / التعطيل التفاعلي + زر تحويل لمسار القاعدة النورانية للقسم الثاني */}
+          <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+            {branchKey === 'minorRevision' && (
+              <button
+                type="button"
+                onClick={handleToggleNooraniaMode}
+                className={`px-3 py-1.5 rounded-2xl text-xs font-bold border transition cursor-pointer active:scale-95 flex items-center gap-1.5 ${
+                  isNooraniaBranch
+                    ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                    : 'bg-[#FAF6F2] text-stone-700 border-[#E2D5CC] hover:border-amber-500 hover:text-amber-800'
+                }`}
+                title="التبديل بين خطة المراجعة الصغرى ومسار القاعدة النورانية لهذه الطالبة"
+              >
+                <span>{isNooraniaBranch ? '🔤 مسار القاعدة النورانية (مفعّل)' : '🔤 تحويل إلى مسار القاعدة النورانية'}</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => handleToggleBranch(branchKey)}
@@ -548,110 +672,186 @@ export const MonthlyPlansView: React.FC = () => {
         <div className={!isEnabled ? 'pointer-events-none select-none opacity-55 grayscale' : ''}>
           {editingStudentPlan ? (
             <div className="space-y-4">
-              {/* اختيار من سورة / آية إلى سورة / آية */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">من سورة:</label>
-                  <select
-                    disabled={!isEnabled}
-                    value={branch.fromSurah}
-                    onChange={e => {
-                      const num = Number(e.target.value);
-                      setStudentPlanForm(prev => ({
-                        ...prev,
-                        [branchKey]: {
-                          ...prev[branchKey],
-                          fromSurah: num,
-                          fromAyah: 1
-                        }
-                      }));
-                    }}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100"
-                  >
-                    {QURAN_SURAHS.map(s => (
-                      <option key={s.number} value={s.number}>
-                        {s.number}. سورة {s.name} ({s.versesCount} آية)
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {isNooraniaBranch ? (
+                /* اختيار دروس وصفحات القاعدة النورانية */
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">من درس القاعدة النورانية:</label>
+                    <select
+                      disabled={!isEnabled}
+                      value={branch.fromLesson || 1}
+                      onChange={e => {
+                        const num = Number(e.target.value);
+                        setStudentPlanForm(prev => ({
+                          ...prev,
+                          [branchKey]: {
+                            ...prev[branchKey],
+                            fromLesson: num,
+                            toLesson: Math.max(num, prev[branchKey].toLesson || num)
+                          }
+                        }));
+                      }}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100 font-bold"
+                    >
+                      {NOORANIA_LESSONS.map(l => (
+                        <option key={l.number} value={l.number}>
+                          {l.number}. {l.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">من آية:</label>
-                  <select
-                    disabled={!isEnabled}
-                    value={branch.fromAyah}
-                    onChange={e =>
-                      setStudentPlanForm(prev => ({
-                        ...prev,
-                        [branchKey]: {
-                          ...prev[branchKey],
-                          fromAyah: Number(e.target.value)
-                        }
-                      }))
-                    }
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100"
-                  >
-                    {Array.from({ length: fromMaxVerses }, (_, i) => i + 1).map(num => (
-                      <option key={num} value={num}>آية {num}</option>
-                    ))}
-                  </select>
-                </div>
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">إلى درس القاعدة النورانية:</label>
+                    <select
+                      disabled={!isEnabled}
+                      value={branch.toLesson || 6}
+                      onChange={e => {
+                        const num = Number(e.target.value);
+                        setStudentPlanForm(prev => ({
+                          ...prev,
+                          [branchKey]: {
+                            ...prev[branchKey],
+                            toLesson: num
+                          }
+                        }));
+                      }}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100 font-bold"
+                    >
+                      {NOORANIA_LESSONS.map(l => (
+                        <option key={l.number} value={l.number}>
+                          {l.number}. {l.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">إلى سورة:</label>
-                  <select
-                    disabled={!isEnabled}
-                    value={branch.toSurah}
-                    onChange={e => {
-                      const num = Number(e.target.value);
-                      setStudentPlanForm(prev => ({
-                        ...prev,
-                        [branchKey]: {
-                          ...prev[branchKey],
-                          toSurah: num,
-                          toAyah: Math.min(prev[branchKey].toAyah, getAyahCount(num))
-                        }
-                      }));
-                    }}
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100"
-                  >
-                    {QURAN_SURAHS.map(s => (
-                      <option key={s.number} value={s.number}>
-                        {s.number}. سورة {s.name} ({s.versesCount} آية)
-                      </option>
-                    ))}
-                  </select>
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">تفصيل الصفحات والتهجي المستهدف (اختياري):</label>
+                    <input
+                      type="text"
+                      disabled={!isEnabled}
+                      value={branch.customLessonText || ''}
+                      onChange={e =>
+                        setStudentPlanForm(prev => ({
+                          ...prev,
+                          [branchKey]: {
+                            ...prev[branchKey],
+                            customLessonText: e.target.value
+                          }
+                        }))
+                      }
+                      placeholder="مثال: من الدرس الأول إلى السادس مع التهجي الكامل"
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100"
+                    />
+                  </div>
                 </div>
+              ) : (
+                /* اختيار من سورة / آية إلى سورة / آية */
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">من سورة:</label>
+                    <select
+                      disabled={!isEnabled}
+                      value={branch.fromSurah}
+                      onChange={e => {
+                        const num = Number(e.target.value);
+                        setStudentPlanForm(prev => ({
+                          ...prev,
+                          [branchKey]: {
+                            ...prev[branchKey],
+                            fromSurah: num,
+                            fromAyah: 1
+                          }
+                        }));
+                      }}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100"
+                    >
+                      {QURAN_SURAHS.map(s => (
+                        <option key={s.number} value={s.number}>
+                          {s.number}. سورة {s.name} ({s.versesCount} آية)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">إلى آية:</label>
-                  <select
-                    disabled={!isEnabled}
-                    value={branch.toAyah}
-                    onChange={e =>
-                      setStudentPlanForm(prev => ({
-                        ...prev,
-                        [branchKey]: {
-                          ...prev[branchKey],
-                          toAyah: Number(e.target.value)
-                        }
-                      }))
-                    }
-                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100"
-                  >
-                    {Array.from({ length: toMaxVerses }, (_, i) => i + 1).map(num => (
-                      <option key={num} value={num}>آية {num}</option>
-                    ))}
-                  </select>
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">من آية:</label>
+                    <select
+                      disabled={!isEnabled}
+                      value={branch.fromAyah}
+                      onChange={e =>
+                        setStudentPlanForm(prev => ({
+                          ...prev,
+                          [branchKey]: {
+                            ...prev[branchKey],
+                            fromAyah: Number(e.target.value)
+                          }
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100"
+                    >
+                      {Array.from({ length: fromMaxVerses }, (_, i) => i + 1).map(num => (
+                        <option key={num} value={num}>آية {num}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">إلى سورة:</label>
+                    <select
+                      disabled={!isEnabled}
+                      value={branch.toSurah}
+                      onChange={e => {
+                        const num = Number(e.target.value);
+                        setStudentPlanForm(prev => ({
+                          ...prev,
+                          [branchKey]: {
+                            ...prev[branchKey],
+                            toSurah: num,
+                            toAyah: Math.min(prev[branchKey].toAyah, getAyahCount(num))
+                          }
+                        }));
+                      }}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100"
+                    >
+                      {QURAN_SURAHS.map(s => (
+                        <option key={s.number} value={s.number}>
+                          {s.number}. سورة {s.name} ({s.versesCount} آية)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">إلى آية:</label>
+                    <select
+                      disabled={!isEnabled}
+                      value={branch.toAyah}
+                      onChange={e =>
+                        setStudentPlanForm(prev => ({
+                          ...prev,
+                          [branchKey]: {
+                            ...prev[branchKey],
+                            toAyah: Number(e.target.value)
+                          }
+                        }))
+                      }
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white disabled:bg-stone-100"
+                    >
+                      {Array.from({ length: toMaxVerses }, (_, i) => i + 1).map(num => (
+                        <option key={num} value={num}>آية {num}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* الصفحات المستهدفة + عداد الأسهم للمقدار اليومي + الإنجاز التلقائي */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-stone-700 mb-1">
-                    إجمالي الصفحات المستهدف للشهر
+                    {isNooraniaBranch ? 'إجمالي الدروس / الصفحات المستهدف للشهر' : 'إجمالي الصفحات المستهدف للشهر'}
                   </label>
                   <input
                     type="number"
@@ -674,11 +874,11 @@ export const MonthlyPlansView: React.FC = () => {
                 {/* عداد الأسهم الذكي (▲ / ▼) للمقدار المطلوب يومياً */}
                 <div>
                   <label className="block text-xs font-bold text-stone-700 mb-1">
-                    المقدار المطلوب يومياً {isNewMem ? '(الحد الأقصى وجهان)' : '(بالأوجه)'}
+                    المقدار المطلوب يومياً {isNewMem ? '(الحد الأقصى وجهان)' : isNooraniaBranch ? '(بالدروس / الصفحات)' : '(بالأوجه)'}
                   </label>
                   <div className="flex items-center justify-between bg-[#FAF6F2] border border-[#E2D5CC] rounded-xl px-3 py-1.5">
                     <span className="text-xs font-extrabold text-stone-900">
-                      {formatDailyStepLabel(currentStepVal, isNewMem)}
+                      {formatDailyStepLabel(currentStepVal, isNewMem, isNooraniaBranch)}
                     </span>
                     <div className="flex items-center gap-1">
                       <button
@@ -706,11 +906,11 @@ export const MonthlyPlansView: React.FC = () => {
                 {/* الصفحات المنجزة تلقائياً من سجل التسميع */}
                 <div>
                   <label className="block text-xs font-bold text-stone-700 mb-1">
-                    الصفحات المنجزة (تلقائياً من سجل التسميع)
+                    {isNooraniaBranch ? 'المنجز الفعلي (تلقائياً من سجل القاعدة النورانية)' : 'الصفحات المنجزة (تلقائياً من سجل التسميع)'}
                   </label>
                   <div className="px-3 py-2 rounded-xl bg-emerald-50/70 border border-emerald-200/80 flex items-center justify-between">
                     <span className="text-xs font-extrabold text-emerald-900">
-                      <span className="privacy-score-digit">{donePages}</span> من <span className="privacy-score-digit">{branch.targetPages}</span> صفحة
+                      <span className="privacy-score-digit">{donePages}</span> من <span className="privacy-score-digit">{branch.targetPages}</span> {isNooraniaBranch ? 'درس / صفحة' : 'صفحة'}
                     </span>
                     <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
                       {percent}%
@@ -743,9 +943,13 @@ export const MonthlyPlansView: React.FC = () => {
             <div className="space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                 <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2]">
-                  <span className="text-stone-400 block text-[11px]">نطاق السور والآيات:</span>
+                  <span className="text-stone-400 block text-[11px]">
+                    {isNooraniaBranch ? 'مقرر دروس القاعدة النورانية والتهجي:' : 'نطاق السور والآيات:'}
+                  </span>
                   <span className="font-bold text-stone-800 block mt-0.5">
-                    من سورة {getSurahByNumber(branch.fromSurah)?.name} (آية {branch.fromAyah}) إلى سورة {getSurahByNumber(branch.toSurah)?.name} (آية {branch.toAyah})
+                    {isNooraniaBranch
+                      ? formatNooraniaRangeLabel(branch.fromLesson, branch.toLesson, branch.customLessonText)
+                      : `من سورة ${getSurahByNumber(branch.fromSurah)?.name} (آية ${branch.fromAyah}) إلى سورة ${getSurahByNumber(branch.toSurah)?.name} (آية ${branch.toAyah})`}
                   </span>
                 </div>
 
@@ -754,7 +958,7 @@ export const MonthlyPlansView: React.FC = () => {
                   <div>
                     <span className="text-stone-400 block text-[11px]">المقدار المطلوب يومياً:</span>
                     <span className="font-extrabold text-stone-900 block mt-0.5">
-                      {formatDailyStepLabel(currentStepVal, isNewMem)}
+                      {formatDailyStepLabel(currentStepVal, isNewMem, isNooraniaBranch)}
                     </span>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
@@ -780,9 +984,11 @@ export const MonthlyPlansView: React.FC = () => {
                 </div>
 
                 <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2]">
-                  <span className="text-stone-400 block text-[11px]">الصفحات المنجزة (تلقائياً):</span>
+                  <span className="text-stone-400 block text-[11px]">
+                    {isNooraniaBranch ? 'الدروس / الصفحات المنجزة (تلقائياً):' : 'الصفحات المنجزة (تلقائياً):'}
+                  </span>
                   <span className="font-extrabold block mt-0.5" style={{ color: accentColor }}>
-                    <span className="privacy-score-digit">{donePages}</span> منجز من أصل <span className="privacy-score-digit">{targetPages}</span> صفحة
+                    <span className="privacy-score-digit">{donePages}</span> منجز من أصل <span className="privacy-score-digit">{targetPages}</span> {isNooraniaBranch ? 'درس / صفحة' : 'صفحة'}
                   </span>
                 </div>
 
@@ -820,7 +1026,7 @@ export const MonthlyPlansView: React.FC = () => {
             <h2 className="text-xl font-bold text-stone-900 font-quran">الخطط الشهرية للحفظ والمراجعة</h2>
           </div>
           <p className="text-xs text-stone-500">
-            تقسيم ثلاثي مستقل (الحفظ الجديد • المراجعة الصغرى • مراجعة التمكين) مع التحكم بالتفعيل والمقدار اليومي واحتساب الإنجاز تلقائياً من سجل التسميع
+            تقسيم ثلاثي مستقل (الحفظ الجديد • المراجعة الصغرى أو القاعدة النورانية • مراجعة التمكين) مع التحكم بالتفعيل والمقدار اليومي واحتساب الإنجاز تلقائياً من سجل التسميع
           </p>
         </div>
 
@@ -1052,9 +1258,13 @@ export const MonthlyPlansView: React.FC = () => {
               </span>
             </div>
             <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white border border-stone-200/70">
-              <span className="text-stone-600 font-bold">٢. المراجعة الصغرى:</span>
+              <span className="text-stone-600 font-bold">
+                {isMinorNoorania ? '٢. مسار القاعدة النورانية:' : '٢. المراجعة الصغرى:'}
+              </span>
               <span className="font-extrabold text-[#96503E]">
-                {isMinorEnabled ? `${minorDone} / ${minorTarget} وجه (${minorPercent}%)` : 'معطّل لهذا الشهر'}
+                {isMinorEnabled
+                  ? `${minorDone} / ${minorTarget} ${isMinorNoorania ? 'درس/ص' : 'وجه'} (${minorPercent}%)`
+                  : 'معطّل لهذا الشهر'}
               </span>
             </div>
             <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white border border-stone-200/70">
@@ -1079,15 +1289,17 @@ export const MonthlyPlansView: React.FC = () => {
           true
         )}
 
-        {/* 2. خطة المراجعة الصغرى (الربط القريب) */}
+        {/* 2. خطة المراجعة الصغرى أو مسار القاعدة النورانية */}
         {renderPlanBranchCard(
           'minorRevision',
-          '٢. خطة المراجعة الصغرى (الربط القريب)',
-          'تثبيت المحفوظ القريب وربطه بالحفظ الجديد',
+          isMinorNoorania ? '٢. مسار القاعدة النورانية' : '٢. خطة المراجعة الصغرى (الربط القريب)',
+          isMinorNoorania
+            ? 'دروس القاعدة النورانية والصفحات والتهجي المعتمدة للطالبة'
+            : 'تثبيت المحفوظ القريب وربطه بالحفظ الجديد',
           '#96503E',
           'bg-amber-50 text-amber-800',
           minorDone,
-          studentPlanForm.minorRevision.targetPages || 4,
+          studentPlanForm.minorRevision.targetPages || (isMinorNoorania ? 6 : 4),
           minorPercent,
           false
         )}

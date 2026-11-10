@@ -193,6 +193,10 @@ export interface MonthlyPlan {
 
 export interface PlanBranchConfig {
   enabled?: boolean; // مفعّل / معطّل لهذا الشهر
+  isNoorania?: boolean; // تفعيل مسار القاعدة النورانية بدلاً من المراجعة الصغرى
+  fromLesson?: number; // من الدرس (في مسار القاعدة النورانية)
+  toLesson?: number; // إلى الدرس (في مسار القاعدة النورانية)
+  customLessonText?: string; // تفصيل الدرس والصفحات والتهجي
   fromSurah: number;
   fromAyah: number;
   toSurah: number;
@@ -202,7 +206,7 @@ export interface PlanBranchConfig {
   dailyAmountPages?: number; // مقدار الصفحات اليومي عبر أزرار الأسهم (0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0...)
   targetDailyAmount: string; // مقدار الحفظ/المراجعة المطلوب يومياً
   actualDailyAmount?: string;
-  revisionType?: 'صغرى' | 'تمكين' | string;
+  revisionType?: 'صغرى' | 'تمكين' | 'نورانية' | string;
   status?: 'completed' | 'in_progress' | 'pending' | string;
   teacherNotes?: string;
 }
@@ -252,6 +256,8 @@ export interface RevisionPortion {
   fromAyah: number;
   toAyah: number;
   pagesCount?: number;
+  isNoorania?: boolean;
+  nooraniaLessonText?: string;
   status: 'excellent' | 'acceptable' | 'needs_repetition' | 'unrecited';
 }
 
