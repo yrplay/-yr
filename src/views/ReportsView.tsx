@@ -222,7 +222,7 @@ export const ReportsView: React.FC = () => {
       ]);
     });
   } else if (reportType === 'exams') {
-    reportHeaders.push('الكود', 'اسم الطالبة', 'الحلقة', 'الاختبار', 'المقرر', 'الدرجة', 'الدرجة العظمى', 'نسبة الاختبار', 'أخطاء الحفظ', 'أخطاء التجويد', 'التنبيهات', 'تاريخ التقييم (هجري)');
+    reportHeaders.push('الكود', 'اسم الطالبة', 'الحلقة', 'الاختبار', 'المقرر', 'حالة الاختبار', 'الدرجة', 'الدرجة العظمى', 'نسبة الاختبار', 'أخطاء الحفظ', 'أخطاء التجويد', 'التنبيهات', 'تاريخ التقييم (هجري)');
     const selectedStudentIds = new Set(filteredStudents.map(student => student.id));
     studentExamResults
       .filter(result => selectedStudentIds.has(result.studentId) && matchesHijriFilter(result.evaluatedAt))
@@ -230,11 +230,29 @@ export const ReportsView: React.FC = () => {
         const student = studentById.get(result.studentId);
         if (!student) return;
         const exam = monthlyExams.find(item => item.id === result.examId);
-        const maximum = exam?.maxScore ?? 0;
+        const maximum = exam?.maxScore ?? 100;
+        const status = result.status || (result.score === null || result.score === undefined ? 'postponed' : 'examined');
+        const statusText =
+          status === 'examined'
+            ? 'مختبرة'
+            : status === 'exempt'
+              ? 'معفاة / غير مطالبة'
+              : status === 'absent_unexcused'
+                ? 'غائبة بدون عذر'
+                : 'لم تختبر / مؤجل';
+        const hasNumScore = status === 'examined' && typeof result.score === 'number';
+        const effectiveScoreDisplay: number | string = hasNumScore ? (result.score ?? '—') : status === 'absent_unexcused' ? 0 : '—';
+        const pctDisplay = hasNumScore && maximum > 0
+          ? `${Math.round(((result.score as number) / maximum) * 1000) / 10}%`
+          : status === 'absent_unexcused'
+            ? '0%'
+            : '—';
         reportRows.push([
           ...appendStudent(student), exam?.title || '', result.customPortion || exam?.requiredPortion || '',
-          result.score, maximum, maximum > 0 ? `${Math.round((result.score / maximum) * 1000) / 10}%` : '',
-          result.memorizationMistakes ?? 0, result.tajweedErrors ?? 0, result.warningsCount ?? 0,
+          statusText, effectiveScoreDisplay, maximum, pctDisplay,
+          hasNumScore ? (result.memorizationMistakes ?? 0) : '—',
+          hasNumScore ? (result.tajweedErrors ?? 0) : '—',
+          hasNumScore ? (result.warningsCount ?? 0) : '—',
           exam?.examDateHijri || formatHijriShort(result.evaluatedAt)
         ]);
       });
@@ -272,12 +290,20 @@ export const ReportsView: React.FC = () => {
     filteredStudents.forEach(student => {
       const score = allStudentScores[student.id];
       const circle = circleById.get(student.circleId);
+      const examCell =
+        score?.examStatus === 'examined'
+          ? `${score?.examScore ?? 0} / ${score?.examMax ?? 0}`
+          : score?.examStatus === 'absent_unexcused'
+            ? `0 / ${score?.examMax ?? 0} (غائبة)`
+            : score?.examStatus === 'exempt'
+              ? 'معفاة (—)'
+              : 'مؤجل / لم تختبر (—)';
       reportRows.push([
         ...appendStudent(student), circle?.teacherName || '', student.partnerStudentName || '—',
         `${score?.attendanceRate ?? 0}%`, score?.newMemorizationPagesDone ?? 0, score?.revisionPagesDone ?? 0,
         `${score?.atqiniScore ?? 0} / ${score?.atqiniMax ?? 0}`,
         `${score?.challengesScore ?? 0} / ${score?.challengesMax ?? 0}`,
-        `${score?.examScore ?? 0} / ${score?.examMax ?? 0}`,
+        examCell,
         `${score?.totalEarnedPoints ?? 0} / ${score?.totalPossiblePoints ?? 0}`,
         `${score?.finalPercentage ?? 0}%`, score?.gradeLabel || '', score?.rankInCircle ?? ''
       ]);

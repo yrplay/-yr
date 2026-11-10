@@ -4,7 +4,7 @@ import {
   FileText, Plus, Edit, CheckCircle2, Award, Calendar,
   AlertCircle, ChevronLeft, UserCheck, Shield, Trash2
 } from 'lucide-react';
-import { MonthlyExam, StudentExamResult } from '../types';
+import { MonthlyExam, StudentExamResult, ExamResultStatus } from '../types';
 import { formatHijriShort } from '../utils/hijriDate';
 
 export const ExamsView: React.FC = () => {
@@ -54,9 +54,19 @@ export const ExamsView: React.FC = () => {
       .trim();
   };
 
-  // Student Result Form (Supports custom individual portions per student)
-  const [resultForm, setResultForm] = useState({
-    score: 95,
+  // Student Result Form (Supports explicit exam status + custom individual portions per student)
+  const [resultForm, setResultForm] = useState<{
+    status: ExamResultStatus;
+    score: number | null;
+    memorizationMistakes: number;
+    tajweedErrors: number;
+    warningsCount: number;
+    customPortion: string;
+    notes: string;
+    examinerName: string;
+  }>({
+    status: 'postponed',
+    score: null,
     memorizationMistakes: 0,
     tajweedErrors: 0,
     warningsCount: 0,
@@ -70,6 +80,14 @@ export const ExamsView: React.FC = () => {
   const [quickPortionInput, setQuickPortionInput] = useState('');
 
   const currentExam = monthlyExams.find(e => e.id === selectedExamId) || monthlyExams[0];
+  const currentExamMaxScore = currentExam?.maxScore || 100;
+
+  const getEffectiveExamStatus = (res?: StudentExamResult): ExamResultStatus => {
+    if (!res) return 'postponed';
+    if (res.status) return res.status;
+    if (res.score === null || res.score === undefined) return 'postponed';
+    return 'examined';
+  };
 
   const handleOpenExamModal = (exam?: MonthlyExam) => {
     if (exam) {
@@ -127,27 +145,103 @@ export const ExamsView: React.FC = () => {
     );
 
     if (existing) {
+      const effectiveStatus = getEffectiveExamStatus(existing);
       setResultForm({
-        score: existing.score,
-        memorizationMistakes: existing.memorizationMistakes,
-        tajweedErrors: existing.tajweedErrors,
-        warningsCount: existing.warningsCount,
+        status: effectiveStatus,
+        score:
+          effectiveStatus === 'postponed' || effectiveStatus === 'exempt'
+            ? null
+            : effectiveStatus === 'absent_unexcused'
+              ? 0
+              : (existing.score ?? null),
+        memorizationMistakes: existing.memorizationMistakes ?? 0,
+        tajweedErrors: existing.tajweedErrors ?? 0,
+        warningsCount: existing.warningsCount ?? 0,
         customPortion: existing.customPortion || '',
         notes: existing.notes || '',
         examinerName: cleanTeacherName(existing.examinerName || currentUser?.name || 'ريفة المنصوري')
       });
     } else {
       setResultForm({
-        score: 95,
+        status: 'postponed',
+        score: null,
         memorizationMistakes: 0,
         tajweedErrors: 0,
         warningsCount: 0,
         customPortion: '',
-        notes: 'حفظ متقن ومثبت بدون تردد',
+        notes: '',
         examinerName: cleanTeacherName(currentUser?.name || 'ريفة المنصوري')
       });
     }
     setEvalModalOpen(true);
+  };
+
+  const handleInlineStatusChange = async (student: any, nextStatus: ExamResultStatus) => {
+    if (!currentExam) return;
+    const existing = studentExamResults.find(
+      r => r.examId === currentExam.id && r.studentId === student.id
+    );
+    const circle = circles.find(c => c.id === student.circleId);
+    const nextScore: number | null =
+      nextStatus === 'postponed' || nextStatus === 'exempt'
+        ? null
+        : nextStatus === 'absent_unexcused'
+          ? 0
+          : (typeof existing?.score === 'number' ? existing.score : currentExamMaxScore);
+
+    await saveExamResult({
+      examId: currentExam.id,
+      studentId: student.id,
+      status: nextStatus,
+      score: nextScore,
+      memorizationMistakes: (nextStatus === 'postponed' || nextStatus === 'exempt') ? 0 : (existing?.memorizationMistakes ?? 0),
+      tajweedErrors: (nextStatus === 'postponed' || nextStatus === 'exempt') ? 0 : (existing?.tajweedErrors ?? 0),
+      warningsCount: (nextStatus === 'postponed' || nextStatus === 'exempt') ? 0 : (existing?.warningsCount ?? 0),
+      customPortion: existing?.customPortion || '',
+      notes: existing?.notes || '',
+      examinerName: cleanTeacherName(existing?.examinerName || circle?.teacherName || currentUser?.name || 'ريفة المنصوري')
+    });
+  };
+
+  const handleInlineScoreCommit = async (student: any, rawValue: string) => {
+    if (!currentExam) return;
+    const existing = studentExamResults.find(
+      r => r.examId === currentExam.id && r.studentId === student.id
+    );
+    const circle = circles.find(c => c.id === student.circleId);
+    const trimmed = rawValue.trim();
+    if (trimmed === '') {
+      await saveExamResult({
+        examId: currentExam.id,
+        studentId: student.id,
+        status: 'postponed',
+        score: null,
+        memorizationMistakes: 0,
+        tajweedErrors: 0,
+        warningsCount: 0,
+        customPortion: existing?.customPortion || '',
+        notes: existing?.notes || '',
+        examinerName: cleanTeacherName(existing?.examinerName || circle?.teacherName || currentUser?.name || 'ريفة المنصوري')
+      });
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) return;
+    const clampedScore = Math.max(0, Math.min(currentExamMaxScore, parsed));
+    if (existing && existing.status === 'examined' && existing.score === clampedScore) return;
+
+    await saveExamResult({
+      examId: currentExam.id,
+      studentId: student.id,
+      status: 'examined',
+      score: clampedScore,
+      memorizationMistakes: existing?.memorizationMistakes ?? 0,
+      tajweedErrors: existing?.tajweedErrors ?? 0,
+      warningsCount: existing?.warningsCount ?? 0,
+      customPortion: existing?.customPortion || '',
+      notes: existing?.notes || '',
+      examinerName: cleanTeacherName(existing?.examinerName || circle?.teacherName || currentUser?.name || 'ريفة المنصوري')
+    });
   };
 
   const handleOpenQuickPortion = (student: any) => {
@@ -164,16 +258,23 @@ export const ExamsView: React.FC = () => {
     const existing = studentExamResults.find(
       r => r.examId === currentExam.id && r.studentId === quickPortionStudent.id
     );
+    const effectiveStatus = getEffectiveExamStatus(existing);
     await saveExamResult({
       examId: currentExam.id,
       studentId: quickPortionStudent.id,
       customPortion: quickPortionInput.trim(),
-      score: existing?.score ?? 0,
+      status: effectiveStatus,
+      score:
+        effectiveStatus === 'postponed' || effectiveStatus === 'exempt'
+          ? null
+          : effectiveStatus === 'absent_unexcused'
+            ? 0
+            : (existing?.score ?? null),
       memorizationMistakes: existing?.memorizationMistakes ?? 0,
       tajweedErrors: existing?.tajweedErrors ?? 0,
       warningsCount: existing?.warningsCount ?? 0,
       notes: existing?.notes || '',
-      examinerName: cleanTeacherName(currentUser?.name || 'ريفة المنصوري')
+      examinerName: cleanTeacherName(existing?.examinerName || currentUser?.name || 'ريفة المنصوري')
     });
     setQuickPortionStudent(null);
   };
@@ -182,13 +283,26 @@ export const ExamsView: React.FC = () => {
     e.preventDefault();
     if (!evalStudent || !currentExam) return;
 
+    const finalScore: number | null =
+      resultForm.status === 'postponed' || resultForm.status === 'exempt'
+        ? null
+        : resultForm.status === 'absent_unexcused'
+          ? 0
+          : resultForm.score !== null && resultForm.score !== undefined && !Number.isNaN(Number(resultForm.score))
+            ? Math.max(0, Math.min(currentExamMaxScore, Number(resultForm.score)))
+            : null;
+
+    const finalStatus: ExamResultStatus =
+      resultForm.status === 'examined' && finalScore === null ? 'postponed' : resultForm.status;
+
     await saveExamResult({
       examId: currentExam.id,
       studentId: evalStudent.id,
-      score: Number(resultForm.score),
-      memorizationMistakes: Number(resultForm.memorizationMistakes),
-      tajweedErrors: Number(resultForm.tajweedErrors),
-      warningsCount: Number(resultForm.warningsCount),
+      status: finalStatus,
+      score: finalScore,
+      memorizationMistakes: (finalStatus === 'postponed' || finalStatus === 'exempt') ? 0 : Number(resultForm.memorizationMistakes),
+      tajweedErrors: (finalStatus === 'postponed' || finalStatus === 'exempt') ? 0 : Number(resultForm.tajweedErrors),
+      warningsCount: (finalStatus === 'postponed' || finalStatus === 'exempt') ? 0 : Number(resultForm.warningsCount),
       customPortion: resultForm.customPortion,
       notes: resultForm.notes,
       examinerName: cleanTeacherName(resultForm.examinerName)
@@ -316,7 +430,7 @@ export const ExamsView: React.FC = () => {
                 <th className="p-3.5 text-center">أخطاء الحفظ</th>
                 <th className="p-3.5 text-center">التنبيهات</th>
                 <th className="p-3.5 text-center">أخطاء التجويد</th>
-                <th className="p-3.5 font-bold text-center">الدرجة</th>
+                <th className="p-3.5 font-bold text-center min-w-[240px]">حالة الاختبار والدرجة</th>
                 <th className="p-3.5">المعلمة</th>
                 <th className="p-3.5">ملاحظات اللجنة</th>
                 <th className="p-3.5 text-center">الإجراءات</th>
@@ -328,6 +442,8 @@ export const ExamsView: React.FC = () => {
                   r => r.examId === currentExam?.id && r.studentId === student.id
                 );
                 const circle = circles.find(c => c.id === student.circleId);
+                const status = getEffectiveExamStatus(res);
+                const isExamined = status === 'examined' && res?.score !== null && res?.score !== undefined;
 
                 return (
                   <tr key={student.id} className="hover:bg-[#FCF9FA] transition">
@@ -349,42 +465,84 @@ export const ExamsView: React.FC = () => {
                     </td>
 
                     <td className="p-3.5 text-center">
-                      {res !== undefined ? (
-                        <span className={`font-semibold ${res.memorizationMistakes > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
-                          <span className="privacy-exam-score">{res.memorizationMistakes}</span>
+                      {isExamined ? (
+                        <span className={`font-semibold ${res!.memorizationMistakes > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                          <span className="privacy-exam-score">{res!.memorizationMistakes}</span>
                         </span>
                       ) : <span className="text-stone-300">—</span>}
                     </td>
 
                     <td className="p-3.5 text-center">
-                      {res !== undefined ? (
+                      {isExamined ? (
                         <span className="font-semibold text-amber-700">
-                          <span className="privacy-exam-score">{res.warningsCount}</span>
+                          <span className="privacy-exam-score">{res!.warningsCount}</span>
                         </span>
                       ) : <span className="text-stone-300">—</span>}
                     </td>
 
                     <td className="p-3.5 text-center">
-                      {res !== undefined ? (
+                      {isExamined ? (
                         <span className="font-semibold text-purple-700">
-                          <span className="privacy-exam-score">{res.tajweedErrors}</span>
+                          <span className="privacy-exam-score">{res!.tajweedErrors}</span>
                         </span>
                       ) : <span className="text-stone-300">—</span>}
                     </td>
 
                     <td className="p-3.5 text-center">
-                      {res !== undefined ? (
-                        <div className="flex items-center justify-center gap-1.5">
-                          <span className="text-base font-extrabold text-[#2D5A43]">
-                            <span className="privacy-exam-score">{res.score}</span>
+                      <div className="flex flex-wrap items-center justify-center gap-1.5">
+                        {/* Status Selector Next to Score Input */}
+                        <select
+                          value={status}
+                          onChange={e => handleInlineStatusChange(student, e.target.value as ExamResultStatus)}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer focus:outline-hidden ${
+                            status === 'examined'
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : status === 'postponed'
+                                ? 'bg-stone-100 text-stone-700 border-stone-200'
+                                : status === 'exempt'
+                                  ? 'bg-sky-50 text-sky-800 border-sky-200'
+                                  : 'bg-rose-50 text-rose-800 border-rose-200'
+                          }`}
+                          title="حالة اختبار الطالبة"
+                        >
+                          <option value="examined">مختبرة</option>
+                          <option value="postponed">لم تختبر / مؤجل</option>
+                          <option value="exempt">معفاة / غير مطالبة</option>
+                          <option value="absent_unexcused">غائبة بدون عذر</option>
+                        </select>
+
+                        {/* Score Input / Frozen Display */}
+                        {status === 'examined' ? (
+                          <div className="inline-flex items-center gap-1 bg-white border border-emerald-200 rounded-lg px-2 py-0.5">
+                            <input
+                              type="number"
+                              min={0}
+                              max={currentExamMaxScore}
+                              step={0.5}
+                              defaultValue={typeof res?.score === 'number' ? res.score : ''}
+                              key={`${student.id}-${currentExam?.id}-${res?.score ?? 'null'}`}
+                              placeholder="الدرجة"
+                              onBlur={e => handleInlineScoreCommit(student, e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  (e.currentTarget as HTMLInputElement).blur();
+                                }
+                              }}
+                              className="w-14 text-center text-sm font-extrabold text-[#2D5A43] focus:outline-hidden privacy-exam-score"
+                            />
+                            <span className="text-[10px] text-stone-400 font-bold">/ {currentExamMaxScore}</span>
+                          </div>
+                        ) : status === 'absent_unexcused' ? (
+                          <div className="inline-flex items-center gap-1 bg-rose-50/70 border border-rose-200 rounded-lg px-2.5 py-1 text-rose-700 font-extrabold text-xs">
+                            <span className="privacy-exam-score">0</span>
+                            <span className="text-[10px] text-rose-400">/ {currentExamMaxScore}</span>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-stone-50 border border-stone-200 text-stone-400 text-[11px] font-bold">
+                            {status === 'exempt' ? 'معفاة (—)' : 'مؤجل (—)'}
                           </span>
-                          <span className="text-[10px] text-stone-400">/ 100</span>
-                        </div>
-                      ) : (
-                        <span className="text-stone-300 font-normal">
-                          <span className="privacy-text-blur">بانتظار الاختبار</span>
-                        </span>
-                      )}
+                        )}
+                      </div>
                     </td>
 
                     <td className="p-3.5 text-stone-700 font-medium text-[11px]">
@@ -398,9 +556,9 @@ export const ExamsView: React.FC = () => {
                     <td className="p-3.5 text-center">
                       <button
                         onClick={() => handleOpenEvalModal(student)}
-                        className="px-3 py-1 bg-[#8E5364] hover:bg-[#744251] text-white rounded-lg text-[11px] font-bold transition shadow-2xs"
+                        className="px-3 py-1 bg-[#8E5364] hover:bg-[#744251] text-white rounded-lg text-[11px] font-bold transition shadow-2xs cursor-pointer"
                       >
-                        {res !== undefined ? 'تعديل الدرجة' : 'رصد الاختبار'}
+                        {res !== undefined ? 'تفاصيل / تعديل' : 'رصد الاختبار'}
                       </button>
                     </td>
                   </tr>
@@ -520,20 +678,99 @@ export const ExamsView: React.FC = () => {
             </p>
 
             <form onSubmit={handleSaveResult} className="space-y-4">
-              
-              <div className="p-4 bg-[#FAF6F2] rounded-2xl border border-[#EFE8E2]">
-                <label className="block text-xs font-bold text-stone-800 mb-1">
-                  الدرجة النهائية المحصلة (من {currentExam?.maxScore || 100}):
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max={currentExam?.maxScore || 100}
-                  step="0.5"
-                  value={resultForm.score}
-                  onChange={e => setResultForm({ ...resultForm, score: Number(e.target.value) })}
-                  className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-lg font-black text-[#2D5A43] bg-white text-center"
-                />
+              {/* Exam Status Selector + Score Input Side by Side */}
+              <div className="p-4 bg-[#FAF6F2] rounded-2xl border border-[#EFE8E2] space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-stone-800 mb-2">
+                    حالة اختبار الطالبة:
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { id: 'examined' as ExamResultStatus, label: 'مختبرة ✅', activeClass: 'bg-[#2D5A43] text-white border-[#2D5A43]' },
+                      { id: 'postponed' as ExamResultStatus, label: 'لم تختبر / مؤجل ⏳', activeClass: 'bg-stone-700 text-white border-stone-700' },
+                      { id: 'exempt' as ExamResultStatus, label: 'معفاة / غير مطالبة 🛡️', activeClass: 'bg-sky-700 text-white border-sky-700' },
+                      { id: 'absent_unexcused' as ExamResultStatus, label: 'غائبة بدون عذر ❌', activeClass: 'bg-rose-600 text-white border-rose-600' }
+                    ].map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => {
+                          if (opt.id === 'postponed' || opt.id === 'exempt') {
+                            setResultForm(prev => ({
+                              ...prev,
+                              status: opt.id,
+                              score: null,
+                              memorizationMistakes: 0,
+                              tajweedErrors: 0,
+                              warningsCount: 0
+                            }));
+                          } else if (opt.id === 'absent_unexcused') {
+                            setResultForm(prev => ({
+                              ...prev,
+                              status: opt.id,
+                              score: 0
+                            }));
+                          } else {
+                            setResultForm(prev => ({
+                              ...prev,
+                              status: 'examined',
+                              score: typeof prev.score === 'number' && prev.score > 0 ? prev.score : currentExamMaxScore
+                            }));
+                          }
+                        }}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                          resultForm.status === opt.id
+                            ? `${opt.activeClass} shadow-xs`
+                            : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-800 mb-1">
+                    الدرجة النهائية المحصلة (من {currentExamMaxScore}):
+                  </label>
+                  {resultForm.status === 'examined' ? (
+                    <input
+                      type="number"
+                      min="0"
+                      max={currentExamMaxScore}
+                      step="0.5"
+                      required
+                      value={resultForm.score ?? ''}
+                      placeholder={`أدخلي الدرجة من ${currentExamMaxScore}`}
+                      onChange={e =>
+                        setResultForm({
+                          ...resultForm,
+                          score: e.target.value === '' ? null : Number(e.target.value)
+                        })
+                      }
+                      className="w-full px-3 py-2.5 border border-emerald-300 rounded-xl text-lg font-black text-[#2D5A43] bg-white text-center focus:outline-hidden focus:ring-2 focus:ring-[#2D5A43]"
+                    />
+                  ) : resultForm.status === 'absent_unexcused' ? (
+                    <input
+                      type="text"
+                      disabled
+                      value={`0 / ${currentExamMaxScore} (غائبة بدون عذر)`}
+                      className="w-full px-3 py-2.5 border border-rose-200 rounded-xl text-sm font-bold text-rose-700 bg-rose-50/70 text-center cursor-not-allowed"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      disabled
+                      value={
+                        resultForm.status === 'exempt'
+                          ? 'معفاة / غير مطالبة بالاختبار (لا تحتسب في المعدل)'
+                          : 'لم تختبر / مؤجل (—) — لا تدخل في حساب المعدل'
+                      }
+                      className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-xs font-bold text-stone-500 bg-stone-100 text-center cursor-not-allowed"
+                    />
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -542,9 +779,10 @@ export const ExamsView: React.FC = () => {
                   <input
                     type="number"
                     min="0"
+                    disabled={resultForm.status !== 'examined'}
                     value={resultForm.memorizationMistakes}
                     onChange={e => setResultForm({ ...resultForm, memorizationMistakes: Number(e.target.value) })}
-                    className="w-full px-2.5 py-1.5 border border-rose-200 rounded-xl text-xs text-center"
+                    className="w-full px-2.5 py-1.5 border border-rose-200 rounded-xl text-xs text-center disabled:bg-stone-100 disabled:text-stone-400"
                   />
                 </div>
                 <div>
@@ -552,9 +790,10 @@ export const ExamsView: React.FC = () => {
                   <input
                     type="number"
                     min="0"
+                    disabled={resultForm.status !== 'examined'}
                     value={resultForm.warningsCount}
                     onChange={e => setResultForm({ ...resultForm, warningsCount: Number(e.target.value) })}
-                    className="w-full px-2.5 py-1.5 border border-amber-200 rounded-xl text-xs text-center"
+                    className="w-full px-2.5 py-1.5 border border-amber-200 rounded-xl text-xs text-center disabled:bg-stone-100 disabled:text-stone-400"
                   />
                 </div>
                 <div>
@@ -562,9 +801,10 @@ export const ExamsView: React.FC = () => {
                   <input
                     type="number"
                     min="0"
+                    disabled={resultForm.status !== 'examined'}
                     value={resultForm.tajweedErrors}
                     onChange={e => setResultForm({ ...resultForm, tajweedErrors: Number(e.target.value) })}
-                    className="w-full px-2.5 py-1.5 border border-purple-200 rounded-xl text-xs text-center"
+                    className="w-full px-2.5 py-1.5 border border-purple-200 rounded-xl text-xs text-center disabled:bg-stone-100 disabled:text-stone-400"
                   />
                 </div>
               </div>

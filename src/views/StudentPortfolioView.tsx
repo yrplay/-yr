@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { OfficialSeal } from '../components/OfficialSeal';
 import { isStudentDefaultNoorania } from './MonthlyPlansView';
+import { ExamResultStatus } from '../types';
 
 interface StudentPortfolioViewProps {
   initialStudentId?: string;
@@ -22,7 +23,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   const {
     students, circles, tracks, users, monthlyPlans, studentPlans,
     dailyRecords, attendanceRecords, studentAtqiniSubmissions,
-    studentChallengeSubmissions, studentExamResults,
+    studentChallengeSubmissions, studentExamResults, monthlyExams,
     allStudentScores, settings, showToast, updateSettings,
     saveStudentPlan, updateStudent, saveDailyRecord, saveExamResult,
     selectedTrackId
@@ -53,6 +54,38 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   const studentChallenges = studentChallengeSubmissions.filter(c => c.studentId === student?.id);
   const studentExams = studentExamResults.filter(e => e.studentId === student?.id);
   const studentExam = studentExams[studentExams.length - 1];
+  const studentExamDef = monthlyExams.find(ex => ex.id === studentExam?.examId) || monthlyExams[0];
+  const examMaxScore = studentExamDef?.maxScore || score?.examRawMax || 100;
+
+  const effectiveExamStatus: ExamResultStatus | 'unrecorded' = !studentExam
+    ? 'unrecorded'
+    : studentExam.status
+      ? studentExam.status
+      : (studentExam.score === null || studentExam.score === undefined)
+        ? 'postponed'
+        : 'examined';
+
+  const hasValidExamScore =
+    effectiveExamStatus === 'examined' &&
+    studentExam !== undefined &&
+    typeof studentExam.score === 'number' &&
+    Number.isFinite(studentExam.score);
+
+  const examActualText = hasValidExamScore
+    ? `${studentExam!.score} درجة`
+    : effectiveExamStatus === 'absent_unexcused'
+      ? 'غائبة بدون عذر (0 درجة)'
+      : effectiveExamStatus === 'exempt'
+        ? 'معفاة / غير مطالبة'
+        : 'لم تختبر / مؤجل';
+
+  const examGradeCellText = hasValidExamScore
+    ? `${studentExam!.score} / ${examMaxScore}`
+    : effectiveExamStatus === 'absent_unexcused'
+      ? `0 / ${examMaxScore}`
+      : effectiveExamStatus === 'exempt'
+        ? 'معفاة (—)'
+        : 'مؤجل (—)';
 
   const teacher = users.find(u => u.id === circle?.teacherId);
   const leader = users.find(u => u.role === 'leader');
@@ -161,13 +194,22 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   const [showQuickEditModal, setShowQuickEditModal] = useState<boolean>(false);
 
   // Quick edit student achievement form state
-  const [quickEditForm, setQuickEditForm] = useState({
+  const [quickEditForm, setQuickEditForm] = useState<{
+    targetPages: number;
+    actualPages: number;
+    revisionTargetPages: number;
+    revisionActualPages: number;
+    notes: string;
+    examStatus: ExamResultStatus;
+    examScore: number | null;
+  }>({
     targetPages: targetNewPages,
     actualPages: doneNewPages,
     revisionTargetPages: targetRevPages,
     revisionActualPages: doneRevPages,
     notes: student?.notes || '',
-    examScore: studentExam ? studentExam.score : 95
+    examStatus: effectiveExamStatus === 'unrecorded' ? 'postponed' : effectiveExamStatus,
+    examScore: hasValidExamScore ? studentExam!.score : effectiveExamStatus === 'absent_unexcused' ? 0 : null
   });
 
   // Sync quick edit form when student changes
@@ -178,9 +220,10 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
       revisionTargetPages: targetRevPages,
       revisionActualPages: doneRevPages,
       notes: student?.notes || '',
-      examScore: studentExam ? studentExam.score : 95
+      examStatus: effectiveExamStatus === 'unrecorded' ? 'postponed' : effectiveExamStatus,
+      examScore: hasValidExamScore ? studentExam!.score : effectiveExamStatus === 'absent_unexcused' ? 0 : null
     });
-  }, [selectedStudentId, activeStudentPlan, score, studentExam]);
+  }, [selectedStudentId, activeStudentPlan, score, studentExam, effectiveExamStatus, hasValidExamScore]);
 
   // Preset theme color swatches for quick selection
   const presetPalettes = [
@@ -246,15 +289,21 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         await updateStudent(student.id, { notes: quickEditForm.notes });
       }
 
-      // 4. Update exam score if provided
-      if (quickEditForm.examScore) {
-        await saveExamResult({
-          studentId: student.id,
-          examId: 'exam-1',
-          score: Number(quickEditForm.examScore),
-          notes: 'رصد فوري معتمد من ملف الإنجاز'
-        });
-      }
+      // 4. Update exam status & score accurately (never injecting a fallback default score)
+      await saveExamResult({
+        studentId: student.id,
+        examId: studentExam?.examId || monthlyExams[0]?.id || 'exam-1',
+        status: quickEditForm.examStatus,
+        score:
+          quickEditForm.examStatus === 'postponed' || quickEditForm.examStatus === 'exempt'
+            ? null
+            : quickEditForm.examStatus === 'absent_unexcused'
+              ? 0
+              : (quickEditForm.examScore !== null && !Number.isNaN(Number(quickEditForm.examScore))
+                  ? Number(quickEditForm.examScore)
+                  : null),
+        notes: studentExam?.notes || 'رصد معتمد من ملف الإنجاز'
+      });
 
       setShowQuickEditModal(false);
       showToast('تم حفظ وتحديث بيانات الخطة والصفحات المنجزة بنجاح ✅', 'success');
@@ -664,9 +713,9 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         </tr>
         <tr>
           <td><strong>الاختبار الشهري</strong></td>
-          <td>اختبار تمكيني شامل</td>
-          <td>${studentExam ? studentExam.score : 95} درجة</td>
-          <td>${studentExam ? studentExam.score : 95} / 100</td>
+          <td>${studentExam?.customPortion || 'اختبار تمكيني شامل'}</td>
+          <td><span style="display:inline-block; padding: 2px 8px; border-radius: 8px; background: ${hasValidExamScore ? '#ecfdf5' : effectiveExamStatus === 'absent_unexcused' ? '#fff1f2' : '#f5f5f4'}; color: ${hasValidExamScore ? '#047857' : effectiveExamStatus === 'absent_unexcused' ? '#be123c' : '#57534e'}; font-weight: bold;">${examActualText}</span></td>
+          <td><strong>${examGradeCellText}</strong></td>
         </tr>
       </tbody>
     </table>
@@ -1204,9 +1253,23 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="text-sm font-extrabold text-[#2D5A43]">
-                {studentExam ? `${studentExam.score} من ١٠٠ درجة` : 'بانتظار الرصد في الموعد المحدد'}
-              </div>
+              {hasValidExamScore ? (
+                <div className="text-sm font-extrabold text-[#2D5A43]">
+                  {studentExam!.score} من {examMaxScore} درجة
+                </div>
+              ) : effectiveExamStatus === 'absent_unexcused' ? (
+                <span className="px-3 py-1 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-xs font-extrabold">
+                  غائبة بدون عذر (0 / {examMaxScore})
+                </span>
+              ) : effectiveExamStatus === 'exempt' ? (
+                <span className="px-3 py-1 rounded-xl bg-sky-50 text-sky-800 border border-sky-200 text-xs font-extrabold">
+                  معفاة / غير مطالبة (—) • لا تدخل في المعدل
+                </span>
+              ) : (
+                <span className="px-3 py-1 rounded-xl bg-stone-100 text-stone-700 border border-stone-200 text-xs font-extrabold">
+                  لم تختبر / مؤجل (—) • النسبة محتسبة من (التسميع + الحضور + التحضير)
+                </span>
+              )}
               <span className="text-[10px] font-bold text-[#2D5A43] group-hover:underline flex items-center gap-0.5 bg-[#EDF3EF] px-2 py-0.5 rounded-lg">
                 فتح كشف الاختبارات ↗
               </span>
@@ -1695,9 +1758,21 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                       </tr>
                       <tr>
                         <td className="p-2.5 font-bold text-stone-900">الاختبار الشهري</td>
-                        <td className="p-2.5">اختبار تمكيني شامل</td>
-                        <td className="p-2.5">{studentExam ? studentExam.score : 95} درجة</td>
-                        <td className="p-2.5 font-bold text-emerald-800">{studentExam ? studentExam.score : 95} / 100</td>
+                        <td className="p-2.5">{studentExam?.customPortion || 'اختبار تمكيني شامل'}</td>
+                        <td className="p-2.5">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                              hasValidExamScore
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : effectiveExamStatus === 'absent_unexcused'
+                                  ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                  : 'bg-stone-100 text-stone-700 border-stone-200'
+                            }`}
+                          >
+                            {examActualText}
+                          </span>
+                        </td>
+                        <td className="p-2.5 font-bold text-emerald-800">{examGradeCellText}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -1847,17 +1922,64 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                 </div>
               </div>
 
-              {/* Monthly Exam Score */}
-              <div>
-                <label className="block font-bold text-stone-700 mb-1">درجة الاختبار الشهري التمكيني (من ١٠٠):</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={quickEditForm.examScore}
-                  onChange={e => setQuickEditForm({ ...quickEditForm, examScore: Number(e.target.value) })}
-                  className="w-full px-3 py-1.5 border border-stone-300 rounded-xl bg-white font-bold text-stone-900"
-                />
+              {/* Monthly Exam Status & Score */}
+              <div className="bg-[#FCFAF8] p-3 rounded-2xl border border-stone-200 space-y-2">
+                <label className="block font-bold text-stone-700">حالة ودرجة الاختبار الشهري التمكيني (من {examMaxScore}):</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={quickEditForm.examStatus}
+                    onChange={e => {
+                      const nextStatus = e.target.value as ExamResultStatus;
+                      setQuickEditForm(prev => ({
+                        ...prev,
+                        examStatus: nextStatus,
+                        examScore:
+                          nextStatus === 'postponed' || nextStatus === 'exempt'
+                            ? null
+                            : nextStatus === 'absent_unexcused'
+                              ? 0
+                              : (prev.examScore ?? examMaxScore)
+                      }));
+                    }}
+                    className="w-full px-3 py-1.5 border border-stone-300 rounded-xl bg-white font-bold text-stone-900"
+                  >
+                    <option value="examined">مختبرة ✅</option>
+                    <option value="postponed">لم تختبر / مؤجل ⏳</option>
+                    <option value="exempt">معفاة / غير مطالبة 🛡️</option>
+                    <option value="absent_unexcused">غائبة بدون عذر ❌</option>
+                  </select>
+
+                  {quickEditForm.examStatus === 'examined' ? (
+                    <input
+                      type="number"
+                      min="0"
+                      max={examMaxScore}
+                      step="0.5"
+                      value={quickEditForm.examScore ?? ''}
+                      placeholder={`الدرجة من ${examMaxScore}`}
+                      onChange={e =>
+                        setQuickEditForm({
+                          ...quickEditForm,
+                          examScore: e.target.value === '' ? null : Number(e.target.value)
+                        })
+                      }
+                      className="w-full px-3 py-1.5 border border-emerald-300 rounded-xl bg-white font-bold text-[#2D5A43] text-center"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      disabled
+                      value={
+                        quickEditForm.examStatus === 'absent_unexcused'
+                          ? `0 / ${examMaxScore}`
+                          : quickEditForm.examStatus === 'exempt'
+                            ? 'معفاة (—)'
+                            : 'لم تختبر / مؤجل (—)'
+                      }
+                      className="w-full px-3 py-1.5 border border-stone-200 rounded-xl bg-stone-100 font-bold text-stone-500 text-center cursor-not-allowed"
+                    />
+                  )}
+                </div>
               </div>
 
               {/* Teacher Remarks & Recommendations */}

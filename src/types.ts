@@ -417,11 +417,14 @@ export interface MonthlyExam {
   updatedAt?: string;
 }
 
+export type ExamResultStatus = 'examined' | 'postponed' | 'exempt' | 'absent_unexcused';
+
 export interface StudentExamResult {
   id: string;
   examId: string;
   studentId: string;
-  score: number;
+  status?: ExamResultStatus; // 'examined' (مختبرة) | 'postponed' (لم تختبر / مؤجل) | 'exempt' (معفاة / غير مطالبة) | 'absent_unexcused' (غائبة بدون عذر)
+  score: number | null;
   memorizationMistakes: number;
   tajweedErrors: number;
   warningsCount: number;

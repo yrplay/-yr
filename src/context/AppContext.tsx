@@ -67,6 +67,9 @@ export interface StudentScoreSummary {
   
   examScore: number;
   examMax: number;
+  examStatus?: 'examined' | 'postponed' | 'exempt' | 'absent_unexcused' | 'unrecorded';
+  examRawScore?: number | null;
+  examRawMax?: number;
   
   totalEarnedPoints: number;
   totalPossiblePoints: number;
@@ -3264,18 +3267,43 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const existingIdx = currentResults.findIndex(
       (r: StudentExamResult) => r.id === cleanId || (r.examId === result.examId && r.studentId === result.studentId)
     );
+
+    const resolvedStatus = result.status ?? (
+      existingIdx >= 0
+        ? (currentResults[existingIdx].status ?? (typeof currentResults[existingIdx].score === 'number' ? 'examined' : 'postponed'))
+        : (typeof result.score === 'number' ? 'examined' : 'postponed')
+    );
+
+    const resolveNormalizedScore = (fallbackScore: number | null): number | null => {
+      if (resolvedStatus === 'postponed' || resolvedStatus === 'exempt') {
+        return null;
+      }
+      if (resolvedStatus === 'absent_unexcused') {
+        return 0;
+      }
+      if (result.score === null) {
+        return null;
+      }
+      if (typeof result.score === 'number' && Number.isFinite(result.score)) {
+        return result.score;
+      }
+      return fallbackScore;
+    };
+
     let next: StudentExamResult[];
     if (existingIdx >= 0) {
       next = [...currentResults];
+      const prev = next[existingIdx];
       next[existingIdx] = {
-        ...next[existingIdx],
+        ...prev,
         ...result,
-        score: result.score ?? next[existingIdx].score,
-        memorizationMistakes: result.memorizationMistakes ?? next[existingIdx].memorizationMistakes,
-        tajweedErrors: result.tajweedErrors ?? next[existingIdx].tajweedErrors,
-        warningsCount: result.warningsCount ?? next[existingIdx].warningsCount,
-        notes: result.notes ?? next[existingIdx].notes,
-        examinerName: currentUser?.name || result.examinerName || next[existingIdx].examinerName,
+        status: resolvedStatus,
+        score: resolveNormalizedScore(prev.score ?? null),
+        memorizationMistakes: (resolvedStatus === 'postponed' || resolvedStatus === 'exempt') ? 0 : (result.memorizationMistakes ?? prev.memorizationMistakes ?? 0),
+        tajweedErrors: (resolvedStatus === 'postponed' || resolvedStatus === 'exempt') ? 0 : (result.tajweedErrors ?? prev.tajweedErrors ?? 0),
+        warningsCount: (resolvedStatus === 'postponed' || resolvedStatus === 'exempt') ? 0 : (result.warningsCount ?? prev.warningsCount ?? 0),
+        notes: result.notes ?? prev.notes,
+        examinerName: currentUser?.name || result.examinerName || prev.examinerName,
         evaluatedAt: new Date().toISOString()
       };
     } else {
@@ -3283,30 +3311,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: cleanId,
         examId: result.examId || '',
         studentId: result.studentId || '',
-        score: result.score ?? 0,
-        memorizationMistakes: result.memorizationMistakes ?? 0,
-        tajweedErrors: result.tajweedErrors ?? 0,
-        warningsCount: result.warningsCount ?? 0,
+        status: resolvedStatus,
+        score: resolveNormalizedScore(null),
+        memorizationMistakes: (resolvedStatus === 'postponed' || resolvedStatus === 'exempt') ? 0 : (result.memorizationMistakes ?? 0),
+        tajweedErrors: (resolvedStatus === 'postponed' || resolvedStatus === 'exempt') ? 0 : (result.tajweedErrors ?? 0),
+        warningsCount: (resolvedStatus === 'postponed' || resolvedStatus === 'exempt') ? 0 : (result.warningsCount ?? 0),
         notes: result.notes || '',
         examinerName: currentUser?.name || result.examinerName || 'لجنة الاختبارات',
         evaluatedAt: new Date().toISOString(),
         customPortion: result.customPortion || '',
-        signatureUrl: result.signatureUrl,
-        ...result
+        signatureUrl: result.signatureUrl
       };
       next = [...currentResults, newResult];
     }
     masterStateRef.current.studentExamResults = next;
     setStudentExamResults(next);
-    const finalScore = result.score ?? (existingIdx >= 0 ? next[existingIdx].score : 0);
+    const savedEntry = existingIdx >= 0 ? next[existingIdx] : next[next.length - 1];
+    const statusLabelMap: Record<string, string> = {
+      examined: `الدرجة: ${savedEntry.score ?? '—'}`,
+      postponed: 'لم تختبر / مؤجل',
+      exempt: 'معفاة / غير مطالبة',
+      absent_unexcused: 'غائبة بدون عذر (0)'
+    };
     const nextLogs = appendAuditEntry(
       'grade',
       'exam',
-      `رصد درجة الاختبار الشهري للطالبة ${studentObj?.name || result.studentId} (الدرجة: ${finalScore})`,
+      `رصد حالة الاختبار الشهري للطالبة ${studentObj?.name || result.studentId} (${statusLabelMap[resolvedStatus] || resolvedStatus})`,
       cleanId
     );
     persistState({ studentExamResults: next, auditLogs: nextLogs });
-    showToast('تم رصد درجة ومقرر الاختبار الشهري بنجاح');
+    showToast('تم حفظ حالة ونتيجة الاختبار الشهري بنجاح ✅');
   };
 
   const updateGradingConfig = async (trackId: string, config: Partial<TrackGradingConfig>) => {
@@ -3979,10 +4013,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const examItem = gradingConfig?.items.find(i => i.category === 'exam');
     const examMax = examItem?.maxScore ?? 15;
-    const hasExam = !!sExam && !!examDefinition && typeof sExam.score === 'number';
     const examBaseMax = examDefinition?.maxScore ?? 100;
-    const examScore = hasExam && examBaseMax > 0
-      ? Math.round((Math.min(examBaseMax, Math.max(0, sExam?.score ?? 0)) / examBaseMax) * examMax * 10) / 10
+    const examStatus: 'examined' | 'postponed' | 'exempt' | 'absent_unexcused' | 'unrecorded' = !sExam
+      ? 'unrecorded'
+      : sExam.status
+        ? sExam.status
+        : (sExam.score === null || sExam.score === undefined)
+          ? 'postponed'
+          : 'examined';
+
+    // Only include exam in cumulative GPA if the student actually took the exam ('examined' with numeric score)
+    // or was absent without excuse ('absent_unexcused' -> 0).
+    // If 'postponed' (لم تختبر / مؤجل), 'exempt' (معفاة), or 'unrecorded' (null), exclude exam from GPA denominator!
+    const hasExam =
+      (examStatus === 'examined' && typeof sExam?.score === 'number' && Number.isFinite(sExam.score)) ||
+      examStatus === 'absent_unexcused';
+
+    const examRawScore: number | null =
+      examStatus === 'absent_unexcused'
+        ? 0
+        : (examStatus === 'examined' && typeof sExam?.score === 'number' && Number.isFinite(sExam.score))
+          ? sExam.score
+          : null;
+
+    const examScore = hasExam && examBaseMax > 0 && examRawScore !== null
+      ? Math.round((Math.min(examBaseMax, Math.max(0, examRawScore)) / examBaseMax) * examMax * 10) / 10
       : 0;
 
     const method = gradingConfig?.calculationMethod || 'weighted_percentage';
@@ -4121,6 +4176,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       peerReviewScore: Number(peerReviewEarned.toFixed(1)),
       examScore: Number(examScore.toFixed(1)),
       examMax,
+      examStatus,
+      examRawScore,
+      examRawMax: examBaseMax,
       totalEarnedPoints: Number(totalEarnedPoints.toFixed(1)),
       totalPossiblePoints,
       finalPercentage: Number(finalPercentage.toFixed(1)),
@@ -4276,6 +4334,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       peerReviewScore: 0,
       examScore: 0,
       examMax: 15,
+      examStatus: 'unrecorded',
+      examRawScore: null,
+      examRawMax: 100,
       totalEarnedPoints: 0,
       totalPossiblePoints: 0,
       finalPercentage: 0,
