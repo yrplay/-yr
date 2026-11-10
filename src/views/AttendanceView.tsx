@@ -11,7 +11,8 @@ export const AttendanceView: React.FC = () => {
   const {
     students, circles, attendanceRecords, dailyRecords, studentChallengeSubmissions,
     saveAttendance, saveBulkAttendance,
-    deleteAttendanceRecord, showToast, allStudentScores, selectedTrackId,
+    clearStudentDayAttendance, toggleAttendanceWeeklyStar,
+    showToast, allStudentScores, selectedTrackId,
     selectedCircleId, setSelectedCircleId, selectedDate, setSelectedDate
   } = useApp();
 
@@ -22,7 +23,6 @@ export const AttendanceView: React.FC = () => {
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'early_prep' | 'absent'>('all');
   const [reasonInputs, setReasonInputs] = useState<Record<string, string>>({});
-  const [attendanceToDelete, setAttendanceToDelete] = useState<{ studentId: string; studentName: string; recordId: string } | null>(null);
 
   React.useEffect(() => {
     if (availableCircles.length > 0 && !availableCircles.some(c => c.id === selectedCircleId)) {
@@ -42,6 +42,20 @@ export const AttendanceView: React.FC = () => {
   // Get or compute record for a student on selectedDate (including passive real-time derivation if not yet persisted)
   const getRecord = (studentId: string): Partial<AttendanceRecord> & { syncSource?: string } => {
     const existing = attendanceRecords.find(a => a.studentId === studentId && a.date === selectedDate);
+
+    // If teacher manually deleted/cleared this day's attendance, do NOT auto-repopulate from recitation/challenges
+    if (existing?.isManuallyCleared) {
+      return {
+        ...existing,
+        studentId,
+        circleId: activeCircle?.id || existing.circleId || '',
+        date: selectedDate,
+        status: 'unrecorded',
+        earlyPrepCardSent: false,
+        syncSource: ''
+      };
+    }
+
     const hasDailyRecitation = dailyRecords.some(
       r => r.studentId === studentId && r.date === selectedDate && (r.status === 'completed' || (r.recitationScore ?? 0) > 0)
     );
@@ -70,7 +84,7 @@ export const AttendanceView: React.FC = () => {
       return {
         ...existing,
         status: existing.status === 'unrecorded' && (hasDailyRecitation || hasChallengeActivity) ? 'present' : existing.status,
-        earlyPrepCardSent: existing.earlyPrepCardSent || hasChallengeEarlyBonus,
+        earlyPrepCardSent: !!existing.earlyPrepCardSent,
         syncSource: syncSource || existing.recordedBy || 'متزامن تلقائياً'
       };
     }
@@ -104,6 +118,8 @@ export const AttendanceView: React.FC = () => {
       circleId: activeCircle?.id || rec.circleId || '',
       date: selectedDate,
       status,
+      earlyPrepCardSent: status === 'present' ? !!rec.earlyPrepCardSent : false,
+      isManuallyCleared: false,
       reason: status === 'absent_excused' ? (reasonInputs[studentId] || rec.reason || '') : undefined
     });
   };
@@ -111,24 +127,38 @@ export const AttendanceView: React.FC = () => {
   const handleToggleEarlyPrep = async (studentId: string) => {
     const rec = getRecord(studentId);
     const nextEarly = !rec.earlyPrepCardSent;
+    const nextStatus = nextEarly
+      ? 'present'
+      : (rec.status && rec.status !== 'unrecorded' ? rec.status : 'present');
     await saveAttendance({
       ...rec,
       studentId,
       circleId: activeCircle?.id || rec.circleId || '',
       date: selectedDate,
-      status: nextEarly ? 'present' : (rec.status || 'present'),
-      earlyPrepCardSent: nextEarly
+      status: nextStatus,
+      earlyPrepCardSent: nextEarly,
+      isManuallyCleared: false
     });
+    showToast?.(
+      nextEarly
+        ? 'تم تفعيل التحضير المبكر ⚡ وإضافته لرصيد الطالبة'
+        : 'تم إلغاء التحضير المبكر لهذا اليوم وخصمه من العداد الشهري'
+    );
   };
 
-  const handleDeleteAttendance = (studentId: string, studentName: string, recordId?: string) => {
-    if (!recordId) {
-      const existing = attendanceRecords.find(a => a.studentId === studentId && a.date === selectedDate);
-      if (!existing) return;
-      setAttendanceToDelete({ studentId, studentName, recordId: existing.id });
-      return;
-    }
-    setAttendanceToDelete({ studentId, studentName, recordId });
+  const handleClearStudentAttendance = async (studentId: string, studentName: string) => {
+    await clearStudentDayAttendance(studentId, selectedDate);
+    setReasonInputs(prev => {
+      const next = { ...prev };
+      delete next[studentId];
+      return next;
+    });
+    showToast?.(`تم مسح سجل الحضور والتحضير المبكر للطالبة «${studentName}» وتحديث الإحصائية فوراً 🗑️`);
+  };
+
+  const handleToggleWeeklyStar = async (studentId: string, studentName: string) => {
+    await toggleAttendanceWeeklyStar(studentId, selectedDate);
+    showToast?.(`تم تحديث نجمة الالتزام الأسبوعي 🌟 للطالبة «${studentName}» ومزامنتها مع ملف الإنجاز`);
   };
 
   const handleBulkPresent = async () => {
@@ -139,7 +169,8 @@ export const AttendanceView: React.FC = () => {
         studentId: st.id,
         circleId: activeCircle?.id || st.circleId || '',
         date: selectedDate,
-        status: 'present' as const
+        status: 'present' as const,
+        isManuallyCleared: false
       };
     });
     await saveBulkAttendance(updates);
@@ -154,7 +185,8 @@ export const AttendanceView: React.FC = () => {
         circleId: activeCircle?.id || st.circleId || '',
         date: selectedDate,
         status: 'present' as const,
-        earlyPrepCardSent: true
+        earlyPrepCardSent: true,
+        isManuallyCleared: false
       };
     });
     await saveBulkAttendance(updates);
@@ -167,6 +199,7 @@ export const AttendanceView: React.FC = () => {
   const excusedCount = dayRecords.filter(r => r.status === 'absent_excused').length;
   const earlyPrepCount = dayRecords.filter(r => r.earlyPrepCardSent).length;
   const absentTotalCount = unexcusedCount + excusedCount;
+  const weeklyStarQualifiedCount = circleStudents.filter(s => allStudentScores[s.id]?.hasWeeklyStar).length;
 
   const filteredStudents = circleStudents.filter(st => {
     const rec = getRecord(st.id);
@@ -190,7 +223,7 @@ export const AttendanceView: React.FC = () => {
             </span>
           </div>
           <p className="text-xs text-stone-500">
-            مرآة تلقائية تعرض الحضور والتحضير المبكر المرصود مباشرة من «سجل الحفظ والتسميع» (الأحد–الأربعاء) و«قسم التحديات» (الخميس) دون الحاجة لإعادة الإدخال اليدوي
+            مرآة تلقائية تعرض الحضور والتحضير المبكر ونجمة الالتزام الأسبوعي 🌟 مع إمكانية التعديل اليدوي الفوري ومزامنة ملف الإنجاز والشهادة
           </p>
         </div>
 
@@ -244,11 +277,11 @@ export const AttendanceView: React.FC = () => {
           {/* Automation Mode Indicator */}
           <div className="p-2.5 rounded-xl bg-[#FCFAF8] border border-[#EFE8E2] text-xs flex flex-col justify-center">
             <span className="font-bold text-stone-700 block">
-              {isSelectedDateThursday ? '🏆 وضع يوم الخميس (التحديات والمراجعة):' : '📖 وضع أيام الأحد–الأربعاء (سجل التسميع):'}
+              {isSelectedDateThursday ? '🏆 وضع يوم الخميس (تتويج متألقة الأسبوع 🌟):' : '📖 وضع أيام الأحد–الأربعاء (سجل التسميع والانضباط):'}
             </span>
             <span className="text-[11px] text-stone-500 block mt-0.5">
               {isSelectedDateThursday
-                ? 'يُسجَّل الحضور تلقائياً بمجرد تقييم التحدي أو منح (+2 نقاط) الإنجاز المبكر'
+                ? 'تُمنح شارة «🌟 متألقة الأسبوع» تلقائياً لمن لم تغب من الأحد للأربعاء (مع إمكانية التبديل اليدوي)'
                 : `يُسجَّل الحضور تلقائياً عند التسميع أو ضغط «⚡ تحضير مبكر» (قبل ${activeCircle?.earlyPrepCutoffTime})`}
             </span>
           </div>
@@ -309,6 +342,8 @@ export const AttendanceView: React.FC = () => {
             <span>•</span>
             <span>تحضير مبكر: <strong className="text-amber-700">{earlyPrepCount}</strong></span>
             <span>•</span>
+            <span>متألقات الأسبوع 🌟: <strong className="text-amber-600">{weeklyStarQualifiedCount}</strong></span>
+            <span>•</span>
             <span>غياب بعذر: <strong className="text-amber-600">{excusedCount}</strong></span>
             <span>•</span>
             <span>دون عذر: <strong className="text-rose-600">{unexcusedCount}</strong></span>
@@ -323,6 +358,9 @@ export const AttendanceView: React.FC = () => {
         {filteredStudents.map((student, idx) => {
           const rec = getRecord(student.id);
           const score = allStudentScores[student.id];
+          const hasWeeklyStar = score?.hasWeeklyStar ?? true;
+          const weeklyAbsences = score?.weeklyAbsenceCount ?? 0;
+          const hasActiveLog = rec.status !== 'unrecorded' || !!rec.earlyPrepCardSent;
 
           return (
             <div
@@ -341,9 +379,9 @@ export const AttendanceView: React.FC = () => {
                     </h3>
                   </div>
                   <div className="text-[11px] text-stone-400 font-mono mt-0.5 mr-7">
-                    كود: <span className="privacy-phone">{student.code}</span> • حضور: <strong className="text-[#2D5A43]"><span className="privacy-score-digit">{score?.attendanceRate || 0}</span>%</strong>
+                    كود: <span className="privacy-phone">{student.code}</span> • حضور: <strong className="text-[#2D5A43]"><span className="privacy-score-digit">{score?.attendanceRate ?? 100}</span>%</strong> • مبكر: <strong className="text-amber-700 privacy-score-digit">{score?.earlyPrepCount ?? 0}</strong>
                   </div>
-                  {rec.syncSource && (
+                  {rec.syncSource && rec.status === 'present' && (
                     <div className="mt-1 mr-7">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/70 text-[10px] font-bold">
                         {rec.syncSource}
@@ -360,24 +398,50 @@ export const AttendanceView: React.FC = () => {
                     className={`px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer touch-manipulation ${
                       rec.earlyPrepCardSent
                         ? 'bg-emerald-600 text-white border border-emerald-700 shadow-2xs'
-                        : 'bg-white text-stone-600 border border-stone-300 hover:bg-emerald-50'
+                        : 'bg-stone-100 text-stone-500 border border-stone-300 hover:bg-stone-200'
                     }`}
                   >
                     <span>⚡ تحضير مبكر</span>
                     {rec.earlyPrepCardSent && <span>✓</span>}
                   </button>
 
-                  {rec.id && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteAttendance(student.id, student.name, rec.id)}
-                      className="p-2 text-stone-400 hover:text-rose-600 rounded-xl hover:bg-rose-50 transition cursor-pointer border border-stone-200"
-                      title="حذف وإلغاء رصد الحضور لهذا اليوم"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleClearStudentAttendance(student.id, student.name)}
+                    disabled={!hasActiveLog}
+                    className={`p-2 rounded-xl transition border ${
+                      hasActiveLog
+                        ? 'text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border-rose-200 cursor-pointer'
+                        : 'text-stone-300 bg-stone-50 border-stone-200 cursor-not-allowed'
+                    }`}
+                    title="مسح وإعادة ضبط حضور وتحضير الطالبة لهذا اليوم"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
+              </div>
+
+              {/* Mobile Weekly Star Badge Row */}
+              <div className="flex items-center justify-between bg-[#FCFAF7] px-3 py-2 rounded-xl border border-amber-200/70">
+                <span className="text-[11px] font-bold text-stone-700">نجمة الالتزام الأسبوعي 🌟:</span>
+                <button
+                  type="button"
+                  onClick={() => handleToggleWeeklyStar(student.id, student.name)}
+                  className={`px-3 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${
+                    hasWeeklyStar
+                      ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-white shadow-sm ring-2 ring-amber-300/50'
+                      : 'bg-stone-100 text-stone-500 border border-stone-300 hover:bg-amber-50 hover:text-amber-800'
+                  }`}
+                >
+                  {hasWeeklyStar ? (
+                    <>
+                      <span>🌟 متألقة الأسبوع</span>
+                      <span className="text-[10px] bg-white/20 px-1.5 py-0.2 rounded-full">✓</span>
+                    </>
+                  ) : (
+                    <span>☆ منح نجمة الأسبوع ({weeklyAbsences} غياب)</span>
+                  )}
+                </button>
               </div>
 
               {/* Status Action Buttons (Touch-friendly 44px min height) */}
@@ -449,6 +513,7 @@ export const AttendanceView: React.FC = () => {
                 <th className="p-3.5">#</th>
                 <th className="p-3.5">اسم الطالبة</th>
                 <th className="p-3.5 text-center">التحضير المبكر ⚡</th>
+                <th className="p-3.5 text-center">نجمة الالتزام 🌟</th>
                 <th className="p-3.5 text-center">حالة الحضور</th>
                 <th className="p-3.5">مصدر المزامنة التلقائية</th>
                 <th className="p-3.5">سبب الغياب (إن وُجد)</th>
@@ -460,6 +525,9 @@ export const AttendanceView: React.FC = () => {
               {filteredStudents.map((student, idx) => {
                 const rec = getRecord(student.id);
                 const score = allStudentScores[student.id];
+                const hasWeeklyStar = score?.hasWeeklyStar ?? true;
+                const weeklyAbsences = score?.weeklyAbsenceCount ?? 0;
+                const hasActiveLog = rec.status !== 'unrecorded' || !!rec.earlyPrepCardSent;
 
                 return (
                   <tr key={student.id} className="hover:bg-[#FCF9FA] transition">
@@ -474,21 +542,53 @@ export const AttendanceView: React.FC = () => {
                       </div>
                     </td>
 
-                    {/* Early Prep Toggle */}
+                    {/* Early Prep 2-Way Toggle */}
                     <td className="p-3.5 text-center">
                       <button
                         type="button"
                         onClick={() => handleToggleEarlyPrep(student.id)}
                         className={`px-3 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer touch-manipulation ${
                           rec.earlyPrepCardSent
-                            ? 'bg-emerald-600 text-white border border-emerald-700 shadow-2xs ring-2 ring-emerald-400/25'
-                            : 'bg-white hover:bg-emerald-50 text-stone-600 hover:text-emerald-800 border border-stone-300'
+                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 shadow-2xs ring-2 ring-emerald-400/25'
+                            : 'bg-stone-100 hover:bg-stone-200 text-stone-500 border border-stone-300'
                         }`}
-                        title="انقري لتبديل حالة التحضير المبكر والحضور"
+                        title={rec.earlyPrepCardSent ? 'انقري لإلغاء التحضير المبكر وخصمه من العداد الشهري' : 'انقري لتفعيل التحضير المبكر وإضافته للعداد الشهري'}
                       >
                         <span>⚡ تحضير مبكر</span>
                         {rec.earlyPrepCardSent && <span>✓</span>}
                       </button>
+                    </td>
+
+                    {/* Weekly Commitment Star Column (نجمة الالتزام 🌟) */}
+                    <td className="p-3.5 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleWeeklyStar(student.id, student.name)}
+                          className={`px-3 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer touch-manipulation ${
+                            hasWeeklyStar
+                              ? isSelectedDateThursday
+                                ? 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500 text-white border border-amber-400 shadow-md ring-2 ring-amber-300/60'
+                                : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
+                              : 'bg-stone-100 hover:bg-amber-50 text-stone-400 hover:text-amber-800 border border-stone-200'
+                          }`}
+                          title="تُحتسب تلقائياً عند عدم وجود غياب من الأحد للأربعاء — انقري لمنحها أو إلغائها يدوياً"
+                        >
+                          {hasWeeklyStar ? (
+                            <>
+                              <span>🌟 متألقة الأسبوع</span>
+                              {isSelectedDateThursday && <span className="text-[10px] bg-white/25 px-1.5 py-0.2 rounded-full">تتويج</span>}
+                            </>
+                          ) : (
+                            <span>☆ غير مستحقة ({weeklyAbsences} غياب)</span>
+                          )}
+                        </button>
+                        <span className="text-[10px] text-stone-400">
+                          {hasWeeklyStar
+                            ? '0 غياب (الأحد–الأربعاء)'
+                            : `انقري للمنح الاستثنائي`}
+                        </span>
+                      </div>
                     </td>
 
                     {/* Attendance Status Buttons */}
@@ -569,27 +669,31 @@ export const AttendanceView: React.FC = () => {
                     {/* Cumulative Monthly Stats */}
                     <td className="p-3.5">
                       <div className="font-semibold text-stone-800">
-                        حضور: <span className="text-[#2D5A43] font-bold privacy-score-digit">{score?.attendanceRate}%</span>
+                        حضور: <span className="text-[#2D5A43] font-bold privacy-score-digit">{score?.attendanceRate ?? 100}%</span>
                       </div>
                       <div className="text-[10px] text-stone-500">
-                        غياب: <span className="privacy-score-digit">{score?.absentUnexcusedCount}</span> دون عذر | مبكر: <span className="privacy-score-digit">{score?.earlyPrepCount}</span>
+                        غياب: <span className="privacy-score-digit font-bold text-rose-700">{(score?.absentUnexcusedCount ?? 0) + (score?.absentExcusedCount ?? 0)}</span> ({score?.absentUnexcusedCount ?? 0} دون عذر) | مبكر: <span className="privacy-score-digit font-bold text-emerald-700">{score?.earlyPrepCount ?? 0}</span>
+                      </div>
+                      <div className="text-[10px] text-amber-700 font-bold mt-0.5">
+                        نجوم الشهر: 🌟 <span className="privacy-score-digit">{score?.weeklyStarsCount ?? 4}</span>/4
                       </div>
                     </td>
 
-                    {/* Actions: Delete Record */}
+                    {/* Actions: Reset/Delete Day Attendance */}
                     <td className="p-3.5 text-center">
-                      {rec.id ? (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteAttendance(student.id, student.name, rec.id)}
-                          className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                          title="حذف وإلغاء رصد الحضور لهذا اليوم"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      ) : (
-                        <span className="text-stone-300 text-[10px]">—</span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleClearStudentAttendance(student.id, student.name)}
+                        disabled={!hasActiveLog}
+                        className={`p-2 rounded-xl transition inline-flex items-center justify-center border ${
+                          hasActiveLog
+                            ? 'text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border-rose-200 shadow-2xs cursor-pointer'
+                            : 'text-stone-300 bg-stone-50 border-stone-100 cursor-not-allowed'
+                        }`}
+                        title="حذف وإعادة ضبط حالة الحضور والتحضير المبكر لهذا اليوم"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </td>
                   </tr>
                 );
@@ -598,61 +702,6 @@ export const AttendanceView: React.FC = () => {
           </table>
         </div>
       </div>
-
-      {/* Delete Confirmation Alert Modal for Attendance */}
-      {attendanceToDelete && (
-        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-200 text-right space-y-4" dir="rtl">
-            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
-              <Trash2 className="w-6 h-6" />
-            </div>
-
-            <div className="text-center space-y-1">
-              <h3 className="font-bold text-stone-900 text-base font-quran">
-                تأكيد حذف سجل الحضور
-              </h3>
-              <p className="text-sm font-bold text-rose-700">
-                هل أنت متأكد من حذف هذا السجل؟
-              </p>
-              <p className="text-xs text-stone-600 font-semibold mt-1">
-                للطالبة: «{attendanceToDelete.studentName}» • تاريخ: {formatHijriDate(selectedDate)}
-              </p>
-            </div>
-
-            <p className="text-xs text-stone-500 leading-relaxed bg-[#FCFAF8] p-3 rounded-2xl border border-stone-200 text-center">
-              سيتم مسح سجل الحضور والتحضير المبكر لهذا اليوم فوراً وتحديث نسب الحضور سحابياً.
-            </p>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
-              <button
-                type="button"
-                onClick={() => setAttendanceToDelete(null)}
-                className="px-4 py-2 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 transition cursor-pointer"
-              >
-                إلغاء
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  const target = attendanceToDelete;
-                  setAttendanceToDelete(null);
-                  await deleteAttendanceRecord(target.recordId);
-                  setReasonInputs(prev => {
-                    const next = { ...prev };
-                    delete next[target.studentId];
-                    return next;
-                  });
-                  showToast?.('تم حذف سجل الحضور بنجاح ومزامنة التغييرات سحابياً 🗑️');
-                }}
-                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>حذف</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

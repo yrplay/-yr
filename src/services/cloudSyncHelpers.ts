@@ -165,21 +165,27 @@ export const deduplicateAttendanceRecords = <T extends Record<string, any>>(list
     const canonicalId = `att_${item.studentId}_${item.date}`;
     const existing = map.get(key);
     if (!existing) {
-      const isAbsent = item.status === 'absent_unexcused' || item.status === 'absent_excused';
+      const isAbsentOrUnrecorded =
+        item.status === 'absent_unexcused' ||
+        item.status === 'absent_excused' ||
+        item.status === 'unrecorded';
       map.set(key, {
         ...item,
         id: item.id || canonicalId,
-        earlyPrepCardSent: isAbsent ? false : !!item.earlyPrepCardSent
+        earlyPrepCardSent: isAbsentOrUnrecorded ? false : !!item.earlyPrepCardSent
       });
     } else {
       const existingTime = parseTime(existing);
       const itemTime = parseTime(item);
       const winner = itemTime >= existingTime ? { ...existing, ...item } : { ...item, ...existing };
-      const isAbsent = winner.status === 'absent_unexcused' || winner.status === 'absent_excused';
+      const isAbsentOrUnrecorded =
+        winner.status === 'absent_unexcused' ||
+        winner.status === 'absent_excused' ||
+        winner.status === 'unrecorded';
       map.set(key, {
         ...winner,
         id: winner.id || canonicalId,
-        earlyPrepCardSent: isAbsent ? false : !!winner.earlyPrepCardSent
+        earlyPrepCardSent: isAbsentOrUnrecorded ? false : !!winner.earlyPrepCardSent
       });
     }
   }

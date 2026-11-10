@@ -301,6 +301,8 @@ export interface AttendanceRecord {
   date: string;
   status: 'present' | 'absent_unexcused' | 'absent_excused' | 'late' | 'unrecorded';
   earlyPrepCardSent: boolean;
+  isManuallyCleared?: boolean;
+  weeklyStarOverride?: boolean;
   reason?: string;
   recordedBy: string;
   recordedAt: string;

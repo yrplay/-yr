@@ -332,6 +332,8 @@ export interface AttendanceRecord {
   date: string; // YYYY-MM-DD
   status: 'present' | 'absent_unexcused' | 'absent_excused' | 'unrecorded';
   earlyPrepCardSent: boolean; // التحضير المبكر
+  isManuallyCleared?: boolean; // تم حذفه وتصفيره يدوياً لمنع إعادة المزامنة التلقائية
+  weeklyStarOverride?: boolean; // تفعيل أو إلغاء نجمة الالتزام الأسبوعي يدوياً
   reason?: string;
   recordedBy: string;
   recordedAt: string;

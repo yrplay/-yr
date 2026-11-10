@@ -141,6 +141,8 @@ interface AppContextType {
   saveDailyRecitation?: (record: any) => Promise<void>;
   saveAttendance: (record: Partial<AttendanceRecord>) => Promise<void>;
   deleteAttendanceRecord: (id: string) => Promise<void>;
+  clearStudentDayAttendance: (studentId: string, dateIso?: string) => Promise<void>;
+  toggleAttendanceWeeklyStar: (studentId: string, dateIso?: string) => Promise<void>;
   saveBulkAttendance: (records: Partial<AttendanceRecord>[]) => Promise<void>;
   
   saveStudentSubscription: (sub: Partial<StudentSubscription>) => Promise<void>;
@@ -2271,6 +2273,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         circleId: circleId || existingAtt?.circleId || '',
         date: targetDate,
         status: resolvedStatus,
+        isManuallyCleared: false,
         earlyPrepCardSent: isAbsent
           ? false
           : earlyPrepOverride !== undefined
@@ -2421,24 +2424,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const studentObj = currentStudents.find((s: Student) => s.id === record.studentId);
 
     const finalStatus = record.status || 'present';
-    const isAbsent = finalStatus === 'absent_unexcused' || finalStatus === 'absent_excused';
+    const isAbsentOrUnrecorded =
+      finalStatus === 'absent_unexcused' ||
+      finalStatus === 'absent_excused' ||
+      finalStatus === 'unrecorded';
+
+    const currentAtt = deduplicateAttendanceRecords<AttendanceRecord>(
+      masterStateRef.current.attendanceRecords || attendanceRecords || []
+    );
+    const existingAtt = currentAtt.find(
+      (a: AttendanceRecord) => a.studentId === record.studentId && a.date === recDate
+    );
 
     const newRecord: AttendanceRecord = {
+      ...(existingAtt || {}),
       ...record,
       id: cleanId,
       studentId: record.studentId || '',
-      circleId: record.circleId || studentObj?.circleId || '',
+      circleId: record.circleId || existingAtt?.circleId || studentObj?.circleId || '',
       date: recDate,
       status: finalStatus,
-      earlyPrepCardSent: isAbsent ? false : !!record.earlyPrepCardSent,
+      isManuallyCleared: record.isManuallyCleared ?? false,
+      weeklyStarOverride: record.weeklyStarOverride !== undefined ? record.weeklyStarOverride : existingAtt?.weeklyStarOverride,
+      earlyPrepCardSent: isAbsentOrUnrecorded ? false : !!record.earlyPrepCardSent,
       reason: record.reason,
       recordedBy: currentUser?.name || 'معلمة الحلقة',
       recordedAt: new Date().toISOString()
     };
 
-    const currentAtt = deduplicateAttendanceRecords<AttendanceRecord>(
-      masterStateRef.current.attendanceRecords || attendanceRecords || []
-    );
     // Strictly replace any record for this studentId + recDate regardless of ID
     const filtered = currentAtt.filter(
       (a: AttendanceRecord) => !(a.studentId === newRecord.studentId && a.date === newRecord.date) && a.id !== cleanId
@@ -2468,19 +2481,43 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       cleanId
     );
     persistState({ attendanceRecords: next, auditLogs: nextLogs });
-    showToast('تم تسجيل الحضور والتحضير بنجاح ✅');
+    showToast(
+      record.earlyPrepCardSent === false && existingAtt?.earlyPrepCardSent
+        ? 'تم إلغاء التحضير المبكر وتحديث الإحصائية فوراً ⚡'
+        : 'تم حفظ وتحديث الحضور والتحضير المبكر فوراً ✅'
+    );
   };
 
-  const deleteAttendanceRecord = async (id: string) => {
-    const currentAtt: AttendanceRecord[] = masterStateRef.current.attendanceRecords || attendanceRecords || [];
-    const attToDelete = currentAtt.find(a => a.id === id);
+  const clearStudentDayAttendance = async (studentId: string, dateIso?: string) => {
+    const targetDate = dateIso || selectedDate || getTodayISO();
+    const cleanId = `att_${studentId}_${targetDate}`;
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
-    const studentObj = currentStudents.find((s: Student) => s.id === attToDelete?.studentId);
-    const next = currentAtt.filter(a => {
-      if (a.id === id) return false;
-      if (attToDelete && a.studentId === attToDelete.studentId && a.date === attToDelete.date) return false;
-      return true;
-    });
+    const studentObj = currentStudents.find((s: Student) => s.id === studentId);
+    const currentAtt: AttendanceRecord[] = deduplicateAttendanceRecords<AttendanceRecord>(
+      masterStateRef.current.attendanceRecords || attendanceRecords || []
+    );
+    const existingAtt = currentAtt.find(a => a.studentId === studentId && a.date === targetDate);
+
+    // Mark as unrecorded + isManuallyCleared: true so passive auto-sync does NOT re-populate this day
+    const clearedRecord: AttendanceRecord = {
+      id: cleanId,
+      studentId,
+      circleId: existingAtt?.circleId || studentObj?.circleId || '',
+      date: targetDate,
+      status: 'unrecorded',
+      earlyPrepCardSent: false,
+      isManuallyCleared: true,
+      weeklyStarOverride: existingAtt?.weeklyStarOverride,
+      reason: undefined,
+      recordedBy: '',
+      recordedAt: new Date().toISOString()
+    };
+
+    const next = deduplicateAttendanceRecords<AttendanceRecord>([
+      ...currentAtt.filter(a => !(a.studentId === studentId && a.date === targetDate) && a.id !== cleanId),
+      clearedRecord
+    ]);
+
     masterStateRef.current.attendanceRecords = next;
     setAttendanceRecords(next);
     try {
@@ -2490,14 +2527,141 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch {
       // ignore storage errors
     }
+
     const nextLogs = appendAuditEntry(
       'delete',
       'attendance',
-      `حذف سجل حضور للطالبة ${studentObj?.name || attToDelete?.studentId || ''} بتاريخ ${attToDelete?.date || ''}`,
-      id
+      `حذف وإعادة ضبط سجل حضور الطالبة ${studentObj?.name || studentId} بتاريخ ${targetDate}`,
+      cleanId
     );
-    persistState({ attendanceRecords: next, auditLogs: nextLogs, _deletedEntities: addDeletedEntity('attendanceRecords', id) });
+    persistState({ attendanceRecords: next, auditLogs: nextLogs });
+    showToast(`تم حذف سجل الحضور والتمهيد المبكر لـ ${studentObj?.name || 'الطالبة'} وتحديث الإحصائية فوراً 🗑️`);
+  };
+
+  const deleteAttendanceRecord = async (id: string) => {
+    const currentAtt: AttendanceRecord[] = masterStateRef.current.attendanceRecords || attendanceRecords || [];
+    const attToDelete = currentAtt.find(a => a.id === id);
+    if (attToDelete?.studentId && attToDelete?.date) {
+      await clearStudentDayAttendance(attToDelete.studentId, attToDelete.date);
+      return;
+    }
+    // Parse att_<studentId>_<date> if id matches pattern
+    if (id.startsWith('att_')) {
+      const parts = id.split('_');
+      if (parts.length >= 3) {
+        const datePart = parts[parts.length - 1];
+        const stId = parts.slice(1, parts.length - 1).join('_');
+        if (stId && datePart) {
+          await clearStudentDayAttendance(stId, datePart);
+          return;
+        }
+      }
+    }
+    const next = currentAtt.filter(a => a.id !== id);
+    masterStateRef.current.attendanceRecords = next;
+    setAttendanceRecords(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_attendance_local_v1', JSON.stringify(next));
+      }
+    } catch {}
+    persistState({ attendanceRecords: next, _deletedEntities: addDeletedEntity('attendanceRecords', id) });
     showToast('تم حذف سجل الحضور بنجاح 🗑️');
+  };
+
+  const toggleAttendanceWeeklyStar = async (studentId: string, dateIso?: string) => {
+    const targetDate = dateIso || selectedDate || getTodayISO();
+    const targetWeekSun = getWeekSundayISO(targetDate);
+    const cleanId = `att_${studentId}_${targetDate}`;
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === studentId);
+    const currentScore = allStudentScores[studentId];
+    const currentHasStar = currentScore ? currentScore.hasWeeklyStar : true;
+    const nextStar = !currentHasStar;
+    const nowIso = new Date().toISOString();
+
+    let currentAtt: AttendanceRecord[] = deduplicateAttendanceRecords<AttendanceRecord>(
+      masterStateRef.current.attendanceRecords || attendanceRecords || []
+    );
+
+    const existingOnDate = currentAtt.find(a => a.studentId === studentId && a.date === targetDate);
+    const updatedTargetRecord: AttendanceRecord = {
+      ...(existingOnDate || {}),
+      id: existingOnDate?.id || cleanId,
+      studentId,
+      circleId: existingOnDate?.circleId || studentObj?.circleId || '',
+      date: targetDate,
+      status: existingOnDate?.status || 'unrecorded',
+      earlyPrepCardSent: existingOnDate?.earlyPrepCardSent ?? false,
+      isManuallyCleared: existingOnDate?.isManuallyCleared,
+      weeklyStarOverride: nextStar,
+      recordedBy: existingOnDate?.recordedBy || currentUser?.name || 'معلمة الحلقة',
+      recordedAt: nowIso
+    };
+
+    currentAtt = currentAtt.map(a => {
+      if (a.studentId === studentId && getWeekSundayISO(a.date) === targetWeekSun) {
+        return { ...a, weeklyStarOverride: nextStar, recordedAt: nowIso };
+      }
+      return a;
+    });
+
+    const nextAtt = deduplicateAttendanceRecords<AttendanceRecord>([
+      ...currentAtt.filter(a => !(a.studentId === studentId && a.date === targetDate) && a.id !== cleanId),
+      updatedTargetRecord
+    ]);
+
+    masterStateRef.current.attendanceRecords = nextAtt;
+    setAttendanceRecords(nextAtt);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_attendance_local_v1', JSON.stringify(nextAtt));
+      }
+    } catch {}
+
+    // Also sync with any challenge submissions for this student so there is no mismatch
+    const currentSubs = deduplicateChallengeSubmissions<StudentChallengeSubmission>(
+      Array.isArray(masterStateRef.current.studentChallengeSubmissions)
+        ? masterStateRef.current.studentChallengeSubmissions
+        : (Array.isArray(studentChallengeSubmissions) ? studentChallengeSubmissions : [])
+    );
+    let subsChanged = false;
+    const nextSubs = currentSubs.map(sub => {
+      if (sub.studentId === studentId && sub.weeklyStarAwarded !== undefined) {
+        subsChanged = true;
+        return { ...sub, weeklyStarAwarded: nextStar, updatedAt: nowIso };
+      }
+      return sub;
+    });
+    if (subsChanged) {
+      masterStateRef.current.studentChallengeSubmissions = nextSubs;
+      setStudentChallengeSubmissions(nextSubs);
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(CHALLENGE_SUBS_LOCAL_KEY, JSON.stringify(nextSubs));
+        }
+      } catch {}
+    }
+
+    const studentName = studentObj?.name || 'الطالبة';
+    const nextLogs = appendAuditEntry(
+      'update',
+      'attendance',
+      nextStar
+        ? `منح واعتماد «🌟 متألقة الأسبوع (نجمة الالتزام)» للطالبة ${studentName}`
+        : `إلغاء «🌟 نجمة الالتزام الأسبوعي» للطالبة ${studentName}`,
+      cleanId
+    );
+    persistState({
+      attendanceRecords: nextAtt,
+      ...(subsChanged ? { studentChallengeSubmissions: nextSubs } : {}),
+      auditLogs: nextLogs
+    });
+    showToast(
+      nextStar
+        ? `تم منح «🌟 متألقة الأسبوع» للطالبة ${studentName} ومزامنتها مع ملف الإنجاز`
+        : `تم إلغاء نجمة الالتزام الأسبوعي للطالبة ${studentName}`
+    );
   };
 
   const saveBulkAttendance = async (records: Partial<AttendanceRecord>[]) => {
@@ -2516,6 +2680,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         circleId: rec.circleId || '',
         date: recDate,
         status: finalStatus,
+        isManuallyCleared: false,
         earlyPrepCardSent: isAbsent ? false : !!rec.earlyPrepCardSent,
         reason: rec.reason,
         recordedBy: currentUser?.name || 'معلمة الحلقة',
@@ -3596,6 +3761,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     sDaily.forEach(dr => {
       if (!dr.date) return;
       const existing = attendanceByDate.get(dr.date);
+      // Do NOT auto-populate if the record was manually cleared/deleted by the teacher
+      if (existing?.isManuallyCleared) return;
+
       if (dr.status === 'completed' || (dr.recitationScore ?? 0) > 0) {
         if (!existing || existing.status === 'unrecorded') {
           attendanceByDate.set(dr.date, {
@@ -3605,6 +3773,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             date: dr.date,
             status: 'present',
             earlyPrepCardSent: existing?.earlyPrepCardSent ?? false,
+            weeklyStarOverride: existing?.weeklyStarOverride,
             recordedBy: existing?.recordedBy || dr.recordedBy || 'تلقائي (التسميع)',
             recordedAt: existing?.recordedAt || dr.recordedAt || new Date().toISOString()
           });
@@ -3639,22 +3808,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const rawDate = (sub.evaluatedAt || sub.updatedAt || '').split('T')[0] || new Date().toISOString().split('T')[0];
       const thursdayDate = getThisWeekThursdayISO(rawDate);
       const existing = attendanceByDate.get(thursdayDate);
+      // Do NOT auto-populate if the record was manually cleared/deleted by the teacher
+      if (existing?.isManuallyCleared) return;
+
       const isEarly = (sub.earlyPrepPointsEarned ?? 0) > 0 || !!sub.earlyAchievementCompleted;
-      if (!existing || existing.status === 'unrecorded') {
+      if (!existing) {
         attendanceByDate.set(thursdayDate, {
-          id: existing?.id || `att_${studentId}_${thursdayDate}`,
+          id: `att_${studentId}_${thursdayDate}`,
           studentId,
-          circleId: existing?.circleId || '',
+          circleId: '',
           date: thursdayDate,
           status: 'present',
-          earlyPrepCardSent: (existing?.earlyPrepCardSent ?? false) || isEarly,
-          recordedBy: existing?.recordedBy || 'تلقائي (تحديات الخميس)',
-          recordedAt: existing?.recordedAt || sub.updatedAt || new Date().toISOString()
+          earlyPrepCardSent: isEarly,
+          recordedBy: 'تلقائي (تحديات الخميس)',
+          recordedAt: sub.updatedAt || new Date().toISOString()
         });
-      } else if (isEarly && !existing.earlyPrepCardSent) {
+      } else if (existing.status === 'unrecorded') {
         attendanceByDate.set(thursdayDate, {
           ...existing,
-          earlyPrepCardSent: true
+          status: 'present',
+          earlyPrepCardSent: existing.earlyPrepCardSent ?? isEarly,
+          recordedBy: existing.recordedBy || 'تلقائي (تحديات الخميس)'
         });
       }
     });
@@ -3895,15 +4069,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ? activeWeekAbsences
       : (activeWeekAbsences > 0 ? activeWeekAbsences : allSunWedAbsences);
 
-    // Check if teacher explicitly toggled weeklyStarAwarded on the latest challenge submission
+    // Check if teacher explicitly toggled weeklyStarOverride on the attendance table or challenge submission
+    const targetWeekAllRecords = weekMap.get(targetWeekSun) || [];
+    const attStarOverrideRec = [...targetWeekAllRecords, ...sAttendance]
+      .filter(r => r.weeklyStarOverride !== undefined)
+      .sort((a, b) => (Date.parse(b.recordedAt || '') || 0) - (Date.parse(a.recordedAt || '') || 0))[0];
+
     const latestSubWithStarPref = [...sChallenges]
       .filter(c => c.weeklyStarAwarded !== undefined)
       .sort((a, b) => (Date.parse(b.updatedAt || b.evaluatedAt || '') || 0) - (Date.parse(a.updatedAt || a.evaluatedAt || '') || 0))[0];
 
     const autoQualifiesWeeklyStar = weeklyAbsenceCount === 0;
-    const hasWeeklyStar = latestSubWithStarPref?.weeklyStarAwarded !== undefined
-      ? latestSubWithStarPref.weeklyStarAwarded
-      : autoQualifiesWeeklyStar;
+    const hasWeeklyStar = attStarOverrideRec?.weeklyStarOverride !== undefined
+      ? attStarOverrideRec.weeklyStarOverride
+      : latestSubWithStarPref?.weeklyStarAwarded !== undefined
+        ? latestSubWithStarPref.weeklyStarAwarded
+        : autoQualifiesWeeklyStar;
 
     // حساب إجمالي نجوم الانضباط الأسبوعية خلال الشهر (٤ أسابيع دراسية في الخطة الشهرية)
     const totalActiveWeeksCount = 4;
@@ -3922,14 +4103,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     let weeklyStarsCount = Math.max(0, totalActiveWeeksCount - weeksWithSunWedAbsence);
-    // Adjust if teacher explicitly overrode stars on challenge submissions
-    if (latestSubWithStarPref?.weeklyStarAwarded === false && autoQualifiesWeeklyStar) {
+    // Adjust if teacher explicitly overrode the weekly star
+    if (hasWeeklyStar === false && autoQualifiesWeeklyStar) {
       weeklyStarsCount = Math.max(0, weeklyStarsCount - 1);
-    } else if (latestSubWithStarPref?.weeklyStarAwarded === true && !autoQualifiesWeeklyStar) {
+    } else if (hasWeeklyStar === true && !autoQualifiesWeeklyStar) {
       weeklyStarsCount = Math.min(totalActiveWeeksCount, weeklyStarsCount + 1);
     }
 
-    const hasFullWeeklyStarsHonor = weeklyStarsCount >= totalActiveWeeksCount && totalAbsencesMonth === 0;
+    const hasFullWeeklyStarsHonor = weeklyStarsCount >= totalActiveWeeksCount && totalAbsencesMonth === 0 && hasWeeklyStar;
 
     return {
       studentId,
@@ -4192,6 +4373,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         saveDailyRecitation: saveDailyRecord,
         saveAttendance,
         deleteAttendanceRecord,
+        clearStudentDayAttendance,
+        toggleAttendanceWeeklyStar,
         saveBulkAttendance,
         saveStudentSubscription,
         createAtqiniAssignment,
