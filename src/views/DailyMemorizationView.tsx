@@ -776,8 +776,9 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     const effectiveMinorPages = isMinorMastered ? Number(form.minorPages || form.attemptedMinorPages || 0) : 0;
     const effectiveMajorPages = isMajorMastered ? Number(form.majorPages || form.attemptedMajorPages || 0) : 0;
 
-    const autoStatusNote =
-      form.newOutcome === 'redo'
+    const autoStatusNote = !isNewMemPlanEnabled
+      ? form.notes
+      : form.newOutcome === 'redo'
         ? (form.notes ? `${form.notes} • [🔄 إعادة وتثبيت للمقرر في الجلسة القادمة]` : '🔄 يحتاج إعادة وتثبيت للمقرر في الجلسة القادمة')
         : form.newOutcome === 'excused'
         ? (form.notes ? `${form.notes} • [❌ اعتذار / لم يتم إنجاز المقرر]` : '❌ اعتذار / لم يتم إنجاز المقرر اليوم')
@@ -790,18 +791,18 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       date: selectedDate,
       dayName: getHijriParts(selectedDate).weekday,
       recitationScore: calculatedNewScore,
-      preparationScore: prepScoreBreakdown.totalOutOf10,
+      preparationScore: isNewMemPlanEnabled ? prepScoreBreakdown.totalOutOf10 : undefined,
       memorizationMistakes: form.hifzErrors,
       hintsCount: form.alerts,
       tajweedErrorsCount: form.tajweedErrors,
       newMemorizationPages: effectiveNewPages,
-      attemptedNewPages: Number(form.attemptedNewPages || form.newPages || 0.5),
-      newOutcome: form.newOutcome,
+      attemptedNewPages: isNewMemPlanEnabled ? Number(form.attemptedNewPages || form.newPages || 0.5) : 0,
+      newOutcome: isNewMemPlanEnabled ? form.newOutcome : undefined,
       minorOutcome: form.minorOutcome,
       majorOutcome: form.majorOutcome,
-      isRedoSession: form.newOutcome === 'redo',
+      isRedoSession: isNewMemPlanEnabled && form.newOutcome === 'redo',
       newMemorizationCompleted: isNewMastered,
-      newMemorizationWithConditions: true,
+      newMemorizationWithConditions: isNewMemPlanEnabled,
       requiredPortionText: isNewMemPlanEnabled ? form.recitedPortion : 'مراجعة فقط (الحفظ الجديد معطّل)',
       revisionCompleted: isMinorMastered || isMajorMastered,
       revisionPages: effectiveMinorPages + effectiveMajorPages,
@@ -828,17 +829,17 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
           : 'unrecited'
       },
       conditions: {
-        listenedToReader: listenCount >= prepScoreBreakdown.listenTarget,
-        recitedLooking: reciteCount >= prepScoreBreakdown.reciteTarget,
-        masteryRepetition: repeatCount >= prepScoreBreakdown.repeatTarget,
+        listenedToReader: isNewMemPlanEnabled ? listenCount >= prepScoreBreakdown.listenTarget : false,
+        recitedLooking: isNewMemPlanEnabled ? reciteCount >= prepScoreBreakdown.reciteTarget : false,
+        masteryRepetition: isNewMemPlanEnabled ? repeatCount >= prepScoreBreakdown.repeatTarget : false,
         minorRevision: isMinorMastered,
         tamkeenRevision: isMajorMastered,
-        achievedDistinction: form.hasMedal || prepScoreBreakdown.totalOutOf10 >= 10
+        achievedDistinction: form.hasMedal || (isNewMemPlanEnabled && prepScoreBreakdown.totalOutOf10 >= 10)
       },
-      criteriaCounts,
-      criteriaListenCount: listenCount,
-      criteriaReciteCount: reciteCount,
-      criteriaRepeatCount: repeatCount,
+      criteriaCounts: isNewMemPlanEnabled ? criteriaCounts : undefined,
+      criteriaListenCount: isNewMemPlanEnabled ? listenCount : undefined,
+      criteriaReciteCount: isNewMemPlanEnabled ? reciteCount : undefined,
+      criteriaRepeatCount: isNewMemPlanEnabled ? repeatCount : undefined,
       status: 'completed',
       notes: autoStatusNote,
       recordedBy: currentUser?.name || 'معلمة الحلقة',
@@ -849,7 +850,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       majorPages: effectiveMajorPages,
       minorDone: isMinorMastered,
       majorDone: isMajorMastered,
-      newWithConditions: true
+      newWithConditions: isNewMemPlanEnabled
     });
 
     setEditingRecordId(null);
@@ -1055,32 +1056,47 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-                  {record ? (
-                    <div className="flex flex-wrap items-center gap-2 text-left">
-                      <div className="text-xs text-stone-500 text-right">
-                        <span>الدرجة: <strong className="text-[#8E5364] font-bold"><span className="privacy-score-digit">{record.recitationScore}</span>/10</strong></span>
-                        <span className="mx-1.5">•</span>
-                        <span>التحضير: <strong className="text-emerald-700 dark:text-emerald-400 font-bold"><span className="privacy-score-digit">{record.preparationScore ?? 10}</span>/10</strong></span>
-                        <span className="mx-1.5">•</span>
-                        <span>الأوجه المنجزة: <strong className="text-stone-800 dark:text-stone-200"><span className="privacy-score-digit">{record.newMemorizationPages ?? 0}</span></strong></span>
-                        <span className="mx-1.5">•</span>
-                        <span>أخطاء: <strong className="text-rose-600"><span className="privacy-score-digit">{record.memorizationMistakes ?? 0}</span></strong></span>
+                  {record ? (() => {
+                    const stPlan = (studentPlans || []).find(p => p.studentId === st.id && p.status === 'active')
+                      || (studentPlans || []).find(p => p.studentId === st.id);
+                    const isStNewMemEnabled = stPlan ? stPlan.newMemorization?.enabled !== false : true;
+                    return (
+                      <div className="flex flex-wrap items-center gap-2 text-left">
+                        <div className="text-xs text-stone-500 text-right">
+                          <span>الدرجة: <strong className="text-[#8E5364] font-bold"><span className="privacy-score-digit">{record.recitationScore}</span>/10</strong></span>
+                          {isStNewMemEnabled && (
+                            <>
+                              <span className="mx-1.5">•</span>
+                              <span>التحضير: <strong className="text-emerald-700 dark:text-emerald-400 font-bold"><span className="privacy-score-digit">{record.preparationScore ?? 10}</span>/10</strong></span>
+                              <span className="mx-1.5">•</span>
+                              <span>الأوجه المنجزة: <strong className="text-stone-800 dark:text-stone-200"><span className="privacy-score-digit">{record.newMemorizationPages ?? 0}</span></strong></span>
+                            </>
+                          )}
+                          {!isStNewMemEnabled && (
+                            <>
+                              <span className="mx-1.5">•</span>
+                              <span>المراجعة: <strong className="text-stone-800 dark:text-stone-200"><span className="privacy-score-digit">{record.revisionPages ?? 0}</span> ص</strong></span>
+                            </>
+                          )}
+                          <span className="mx-1.5">•</span>
+                          <span>أخطاء: <strong className="text-rose-600"><span className="privacy-score-digit">{record.memorizationMistakes ?? 0}</span></strong></span>
+                        </div>
+                        {isStNewMemEnabled && (record.newOutcome === 'redo' || record.isRedoSession) ? (
+                          <div className="px-3 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 font-bold text-xs flex items-center gap-1">
+                            <span>🔄 إعادة للتثبيت</span>
+                          </div>
+                        ) : isStNewMemEnabled && record.newOutcome === 'excused' ? (
+                          <div className="px-3 py-1 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300 font-bold text-xs flex items-center gap-1">
+                            <span>❌ اعتذار / لم يُنجز</span>
+                          </div>
+                        ) : (
+                          <div className="px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-400 font-bold text-xs">
+                            تم الرصد ✅
+                          </div>
+                        )}
                       </div>
-                      {(record.newOutcome === 'redo' || record.isRedoSession) ? (
-                        <div className="px-3 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 font-bold text-xs flex items-center gap-1">
-                          <span>🔄 إعادة للتثبيت</span>
-                        </div>
-                      ) : record.newOutcome === 'excused' ? (
-                        <div className="px-3 py-1 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300 font-bold text-xs flex items-center gap-1">
-                          <span>❌ اعتذار / لم يُنجز</span>
-                        </div>
-                      ) : (
-                        <div className="px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-400 font-bold text-xs">
-                          تم الرصد ✅
-                        </div>
-                      )}
-                    </div>
-                  ) : isSelectedDateThursday ? (
+                    );
+                  })() : isSelectedDateThursday ? (
                     <span className="px-3 py-1 rounded-xl bg-[#FAF6F2] dark:bg-stone-800 text-[#8E5364] dark:text-[#E8BDC8] border border-[#E8DFD8] dark:border-stone-700 text-xs font-bold">
                       يوم التحديات والمراجعة الثنائية 🏆
                     </span>
@@ -1784,350 +1800,352 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
               </div>
             )}
 
-            {/* ===================== 4. معايير التحضير والإتقان ===================== */}
-            <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="block text-xs font-bold text-stone-800 dark:text-stone-200">
-                    معايير التحضير والإتقان (دليل مشكاة الغيم):
-                  </span>
-                  <span className="text-[10px] text-stone-400">
-                    خاصة بمسار: {modalTrack?.name || 'المسار الحالي'}
-                  </span>
+            {/* ===================== 4. معايير التحضير والإتقان (تظهر فقط عند تفعيل الحفظ الجديد) ===================== */}
+            {isNewMemPlanEnabled && (
+              <div className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#EFEAE5] dark:border-stone-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="block text-xs font-bold text-stone-800 dark:text-stone-200">
+                      معايير التحضير والإتقان (دليل مشكاة الغيم):
+                    </span>
+                    <span className="text-[10px] text-stone-400">
+                      خاصة بمسار: {modalTrack?.name || 'المسار الحالي'}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleOpenMasteryEditor}
+                    className="px-2.5 py-1 text-[11px] font-bold text-[#8E5364] dark:text-[#E8BDC8] bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl hover:bg-stone-50 transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                  >
+                    <span>{isEditingMastery ? 'إغلاق ✕' : '⚙️ تعديل أو إضافة معايير'}</span>
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleOpenMasteryEditor}
-                  className="px-2.5 py-1 text-[11px] font-bold text-[#8E5364] dark:text-[#E8BDC8] bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl hover:bg-stone-50 transition cursor-pointer flex items-center gap-1 shadow-2xs"
-                >
-                  <span>{isEditingMastery ? 'إغلاق ✕' : '⚙️ تعديل أو إضافة معايير'}</span>
-                </button>
-              </div>
+                {/* لوحة التعديل الموحدة لكافة المعايير (كلها زي بعض) */}
+                {isEditingMastery && (
+                  <div className="p-3.5 bg-white dark:bg-stone-800 rounded-2xl border border-[#8E5364]/30 space-y-3 animate-in fade-in">
+                    <div className="flex items-center justify-between pb-1 border-b border-stone-100 dark:border-stone-700">
+                      <span className="text-xs font-bold text-[#8E5364] dark:text-[#E8BDC8]">
+                        إدارة معايير دليل الإتقان لمسار ({modalTrack?.name}):
+                      </span>
+                      <span className="text-[10px] text-stone-400">معايير موحدة قابلة للتعديل والإضافة والحذف</span>
+                    </div>
 
-              {/* لوحة التعديل الموحدة لكافة المعايير (كلها زي بعض) */}
-              {isEditingMastery && (
-                <div className="p-3.5 bg-white dark:bg-stone-800 rounded-2xl border border-[#8E5364]/30 space-y-3 animate-in fade-in">
-                  <div className="flex items-center justify-between pb-1 border-b border-stone-100 dark:border-stone-700">
-                    <span className="text-xs font-bold text-[#8E5364] dark:text-[#E8BDC8]">
-                      إدارة معايير دليل الإتقان لمسار ({modalTrack?.name}):
-                    </span>
-                    <span className="text-[10px] text-stone-400">معايير موحدة قابلة للتعديل والإضافة والحذف</span>
-                  </div>
-
-                  {/* قائمة المعايير الموحدة الحالية */}
-                  <div className="space-y-2">
-                    {editingCriteriaList.map((crit, idx) => (
-                      <div 
-                        key={crit.id} 
-                        className="p-2.5 bg-stone-50 dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                      >
-                        <div className="flex-1">
-                          <input
-                            type="text"
-                            value={crit.title}
-                            onChange={e => {
-                              const nextTitle = e.target.value;
-                              setEditingCriteriaList(prev => prev.map((c, i) => i === idx ? { ...c, title: nextTitle } : c));
-                            }}
-                            className="w-full text-xs font-bold text-stone-800 dark:text-stone-100 bg-transparent outline-hidden"
-                            placeholder="اسم المعيار"
-                          />
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center gap-1 bg-white dark:bg-stone-800 px-2 py-1 rounded-lg border border-stone-200 dark:border-stone-700">
-                            <span className="text-[10px] text-stone-400">المستهدف:</span>
+                    {/* قائمة المعايير الموحدة الحالية */}
+                    <div className="space-y-2">
+                      {editingCriteriaList.map((crit, idx) => (
+                        <div 
+                          key={crit.id} 
+                          className="p-2.5 bg-stone-50 dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                        >
+                          <div className="flex-1">
                             <input
-                              type="number"
-                              min="1"
-                              value={crit.count}
+                              type="text"
+                              value={crit.title}
                               onChange={e => {
-                                const nextCount = Math.max(1, parseInt(e.target.value, 10) || 1);
-                                setEditingCriteriaList(prev => prev.map((c, i) => i === idx ? { ...c, count: nextCount } : c));
+                                const nextTitle = e.target.value;
+                                setEditingCriteriaList(prev => prev.map((c, i) => i === idx ? { ...c, title: nextTitle } : c));
                               }}
-                              className="w-12 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] bg-transparent outline-hidden"
+                              className="w-full text-xs font-bold text-stone-800 dark:text-stone-100 bg-transparent outline-hidden"
+                              placeholder="اسم المعيار"
                             />
-                            <span className="text-[10px] text-stone-500 font-bold">{crit.unit || 'مرات'}</span>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingCriteriaList(prev => prev.filter((_, i) => i !== idx));
-                            }}
-                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer transition"
-                            title="حذف هذا المعيار"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1 bg-white dark:bg-stone-800 px-2 py-1 rounded-lg border border-stone-200 dark:border-stone-700">
+                              <span className="text-[10px] text-stone-400">المستهدف:</span>
+                              <input
+                                type="number"
+                                min="1"
+                                value={crit.count}
+                                onChange={e => {
+                                  const nextCount = Math.max(1, parseInt(e.target.value, 10) || 1);
+                                  setEditingCriteriaList(prev => prev.map((c, i) => i === idx ? { ...c, count: nextCount } : c));
+                                }}
+                                className="w-12 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] bg-transparent outline-hidden"
+                              />
+                              <span className="text-[10px] text-stone-500 font-bold">{crit.unit || 'مرات'}</span>
+                            </div>
 
-                  {/* إضافة معيار جديد إلى القائمة */}
-                  <div className="pt-2 border-t border-stone-100 dark:border-stone-700 space-y-2">
-                    <span className="block text-[11px] font-bold text-stone-700 dark:text-stone-300">
-                      إضافة معيار جديد:
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        placeholder="اسم المعيار (مثال: الاستماع، التلاوة، التكرار، حفظ المعاني، التسميع للرفيقة...)"
-                        value={newCritName}
-                        onChange={e => setNewCritName(e.target.value)}
-                        className="flex-1 py-1.5 px-2.5 bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-xs outline-hidden"
-                      />
-                      <input
-                        type="number"
-                        min="1"
-                        value={newCritTimes}
-                        onChange={e => setNewCritTimes(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                        className="w-14 text-center py-1.5 bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-bold"
-                        title="عدد المرات المستهدفة"
-                      />
-                      <input
-                        type="text"
-                        value={newCritUnit}
-                        onChange={e => setNewCritUnit(e.target.value)}
-                        placeholder="مرات"
-                        className="w-14 text-center py-1.5 bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-bold"
-                        title="الوحدة (مرات، مرة، حزب)"
-                      />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCriteriaList(prev => prev.filter((_, i) => i !== idx));
+                              }}
+                              className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer transition"
+                              title="حذف هذا المعيار"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* إضافة معيار جديد إلى القائمة */}
+                    <div className="pt-2 border-t border-stone-100 dark:border-stone-700 space-y-2">
+                      <span className="block text-[11px] font-bold text-stone-700 dark:text-stone-300">
+                        إضافة معيار جديد:
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          placeholder="اسم المعيار (مثال: الاستماع، التلاوة، التكرار، حفظ المعاني، التسميع للرفيقة...)"
+                          value={newCritName}
+                          onChange={e => setNewCritName(e.target.value)}
+                          className="flex-1 py-1.5 px-2.5 bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-xs outline-hidden"
+                        />
+                        <input
+                          type="number"
+                          min="1"
+                          value={newCritTimes}
+                          onChange={e => setNewCritTimes(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                          className="w-14 text-center py-1.5 bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-bold"
+                          title="عدد المرات المستهدفة"
+                        />
+                        <input
+                          type="text"
+                          value={newCritUnit}
+                          onChange={e => setNewCritUnit(e.target.value)}
+                          placeholder="مرات"
+                          className="w-14 text-center py-1.5 bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-bold"
+                          title="الوحدة (مرات، مرة، حزب)"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!newCritName.trim()) return;
+                            const newC = {
+                              id: `crit-${Date.now()}`,
+                              title: newCritName.trim(),
+                              count: Number(newCritTimes) || 1,
+                              unit: newCritUnit.trim() || 'مرات'
+                            };
+                            setEditingCriteriaList(prev => [...prev, newC]);
+                            setNewCritName('');
+                          }}
+                          className="px-2.5 py-1.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer whitespace-nowrap active:scale-95 shadow-xs"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>إضافة</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2 border-t border-stone-100 dark:border-stone-700">
                       <button
                         type="button"
-                        onClick={() => {
-                          if (!newCritName.trim()) return;
-                          const newC = {
-                            id: `crit-${Date.now()}`,
-                            title: newCritName.trim(),
-                            count: Number(newCritTimes) || 1,
-                            unit: newCritUnit.trim() || 'مرات'
-                          };
-                          setEditingCriteriaList(prev => [...prev, newC]);
-                          setNewCritName('');
-                        }}
-                        className="px-2.5 py-1.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer whitespace-nowrap active:scale-95 shadow-xs"
+                        onClick={() => setIsEditingMastery(false)}
+                        className="px-3 py-1.5 text-xs text-stone-500 hover:text-stone-700 cursor-pointer"
                       >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>إضافة</span>
+                        إلغاء
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveMasteryStandards}
+                        className="px-4 py-1.5 text-xs font-bold text-white bg-[#8E5364] hover:bg-[#744251] rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1 active:scale-95"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>حفظ وتطبيق المعايير</span>
                       </button>
                     </div>
                   </div>
+                )}
 
-                  <div className="flex justify-end gap-2 pt-2 border-t border-stone-100 dark:border-stone-700">
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingMastery(false)}
-                      className="px-3 py-1.5 text-xs text-stone-500 hover:text-stone-700 cursor-pointer"
-                    >
-                      إلغاء
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSaveMasteryStandards}
-                      className="px-4 py-1.5 text-xs font-bold text-white bg-[#8E5364] hover:bg-[#744251] rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1 active:scale-95"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>حفظ وتطبيق المعايير</span>
-                    </button>
-                  </div>
+                {/* بطاقات المعايير الموحدة مع خانة كتابة الرقم يدوياً (تسمع مرة تحط 1 ومرتين تحط 2) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                  {activeCriteriaList.map(crit => {
+                    const currentCount = criteriaCounts[crit.id] ?? 0;
+                    const isDone = currentCount >= crit.count;
+                    const isPartial = currentCount > 0 && !isDone;
+
+                    return (
+                      <div
+                        key={crit.id}
+                        className="p-3 rounded-2xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 space-y-2 hover:border-[#8E5364]/40 transition shadow-2xs"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="font-bold text-xs text-stone-800 dark:text-stone-100 block">
+                              {crit.title}
+                            </span>
+                            <span className="text-[10px] text-stone-400">
+                              المستهدف: {crit.count} {crit.unit || 'مرات'}
+                            </span>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            isDone 
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300' 
+                              : isPartial 
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300' 
+                              : 'bg-stone-100 text-stone-500 dark:bg-stone-700 dark:text-stone-400'
+                          }`}>
+                            {isDone ? 'مكتمل ✅' : isPartial ? 'منجز جزئياً ⏳' : 'لم يُنجز'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1 border-t border-stone-100 dark:border-stone-700/60">
+                          <label className="text-[11px] font-bold text-stone-600 dark:text-stone-400 cursor-pointer">
+                            المنجز (اكتب الرقم):
+                          </label>
+                          
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setCriteriaCounts(prev => ({
+                                ...prev,
+                                [crit.id]: Math.max(0, (Number(prev[crit.id]) || 0) - 1)
+                              }))}
+                              className="w-7 h-7 rounded-lg bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 flex items-center justify-center font-bold hover:bg-stone-200 cursor-pointer active:scale-95"
+                              title="إنقاص مرة واحدة"
+                            >
+                              -
+                            </button>
+
+                            <input
+                              type="number"
+                              min="0"
+                              max="999"
+                              value={criteriaCounts[crit.id] ?? 0}
+                              onChange={e => {
+                                const val = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0);
+                                setCriteriaCounts(prev => ({ ...prev, [crit.id]: val }));
+                              }}
+                              className="w-14 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-[#FAF7F5] dark:bg-stone-900 border-2 border-stone-200 dark:border-stone-700 focus:border-[#8E5364] rounded-lg py-1 outline-hidden"
+                              title="اكتب عدد المرات المنجزة مباشرة"
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() => setCriteriaCounts(prev => ({
+                                ...prev,
+                                [crit.id]: (Number(prev[crit.id]) || 0) + 1
+                              }))}
+                              className="w-7 h-7 rounded-lg bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 flex items-center justify-center font-bold hover:bg-stone-200 cursor-pointer active:scale-95"
+                              title="زيادة مرة واحدة"
+                            >
+                              +
+                            </button>
+
+                            <span className="text-[10px] text-stone-400 font-bold mr-1">
+                              {crit.unit || 'مرات'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
 
-              {/* بطاقات المعايير الموحدة مع خانة كتابة الرقم يدوياً (تسمع مرة تحط 1 ومرتين تحط 2) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                {activeCriteriaList.map(crit => {
-                  const currentCount = criteriaCounts[crit.id] ?? 0;
-                  const isDone = currentCount >= crit.count;
-                  const isPartial = currentCount > 0 && !isDone;
+                {/* التقييم الآلي لدرجة التحضير اليومي من 10 */}
+                {(() => {
+                  const prepScore = prepScoreBreakdown.totalOutOf10;
+                  const prepStatus: 'full' | 'partial' | 'needs_care' =
+                    prepScore >= 9
+                      ? 'full'
+                      : prepScore >= 5
+                        ? 'partial'
+                        : 'needs_care';
 
                   return (
-                    <div
-                      key={crit.id}
-                      className="p-3 rounded-2xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 space-y-2 hover:border-[#8E5364]/40 transition shadow-2xs"
-                    >
-                      <div className="flex items-start justify-between gap-2">
+                    <div className="p-3.5 rounded-2xl bg-white dark:bg-stone-800 border border-[#E2D5CC] dark:border-stone-700 space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 dark:border-stone-700/60 pb-2">
                         <div>
-                          <span className="font-bold text-xs text-stone-800 dark:text-stone-100 block">
-                            {crit.title}
+                          <span className="text-xs font-extrabold text-stone-800 dark:text-stone-100 block">
+                            درجة التحضير اليومي المحسوبة تلقائياً (من 10):
                           </span>
-                          <span className="text-[10px] text-stone-400">
-                            المستهدف: {crit.count} {crit.unit || 'مرات'}
+                          <span className="text-[10px] text-stone-500">
+                            الاستماع ({prepScoreBreakdown.listenPoints}/3) • التلاوة نظراً ({prepScoreBreakdown.recitePoints}/3) • التكرار المتقن ({prepScoreBreakdown.repeatPoints}/4)
                           </span>
                         </div>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          isDone 
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300' 
-                            : isPartial 
-                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300' 
-                            : 'bg-stone-100 text-stone-500 dark:bg-stone-700 dark:text-stone-400'
-                        }`}>
-                          {isDone ? 'مكتمل ✅' : isPartial ? 'منجز جزئياً ⏳' : 'لم يُنجز'}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-3 py-1 rounded-xl font-mono text-base font-extrabold border ${
+                            prepScore >= 9
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                              : prepScore >= 7
+                              ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                              : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+                          }`}>
+                            {prepScore} / 10
+                          </span>
+                          {prepScore >= 10 && (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold animate-in fade-in">
+                              10/10 إتقان كامل ⭐
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="flex items-center justify-between pt-1 border-t border-stone-100 dark:border-stone-700/60">
-                        <label className="text-[11px] font-bold text-stone-600 dark:text-stone-400 cursor-pointer">
-                          المنجز (اكتب الرقم):
-                        </label>
-                        
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setCriteriaCounts(prev => ({
-                              ...prev,
-                              [crit.id]: Math.max(0, (Number(prev[crit.id]) || 0) - 1)
-                            }))}
-                            className="w-7 h-7 rounded-lg bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 flex items-center justify-center font-bold hover:bg-stone-200 cursor-pointer active:scale-95"
-                            title="إنقاص مرة واحدة"
-                          >
-                            -
-                          </button>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next: Record<string, number> = {};
+                            activeCriteriaList.forEach(c => { next[c.id] = c.count; });
+                            setCriteriaCounts(next);
+                          }}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                            prepStatus === 'full' && prepScore === 10
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/20'
+                              : 'bg-[#FAF7F5] dark:bg-stone-900 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-emerald-300'
+                          }`}
+                        >
+                          <span>تحضير كامل (10/10) ⭐</span>
+                        </button>
 
-                          <input
-                            type="number"
-                            min="0"
-                            max="999"
-                            value={criteriaCounts[crit.id] ?? 0}
-                            onChange={e => {
-                              const val = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0);
-                              setCriteriaCounts(prev => ({ ...prev, [crit.id]: val }));
-                            }}
-                            className="w-14 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-[#FAF7F5] dark:bg-stone-900 border-2 border-stone-200 dark:border-stone-700 focus:border-[#8E5364] rounded-lg py-1 outline-hidden"
-                            title="اكتب عدد المرات المنجزة مباشرة"
-                          />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next: Record<string, number> = {};
+                            activeCriteriaList.forEach(c => {
+                              next[c.id] = Math.max(1, Math.floor(c.count / 2));
+                            });
+                            setCriteriaCounts(next);
+                          }}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                            prepStatus === 'partial'
+                              ? 'bg-amber-500 text-white border-amber-500 shadow-xs ring-2 ring-amber-400/20'
+                              : 'bg-[#FAF7F5] dark:bg-stone-900 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-amber-300'
+                          }`}
+                        >
+                          <span>تحضير جزئي (نصف العدد) ⏳</span>
+                        </button>
 
-                          <button
-                            type="button"
-                            onClick={() => setCriteriaCounts(prev => ({
-                              ...prev,
-                              [crit.id]: (Number(prev[crit.id]) || 0) + 1
-                            }))}
-                            className="w-7 h-7 rounded-lg bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 flex items-center justify-center font-bold hover:bg-stone-200 cursor-pointer active:scale-95"
-                            title="زيادة مرة واحدة"
-                          >
-                            +
-                          </button>
-
-                          <span className="text-[10px] text-stone-400 font-bold mr-1">
-                            {crit.unit || 'مرات'}
-                          </span>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next: Record<string, number> = {};
+                            activeCriteriaList.forEach(c => { next[c.id] = 0; });
+                            setCriteriaCounts(next);
+                          }}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                            prepStatus === 'needs_care' && prepScore === 0
+                              ? 'bg-rose-600 text-white border-rose-600 shadow-xs ring-2 ring-rose-500/20'
+                              : 'bg-[#FAF7F5] dark:bg-stone-900 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-rose-300'
+                          }`}
+                        >
+                          <span>لم تحضّر (0/10) 💡</span>
+                        </button>
                       </div>
                     </div>
                   );
-                })}
+                })()}
+
+                {/* وسام التميز لليوم */}
+                <label className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/60 cursor-pointer hover:border-amber-400 transition">
+                  <input
+                    type="checkbox"
+                    checked={form.hasMedal}
+                    onChange={e => setForm({ ...form, hasMedal: e.target.checked })}
+                    className="accent-amber-500 w-4 h-4 cursor-pointer"
+                  />
+                  <span className="text-amber-800 dark:text-amber-300 font-bold text-xs">
+                    ⭐ نيل وسام التميز والتفوق لليوم
+                  </span>
+                </label>
               </div>
-
-              {/* التقييم الآلي لدرجة التحضير اليومي من 10 */}
-              {(() => {
-                const prepScore = prepScoreBreakdown.totalOutOf10;
-                const prepStatus: 'full' | 'partial' | 'needs_care' =
-                  prepScore >= 9
-                    ? 'full'
-                    : prepScore >= 5
-                      ? 'partial'
-                      : 'needs_care';
-
-                return (
-                  <div className="p-3.5 rounded-2xl bg-white dark:bg-stone-800 border border-[#E2D5CC] dark:border-stone-700 space-y-2.5">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 dark:border-stone-700/60 pb-2">
-                      <div>
-                        <span className="text-xs font-extrabold text-stone-800 dark:text-stone-100 block">
-                          درجة التحضير اليومي المحسوبة تلقائياً (من 10):
-                        </span>
-                        <span className="text-[10px] text-stone-500">
-                          الاستماع ({prepScoreBreakdown.listenPoints}/3) • التلاوة نظراً ({prepScoreBreakdown.recitePoints}/3) • التكرار المتقن ({prepScoreBreakdown.repeatPoints}/4)
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-3 py-1 rounded-xl font-mono text-base font-extrabold border ${
-                          prepScore >= 9
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                            : prepScore >= 7
-                            ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
-                            : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
-                        }`}>
-                          {prepScore} / 10
-                        </span>
-                        {prepScore >= 10 && (
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold animate-in fade-in">
-                            10/10 إتقان كامل ⭐
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next: Record<string, number> = {};
-                          activeCriteriaList.forEach(c => { next[c.id] = c.count; });
-                          setCriteriaCounts(next);
-                        }}
-                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                          prepStatus === 'full' && prepScore === 10
-                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/20'
-                            : 'bg-[#FAF7F5] dark:bg-stone-900 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-emerald-300'
-                        }`}
-                      >
-                        <span>تحضير كامل (10/10) ⭐</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next: Record<string, number> = {};
-                          activeCriteriaList.forEach(c => {
-                            next[c.id] = Math.max(1, Math.floor(c.count / 2));
-                          });
-                          setCriteriaCounts(next);
-                        }}
-                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                          prepStatus === 'partial'
-                            ? 'bg-amber-500 text-white border-amber-500 shadow-xs ring-2 ring-amber-400/20'
-                            : 'bg-[#FAF7F5] dark:bg-stone-900 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-amber-300'
-                        }`}
-                      >
-                        <span>تحضير جزئي (نصف العدد) ⏳</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next: Record<string, number> = {};
-                          activeCriteriaList.forEach(c => { next[c.id] = 0; });
-                          setCriteriaCounts(next);
-                        }}
-                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                          prepStatus === 'needs_care' && prepScore === 0
-                            ? 'bg-rose-600 text-white border-rose-600 shadow-xs ring-2 ring-rose-500/20'
-                            : 'bg-[#FAF7F5] dark:bg-stone-900 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-rose-300'
-                        }`}
-                      >
-                        <span>لم تحضّر (0/10) 💡</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* وسام التميز لليوم */}
-              <label className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/60 cursor-pointer hover:border-amber-400 transition">
-                <input
-                  type="checkbox"
-                  checked={form.hasMedal}
-                  onChange={e => setForm({ ...form, hasMedal: e.target.checked })}
-                  className="accent-amber-500 w-4 h-4 cursor-pointer"
-                />
-                <span className="text-amber-800 dark:text-amber-300 font-bold text-xs">
-                  ⭐ نيل وسام التميز والتفوق لليوم
-                </span>
-              </label>
-            </div>
+            )}
 
             {/* ===================== أزرار الحفظ والإلغاء ===================== */}
             <div className="flex gap-2 pt-2 border-t border-stone-100 dark:border-stone-800">
@@ -2300,9 +2318,11 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                                     }`}>
                                       تسميع: {r.recitationScore ?? 10}/10
                                     </span>
-                                    <span className="text-[10px] font-bold text-stone-500">
-                                      تحضير: {r.preparationScore ?? 10}/10
-                                    </span>
+                                    {!(r.requiredPortionText || '').includes('الحفظ الجديد معطّل') && r.preparationScore !== undefined && (
+                                      <span className="text-[10px] font-bold text-stone-500">
+                                        تحضير: {r.preparationScore}/10
+                                      </span>
+                                    )}
                                   </div>
                                 </td>
                                 <td className="p-2.5 text-[10px] text-stone-600 dark:text-stone-400 max-w-[150px]">

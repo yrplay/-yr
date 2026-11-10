@@ -66,8 +66,14 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
 
   const currentPlan = monthlyPlans.find(p => p.id === (activeStudentPlan as any)?.monthlyPlanId) || monthlyPlans[0];
 
+  const isNewMemPlanEnabled = (activeStudentPlan as any)?.newMemorization
+    ? (activeStudentPlan as any).newMemorization.enabled !== false
+    : true;
+
   // الخطة تحدد المستهدف، وملخص السجلات اليومية هو المصدر الوحيد للمنجز.
-  const targetNewPages = (activeStudentPlan as any)?.newMemorization?.targetPages ?? score?.newMemorizationPagesTarget ?? 8;
+  const targetNewPages = !isNewMemPlanEnabled
+    ? 0
+    : ((activeStudentPlan as any)?.newMemorization?.targetPages ?? score?.newMemorizationPagesTarget ?? 8);
   const targetRevPages = (activeStudentPlan as any)?.revision?.targetPages ?? score?.revisionPagesTarget ?? 4;
   const doneNewPages = score?.newMemorizationPagesDone ?? 0;
   const doneRevPages = score?.revisionPagesDone ?? 0;
@@ -596,12 +602,12 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           <td>نسبة ${score?.attendanceRate || 0}% • غياب: ${totalAbsentDays} أيام (${score?.absentExcusedCount || 0} بعذر • ${score?.absentUnexcusedCount || 0} دون عذر)</td>
           <td>${score?.attendanceScore || 10} / 10</td>
         </tr>
-        <tr>
+        ${isNewMemPlanEnabled ? `<tr>
           <td><strong>الحفظ الجديد</strong></td>
           <td>${targetNewPages} صفحات</td>
           <td>${doneNewPages} صفحات</td>
           <td>${score?.memorizationScore || 10} / 10</td>
-        </tr>
+        </tr>` : ''}
         <tr>
           <td><strong>المراجعة الصغرى</strong></td>
           <td>حسب خطة المراجعة</td>
@@ -614,12 +620,12 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           <td>${doneTamkeenPages} صفحات</td>
           <td>متقن بالشروط ✅</td>
         </tr>
-        <tr>
+        ${isNewMemPlanEnabled ? `<tr>
           <td><strong>معدل الالتزام بمعايير التحضير والإتقان</strong></td>
           <td>الاستماع (5) • التلاوة نظراً (5) • التكرار (10)</td>
           <td><span style="display:inline-block; padding: 2px 8px; border-radius: 10px; background: ${prepEvaluation.htmlBg}; color: ${prepEvaluation.htmlColor}; border: 1px solid ${prepEvaluation.htmlBorder}; font-weight: bold;">${prepEvaluation.badgeText} (${prepRatePercent}%)</span></td>
           <td><strong>${prepAvgOutOf10} / 10</strong></td>
-        </tr>
+        </tr>` : ''}
         ${doneUnclassifiedRevisionPages > 0 ? `<tr><td><strong>مراجعة مسجلة دون تفصيل (سجلات سابقة)</strong></td><td>—</td><td>${doneUnclassifiedRevisionPages} صفحات</td><td>غير مصنفة</td></tr>` : ''}
         <tr>
           <td><strong>واجبات «أتقني» للتجويد</strong></td>
@@ -898,62 +904,64 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           </div>
         </div>
 
-        {/* Dedicated Metric Card & Monthly Progress Bar: معدل الالتزام بمعايير التحضير والإتقان */}
-        <div
-          onClick={() => onNavigateToSection?.('recitation')}
-          className="p-5 rounded-2xl border-2 border-[#E8DFD8] bg-gradient-to-l from-[#FAF6F3] via-white to-[#F4F9F6] space-y-3.5 shadow-2xs hover:border-[#8E5364] transition cursor-pointer"
-          title="انقر لفتح سجل التسميع ومعايير التحضير اليومي"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2.5">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shadow-2xs shrink-0"
-                style={{ backgroundColor: prepEvaluation.barColor }}
-              >
-                <CheckCircle2 className="w-5 h-5" />
+        {/* Dedicated Metric Card & Monthly Progress Bar: معدل الالتزام بمعايير التحضير والإتقان (يظهر فقط عند تفعيل الحفظ الجديد) */}
+        {isNewMemPlanEnabled && (
+          <div
+            onClick={() => onNavigateToSection?.('recitation')}
+            className="p-5 rounded-2xl border-2 border-[#E8DFD8] bg-gradient-to-l from-[#FAF6F3] via-white to-[#F4F9F6] space-y-3.5 shadow-2xs hover:border-[#8E5364] transition cursor-pointer"
+            title="انقر لفتح سجل التسميع ومعايير التحضير اليومي"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shadow-2xs shrink-0"
+                  style={{ backgroundColor: prepEvaluation.barColor }}
+                >
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-stone-900 text-sm sm:text-base font-quran">
+                    معدل الالتزام بمعايير التحضير والإتقان
+                  </h4>
+                  <p className="text-[11px] text-stone-500">
+                    الاستماع للمقرئ (5 مرات = 3 درجات) • التلاوة نظراً (5 مرات = 3 درجات) • التكرار المتقن (10 مرات = 4 درجات)
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="font-extrabold text-stone-900 text-sm sm:text-base font-quran">
-                  معدل الالتزام بمعايير التحضير والإتقان
-                </h4>
-                <p className="text-[11px] text-stone-500">
-                  الاستماع للمقرئ (5 مرات = 3 درجات) • التلاوة نظراً (5 مرات = 3 درجات) • التكرار المتقن (10 مرات = 4 درجات)
-                </p>
+
+              <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+                <span className={`px-3 py-1.5 rounded-xl text-xs font-extrabold border ${prepEvaluation.badgeClass}`}>
+                  {prepEvaluation.badgeText}
+                </span>
+                <div className="bg-white px-3.5 py-1.5 rounded-xl border border-stone-200 text-center shadow-2xs">
+                  <span className="text-[10px] text-stone-400 block">متوسط التحضير</span>
+                  <strong className="text-sm font-black privacy-score-digit" style={{ color: prepEvaluation.barColor }}>
+                    {prepAvgOutOf10} / 10 ({prepRatePercent}%)
+                  </strong>
+                </div>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
-              <span className={`px-3 py-1.5 rounded-xl text-xs font-extrabold border ${prepEvaluation.badgeClass}`}>
-                {prepEvaluation.badgeText}
-              </span>
-              <div className="bg-white px-3.5 py-1.5 rounded-xl border border-stone-200 text-center shadow-2xs">
-                <span className="text-[10px] text-stone-400 block">متوسط التحضير</span>
-                <strong className="text-sm font-black privacy-score-digit" style={{ color: prepEvaluation.barColor }}>
-                  {prepAvgOutOf10} / 10 ({prepRatePercent}%)
-                </strong>
+            {/* Monthly Progress Bar */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] font-bold text-stone-600">
+                <span>مؤشر الإنجاز الشهري لمعايير التحضير المسبق</span>
+                <span className="privacy-score-digit" style={{ color: prepEvaluation.barColor }}>
+                  {prepRatePercent}% ({prepAvgOutOf10} من 10 درجات)
+                </span>
+              </div>
+              <div className="w-full h-3 bg-stone-200/80 rounded-full overflow-hidden p-0.5">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{
+                    width: `${Math.min(100, Math.max(4, prepRatePercent))}%`,
+                    backgroundColor: prepEvaluation.barColor
+                  }}
+                />
               </div>
             </div>
           </div>
-
-          {/* Monthly Progress Bar */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] font-bold text-stone-600">
-              <span>مؤشر الإنجاز الشهري لمعايير التحضير المسبق</span>
-              <span className="privacy-score-digit" style={{ color: prepEvaluation.barColor }}>
-                {prepRatePercent}% ({prepAvgOutOf10} من 10 درجات)
-              </span>
-            </div>
-            <div className="w-full h-3 bg-stone-200/80 rounded-full overflow-hidden p-0.5">
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{
-                  width: `${Math.min(100, Math.max(4, prepRatePercent))}%`,
-                  backgroundColor: prepEvaluation.barColor
-                }}
-              />
-            </div>
-          </div>
-        </div>
+        )}
 
         {/* Detailed Sections Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
@@ -990,7 +998,11 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             <div className="space-y-1.5 text-stone-600">
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>الحفظ الجديد المنجز (بشروط):</span>
-                <strong className="text-stone-900">{doneNewPages} من {targetNewPages} صفحات</strong>
+                {isNewMemPlanEnabled ? (
+                  <strong className="text-stone-900">{doneNewPages} من {targetNewPages} صفحات</strong>
+                ) : (
+                  <strong className="text-stone-500">خطة مراجعة فقط (الحفظ الجديد معطّل)</strong>
+                )}
               </div>
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>المراجعة الصغرى المنجزة:</span>
@@ -1572,12 +1584,14 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                         <td className="p-2.5">حضور {score?.attendanceRate || 0}% • غياب {totalAbsentDays} أيام</td>
                         <td className="p-2.5 font-bold" style={{ color: customSecondaryColor }}>{score?.attendanceScore || 10} / 10</td>
                       </tr>
-                      <tr>
-                        <td className="p-2.5 font-bold text-stone-900">الحفظ الجديد</td>
-                        <td className="p-2.5">{targetNewPages} صفحات</td>
-                        <td className="p-2.5">{doneNewPages} صفحات</td>
-                        <td className="p-2.5 font-bold" style={{ color: customPrimaryColor }}>{score?.memorizationScore || 10} / 10</td>
-                      </tr>
+                      {isNewMemPlanEnabled && (
+                        <tr>
+                          <td className="p-2.5 font-bold text-stone-900">الحفظ الجديد</td>
+                          <td className="p-2.5">{targetNewPages} صفحات</td>
+                          <td className="p-2.5">{doneNewPages} صفحات</td>
+                          <td className="p-2.5 font-bold" style={{ color: customPrimaryColor }}>{score?.memorizationScore || 10} / 10</td>
+                        </tr>
+                      )}
                       <tr>
                         <td className="p-2.5 font-bold text-stone-900">المراجعة الصغرى</td>
                         <td className="p-2.5">حسب برنامج اليوم</td>
@@ -1590,16 +1604,18 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                         <td className="p-2.5">{doneTamkeenPages} صفحات</td>
                         <td className="p-2.5 text-emerald-700 font-bold">متقن بالشروط ✅</td>
                       </tr>
-                      <tr>
-                        <td className="p-2.5 font-bold text-stone-900">الالتزام بمعايير التحضير والإتقان</td>
-                        <td className="p-2.5">الاستماع (5) • التلاوة (5) • التكرار (10)</td>
-                        <td className="p-2.5">
-                          <span className={`inline-block px-2 py-0.5 rounded-lg text-[10px] font-bold border ${prepEvaluation.badgeClass}`}>
-                            {prepEvaluation.badgeText} ({prepRatePercent}%)
-                          </span>
-                        </td>
-                        <td className="p-2.5 font-bold" style={{ color: prepEvaluation.barColor }}>{prepAvgOutOf10} / 10</td>
-                      </tr>
+                      {isNewMemPlanEnabled && (
+                        <tr>
+                          <td className="p-2.5 font-bold text-stone-900">الالتزام بمعايير التحضير والإتقان</td>
+                          <td className="p-2.5">الاستماع (5) • التلاوة (5) • التكرار (10)</td>
+                          <td className="p-2.5">
+                            <span className={`inline-block px-2 py-0.5 rounded-lg text-[10px] font-bold border ${prepEvaluation.badgeClass}`}>
+                              {prepEvaluation.badgeText} ({prepRatePercent}%)
+                            </span>
+                          </td>
+                          <td className="p-2.5 font-bold" style={{ color: prepEvaluation.barColor }}>{prepAvgOutOf10} / 10</td>
+                        </tr>
+                      )}
                       {doneUnclassifiedRevisionPages > 0 && (
                         <tr>
                           <td className="p-2.5 font-bold text-amber-700">مراجعة مسجلة دون تفصيل</td>

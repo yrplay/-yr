@@ -3648,6 +3648,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
+    const isNewMemEnabled = sPlan ? sPlan.newMemorization?.enabled !== false : true;
+
     const memorizationItem = gradingConfig?.items.find(i => i.category === 'memorization');
     const memorizationMax = memorizationItem?.maxScore ?? 25;
     const hasMemorizationData = completedDailyRecords.length > 0;
@@ -3656,13 +3658,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const conditionsItem = gradingConfig?.items.find(i => i.category === 'conditions');
     const conditionsMax = conditionsItem?.maxScore ?? 10;
-    const hasConditionsData = completedDailyRecords.length > 0;
+    const hasConditionsData = isNewMemEnabled && completedDailyRecords.length > 0;
     const avgConditionsOutOf10 = hasConditionsData ? (conditionsSum / completedDailyRecords.length) : 0;
-    const preparationAvgOutOf10 = Number(avgConditionsOutOf10.toFixed(1));
-    const preparationRatePercent = Math.min(100, Math.max(0, Math.round(avgConditionsOutOf10 * 10)));
+    const preparationAvgOutOf10 = isNewMemEnabled ? Number(avgConditionsOutOf10.toFixed(1)) : 10;
+    const preparationRatePercent = isNewMemEnabled ? Math.min(100, Math.max(0, Math.round(avgConditionsOutOf10 * 10))) : 100;
     const conditionsFulfilledScore = hasConditionsData ? (avgConditionsOutOf10 / 10) * conditionsMax : 0;
 
-    const newMemorizationPagesTarget = (typeof sPlan?.newMemorization?.targetPages === 'number' && sPlan.newMemorization.targetPages > 0) ? sPlan.newMemorization.targetPages : 8;
+    const newMemorizationPagesTarget = !isNewMemEnabled
+      ? 0
+      : (typeof sPlan?.newMemorization?.targetPages === 'number' && sPlan.newMemorization.targetPages > 0)
+        ? sPlan.newMemorization.targetPages
+        : 8;
     const revisionPagesTarget = (typeof sPlan?.revision?.targetPages === 'number' && sPlan.revision.targetPages > 0) ? sPlan.revision.targetPages : 4;
 
     const atqiniItem = gradingConfig?.items.find(i => i.category === 'atqini');
@@ -3720,7 +3726,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (item.category === 'custom') return;
         if (item.category === 'exam' && !hasExam) return;
         if (item.category === 'attendance' && totalRecordedDays === 0) return;
-        if ((item.category === 'memorization' || item.category === 'conditions') && !hasMemorizationData) return;
+        if (item.category === 'memorization' && !hasMemorizationData) return;
+        if (item.category === 'conditions' && !hasConditionsData) return;
         if (item.category === 'atqini' && !hasAtqiniData) return;
         if (item.category === 'thursday_challenge' && !hasChallengeData) return;
         totalWeights += item.weightPercentage;
