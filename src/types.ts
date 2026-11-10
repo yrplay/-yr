@@ -389,6 +389,7 @@ export interface StudentChallengeSubmission {
   tasksCompleted: string[] | any;
   earlyPrepPointsEarned: number;
   earlyAchievementCompleted?: boolean;
+  weeklyStarAwarded?: boolean; // نجمة الانضباط الأسبوعي 🌟
   totalPointsEarned: number;
   peerReviewEvaluation?: any;
   peerReviewDetails?: any;

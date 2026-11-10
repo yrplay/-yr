@@ -96,6 +96,10 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   const doneUnclassifiedRevisionPages = score?.unclassifiedRevisionPagesDone ?? 0;
 
   const totalAbsentDays = (score?.absentUnexcusedCount || 0) + (score?.absentExcusedCount || 0);
+  const totalActiveWeeksCount = score?.totalActiveWeeksCount ?? 4;
+  const weeklyStarsCount = score?.weeklyStarsCount ?? Math.max(0, totalActiveWeeksCount - totalAbsentDays);
+  const weeklyStarsEmojis = weeklyStarsCount > 0 ? '🌟'.repeat(weeklyStarsCount) : 'لا توجد نجوم هذا الشهر';
+  const hasFullWeeklyStarsHonor = score?.hasFullWeeklyStarsHonor ?? (weeklyStarsCount >= totalActiveWeeksCount && totalAbsentDays === 0);
 
   // حساب معدل الالتزام بمعايير التحضير والإتقان (من 10 ونسبة مئوية %)
   const studentDailyCompleted = dailyRecords.filter(d => d.studentId === student?.id && d.status === 'completed');
@@ -614,7 +618,11 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         <tr>
           <td><strong>الحضور والانضباط</strong></td>
           <td>حضور جلسات التسميع المقررة</td>
-          <td>نسبة ${score?.attendanceRate || 0}% • غياب: ${totalAbsentDays} أيام (${score?.absentExcusedCount || 0} بعذر • ${score?.absentUnexcusedCount || 0} دون عذر)</td>
+          <td>
+            <div>نسبة ${score?.attendanceRate || 0}% • غياب: ${totalAbsentDays} أيام (${score?.absentExcusedCount || 0} بعذر • ${score?.absentUnexcusedCount || 0} دون عذر)</div>
+            <div style="margin-top: 3px; font-weight: bold; color: #92400e;">نجوم الانضباط الأسبوعية: ${weeklyStarsEmojis} (${weeklyStarsCount}/${totalActiveWeeksCount})</div>
+            ${hasFullWeeklyStarsHonor ? `<div style="margin-top: 3px; display: inline-block; padding: 2px 8px; border-radius: 10px; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; font-weight: 800; font-size: 10px;">طالبة ملتزمة بنجوم الانضباط الكاملة 🌟</div>` : ''}
+          </td>
           <td>${score?.attendanceScore || 10} / 10</td>
         </tr>
         ${isNewMemPlanEnabled ? `<tr>
@@ -1085,6 +1093,17 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                 <span>بطاقات التحضير المبكر ⭐:</span>
                 <strong className="text-amber-800">{score?.earlyPrepCount} بطاقات في الموعد</strong>
               </div>
+              <div className="flex justify-between items-center py-1 px-1.5 rounded-xl bg-amber-50/70 border border-amber-200/70">
+                <span className="font-bold text-amber-900">نجوم الانضباط الأسبوعية:</span>
+                <strong className="text-amber-900 font-extrabold tracking-wide">
+                  {weeklyStarsEmojis} <span className="text-[10px] font-bold text-amber-700">({weeklyStarsCount}/{totalActiveWeeksCount})</span>
+                </strong>
+              </div>
+              {hasFullWeeklyStarsHonor && (
+                <div className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-100 via-yellow-50 to-amber-100 border border-amber-300 text-amber-950 font-extrabold text-[11px] flex items-center justify-center gap-1.5 shadow-2xs">
+                  <span>طالبة ملتزمة بنجوم الانضباط الكاملة 🌟</span>
+                </div>
+              )}
               <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900 items-center">
                 <span>درجة الحضور والانضباط:</span>
                 <span style={{ color: customSecondaryColor }}>{score?.attendanceScore} / {score?.attendanceMax} نقطة</span>
@@ -1603,7 +1622,17 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                       <tr>
                         <td className="p-2.5 font-bold text-stone-900">الحضور والانضباط</td>
                         <td className="p-2.5">حضور الجلسات المقررة</td>
-                        <td className="p-2.5">حضور {score?.attendanceRate || 0}% • غياب {totalAbsentDays} أيام</td>
+                        <td className="p-2.5 space-y-1">
+                          <div>حضور {score?.attendanceRate || 0}% • غياب {totalAbsentDays} أيام</div>
+                          <div className="text-[11px] font-bold text-amber-800">
+                            نجوم الانضباط الأسبوعية: {weeklyStarsEmojis} ({weeklyStarsCount}/{totalActiveWeeksCount})
+                          </div>
+                          {hasFullWeeklyStarsHonor && (
+                            <span className="inline-block px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold">
+                              طالبة ملتزمة بنجوم الانضباط الكاملة 🌟
+                            </span>
+                          )}
+                        </td>
                         <td className="p-2.5 font-bold" style={{ color: customSecondaryColor }}>{score?.attendanceScore || 10} / 10</td>
                       </tr>
                       {isNewMemPlanEnabled && (

@@ -12,8 +12,9 @@ export const ChallengesView: React.FC = () => {
   const {
     challenges, studentChallengeSubmissions, students, circles, tracks,
     createChallenge, updateChallenge, deleteChallenge,
-    saveChallengeSubmission, toggleChallengeEarlyAchievement, currentUser, quickModalAction, clearQuickModal, settings,
-    attendanceRecords, selectedTrackId, selectedDate
+    saveChallengeSubmission, toggleChallengeEarlyAchievement, toggleChallengeWeeklyStar,
+    currentUser, quickModalAction, clearQuickModal, settings,
+    attendanceRecords, allStudentScores, selectedTrackId, selectedDate
   } = useApp();
 
   const availableChallenges = React.useMemo(() => {
@@ -90,6 +91,7 @@ export const ChallengesView: React.FC = () => {
   // Submission Evaluation Form State (including Peer Review rubric)
   const [subForm, setSubForm] = useState({
     earlyPrepPointsEarned: 2,
+    weeklyStarAwarded: true,
     tasksCompleted: [] as { taskId: string, completed: boolean, earnedPoints: number }[],
     peerReviewEvaluation: {
       jointRevisionCompleted: true,
@@ -125,6 +127,16 @@ export const ChallengesView: React.FC = () => {
     return (sub?.earlyPrepPointsEarned ?? 0) > 0 || !!sub?.earlyAchievementCompleted;
   };
 
+  const isWeeklyStarForStudent = (studentId: string) => {
+    const sub = studentChallengeSubmissions.find(
+      c => c.challengeId === currentChallenge?.id && c.studentId === studentId
+    );
+    if (sub?.weeklyStarAwarded !== undefined) {
+      return sub.weeklyStarAwarded;
+    }
+    return allStudentScores[studentId]?.hasWeeklyStar ?? true;
+  };
+
   const awardedEarlyCount = activeStudents.filter(s => isEarlyAwardedForStudent(s.id)).length;
 
   const circleScopedStudents = activeStudents.filter(student => {
@@ -133,6 +145,7 @@ export const ChallengesView: React.FC = () => {
   });
 
   const circleAwardedCount = circleScopedStudents.filter(s => isEarlyAwardedForStudent(s.id)).length;
+  const circleWeeklyStarCount = circleScopedStudents.filter(s => isWeeklyStarForStudent(s.id)).length;
   const circlePendingCount = circleScopedStudents.length - circleAwardedCount;
 
   const filteredEarlyStudents = circleScopedStudents.filter(student => {
@@ -247,6 +260,8 @@ export const ChallengesView: React.FC = () => {
 
     const challengeTasks = currentChallenge?.tasks || [];
 
+    const autoQualifiedWeeklyStar = allStudentScores[student.id]?.hasWeeklyStar ?? true;
+
     if (existing) {
       const normalizedTasks = challengeTasks.map((t: any) => {
         const found = (existing.tasksCompleted || []).find((et: any) => et.taskId === t.id);
@@ -259,6 +274,7 @@ export const ChallengesView: React.FC = () => {
       });
       setSubForm({
         earlyPrepPointsEarned: existing.earlyPrepPointsEarned || 0,
+        weeklyStarAwarded: existing.weeklyStarAwarded !== undefined ? existing.weeklyStarAwarded : autoQualifiedWeeklyStar,
         tasksCompleted: normalizedTasks,
         peerReviewEvaluation: existing.peerReviewEvaluation || {
           jointRevisionCompleted: true,
@@ -281,6 +297,7 @@ export const ChallengesView: React.FC = () => {
       }));
       setSubForm({
         earlyPrepPointsEarned: currentChallenge?.earlyPrepPoints || 2,
+        weeklyStarAwarded: autoQualifiedWeeklyStar,
         tasksCompleted: initialTasks,
         peerReviewEvaluation: {
           jointRevisionCompleted: true,
@@ -339,6 +356,7 @@ export const ChallengesView: React.FC = () => {
       tasksCompleted: evaluatedTasks,
       earlyPrepPointsEarned: earlyPointsFromTask,
       earlyAchievementCompleted: earlyPointsFromTask > 0,
+      weeklyStarAwarded: subForm.weeklyStarAwarded,
       peerReviewEvaluation: {
         ...subForm.peerReviewEvaluation,
         jointRevisionCompleted: peerRevisionDone,
@@ -613,8 +631,14 @@ export const ChallengesView: React.FC = () => {
               </p>
             </div>
 
-            {/* Live Early Achievement Counter Pill */}
-            <div className="flex items-center gap-2 bg-[#FAF6F2] px-3 py-2 rounded-2xl border border-[#EFE8E2] self-start lg:self-auto shrink-0">
+            {/* Live Early Achievement & Weekly Star Counter Pill */}
+            <div className="flex flex-wrap items-center gap-2 bg-[#FAF6F2] px-3 py-2 rounded-2xl border border-[#EFE8E2] self-start lg:self-auto shrink-0">
+              <div className="text-center px-2.5 border-l border-stone-200">
+                <div className="text-[10px] text-stone-500 font-medium">نجمة الانضباط الأسبوعي 🌟</div>
+                <div className="text-xs sm:text-sm font-extrabold text-amber-700">
+                  {circleWeeklyStarCount} <span className="text-[10px] text-stone-400 font-normal">/ {circleScopedStudents.length}</span>
+                </div>
+              </div>
               <div className="text-center px-2.5 border-l border-stone-200">
                 <div className="text-[10px] text-stone-500 font-medium">المنجزات مبكراً</div>
                 <div className="text-xs sm:text-sm font-extrabold text-emerald-700">
@@ -722,6 +746,10 @@ export const ChallengesView: React.FC = () => {
                     const progressPercent = Math.min(100, Math.round((totalPoints / maxPoints) * 100));
                     const studentCircle = circles.find(c => c.id === student.circleId);
 
+                    const studentScore = allStudentScores[student.id];
+                    const weeklyAbsenceCount = studentScore?.weeklyAbsenceCount ?? 0;
+                    const hasWeeklyStar = isWeeklyStarForStudent(student.id);
+
                     const todayIso = getTodayISO();
                     const isSyncedPresent =
                       !!sub ||
@@ -737,7 +765,7 @@ export const ChallengesView: React.FC = () => {
                       >
                         <td className="p-3.5 font-semibold text-stone-400">{idx + 1}</td>
                         <td className="p-3.5 font-bold text-stone-900">
-                          <div className="flex flex-col gap-0.5">
+                          <div className="flex flex-col gap-1">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span className="privacy-student-name">{student.name}</span>
                               {isSyncedPresent && (
@@ -748,6 +776,26 @@ export const ChallengesView: React.FC = () => {
                                   حاضرة ✅
                                 </span>
                               )}
+                              <button
+                                type="button"
+                                onClick={() => currentChallenge && toggleChallengeWeeklyStar(currentChallenge.id, student.id)}
+                                title={
+                                  hasWeeklyStar
+                                    ? `مؤهلة ومعتمدة (الغياب من الأحد إلى الأربعاء: ${weeklyAbsenceCount}) — انقري للتبديل`
+                                    : `عدد الغياب الأسبوعي (${weeklyAbsenceCount}) — انقري لمنح نجمة الانضباط الأسبوعي يدوياً`
+                                }
+                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold transition cursor-pointer select-none ${
+                                  hasWeeklyStar
+                                    ? 'bg-gradient-to-r from-amber-100 to-yellow-50 hover:from-amber-200 hover:to-yellow-100 text-amber-900 border border-amber-300 shadow-2xs ring-1 ring-amber-400/30'
+                                    : 'bg-stone-100 hover:bg-amber-50 text-stone-500 hover:text-amber-800 border border-dashed border-stone-300'
+                                }`}
+                              >
+                                {hasWeeklyStar ? (
+                                  <span>🌟 نجمة الانضباط الأسبوعي</span>
+                                ) : (
+                                  <span>☆ منح نجمة الانضباط ({weeklyAbsenceCount} غياب)</span>
+                                )}
+                              </button>
                             </div>
                             {studentCircle && (
                               <span className="text-[10px] text-stone-400 font-normal">
@@ -1003,6 +1051,23 @@ export const ChallengesView: React.FC = () => {
                         <span>{((sub?.earlyPrepPointsEarned ?? 0) > 0 || !!sub?.earlyAchievementCompleted) ? '+2 معتمد ⭐' : 'منح +2 نقاط'}</span>
                       </button>
                     </div>
+
+                    {/* Weekly Star Badge & Toggle in Peer Review Card */}
+                    <div className="flex items-center justify-between pt-1.5 border-t border-stone-200/50">
+                      <span className="text-[11px] text-stone-500 font-medium">الانضباط الأسبوعي:</span>
+                      <button
+                        type="button"
+                        onClick={() => currentChallenge && toggleChallengeWeeklyStar(currentChallenge.id, student.id)}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold transition flex items-center gap-1 cursor-pointer ${
+                          isWeeklyStarForStudent(student.id)
+                            ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 ring-1 ring-amber-400/20'
+                            : 'bg-stone-100 hover:bg-amber-50 text-stone-500 border border-dashed border-stone-300'
+                        }`}
+                        title="انقري لاعتماد أو تبديل نجمة الانضباط الأسبوعي"
+                      >
+                        <span>{isWeeklyStarForStudent(student.id) ? '🌟 نجمة الانضباط الأسبوعي' : '☆ منح نجمة الانضباط'}</span>
+                      </button>
+                    </div>
                   </div>
 
                   <button
@@ -1025,9 +1090,42 @@ export const ChallengesView: React.FC = () => {
             <h3 className="font-bold text-stone-900 text-base font-quran mb-1">
               رصد نقاط التحدي والمراجعة الثنائية
             </h3>
-            <p className="text-xs text-stone-500 mb-4">
+            <p className="text-xs text-stone-500 mb-3">
               للطالبة: <strong className="privacy-student-name">{evalStudent.name}</strong> • الرفيقة: <strong className="privacy-student-name">{evalStudent.partnerStudentName || 'لم تعين'}</strong>
             </p>
+
+            {/* بطاقة نجمة الانضباط الأسبوعي داخل نافذة التحدي */}
+            <div className="mb-4 p-3.5 rounded-2xl bg-gradient-to-r from-amber-50 via-[#FFFDF7] to-amber-50/70 border border-amber-200/80 flex flex-wrap items-center justify-between gap-2.5">
+              <div>
+                <div className="text-xs font-extrabold text-amber-900 flex items-center gap-1.5">
+                  <span>🌟 نجمة الانضباط الأسبوعي</span>
+                  {(allStudentScores[evalStudent.id]?.weeklyAbsenceCount ?? 0) === 0 ? (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                      مؤهلة تلقائياً (0 غياب) ✅
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-bold">
+                      غياب أسبوعي: {allStudentScores[evalStudent.id]?.weeklyAbsenceCount} أيام
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-amber-800/80 mt-0.5">
+                  تُمنح تلقائياً للطالبة التي لم تسجل أي غياب من الأحد إلى الأربعاء
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSubForm(prev => ({ ...prev, weeklyStarAwarded: !prev.weeklyStarAwarded }))}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold border transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                  subForm.weeklyStarAwarded
+                    ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500 ring-2 ring-amber-400/30'
+                    : 'bg-white hover:bg-amber-50 text-stone-600 border-stone-300'
+                }`}
+              >
+                <span>{subForm.weeklyStarAwarded ? '🌟 معتمدة وممنوحة' : '☆ منح وتأكيد النجمة'}</span>
+              </button>
+            </div>
 
             <form onSubmit={handleSaveSubmission} className="space-y-4">
               

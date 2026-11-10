@@ -32,6 +32,11 @@ export interface StudentScoreSummary {
   absentExcusedCount: number;
   earlyPrepCount: number;
   perfectWeeksCount: number;
+  weeklyAbsenceCount: number;
+  hasWeeklyStar: boolean;
+  weeklyStarsCount: number;
+  totalActiveWeeksCount: number;
+  hasFullWeeklyStarsHonor: boolean;
   
   memorizationScore: number;
   memorizationMax: number;
@@ -151,6 +156,7 @@ interface AppContextType {
   deleteChallenge: (id: string) => Promise<void>;
   saveChallengeSubmission: (sub: Partial<StudentChallengeSubmission>) => Promise<void>;
   toggleChallengeEarlyAchievement: (challengeId: string, studentId: string) => Promise<void>;
+  toggleChallengeWeeklyStar: (challengeId: string, studentId: string) => Promise<void>;
   
   createMonthlyExam: (exam: Partial<MonthlyExam>) => Promise<MonthlyExam>;
   updateMonthlyExam: (id: string, exam: Partial<MonthlyExam>) => Promise<void>;
@@ -2205,6 +2211,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return `${y}-${m}-${dayNum}`;
   };
 
+  const getWeekSundayISO = (baseDateIso?: string): string => {
+    const cleanBase = baseDateIso || getTodayISO();
+    const parts = cleanBase.split('-').map(Number);
+    const d = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0) : new Date();
+    if (Number.isNaN(d.getTime())) return getTodayISO();
+    const day = d.getDay(); // 0=Sun ... 6=Sat
+    d.setDate(d.getDate() - day);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dayNum = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dayNum}`;
+  };
+
+  const isSunThroughWed = (dateIso?: string): boolean => {
+    if (!dateIso) return true;
+    const parts = dateIso.split('-').map(Number);
+    if (parts.length !== 3) return true;
+    const d = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
+    if (Number.isNaN(d.getTime())) return true;
+    const day = d.getDay();
+    return day >= 0 && day <= 3; // Sunday (0) through Wednesday (3)
+  };
+
   const upsertAttendanceForDates = (
     studentId: string,
     dates: string[],
@@ -2921,6 +2950,83 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       nextAwarded
         ? `تم منح ${studentName} (+2 نقاط) وتسجيل حضورها وتحضيرها المبكر تلقائياً ⭐✅`
         : `تم إلغاء نقطتي الإنجاز المبكر لـ ${studentName} بنجاح`
+    );
+  };
+
+  const toggleChallengeWeeklyStar = async (challengeId: string, studentId: string) => {
+    const currentSubs = deduplicateChallengeSubmissions<StudentChallengeSubmission>(
+      Array.isArray(masterStateRef.current.studentChallengeSubmissions)
+        ? masterStateRef.current.studentChallengeSubmissions
+        : (Array.isArray(studentChallengeSubmissions) ? studentChallengeSubmissions : [])
+    );
+
+    const existingSub = currentSubs.find(
+      (s: StudentChallengeSubmission) =>
+        s.challengeId === challengeId && s.studentId === studentId
+    );
+
+    const stableId = existingSub?.id || `cs_${challengeId}_${studentId}`;
+    const nowIso = new Date().toISOString();
+
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const studentObj = currentStudents.find((s: Student) => s.id === studentId);
+    const studentScore = allStudentScores[studentId];
+    const autoQualified = studentScore ? studentScore.hasWeeklyStar : true;
+
+    const currentlyAwarded = existingSub?.weeklyStarAwarded !== undefined
+      ? existingSub.weeklyStarAwarded
+      : autoQualified;
+    const nextStarAwarded = !currentlyAwarded;
+
+    const finalizedSub: StudentChallengeSubmission = {
+      ...existingSub,
+      id: stableId,
+      challengeId,
+      studentId,
+      partnerStudentId: studentObj?.partnerStudentId || existingSub?.partnerStudentId,
+      partnerStudentName: studentObj?.partnerStudentName || existingSub?.partnerStudentName,
+      tasksCompleted: existingSub?.tasksCompleted || [],
+      earlyPrepPointsEarned: existingSub?.earlyPrepPointsEarned ?? 0,
+      earlyAchievementCompleted: existingSub?.earlyAchievementCompleted ?? false,
+      weeklyStarAwarded: nextStarAwarded,
+      peerReviewEvaluation: existingSub?.peerReviewEvaluation,
+      totalPointsEarned: existingSub?.totalPointsEarned ?? 0,
+      teacherNotes: existingSub?.teacherNotes || '',
+      evaluatedBy: currentUser?.name || existingSub?.evaluatedBy || 'معلمة الحلقة',
+      evaluatedAt: existingSub?.evaluatedAt || nowIso,
+      updatedAt: nowIso
+    };
+
+    const filtered = currentSubs.filter(
+      (s: StudentChallengeSubmission) =>
+        s.id !== stableId &&
+        !(s.challengeId === challengeId && s.studentId === studentId)
+    );
+
+    const next: StudentChallengeSubmission[] = [...filtered, finalizedSub];
+    masterStateRef.current.studentChallengeSubmissions = next;
+    setStudentChallengeSubmissions(next);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(CHALLENGE_SUBS_LOCAL_KEY, JSON.stringify(next));
+      } catch {}
+    }
+
+    const studentName = studentObj?.name || studentId;
+    const nextLogs = appendAuditEntry(
+      'grade',
+      'challenge',
+      nextStarAwarded
+        ? `اعتماد ومنح «🌟 نجمة الانضباط الأسبوعي» للطالبة ${studentName}`
+        : `إلغاء «🌟 نجمة الانضباط الأسبوعي» للطالبة ${studentName}`,
+      stableId
+    );
+
+    persistState({ studentChallengeSubmissions: next, auditLogs: nextLogs });
+    showToast(
+      nextStarAwarded
+        ? `تم اعتماد ومنح «🌟 نجمة الانضباط الأسبوعي» للطالبة ${studentName}`
+        : `تم إلغاء نجمة الانضباط الأسبوعي لـ ${studentName}`
     );
   };
 
@@ -3758,6 +3864,73 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const matchedScale = scale.find(s => finalPercentage >= s.minPercentage) || scale[scale.length - 1];
 
+    // حساب الغياب الأسبوعي (من الأحد إلى الأربعاء) وتأهيل الطالبة لنجمة الانضباط الأسبوعي 🌟
+    const weekMap = new Map<string, AttendanceRecord[]>();
+    effectiveAttendance.forEach(rec => {
+      if (!rec.date) return;
+      const wkSun = getWeekSundayISO(rec.date);
+      const list = weekMap.get(wkSun) || [];
+      list.push(rec);
+      weekMap.set(wkSun, list);
+    });
+
+    const targetWeekSun = getWeekSundayISO(selectedDate || getTodayISO());
+    let activeWeekRecords = (weekMap.get(targetWeekSun) || []).filter(r => isSunThroughWed(r.date));
+    if (activeWeekRecords.length === 0 && weekMap.size > 0) {
+      const sortedWeeks = Array.from(weekMap.keys()).sort();
+      const latestWeek = sortedWeeks[sortedWeeks.length - 1];
+      activeWeekRecords = (weekMap.get(latestWeek) || []).filter(r => isSunThroughWed(r.date));
+    }
+
+    const activeWeekAbsences = activeWeekRecords.filter(
+      r => r.status === 'absent_unexcused' || r.status === 'absent_excused'
+    ).length;
+
+    // إذا لم توجد سجلات في الأسبوع المحدد ولكن توجد غيابات مسجلة في الدورة الحالية من الأحد إلى الأربعاء
+    const allSunWedAbsences = effectiveAttendance.filter(
+      r => isSunThroughWed(r.date) && (r.status === 'absent_unexcused' || r.status === 'absent_excused')
+    ).length;
+
+    const weeklyAbsenceCount = weekMap.has(targetWeekSun)
+      ? activeWeekAbsences
+      : (activeWeekAbsences > 0 ? activeWeekAbsences : allSunWedAbsences);
+
+    // Check if teacher explicitly toggled weeklyStarAwarded on the latest challenge submission
+    const latestSubWithStarPref = [...sChallenges]
+      .filter(c => c.weeklyStarAwarded !== undefined)
+      .sort((a, b) => (Date.parse(b.updatedAt || b.evaluatedAt || '') || 0) - (Date.parse(a.updatedAt || a.evaluatedAt || '') || 0))[0];
+
+    const autoQualifiesWeeklyStar = weeklyAbsenceCount === 0;
+    const hasWeeklyStar = latestSubWithStarPref?.weeklyStarAwarded !== undefined
+      ? latestSubWithStarPref.weeklyStarAwarded
+      : autoQualifiesWeeklyStar;
+
+    // حساب إجمالي نجوم الانضباط الأسبوعية خلال الشهر (٤ أسابيع دراسية في الخطة الشهرية)
+    const totalActiveWeeksCount = 4;
+    let weeksWithSunWedAbsence = 0;
+    weekMap.forEach(records => {
+      const sunWedAbs = records.filter(
+        r => isSunThroughWed(r.date) && (r.status === 'absent_unexcused' || r.status === 'absent_excused')
+      ).length;
+      if (sunWedAbs > 0) {
+        weeksWithSunWedAbsence += 1;
+      }
+    });
+    const totalAbsencesMonth = absentUnexcusedCount + absentExcusedCount;
+    if (totalAbsencesMonth > 0 && weeksWithSunWedAbsence === 0) {
+      weeksWithSunWedAbsence = Math.min(totalActiveWeeksCount, totalAbsencesMonth);
+    }
+
+    let weeklyStarsCount = Math.max(0, totalActiveWeeksCount - weeksWithSunWedAbsence);
+    // Adjust if teacher explicitly overrode stars on challenge submissions
+    if (latestSubWithStarPref?.weeklyStarAwarded === false && autoQualifiesWeeklyStar) {
+      weeklyStarsCount = Math.max(0, weeklyStarsCount - 1);
+    } else if (latestSubWithStarPref?.weeklyStarAwarded === true && !autoQualifiesWeeklyStar) {
+      weeklyStarsCount = Math.min(totalActiveWeeksCount, weeklyStarsCount + 1);
+    }
+
+    const hasFullWeeklyStarsHonor = weeklyStarsCount >= totalActiveWeeksCount && totalAbsencesMonth === 0;
+
     return {
       studentId,
       attendanceScore: Number(attendanceScore.toFixed(1)),
@@ -3768,7 +3941,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       absentUnexcusedCount,
       absentExcusedCount,
       earlyPrepCount,
-      perfectWeeksCount: totalRecordedDays > 0 && absentUnexcusedCount === 0 ? 1 : 0,
+      perfectWeeksCount: weeklyStarsCount,
+      weeklyAbsenceCount,
+      hasWeeklyStar,
+      weeklyStarsCount,
+      totalActiveWeeksCount,
+      hasFullWeeklyStarsHonor,
       memorizationScore: Number(memorizationScore.toFixed(1)),
       memorizationMax,
       newMemorizationPagesDone: newPagesDone,
@@ -3905,7 +4083,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     return scoresMap;
-  }, [students, circles, tracks, attendanceRecords, dailyRecords, studentPlans, studentAtqiniSubmissions, studentChallengeSubmissions, studentExamResults, monthlyExams, atqiniAssignments, gradingConfigs]);
+  }, [students, circles, tracks, attendanceRecords, dailyRecords, studentPlans, studentAtqiniSubmissions, studentChallengeSubmissions, studentExamResults, monthlyExams, atqiniAssignments, gradingConfigs, selectedDate]);
 
   const getStudentScoreSummary = (studentId: string): StudentScoreSummary => {
     return allStudentScores[studentId] || {
@@ -3919,6 +4097,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       absentExcusedCount: 0,
       earlyPrepCount: 0,
       perfectWeeksCount: 0,
+      weeklyAbsenceCount: 0,
+      hasWeeklyStar: true,
+      weeklyStarsCount: 4,
+      totalActiveWeeksCount: 4,
+      hasFullWeeklyStarsHonor: true,
       memorizationScore: 0,
       memorizationMax: 25,
       newMemorizationPagesDone: 0,
@@ -4021,6 +4204,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         deleteChallenge,
         saveChallengeSubmission,
         toggleChallengeEarlyAchievement,
+        toggleChallengeWeeklyStar,
         selectedTrackId,
         setSelectedTrackId,
         selectedCircleId,
