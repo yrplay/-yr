@@ -8,7 +8,7 @@ import { useApp } from '../context/AppContext';
 import { QURAN_SURAHS, SurahInfo } from '../data/quranData';
 import { defaultMasteryGuideConfig, CustomMasteryCriterion, MasteryGuideConfig, Student } from '../types';
 import { HijriDateNavigationBar, formatHijriDate, formatHijriShort, getHijriParts, getTodayISO } from '../utils/hijriDate';
-import { NOORANIA_LESSONS, isStudentDefaultNoorania, formatNooraniaRangeLabel } from './MonthlyPlansView';
+import { NOORANIA_LESSONS, isStudentDefaultNoorania, formatNooraniaRangeLabel, formatDailyStepLabel } from './MonthlyPlansView';
 
 /**
  * دالة مساعدة لحساب عدد أوجه القرآن الكريم تقريبياً وبدقة
@@ -38,8 +38,8 @@ export function calculatePortionPages(
     const clampedToAyah = Math.max(clampedFromAyah, Math.min(toAyah || s1.versesCount, s1.versesCount));
     const versesSpan = clampedToAyah - clampedFromAyah + 1;
     const est = (versesSpan / s1.versesCount) * s1PagesTotal;
-    const rounded = Math.round(est * 2) / 2;
-    return Math.max(0.5, rounded);
+    const rounded = Math.round(est * 4) / 4;
+    return Math.max(0.25, rounded);
   }
 
   if (fromSurahNum > toSurahNum) {
@@ -64,7 +64,7 @@ export function calculatePortionPages(
   const s2Pages = (clampedToAyah / s2.versesCount) * s2PagesTotal;
 
   const total = s1Pages + midPages + s2Pages;
-  return Math.max(0.5, Math.round(total * 2) / 2);
+  return Math.max(0.25, Math.round(total * 4) / 4);
 }
 
 function formatPortionText(fromSurahNum: number, fromAyah: number, toSurahNum: number, toAyah: number): string {
@@ -78,13 +78,7 @@ function formatPortionText(fromSurahNum: number, fromAyah: number, toSurahNum: n
 }
 
 function formatPaceLabel(pages: number): string {
-  if (pages === 0.25) return 'ربع وجه (0.25 ص)';
-  if (pages === 0.5) return 'نصف وجه (0.5 ص)';
-  if (pages === 0.75) return 'ثلاثة أرباع وجه (0.75 ص)';
-  if (pages === 1) return 'وجه كامل (1.0 ص)';
-  if (pages === 1.5) return 'وجه ونصف (1.5 ص)';
-  if (pages === 2) return 'وجهان (2.0 ص)';
-  return `${pages} وجه`;
+  return formatDailyStepLabel(pages);
 }
 
 /**
@@ -1386,12 +1380,12 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                       <input
                         type="number"
                         min="0"
-                        max="2"
+                        max="20"
                         step="0.25"
                         value={form.newOutcome === 'mastered' ? form.newPages : 0}
                         disabled={form.newOutcome !== 'mastered'}
                         onChange={e => {
-                          const val = Math.min(2, Math.max(0, parseFloat(e.target.value) || 0));
+                          const val = Math.min(20, Math.max(0, parseFloat(e.target.value) || 0));
                           setForm({ ...form, newPages: val, attemptedNewPages: val || form.attemptedNewPages });
                         }}
                         className="w-16 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364] disabled:opacity-50"

@@ -8,9 +8,9 @@ import {
 import { MonthlyPlan, PlanBranchConfig } from '../types';
 import { summarizeDailyPageProgress } from '../services/recitationProgress';
 
-// قيم العداد التدريجي (Stepper) للمقدار اليومي المطلوب
-const NEW_MEM_STEPS = [0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0];
-const REVIEW_STEPS = [0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+// قيم العداد التدريجي الموحد (0.25 ربع وجه لكل ضغطة) لجميع الأقسام الثلاثة
+const NEW_MEM_STEPS = Array.from({ length: 41 }, (_, i) => Number((i * 0.25).toFixed(2))); // 0 إلى 10.0 بزيادة 0.25
+const REVIEW_STEPS = Array.from({ length: 121 }, (_, i) => Number((i * 0.25).toFixed(2))); // 0 إلى 30.0 بزيادة 0.25
 
 // دروس القاعدة النورانية السبعة عشر المعتمدة
 export const NOORANIA_LESSONS = [
@@ -55,54 +55,88 @@ export const formatNooraniaRangeLabel = (
   return `من ${f.title} إلى ${t.title}`;
 };
 
-export const formatDailyStepLabel = (val: number, isNewMemorization = false, isNoorania = false): string => {
-  const num = Number(val) || 0;
+export const formatDailyStepLabel = (val: number, _isNewMemorization = false, isNoorania = false): string => {
+  const num = Math.round((Number(val) || 0) * 100) / 100;
+  if (num <= 0) return '0 (غير محدد)';
+
   if (isNoorania) {
-    if (num === 0) return '0 (غير محدد)';
-    if (num === 0.25) return '0.25 (ربع صفحة / سطرين)';
-    if (num === 0.5) return '0.5 (نصف صفحة / نصف درس)';
-    if (num === 0.75) return '0.75 (ثلاثة أرباع صفحة)';
-    if (num === 1) return '1.0 (صفحة / درس يومياً)';
-    if (num === 1.5) return '1.5 (صفحة ونصف)';
-    if (num === 2) return '2.0 (صفحتين / درسين)';
-    return `${num} صفحات / دروس`;
+    if (num === 0.25) return '0.25 (ربع وجه / ربع درس)';
+    if (num === 0.5) return '0.5 (نصف وجه / نصف درس)';
+    if (num === 0.75) return '0.75 (ثلاثة أرباع وجه / درس)';
+    if (num === 1) return '1.0 (وجه كامل / درس كامل)';
+    if (num === 1.25) return '1.25 (وجه وربع / درس وربع)';
+    if (num === 1.5) return '1.5 (وجه ونصف / درس ونصف)';
+    if (num === 1.75) return '1.75 (وجه وثلاثة أرباع)';
+    if (num === 2) return '2.0 (وجهان / درسان)';
+    if (num === 2.25) return '2.25 (وجهان وربع)';
+    if (num === 2.5) return '2.5 (وجهان ونصف)';
+    if (num === 2.75) return '2.75 (وجهان وثلاثة أرباع)';
   }
-  if (num === 0) return '0 (غير محدد)';
+
   if (num === 0.25) return '0.25 (ربع وجه)';
   if (num === 0.5) return '0.5 (نصف وجه)';
   if (num === 0.75) return '0.75 (ثلاثة أرباع وجه)';
-  if (num === 1) return '1.0 (وجه)';
+  if (num === 1) return '1.0 (وجه كامل)';
+  if (num === 1.25) return '1.25 (وجه وربع)';
   if (num === 1.5) return '1.5 (وجه ونصف)';
-  if (num === 2) return isNewMemorization ? '2.0 (وجهين كحد أقصى)' : '2.0 (وجهين)';
-  if (num === 2.5) return '2.5 (وجهين ونصف)';
-  if (num === 3) return '3.0 (٣ أوجه)';
-  if (num === 4) return '4.0 (٤ أوجه)';
-  if (num === 5) return '5.0 (٥ أوجه - ربع حزب)';
-  if (num === 6) return '6.0 (٦ أوجه)';
-  if (num === 7) return '7.0 (٧ أوجه)';
-  if (num === 8) return '8.0 (٨ أوجه)';
-  if (num === 9) return '9.0 (٩ أوجه)';
-  if (num === 10) return '10.0 (١٠ أوجه - نصف جزء)';
+  if (num === 1.75) return '1.75 (وجه وثلاثة أرباع)';
+  if (num === 2) return '2.0 (وجهان)';
+  if (num === 2.25) return '2.25 (وجهان وربع)';
+  if (num === 2.5) return '2.5 (وجهان ونصف)';
+  if (num === 2.75) return '2.75 (وجهان وثلاثة أرباع)';
+
+  const whole = Math.floor(num);
+  const frac = Math.round((num - whole) * 100) / 100;
+  const unitPlural = whole >= 3 && whole <= 10 ? 'أوجه' : 'وجهاً';
+
+  if (frac === 0) {
+    const formattedWhole = num.toFixed(1);
+    if (whole === 3) return '3.0 (٣ أوجه)';
+    if (whole === 4) return '4.0 (٤ أوجه)';
+    if (whole === 5) return '5.0 (٥ أوجه - ربع حزب)';
+    if (whole === 6) return '6.0 (٦ أوجه)';
+    if (whole === 7) return '7.0 (٧ أوجه)';
+    if (whole === 8) return '8.0 (٨ أوجه)';
+    if (whole === 9) return '9.0 (٩ أوجه)';
+    if (whole === 10) return '10.0 (١٠ أوجه - نصف جزء)';
+    if (whole === 20) return '20.0 (٢٠ وجهاً - جزء كامل)';
+    return `${formattedWhole} (${whole} ${unitPlural})`;
+  }
+  if (frac === 0.25) {
+    return `${num} (${whole} ${unitPlural} وربع)`;
+  }
+  if (frac === 0.5) {
+    return `${num} (${whole} ${unitPlural} ونصف)`;
+  }
+  if (frac === 0.75) {
+    return `${num} (${whole} ${unitPlural} وثلاثة أرباع)`;
+  }
   return `${num} وجه`;
 };
 
 const parseDailyStepFromLegacy = (branch: any, fallback: number, isNewMem: boolean): number => {
-  const allowed = isNewMem ? NEW_MEM_STEPS : REVIEW_STEPS;
+  const maxAllowed = isNewMem ? 10.0 : 30.0;
   if (typeof branch?.dailyAmountPages === 'number' && Number.isFinite(branch.dailyAmountPages)) {
-    const clamped = isNewMem ? Math.min(2.0, Math.max(0, branch.dailyAmountPages)) : Math.min(10.0, Math.max(0, branch.dailyAmountPages));
-    // Snap to closest step
-    return allowed.reduce((prev, curr) => Math.abs(curr - clamped) < Math.abs(prev - clamped) ? curr : prev, allowed[0]);
+    const clamped = Math.min(maxAllowed, Math.max(0, branch.dailyAmountPages));
+    // Snap to closest 0.25 increment
+    return Math.round(clamped * 4) / 4;
   }
   const text = String(branch?.targetDailyAmount || '');
   if (!text) return fallback;
-  if (text.includes('0.25') || text.includes('ربع')) return 0.25;
-  if (text.includes('0.75') || text.includes('ثلاثة أرباع')) return 0.75;
-  if (text.includes('1.5') || text.includes('ونصف')) return 1.5;
-  if (text.includes('0.5') || text.includes('نصف')) return 0.5;
-  if (text.includes('2') || text.includes('وجهين') || text.includes('صفحتين')) return 2.0;
-  if (text.includes('3') || text.includes('٣')) return isNewMem ? 2.0 : 3.0;
-  if (text.includes('5') || text.includes('٥')) return isNewMem ? 2.0 : 5.0;
-  if (text.includes('1') || text.includes('وجه') || text.includes('صفحة')) return 1.0;
+  const numMatch = text.match(/(\d+(?:\.\d+)?)/);
+  if (numMatch) {
+    const parsed = parseFloat(numMatch[1]);
+    if (Number.isFinite(parsed)) {
+      return Math.min(maxAllowed, Math.max(0, Math.round(parsed * 4) / 4));
+    }
+  }
+  if (text.includes('ثلاثة أرباع')) return 0.75;
+  if (text.includes('وربع')) return 1.25;
+  if (text.includes('ونصف')) return 1.5;
+  if (text.includes('ربع')) return 0.25;
+  if (text.includes('نصف')) return 0.5;
+  if (text.includes('وجهين') || text.includes('وجهان') || text.includes('صفحتين')) return 2.0;
+  if (text.includes('وجه') || text.includes('صفحة')) return 1.0;
   return fallback;
 };
 
@@ -460,7 +494,7 @@ export const MonthlyPlansView: React.FC = () => {
     );
   };
 
-  // تحريك سهم المقدار اليومي المطلوب (▲ / ▼) مع حفظ فوري
+  // تحريك سهم المقدار اليومي المطلوب (▲ / ▼) بمقدار ربع وجه (0.25) مع حفظ فوري
   const handleStepDailyAmount = async (
     branchKey: 'newMemorization' | 'minorRevision' | 'tamkeenRevision',
     direction: 'up' | 'down'
@@ -470,23 +504,14 @@ export const MonthlyPlansView: React.FC = () => {
 
     const isNewMem = branchKey === 'newMemorization';
     const isNooraniaBranch = branchKey === 'minorRevision' && (!!branch.isNoorania || branch.revisionType === 'نورانية');
-    const steps = isNewMem ? NEW_MEM_STEPS : REVIEW_STEPS;
+    const maxLimit = isNewMem ? NEW_MEM_STEPS[NEW_MEM_STEPS.length - 1] : REVIEW_STEPS[REVIEW_STEPS.length - 1];
     const currentVal = typeof branch.dailyAmountPages === 'number' ? branch.dailyAmountPages : 1.0;
 
-    // Find closest index in steps array
-    let currentIdx = steps.findIndex(s => Math.abs(s - currentVal) < 0.001);
-    if (currentIdx === -1) {
-      currentIdx = steps.reduce(
-        (bestIdx, curr, idx) => Math.abs(curr - currentVal) < Math.abs(steps[bestIdx] - currentVal) ? idx : bestIdx,
-        0
-      );
-    }
+    // Snap current value to nearest 0.25 and step by +/- 0.25
+    const snappedCurrent = Math.round(currentVal * 4) / 4;
+    const rawNext = direction === 'up' ? snappedCurrent + 0.25 : snappedCurrent - 0.25;
+    const nextVal = Math.max(0, Math.min(maxLimit, Math.round(rawNext * 4) / 4));
 
-    const nextIdx = direction === 'up'
-      ? Math.min(steps.length - 1, currentIdx + 1)
-      : Math.max(0, currentIdx - 1);
-
-    const nextVal = steps[nextIdx];
     if (nextVal === currentVal) return;
 
     const nextLabel = formatDailyStepLabel(nextVal, isNewMem, isNooraniaBranch);
@@ -500,6 +525,30 @@ export const MonthlyPlansView: React.FC = () => {
     };
     setStudentPlanForm(nextForm);
     await persistBranchesImmediately(nextForm);
+  };
+
+  // تحريك سهم إجمالي الصفحات المستهدفة للشهر بمقدار ربع وجه (0.25)
+  const handleStepTargetPages = async (
+    branchKey: 'newMemorization' | 'minorRevision' | 'tamkeenRevision',
+    direction: 'up' | 'down',
+    persistNow = false
+  ) => {
+    const branch = studentPlanForm[branchKey];
+    if (branch.enabled === false) return;
+    const currentTarget = Number(branch.targetPages) || 0;
+    const rawNext = direction === 'up' ? currentTarget + 0.25 : currentTarget - 0.25;
+    const nextTarget = Math.max(0.25, Math.round(rawNext * 100) / 100);
+    const nextForm = {
+      ...studentPlanForm,
+      [branchKey]: {
+        ...branch,
+        targetPages: nextTarget
+      }
+    };
+    setStudentPlanForm(nextForm);
+    if (persistNow) {
+      await persistBranchesImmediately(nextForm);
+    }
   };
 
   const handleSaveStudentPlan = async () => {
@@ -553,26 +602,31 @@ export const MonthlyPlansView: React.FC = () => {
     setPlanModalOpen(false);
   };
 
-  // الحسابات التلقائية لنسب الإنجاز لكل فرع
+  // الحسابات التلقائية لنسب الإنجاز لكل فرع (مع دعم الكسور العشرية مثل 4.25، 7.5، 12.75، 23.5 دون تقريب لأعداد صحيحة)
   const isNewEnabled = studentPlanForm.newMemorization.enabled !== false;
   const isMinorEnabled = studentPlanForm.minorRevision.enabled !== false;
   const isTamkeenEnabled = studentPlanForm.tamkeenRevision.enabled !== false;
   const isMinorNoorania = !!studentPlanForm.minorRevision.isNoorania || studentPlanForm.minorRevision.revisionType === 'نورانية';
 
-  const newTarget = isNewEnabled ? Math.max(1, studentPlanForm.newMemorization.targetPages || 1) : 0;
-  const minorTarget = isMinorEnabled ? Math.max(1, studentPlanForm.minorRevision.targetPages || 1) : 0;
-  const tamkeenTarget = isTamkeenEnabled ? Math.max(1, studentPlanForm.tamkeenRevision.targetPages || 1) : 0;
+  const parseDecimalTarget = (val: any, fallback: number): number => {
+    const num = Number(val);
+    return Number.isFinite(num) && num > 0 ? Math.round(num * 100) / 100 : fallback;
+  };
 
-  const newDone = autoProgress.newMemorizationPagesDone;
-  const minorDone = autoProgress.minorRevisionPagesDone;
-  const tamkeenDone = autoProgress.tamkeenRevisionPagesDone;
+  const newTarget = isNewEnabled ? parseDecimalTarget(studentPlanForm.newMemorization.targetPages, 8) : 0;
+  const minorTarget = isMinorEnabled ? parseDecimalTarget(studentPlanForm.minorRevision.targetPages, isMinorNoorania ? 6 : 4) : 0;
+  const tamkeenTarget = isTamkeenEnabled ? parseDecimalTarget(studentPlanForm.tamkeenRevision.targetPages, 4) : 0;
 
-  const newPercent = isNewEnabled ? Math.min(100, Math.round((newDone / newTarget) * 100)) : 0;
-  const minorPercent = isMinorEnabled ? Math.min(100, Math.round((minorDone / minorTarget) * 100)) : 0;
-  const tamkeenPercent = isTamkeenEnabled ? Math.min(100, Math.round((tamkeenDone / tamkeenTarget) * 100)) : 0;
+  const newDone = Math.round((autoProgress.newMemorizationPagesDone || 0) * 100) / 100;
+  const minorDone = Math.round((autoProgress.minorRevisionPagesDone || 0) * 100) / 100;
+  const tamkeenDone = Math.round((autoProgress.tamkeenRevisionPagesDone || 0) * 100) / 100;
 
-  const totalEnabledTarget = (isNewEnabled ? newTarget : 0) + (isMinorEnabled ? minorTarget : 0) + (isTamkeenEnabled ? tamkeenTarget : 0);
-  const totalEnabledDone = (isNewEnabled ? newDone : 0) + (isMinorEnabled ? minorDone : 0) + (isTamkeenEnabled ? tamkeenDone : 0);
+  const newPercent = isNewEnabled && newTarget > 0 ? Math.min(100, Math.round((newDone / newTarget) * 100)) : 0;
+  const minorPercent = isMinorEnabled && minorTarget > 0 ? Math.min(100, Math.round((minorDone / minorTarget) * 100)) : 0;
+  const tamkeenPercent = isTamkeenEnabled && tamkeenTarget > 0 ? Math.min(100, Math.round((tamkeenDone / tamkeenTarget) * 100)) : 0;
+
+  const totalEnabledTarget = Math.round(((isNewEnabled ? newTarget : 0) + (isMinorEnabled ? minorTarget : 0) + (isTamkeenEnabled ? tamkeenTarget : 0)) * 100) / 100;
+  const totalEnabledDone = Math.round(((isNewEnabled ? newDone : 0) + (isMinorEnabled ? minorDone : 0) + (isTamkeenEnabled ? tamkeenDone : 0)) * 100) / 100;
   const overallPercent = totalEnabledTarget > 0 ? Math.min(100, Math.round((totalEnabledDone / totalEnabledTarget) * 100)) : 0;
 
   // دالة مساعدة لرسم قسم خطة فرعية متكامل مع زر التفعيل/التعطيل وأسهم المقدار اليومي
@@ -847,34 +901,60 @@ export const MonthlyPlansView: React.FC = () => {
                 </div>
               )}
 
-              {/* الصفحات المستهدفة + عداد الأسهم للمقدار اليومي + الإنجاز التلقائي */}
+              {/* الصفحات المستهدفة (يدعم الكسور مثل 4.25، 7.5، 12.75، 23.5) + عداد الأسهم للمقدار اليومي + الإنجاز التلقائي */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-stone-700 mb-1">
                     {isNooraniaBranch ? 'إجمالي الدروس / الصفحات المستهدف للشهر' : 'إجمالي الصفحات المستهدف للشهر'}
                   </label>
-                  <input
-                    type="number"
-                    min="1"
-                    disabled={!isEnabled}
-                    value={branch.targetPages}
-                    onChange={e =>
-                      setStudentPlanForm(prev => ({
-                        ...prev,
-                        [branchKey]: {
-                          ...prev[branchKey],
-                          targetPages: Math.max(1, Number(e.target.value) || 1)
-                        }
-                      }))
-                    }
-                    className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-xs font-bold bg-white disabled:bg-stone-100"
-                  />
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0.25"
+                      step="0.25"
+                      disabled={!isEnabled}
+                      value={branch.targetPages}
+                      onChange={e => {
+                        const raw = e.target.value;
+                        const parsed = raw === '' ? 0 : parseFloat(raw);
+                        setStudentPlanForm(prev => ({
+                          ...prev,
+                          [branchKey]: {
+                            ...prev[branchKey],
+                            targetPages: Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
+                          }
+                        }));
+                      }}
+                      placeholder="مثال: 4.25 أو 7.5 أو 12.75"
+                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs font-extrabold bg-white disabled:bg-stone-100"
+                    />
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        disabled={!isEnabled}
+                        onClick={() => handleStepTargetPages(branchKey, 'up', false)}
+                        className="w-7 h-7 rounded-lg bg-[#FAF6F2] border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                        title="زيادة المستهدف الشهري بمقدار ربع وجه (+0.25)"
+                      >
+                        <ChevronUp className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!isEnabled || (Number(branch.targetPages) || 0) <= 0.25}
+                        onClick={() => handleStepTargetPages(branchKey, 'down', false)}
+                        className="w-7 h-7 rounded-lg bg-[#FAF6F2] border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                        title="إنقاص المستهدف الشهري بمقدار ربع وجه (-0.25)"
+                      >
+                        <ChevronDown className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                {/* عداد الأسهم الذكي (▲ / ▼) للمقدار المطلوب يومياً */}
+                {/* عداد الأسهم الذكي (▲ / ▼) للمقدار المطلوب يومياً بمضاعفات 0.25 */}
                 <div>
                   <label className="block text-xs font-bold text-stone-700 mb-1">
-                    المقدار المطلوب يومياً {isNewMem ? '(الحد الأقصى وجهان)' : isNooraniaBranch ? '(بالدروس / الصفحات)' : '(بالأوجه)'}
+                    المقدار المطلوب يومياً {isNooraniaBranch ? '(بمضاعفات 0.25 ربع درس/صفحة)' : '(بمضاعفات 0.25 ربع وجه)'}
                   </label>
                   <div className="flex items-center justify-between bg-[#FAF6F2] border border-[#E2D5CC] rounded-xl px-3 py-1.5">
                     <span className="text-xs font-extrabold text-stone-900">
@@ -886,7 +966,7 @@ export const MonthlyPlansView: React.FC = () => {
                         disabled={!isEnabled || isAtMax}
                         onClick={() => handleStepDailyAmount(branchKey, 'up')}
                         className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
-                        title="زيادة المقدار اليومي (▲)"
+                        title="زيادة المقدار اليومي بربع وجه (+0.25 ▲)"
                       >
                         <ChevronUp className="w-4 h-4" />
                       </button>
@@ -895,7 +975,7 @@ export const MonthlyPlansView: React.FC = () => {
                         disabled={!isEnabled || isAtMin}
                         onClick={() => handleStepDailyAmount(branchKey, 'down')}
                         className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
-                        title="إنقاص المقدار اليومي (▼)"
+                        title="إنقاص المقدار اليومي بربع وجه (-0.25 ▼)"
                       >
                         <ChevronDown className="w-4 h-4" />
                       </button>
@@ -910,7 +990,7 @@ export const MonthlyPlansView: React.FC = () => {
                   </label>
                   <div className="px-3 py-2 rounded-xl bg-emerald-50/70 border border-emerald-200/80 flex items-center justify-between">
                     <span className="text-xs font-extrabold text-emerald-900">
-                      <span className="privacy-score-digit">{donePages}</span> من <span className="privacy-score-digit">{branch.targetPages}</span> {isNooraniaBranch ? 'درس / صفحة' : 'صفحة'}
+                      <span className="privacy-score-digit">{donePages}</span> من <span className="privacy-score-digit">{targetPages}</span> {isNooraniaBranch ? 'درس / صفحة' : 'صفحة'}
                     </span>
                     <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
                       {percent}%
@@ -953,7 +1033,7 @@ export const MonthlyPlansView: React.FC = () => {
                   </span>
                 </div>
 
-                {/* المقدار المطلوب يومياً مع أزرار الأسهم المباشرة (▲ / ▼) */}
+                {/* المقدار المطلوب يومياً مع أزرار الأسهم المباشرة (▲ / ▼) بمضاعفات 0.25 */}
                 <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2] flex items-center justify-between gap-2">
                   <div>
                     <span className="text-stone-400 block text-[11px]">المقدار المطلوب يومياً:</span>
@@ -967,7 +1047,7 @@ export const MonthlyPlansView: React.FC = () => {
                       disabled={!isEnabled || isAtMax}
                       onClick={() => handleStepDailyAmount(branchKey, 'up')}
                       className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
-                      title="زيادة المقدار اليومي (▲)"
+                      title="زيادة المقدار اليومي بربع وجه (+0.25 ▲)"
                     >
                       <ChevronUp className="w-3.5 h-3.5" />
                     </button>
@@ -976,20 +1056,42 @@ export const MonthlyPlansView: React.FC = () => {
                       disabled={!isEnabled || isAtMin}
                       onClick={() => handleStepDailyAmount(branchKey, 'down')}
                       className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
-                      title="إنقاص المقدار اليومي (▼)"
+                      title="إنقاص المقدار اليومي بربع وجه (-0.25 ▼)"
                     >
                       <ChevronDown className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
 
-                <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2]">
-                  <span className="text-stone-400 block text-[11px]">
-                    {isNooraniaBranch ? 'الدروس / الصفحات المنجزة (تلقائياً):' : 'الصفحات المنجزة (تلقائياً):'}
-                  </span>
-                  <span className="font-extrabold block mt-0.5" style={{ color: accentColor }}>
-                    <span className="privacy-score-digit">{donePages}</span> منجز من أصل <span className="privacy-score-digit">{targetPages}</span> {isNooraniaBranch ? 'درس / صفحة' : 'صفحة'}
-                  </span>
+                <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2] flex items-center justify-between gap-2">
+                  <div>
+                    <span className="text-stone-400 block text-[11px]">
+                      {isNooraniaBranch ? 'الدروس / الصفحات المنجزة (من المستهدف):' : 'الصفحات المنجزة (من المستهدف الشهري):'}
+                    </span>
+                    <span className="font-extrabold block mt-0.5" style={{ color: accentColor }}>
+                      <span className="privacy-score-digit">{donePages}</span> منجز من أصل <span className="privacy-score-digit">{targetPages}</span> {isNooraniaBranch ? 'درس / صفحة' : 'صفحة'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      disabled={!isEnabled}
+                      onClick={() => handleStepTargetPages(branchKey, 'up', true)}
+                      className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                      title="زيادة إجمالي الصفحات المستهدف للشهر بربع وجه (+0.25 ▲)"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!isEnabled || targetPages <= 0.25}
+                      onClick={() => handleStepTargetPages(branchKey, 'down', true)}
+                      className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                      title="إنقاص إجمالي الصفحات المستهدف للشهر بربع وجه (-0.25 ▼)"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2]">
@@ -1280,11 +1382,11 @@ export const MonthlyPlansView: React.FC = () => {
         {renderPlanBranchCard(
           'newMemorization',
           '١. خطة ومقرر الحفظ الجديد',
-          'بحد أقصى وجهان يومياً — يُجمع الإنجاز تلقائياً من سجل التسميع',
+          'بمضاعفات ربع وجه (0.25) يومياً — يُجمع الإنجاز تلقائياً من سجل التسميع',
           '#8E5364',
           'bg-[#FAF0F3] text-[#8E5364]',
           newDone,
-          studentPlanForm.newMemorization.targetPages || 8,
+          newTarget || 8,
           newPercent,
           true
         )}
@@ -1299,7 +1401,7 @@ export const MonthlyPlansView: React.FC = () => {
           '#96503E',
           'bg-amber-50 text-amber-800',
           minorDone,
-          studentPlanForm.minorRevision.targetPages || (isMinorNoorania ? 6 : 4),
+          minorTarget || (isMinorNoorania ? 6 : 4),
           minorPercent,
           false
         )}
@@ -1312,7 +1414,7 @@ export const MonthlyPlansView: React.FC = () => {
           '#2D5A43',
           'bg-emerald-50 text-emerald-800',
           tamkeenDone,
-          studentPlanForm.tamkeenRevision.targetPages || 4,
+          tamkeenTarget || 4,
           tamkeenPercent,
           false
         )}
