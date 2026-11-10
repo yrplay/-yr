@@ -103,6 +103,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   const isNewMemPlanEnabled = (activeStudentPlan as any)?.newMemorization
     ? (activeStudentPlan as any).newMemorization.enabled !== false
     : true;
+  const isFreeMemorization = Boolean((activeStudentPlan as any)?.newMemorization?.isFreeMemorization);
 
   const isNooraniaTrack = Boolean(
     (activeStudentPlan as any)?.minorRevision?.isNoorania ||
@@ -114,7 +115,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
     (activeStudentPlan as any)?.minorRevision?.targetPages ?? (isNooraniaTrack ? 6 : 4);
 
   // الخطة تحدد المستهدف، وملخص السجلات اليومية هو المصدر الوحيد للمنجز.
-  const targetNewPages = !isNewMemPlanEnabled
+  const targetNewPages = !isNewMemPlanEnabled || isFreeMemorization
     ? 0
     : ((activeStudentPlan as any)?.newMemorization?.targetPages ?? score?.newMemorizationPagesTarget ?? 8);
   const targetRevPages =
@@ -632,9 +633,9 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         <div style="font-size: 9px; color: #a8a29e; margin-top: 2px;">${score?.absentExcusedCount || 0} بعذر • ${score?.absentUnexcusedCount || 0} دون عذر</div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">الحفظ الجديد المنجز</div>
-        <div class="stat-value">${doneNewPages} ص</div>
-        <div style="font-size: 9px; color: #78716c; margin-top: 2px;">المستهدف: ${targetNewPages} ص</div>
+        <div class="stat-label">${isFreeMemorization ? 'نوع الخطة: الحفظ الحر' : 'الحفظ الجديد المنجز'}</div>
+        <div class="stat-value">${isFreeMemorization ? `${doneNewPages} صفحة متقنة 🌟` : `${doneNewPages} ص`}</div>
+        <div style="font-size: 9px; color: #78716c; margin-top: 2px;">${isFreeMemorization ? `إجمالي المنجز: ${doneNewPages} صفحة متقنة 🌟` : `المستهدف: ${targetNewPages} ص`}</div>
       </div>
       <div class="stat-box">
         <div class="stat-label">${minorSectionLabel}</div>
@@ -675,9 +676,9 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           <td>${score?.attendanceScore || 10} / 10</td>
         </tr>
         ${isNewMemPlanEnabled ? `<tr>
-          <td><strong>الحفظ الجديد</strong></td>
-          <td>${targetNewPages} صفحات</td>
-          <td>${doneNewPages} صفحات</td>
+          <td><strong>${isFreeMemorization ? 'الحفظ الحر' : 'الحفظ الجديد'}</strong></td>
+          <td>${isFreeMemorization ? 'نوع الخطة: الحفظ الحر' : `${targetNewPages} صفحات`}</td>
+          <td>${isFreeMemorization ? `<strong>إجمالي المنجز: ${doneNewPages} صفحة متقنة 🌟</strong>` : `${doneNewPages} صفحات`}</td>
           <td>${score?.memorizationScore || 10} / 10</td>
         </tr>` : ''}
         <tr>
@@ -1068,10 +1069,22 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             </div>
 
             <div className="space-y-1.5 text-stone-600">
+              {isFreeMemorization && isNewMemPlanEnabled && (
+                <div className="flex justify-between items-center py-1 px-2 rounded-xl bg-amber-50/80 border border-amber-200/80">
+                  <span className="font-bold text-amber-900">نوع الخطة: الحفظ الحر</span>
+                  <span className="text-[11px] font-extrabold text-[#8E5364]">رصد تراكمي مفتوح 🔓</span>
+                </div>
+              )}
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
-                <span>الحفظ الجديد المنجز (بشروط):</span>
+                <span>{isFreeMemorization ? 'الحفظ الحر:' : 'الحفظ الجديد المنجز (بشروط):'}</span>
                 {isNewMemPlanEnabled ? (
-                  <strong className="text-stone-900">{doneNewPages} من {targetNewPages} صفحات</strong>
+                  isFreeMemorization ? (
+                    <strong className="text-emerald-800 font-extrabold">
+                      إجمالي المنجز: {doneNewPages} صفحة متقنة 🌟
+                    </strong>
+                  ) : (
+                    <strong className="text-stone-900">{doneNewPages} من {targetNewPages} صفحات</strong>
+                  )
                 ) : (
                   <strong className="text-stone-500">خطة مراجعة فقط (الحفظ الجديد معطّل)</strong>
                 )}
@@ -1645,9 +1658,15 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                     <span className="text-[9px] text-stone-400 block mt-0.5">{score?.absentExcusedCount || 0} بعذر</span>
                   </div>
                   <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
-                    <span className="text-[10px] text-stone-500 block">الحفظ الجديد</span>
-                    <strong className="text-sm font-bold text-stone-900">{doneNewPages} ص</strong>
-                    <span className="text-[9px] text-stone-400 block mt-0.5">المستهدف: {targetNewPages} ص</span>
+                    <span className="text-[10px] text-stone-500 block">
+                      {isFreeMemorization ? 'نوع الخطة: الحفظ الحر' : 'الحفظ الجديد'}
+                    </span>
+                    <strong className="text-sm font-bold text-stone-900">
+                      {isFreeMemorization ? `${doneNewPages} صفحة متقنة 🌟` : `${doneNewPages} ص`}
+                    </strong>
+                    <span className="text-[9px] text-stone-400 block mt-0.5">
+                      {isFreeMemorization ? `إجمالي المنجز: ${doneNewPages} صفحة متقنة 🌟` : `المستهدف: ${targetNewPages} ص`}
+                    </span>
                   </div>
                   <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
                     <span className="text-[10px] text-stone-500 block">{minorSectionLabel}</span>
@@ -1700,9 +1719,15 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                       </tr>
                       {isNewMemPlanEnabled && (
                         <tr>
-                          <td className="p-2.5 font-bold text-stone-900">الحفظ الجديد</td>
-                          <td className="p-2.5">{targetNewPages} صفحات</td>
-                          <td className="p-2.5">{doneNewPages} صفحات</td>
+                          <td className="p-2.5 font-bold text-stone-900">
+                            {isFreeMemorization ? 'الحفظ الحر' : 'الحفظ الجديد'}
+                          </td>
+                          <td className="p-2.5">
+                            {isFreeMemorization ? 'نوع الخطة: الحفظ الحر' : `${targetNewPages} صفحات`}
+                          </td>
+                          <td className="p-2.5 font-bold text-emerald-800">
+                            {isFreeMemorization ? `إجمالي المنجز: ${doneNewPages} صفحة متقنة 🌟` : `${doneNewPages} صفحات`}
+                          </td>
                           <td className="p-2.5 font-bold" style={{ color: customPrimaryColor }}>{score?.memorizationScore || 10} / 10</td>
                         </tr>
                       )}
@@ -1874,28 +1899,48 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             <div className="space-y-3 text-xs">
               
               {/* Target & Done Pages for New Memorization */}
-              <div className="grid grid-cols-2 gap-3 bg-[#FCFAF8] p-3 rounded-2xl border border-stone-200">
-                <div>
-                  <label className="block font-bold text-stone-700 mb-1">صفحات الحفظ المستهدفة:</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={quickEditForm.targetPages}
-                    onChange={e => setQuickEditForm({ ...quickEditForm, targetPages: Number(e.target.value) })}
-                    className="w-full px-3 py-1.5 border border-stone-300 rounded-xl bg-white font-bold text-stone-900"
-                  />
+              {isFreeMemorization ? (
+                <div className="bg-[#FCFAF8] p-3 rounded-2xl border border-stone-200 flex items-center justify-between gap-3">
+                  <div>
+                    <span className="block font-bold text-[#8E5364]">نوع الخطة: الحفظ الحر 🔓</span>
+                    <span className="text-[11px] text-stone-500">رصد تراكمي مفتوح حسب استطاعة الطالبة بدون سقف شهري محدد</span>
+                  </div>
+                  <div className="w-36">
+                    <label className="block font-bold text-stone-700 mb-1">إجمالي المنجز 🌟:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.25"
+                      value={quickEditForm.actualPages}
+                      onChange={e => setQuickEditForm({ ...quickEditForm, actualPages: Number(e.target.value) })}
+                      className="w-full px-3 py-1.5 border border-stone-300 rounded-xl bg-white font-bold text-[#8E5364] text-center"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block font-bold text-stone-700 mb-1">صفحات الحفظ المنجزة بشروط:</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={quickEditForm.actualPages}
-                    onChange={e => setQuickEditForm({ ...quickEditForm, actualPages: Number(e.target.value) })}
-                    className="w-full px-3 py-1.5 border border-stone-300 rounded-xl bg-white font-bold text-[#8E5364]"
-                  />
+              ) : (
+                <div className="grid grid-cols-2 gap-3 bg-[#FCFAF8] p-3 rounded-2xl border border-stone-200">
+                  <div>
+                    <label className="block font-bold text-stone-700 mb-1">صفحات الحفظ المستهدفة:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={quickEditForm.targetPages}
+                      onChange={e => setQuickEditForm({ ...quickEditForm, targetPages: Number(e.target.value) })}
+                      className="w-full px-3 py-1.5 border border-stone-300 rounded-xl bg-white font-bold text-stone-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-stone-700 mb-1">صفحات الحفظ المنجزة بشروط:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={quickEditForm.actualPages}
+                      onChange={e => setQuickEditForm({ ...quickEditForm, actualPages: Number(e.target.value) })}
+                      className="w-full px-3 py-1.5 border border-stone-300 rounded-xl bg-white font-bold text-[#8E5364]"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Target & Done Pages for Revision */}
               <div className="grid grid-cols-2 gap-3 bg-[#FCFAF8] p-3 rounded-2xl border border-stone-200">

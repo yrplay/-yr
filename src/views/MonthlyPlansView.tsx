@@ -216,6 +216,7 @@ export const MonthlyPlansView: React.FC = () => {
   }>({
     newMemorization: {
       enabled: true,
+      isFreeMemorization: false,
       fromSurah: 2,
       fromAyah: 1,
       toSurah: 2,
@@ -264,6 +265,7 @@ export const MonthlyPlansView: React.FC = () => {
       return {
         newMemorization: {
           enabled: true,
+          isFreeMemorization: false,
           fromSurah: 2,
           fromAyah: 1,
           toSurah: 2,
@@ -321,13 +323,16 @@ export const MonthlyPlansView: React.FC = () => {
     return {
       newMemorization: {
         enabled: existing.newMemorization?.enabled !== false,
+        isFreeMemorization: Boolean(existing.newMemorization?.isFreeMemorization),
         fromSurah: existing.newMemorization?.fromSurah || 2,
         fromAyah: existing.newMemorization?.fromAyah || 1,
         toSurah: existing.newMemorization?.toSurah || 2,
         toAyah: existing.newMemorization?.toAyah || 50,
         targetPages: existing.newMemorization?.targetPages ?? 8,
         dailyAmountPages: newStep,
-        targetDailyAmount: formatDailyStepLabel(newStep, true),
+        targetDailyAmount: existing.newMemorization?.isFreeMemorization
+          ? 'الحفظ الحر (حسب الاستطاعة)'
+          : formatDailyStepLabel(newStep, true),
         teacherNotes: existing.newMemorization?.teacherNotes || ''
       },
       minorRevision: {
@@ -435,6 +440,36 @@ export const MonthlyPlansView: React.FC = () => {
     if (toastMsg) {
       showToast(toastMsg, 'success');
     }
+  };
+
+  // تبديل القسم الأول بين "خطة الحفظ المحددة" و "الحفظ الحر (حسب الاستطاعة)" مع بقاء الطالبة في حلقتها ومسارها
+  const handleToggleFreeMemorizationMode = async () => {
+    const currentIsFree = Boolean(studentPlanForm.newMemorization.isFreeMemorization);
+    const nextIsFree = !currentIsFree;
+    const stepVal =
+      typeof studentPlanForm.newMemorization.dailyAmountPages === 'number' &&
+      studentPlanForm.newMemorization.dailyAmountPages > 0
+        ? studentPlanForm.newMemorization.dailyAmountPages
+        : 1.0;
+
+    const nextForm = {
+      ...studentPlanForm,
+      newMemorization: {
+        ...studentPlanForm.newMemorization,
+        enabled: true,
+        isFreeMemorization: nextIsFree,
+        targetDailyAmount: nextIsFree
+          ? 'الحفظ الحر (حسب الاستطاعة)'
+          : formatDailyStepLabel(stepVal, true)
+      }
+    };
+    setStudentPlanForm(nextForm);
+    await persistBranchesImmediately(
+      nextForm,
+      nextIsFree
+        ? `تم تفعيل «🔓 الحفظ الحر (حسب الاستطاعة)» للطالبة ${selectedStudent?.name || ''} داخل حلقتها الحالية 🌟`
+        : `تم إعادة خطة الحفظ للطالبة ${selectedStudent?.name || ''} إلى المقرر الشهري المحدد 📖`
+    );
   };
 
   // تبديل القسم الثاني بين "خطة المراجعة الصغرى" و "مسار القاعدة النورانية"
@@ -604,6 +639,7 @@ export const MonthlyPlansView: React.FC = () => {
 
   // الحسابات التلقائية لنسب الإنجاز لكل فرع (مع دعم الكسور العشرية مثل 4.25، 7.5، 12.75، 23.5 دون تقريب لأعداد صحيحة)
   const isNewEnabled = studentPlanForm.newMemorization.enabled !== false;
+  const isFreeMem = Boolean(studentPlanForm.newMemorization.isFreeMemorization);
   const isMinorEnabled = studentPlanForm.minorRevision.enabled !== false;
   const isTamkeenEnabled = studentPlanForm.tamkeenRevision.enabled !== false;
   const isMinorNoorania = !!studentPlanForm.minorRevision.isNoorania || studentPlanForm.minorRevision.revisionType === 'نورانية';
@@ -613,7 +649,7 @@ export const MonthlyPlansView: React.FC = () => {
     return Number.isFinite(num) && num > 0 ? Math.round(num * 100) / 100 : fallback;
   };
 
-  const newTarget = isNewEnabled ? parseDecimalTarget(studentPlanForm.newMemorization.targetPages, 8) : 0;
+  const newTarget = isNewEnabled && !isFreeMem ? parseDecimalTarget(studentPlanForm.newMemorization.targetPages, 8) : 0;
   const minorTarget = isMinorEnabled ? parseDecimalTarget(studentPlanForm.minorRevision.targetPages, isMinorNoorania ? 6 : 4) : 0;
   const tamkeenTarget = isTamkeenEnabled ? parseDecimalTarget(studentPlanForm.tamkeenRevision.targetPages, 4) : 0;
 
@@ -621,13 +657,20 @@ export const MonthlyPlansView: React.FC = () => {
   const minorDone = Math.round((autoProgress.minorRevisionPagesDone || 0) * 100) / 100;
   const tamkeenDone = Math.round((autoProgress.tamkeenRevisionPagesDone || 0) * 100) / 100;
 
-  const newPercent = isNewEnabled && newTarget > 0 ? Math.min(100, Math.round((newDone / newTarget) * 100)) : 0;
+  const newPercent = isNewEnabled
+    ? isFreeMem
+      ? 100
+      : (newTarget > 0 ? Math.min(100, Math.round((newDone / newTarget) * 100)) : 0)
+    : 0;
   const minorPercent = isMinorEnabled && minorTarget > 0 ? Math.min(100, Math.round((minorDone / minorTarget) * 100)) : 0;
   const tamkeenPercent = isTamkeenEnabled && tamkeenTarget > 0 ? Math.min(100, Math.round((tamkeenDone / tamkeenTarget) * 100)) : 0;
 
-  const totalEnabledTarget = Math.round(((isNewEnabled ? newTarget : 0) + (isMinorEnabled ? minorTarget : 0) + (isTamkeenEnabled ? tamkeenTarget : 0)) * 100) / 100;
+  const totalEnabledTarget = Math.round((((isNewEnabled && !isFreeMem) ? newTarget : 0) + (isMinorEnabled ? minorTarget : 0) + (isTamkeenEnabled ? tamkeenTarget : 0)) * 100) / 100;
   const totalEnabledDone = Math.round(((isNewEnabled ? newDone : 0) + (isMinorEnabled ? minorDone : 0) + (isTamkeenEnabled ? tamkeenDone : 0)) * 100) / 100;
-  const overallPercent = totalEnabledTarget > 0 ? Math.min(100, Math.round((totalEnabledDone / totalEnabledTarget) * 100)) : 0;
+  const fixedBranchesDone = Math.round((((isNewEnabled && !isFreeMem) ? newDone : 0) + (isMinorEnabled ? minorDone : 0) + (isTamkeenEnabled ? tamkeenDone : 0)) * 100) / 100;
+  const overallPercent = totalEnabledTarget > 0
+    ? Math.min(100, Math.round((fixedBranchesDone / totalEnabledTarget) * 100))
+    : (isNewEnabled && isFreeMem ? 100 : 0);
 
   // دالة مساعدة لرسم قسم خطة فرعية متكامل مع زر التفعيل/التعطيل وأسهم المقدار اليومي
   const renderPlanBranchCard = (
@@ -643,6 +686,7 @@ export const MonthlyPlansView: React.FC = () => {
   ) => {
     const branch = studentPlanForm[branchKey];
     const isEnabled = branch.enabled !== false;
+    const isFreeMemorizationBranch = branchKey === 'newMemorization' && Boolean(branch.isFreeMemorization);
     const isNooraniaBranch = branchKey === 'minorRevision' && (!!branch.isNoorania || branch.revisionType === 'نورانية');
     const steps = isNewMem ? NEW_MEM_STEPS : REVIEW_STEPS;
     const currentStepVal = typeof branch.dailyAmountPages === 'number' ? branch.dailyAmountPages : 1.0;
@@ -675,6 +719,10 @@ export const MonthlyPlansView: React.FC = () => {
                 <Lock className="w-3 h-3" />
                 <span>معطّل لهذا الشهر</span>
               </span>
+            ) : isFreeMemorizationBranch ? (
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
+                الحفظ الحر: رصد تراكمي مفتوح حسب استطاعة الطالبة 🌟
+              </span>
             ) : (
               <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${badgeBg}`}>
                 مفعّل ✅
@@ -683,8 +731,23 @@ export const MonthlyPlansView: React.FC = () => {
             <span className="text-[11px] text-stone-400 hidden md:inline">• {subtitle}</span>
           </div>
 
-          {/* مفتاح التفعيل / التعطيل التفاعلي + زر تحويل لمسار القاعدة النورانية للقسم الثاني */}
+          {/* مفتاح التفعيل / التعطيل التفاعلي + زر الحفظ الحر للقسم الأول + زر تحويل لمسار القاعدة النورانية للقسم الثاني */}
           <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+            {branchKey === 'newMemorization' && (
+              <button
+                type="button"
+                onClick={handleToggleFreeMemorizationMode}
+                className={`px-3 py-1.5 rounded-2xl text-xs font-bold border transition cursor-pointer active:scale-95 flex items-center gap-1.5 ${
+                  isFreeMemorizationBranch
+                    ? 'bg-[#8E5364] text-white border-[#8E5364] shadow-2xs ring-2 ring-[#8E5364]/20'
+                    : 'bg-[#FAF6F2] text-stone-700 border-[#E2D5CC] hover:border-[#8E5364] hover:text-[#8E5364]'
+                }`}
+                title="تفعيل أو إلغاء الحفظ الحر (حسب الاستطاعة) مع بقاء الطالبة في حلقتها الحالية دون سقف صفحات شهري أو قيد يومي"
+              >
+                <span>{isFreeMemorizationBranch ? '🔓 الحفظ الحر (حسب الاستطاعة) — مفعّل ✓' : '🔓 الحفظ الحر (حسب الاستطاعة)'}</span>
+              </button>
+            )}
+
             {branchKey === 'minorRevision' && (
               <button
                 type="button"
@@ -901,103 +964,125 @@ export const MonthlyPlansView: React.FC = () => {
                 </div>
               )}
 
-              {/* الصفحات المستهدفة (يدعم الكسور مثل 4.25، 7.5، 12.75، 23.5) + عداد الأسهم للمقدار اليومي + الإنجاز التلقائي */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    {isNooraniaBranch ? 'إجمالي الدروس / الصفحات المستهدف للشهر' : 'إجمالي الصفحات المستهدف للشهر'}
-                  </label>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="number"
-                      min="0.25"
-                      step="0.25"
-                      disabled={!isEnabled}
-                      value={branch.targetPages}
-                      onChange={e => {
-                        const raw = e.target.value;
-                        const parsed = raw === '' ? 0 : parseFloat(raw);
-                        setStudentPlanForm(prev => ({
-                          ...prev,
-                          [branchKey]: {
-                            ...prev[branchKey],
-                            targetPages: Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
-                          }
-                        }));
-                      }}
-                      placeholder="مثال: 4.25 أو 7.5 أو 12.75"
-                      className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs font-extrabold bg-white disabled:bg-stone-100"
-                    />
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
+              {/* الصفحات المستهدفة + المقدار اليومي + الإنجاز التلقائي (أو وضع الحفظ الحر التراكمي المفتوح) */}
+              {isFreeMemorizationBranch ? (
+                <div className="p-4 rounded-2xl bg-gradient-to-l from-[#FAF0F3] via-amber-50/40 to-[#FAF7F5] border border-[#E2D5CC] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🔓</span>
+                      <span className="text-xs sm:text-sm font-extrabold text-[#744251]">
+                        الحفظ الحر: رصد تراكمي مفتوح حسب استطاعة الطالبة
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-stone-600 leading-relaxed">
+                      تم إلغاء السقف الإلزامي لعدد الصفحات الشهرية وإزالة قيد المقدار اليومي الثابت، مع بقاء الطالبة في حلقتها الحالية وتراكم كل ما تُسمّعه من أرباع وأنصاف وأوجه تلقائياً.
+                    </p>
+                  </div>
+                  <div className="px-4 py-2.5 rounded-2xl bg-white border border-emerald-200 shadow-2xs text-center shrink-0">
+                    <span className="text-[10px] font-bold text-stone-500 block">نوع الخطة: الحفظ الحر</span>
+                    <span className="text-xs sm:text-sm font-black text-emerald-800 block mt-0.5">
+                      إجمالي المنجز: <span className="privacy-score-digit">{donePages}</span> صفحة متقنة 🌟
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">
+                      {isNooraniaBranch ? 'إجمالي الدروس / الصفحات المستهدف للشهر' : 'إجمالي الصفحات المستهدف للشهر'}
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="0.25"
+                        step="0.25"
                         disabled={!isEnabled}
-                        onClick={() => handleStepTargetPages(branchKey, 'up', false)}
-                        className="w-7 h-7 rounded-lg bg-[#FAF6F2] border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
-                        title="زيادة المستهدف الشهري بمقدار ربع وجه (+0.25)"
-                      >
-                        <ChevronUp className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!isEnabled || (Number(branch.targetPages) || 0) <= 0.25}
-                        onClick={() => handleStepTargetPages(branchKey, 'down', false)}
-                        className="w-7 h-7 rounded-lg bg-[#FAF6F2] border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
-                        title="إنقاص المستهدف الشهري بمقدار ربع وجه (-0.25)"
-                      >
-                        <ChevronDown className="w-4 h-4" />
-                      </button>
+                        value={branch.targetPages}
+                        onChange={e => {
+                          const raw = e.target.value;
+                          const parsed = raw === '' ? 0 : parseFloat(raw);
+                          setStudentPlanForm(prev => ({
+                            ...prev,
+                            [branchKey]: {
+                              ...prev[branchKey],
+                              targetPages: Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
+                            }
+                          }));
+                        }}
+                        placeholder="مثال: 4.25 أو 7.5 أو 12.75"
+                        className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs font-extrabold bg-white disabled:bg-stone-100"
+                      />
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          disabled={!isEnabled}
+                          onClick={() => handleStepTargetPages(branchKey, 'up', false)}
+                          className="w-7 h-7 rounded-lg bg-[#FAF6F2] border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                          title="زيادة المستهدف الشهري بمقدار ربع وجه (+0.25)"
+                        >
+                          <ChevronUp className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!isEnabled || (Number(branch.targetPages) || 0) <= 0.25}
+                          onClick={() => handleStepTargetPages(branchKey, 'down', false)}
+                          className="w-7 h-7 rounded-lg bg-[#FAF6F2] border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                          title="إنقاص المستهدف الشهري بمقدار ربع وجه (-0.25)"
+                        >
+                          <ChevronDown className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* عداد الأسهم الذكي (▲ / ▼) للمقدار المطلوب يومياً بمضاعفات 0.25 */}
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">
+                      المقدار المطلوب يومياً {isNooraniaBranch ? '(بمضاعفات 0.25 ربع درس/صفحة)' : '(بمضاعفات 0.25 ربع وجه)'}
+                    </label>
+                    <div className="flex items-center justify-between bg-[#FAF6F2] border border-[#E2D5CC] rounded-xl px-3 py-1.5">
+                      <span className="text-xs font-extrabold text-stone-900">
+                        {formatDailyStepLabel(currentStepVal, isNewMem, isNooraniaBranch)}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={!isEnabled || isAtMax}
+                          onClick={() => handleStepDailyAmount(branchKey, 'up')}
+                          className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                          title="زيادة المقدار اليومي بربع وجه (+0.25 ▲)"
+                        >
+                          <ChevronUp className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!isEnabled || isAtMin}
+                          onClick={() => handleStepDailyAmount(branchKey, 'down')}
+                          className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                          title="إنقاص المقدار اليومي بربع وجه (-0.25 ▼)"
+                        >
+                          <ChevronDown className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* الصفحات المنجزة تلقائياً من سجل التسميع */}
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1">
+                      {isNooraniaBranch ? 'المنجز الفعلي (تلقائياً من سجل القاعدة النورانية)' : 'الصفحات المنجزة (تلقائياً من سجل التسميع)'}
+                    </label>
+                    <div className="px-3 py-2 rounded-xl bg-emerald-50/70 border border-emerald-200/80 flex items-center justify-between">
+                      <span className="text-xs font-extrabold text-emerald-900">
+                        <span className="privacy-score-digit">{donePages}</span> من <span className="privacy-score-digit">{targetPages}</span> {isNooraniaBranch ? 'درس / صفحة' : 'صفحة'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
+                        {percent}%
+                      </span>
                     </div>
                   </div>
                 </div>
-
-                {/* عداد الأسهم الذكي (▲ / ▼) للمقدار المطلوب يومياً بمضاعفات 0.25 */}
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    المقدار المطلوب يومياً {isNooraniaBranch ? '(بمضاعفات 0.25 ربع درس/صفحة)' : '(بمضاعفات 0.25 ربع وجه)'}
-                  </label>
-                  <div className="flex items-center justify-between bg-[#FAF6F2] border border-[#E2D5CC] rounded-xl px-3 py-1.5">
-                    <span className="text-xs font-extrabold text-stone-900">
-                      {formatDailyStepLabel(currentStepVal, isNewMem, isNooraniaBranch)}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        disabled={!isEnabled || isAtMax}
-                        onClick={() => handleStepDailyAmount(branchKey, 'up')}
-                        className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
-                        title="زيادة المقدار اليومي بربع وجه (+0.25 ▲)"
-                      >
-                        <ChevronUp className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!isEnabled || isAtMin}
-                        onClick={() => handleStepDailyAmount(branchKey, 'down')}
-                        className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
-                        title="إنقاص المقدار اليومي بربع وجه (-0.25 ▼)"
-                      >
-                        <ChevronDown className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* الصفحات المنجزة تلقائياً من سجل التسميع */}
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    {isNooraniaBranch ? 'المنجز الفعلي (تلقائياً من سجل القاعدة النورانية)' : 'الصفحات المنجزة (تلقائياً من سجل التسميع)'}
-                  </label>
-                  <div className="px-3 py-2 rounded-xl bg-emerald-50/70 border border-emerald-200/80 flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-emerald-900">
-                      <span className="privacy-score-digit">{donePages}</span> من <span className="privacy-score-digit">{targetPages}</span> {isNooraniaBranch ? 'درس / صفحة' : 'صفحة'}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
-                      {percent}%
-                    </span>
-                  </div>
-                </div>
-              </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-stone-700 mb-1">ملاحظات المعلمة على هذا القسم</label>
@@ -1021,95 +1106,128 @@ export const MonthlyPlansView: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2]">
-                  <span className="text-stone-400 block text-[11px]">
-                    {isNooraniaBranch ? 'مقرر دروس القاعدة النورانية والتهجي:' : 'نطاق السور والآيات:'}
-                  </span>
-                  <span className="font-bold text-stone-800 block mt-0.5">
-                    {isNooraniaBranch
-                      ? formatNooraniaRangeLabel(branch.fromLesson, branch.toLesson, branch.customLessonText)
-                      : `من سورة ${getSurahByNumber(branch.fromSurah)?.name} (آية ${branch.fromAyah}) إلى سورة ${getSurahByNumber(branch.toSurah)?.name} (آية ${branch.toAyah})`}
-                  </span>
-                </div>
-
-                {/* المقدار المطلوب يومياً مع أزرار الأسهم المباشرة (▲ / ▼) بمضاعفات 0.25 */}
-                <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2] flex items-center justify-between gap-2">
-                  <div>
-                    <span className="text-stone-400 block text-[11px]">المقدار المطلوب يومياً:</span>
-                    <span className="font-extrabold text-stone-900 block mt-0.5">
-                      {formatDailyStepLabel(currentStepVal, isNewMem, isNooraniaBranch)}
+              {isFreeMemorizationBranch ? (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2]">
+                    <span className="text-stone-400 block text-[11px]">نطاق السور والآيات (نقطة الانطلاق):</span>
+                    <span className="font-bold text-stone-800 block mt-0.5">
+                      من سورة {getSurahByNumber(branch.fromSurah)?.name} (آية {branch.fromAyah}) إلى سورة {getSurahByNumber(branch.toSurah)?.name} (آية {branch.toAyah})
                     </span>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      disabled={!isEnabled || isAtMax}
-                      onClick={() => handleStepDailyAmount(branchKey, 'up')}
-                      className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
-                      title="زيادة المقدار اليومي بربع وجه (+0.25 ▲)"
-                    >
-                      <ChevronUp className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!isEnabled || isAtMin}
-                      onClick={() => handleStepDailyAmount(branchKey, 'down')}
-                      className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
-                      title="إنقاص المقدار اليومي بربع وجه (-0.25 ▼)"
-                    >
-                      <ChevronDown className="w-3.5 h-3.5" />
-                    </button>
+
+                  <div className="p-3 bg-gradient-to-l from-[#FAF0F3] to-[#FAF6F2] rounded-xl border border-[#E2D5CC] flex items-center gap-2.5">
+                    <span className="text-lg shrink-0">🔓</span>
+                    <div>
+                      <span className="text-[#8E5364] font-bold block text-[11px]">نوع الخطة: الحفظ الحر</span>
+                      <span className="font-extrabold text-stone-900 block mt-0.5">
+                        الحفظ الحر: رصد تراكمي مفتوح حسب استطاعة الطالبة
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200/80 flex items-center justify-between gap-2">
+                    <div>
+                      <span className="text-emerald-700 font-bold block text-[11px]">الحصيلة التراكمية للشهر (بدون سقف محدد):</span>
+                      <span className="font-black text-emerald-950 text-xs sm:text-sm block mt-0.5">
+                        إجمالي المنجز: <span className="privacy-score-digit">{donePages}</span> صفحة متقنة 🌟
+                      </span>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold shrink-0">
+                      مفتوح 🔓
+                    </span>
                   </div>
                 </div>
-
-                <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2] flex items-center justify-between gap-2">
-                  <div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                  <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2]">
                     <span className="text-stone-400 block text-[11px]">
-                      {isNooraniaBranch ? 'الدروس / الصفحات المنجزة (من المستهدف):' : 'الصفحات المنجزة (من المستهدف الشهري):'}
+                      {isNooraniaBranch ? 'مقرر دروس القاعدة النورانية والتهجي:' : 'نطاق السور والآيات:'}
                     </span>
-                    <span className="font-extrabold block mt-0.5" style={{ color: accentColor }}>
-                      <span className="privacy-score-digit">{donePages}</span> منجز من أصل <span className="privacy-score-digit">{targetPages}</span> {isNooraniaBranch ? 'درس / صفحة' : 'صفحة'}
+                    <span className="font-bold text-stone-800 block mt-0.5">
+                      {isNooraniaBranch
+                        ? formatNooraniaRangeLabel(branch.fromLesson, branch.toLesson, branch.customLessonText)
+                        : `من سورة ${getSurahByNumber(branch.fromSurah)?.name} (آية ${branch.fromAyah}) إلى سورة ${getSurahByNumber(branch.toSurah)?.name} (آية ${branch.toAyah})`}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      disabled={!isEnabled}
-                      onClick={() => handleStepTargetPages(branchKey, 'up', true)}
-                      className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
-                      title="زيادة إجمالي الصفحات المستهدف للشهر بربع وجه (+0.25 ▲)"
-                    >
-                      <ChevronUp className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!isEnabled || targetPages <= 0.25}
-                      onClick={() => handleStepTargetPages(branchKey, 'down', true)}
-                      className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
-                      title="إنقاص إجمالي الصفحات المستهدف للشهر بربع وجه (-0.25 ▼)"
-                    >
-                      <ChevronDown className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
 
-                <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2]">
-                  <div className="flex items-center justify-between text-[11px] mb-1.5">
-                    <span className="text-stone-400">نسبة الإنجاز التلقائية:</span>
-                    <span className="font-extrabold text-stone-800">{isEnabled ? `${percent}%` : 'معطّل'}</span>
+                  {/* المقدار المطلوب يومياً مع أزرار الأسهم المباشرة (▲ / ▼) بمضاعفات 0.25 */}
+                  <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2] flex items-center justify-between gap-2">
+                    <div>
+                      <span className="text-stone-400 block text-[11px]">المقدار المطلوب يومياً:</span>
+                      <span className="font-extrabold text-stone-900 block mt-0.5">
+                        {formatDailyStepLabel(currentStepVal, isNewMem, isNooraniaBranch)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        disabled={!isEnabled || isAtMax}
+                        onClick={() => handleStepDailyAmount(branchKey, 'up')}
+                        className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                        title="زيادة المقدار اليومي بربع وجه (+0.25 ▲)"
+                      >
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!isEnabled || isAtMin}
+                        onClick={() => handleStepDailyAmount(branchKey, 'down')}
+                        className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                        title="إنقاص المقدار اليومي بربع وجه (-0.25 ▼)"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="w-full bg-stone-200/80 h-2 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-300"
-                      style={{
-                        width: `${isEnabled ? percent : 0}%`,
-                        backgroundColor: accentColor
-                      }}
-                    />
+
+                  <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2] flex items-center justify-between gap-2">
+                    <div>
+                      <span className="text-stone-400 block text-[11px]">
+                        {isNooraniaBranch ? 'الدروس / الصفحات المنجزة (من المستهدف):' : 'الصفحات المنجزة (من المستهدف الشهري):'}
+                      </span>
+                      <span className="font-extrabold block mt-0.5" style={{ color: accentColor }}>
+                        <span className="privacy-score-digit">{donePages}</span> منجز من أصل <span className="privacy-score-digit">{targetPages}</span> {isNooraniaBranch ? 'درس / صفحة' : 'صفحة'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        disabled={!isEnabled}
+                        onClick={() => handleStepTargetPages(branchKey, 'up', true)}
+                        className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                        title="زيادة إجمالي الصفحات المستهدف للشهر بربع وجه (+0.25 ▲)"
+                      >
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!isEnabled || targetPages <= 0.25}
+                        onClick={() => handleStepTargetPages(branchKey, 'down', true)}
+                        className="w-7 h-7 rounded-lg bg-white border border-stone-200 hover:bg-[#8E5364] hover:text-white hover:border-[#8E5364] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center text-stone-700 transition cursor-pointer shadow-2xs"
+                        title="إنقاص إجمالي الصفحات المستهدف للشهر بربع وجه (-0.25 ▼)"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2]">
+                    <div className="flex items-center justify-between text-[11px] mb-1.5">
+                      <span className="text-stone-400">نسبة الإنجاز التلقائية:</span>
+                      <span className="font-extrabold text-stone-800">{isEnabled ? `${percent}%` : 'معطّل'}</span>
+                    </div>
+                    <div className="w-full bg-stone-200/80 h-2 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-300"
+                        style={{
+                          width: `${isEnabled ? percent : 0}%`,
+                          backgroundColor: accentColor
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>
@@ -1343,7 +1461,15 @@ export const MonthlyPlansView: React.FC = () => {
               </span>
             </div>
             <span className="text-[#8E5364] font-extrabold">
-              <span className="privacy-score-digit">{totalEnabledDone}</span> من أصل <span className="privacy-score-digit">{totalEnabledTarget}</span> صفحة منجزة ({overallPercent}%)
+              {isFreeMem ? (
+                <span>
+                  إجمالي المنجز الكلي: <span className="privacy-score-digit">{totalEnabledDone}</span> صفحة متقنة 🌟 ({overallPercent}%)
+                </span>
+              ) : (
+                <span>
+                  <span className="privacy-score-digit">{totalEnabledDone}</span> من أصل <span className="privacy-score-digit">{totalEnabledTarget}</span> صفحة منجزة ({overallPercent}%)
+                </span>
+              )}
             </span>
           </div>
           <div className="w-full bg-[#EFEAE5] h-3 rounded-full overflow-hidden">
@@ -1354,9 +1480,15 @@ export const MonthlyPlansView: React.FC = () => {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
             <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white border border-stone-200/70">
-              <span className="text-stone-600 font-bold">١. الحفظ الجديد:</span>
+              <span className="text-stone-600 font-bold">
+                {isFreeMem ? '١. الحفظ الحر:' : '١. الحفظ الجديد:'}
+              </span>
               <span className="font-extrabold text-[#8E5364]">
-                {isNewEnabled ? `${newDone} / ${newTarget} وجه (${newPercent}%)` : 'معطّل لهذا الشهر'}
+                {!isNewEnabled
+                  ? 'معطّل لهذا الشهر'
+                  : isFreeMem
+                    ? `إجمالي المنجز: ${newDone} صفحة متقنة 🌟`
+                    : `${newDone} / ${newTarget} وجه (${newPercent}%)`}
               </span>
             </div>
             <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white border border-stone-200/70">
@@ -1378,11 +1510,13 @@ export const MonthlyPlansView: React.FC = () => {
           </div>
         </div>
 
-        {/* 1. خطة ومقرر الحفظ الجديد */}
+        {/* 1. خطة ومقرر الحفظ الجديد أو الحفظ الحر */}
         {renderPlanBranchCard(
           'newMemorization',
-          '١. خطة ومقرر الحفظ الجديد',
-          'بمضاعفات ربع وجه (0.25) يومياً — يُجمع الإنجاز تلقائياً من سجل التسميع',
+          isFreeMem ? '١. الحفظ الحر (حسب الاستطاعة)' : '١. خطة ومقرر الحفظ الجديد',
+          isFreeMem
+            ? 'الحفظ الحر: رصد تراكمي مفتوح حسب استطاعة الطالبة'
+            : 'بمضاعفات ربع وجه (0.25) يومياً — يُجمع الإنجاز تلقائياً من سجل التسميع',
           '#8E5364',
           'bg-[#FAF0F3] text-[#8E5364]',
           newDone,

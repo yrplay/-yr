@@ -187,6 +187,7 @@ export interface MonthlyPlan {
 
 export interface PlanBranchConfig {
   enabled?: boolean;
+  isFreeMemorization?: boolean;
   isNoorania?: boolean;
   fromLesson?: number;
   toLesson?: number;

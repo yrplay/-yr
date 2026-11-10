@@ -3963,6 +3963,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     const isNewMemEnabled = sPlan ? sPlan.newMemorization?.enabled !== false : true;
+    const isFreeMemorization = Boolean(sPlan?.newMemorization?.isFreeMemorization);
 
     const memorizationItem = gradingConfig?.items.find(i => i.category === 'memorization');
     const memorizationMax = memorizationItem?.maxScore ?? 25;
@@ -3978,7 +3979,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const preparationRatePercent = isNewMemEnabled ? Math.min(100, Math.max(0, Math.round(avgConditionsOutOf10 * 10))) : 100;
     const conditionsFulfilledScore = hasConditionsData ? (avgConditionsOutOf10 / 10) * conditionsMax : 0;
 
-    const newMemorizationPagesTarget = !isNewMemEnabled
+    const newMemorizationPagesTarget = !isNewMemEnabled || isFreeMemorization
       ? 0
       : (typeof sPlan?.newMemorization?.targetPages === 'number' && sPlan.newMemorization.targetPages > 0)
         ? sPlan.newMemorization.targetPages
