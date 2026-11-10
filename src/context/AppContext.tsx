@@ -2233,7 +2233,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const d = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
     if (Number.isNaN(d.getTime())) return true;
     const day = d.getDay();
-    return day >= 0 && day <= 3; // Sunday (0) through Wednesday (3)
+    return day >= 0 && day <= 4; // Sunday (0) through Thursday (4)
   };
 
   const upsertAttendanceForDates = (
@@ -4038,7 +4038,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const matchedScale = scale.find(s => finalPercentage >= s.minPercentage) || scale[scale.length - 1];
 
-    // حساب الغياب الأسبوعي (من الأحد إلى الأربعاء) وتأهيل الطالبة لنجمة الانضباط الأسبوعي 🌟
+    // حساب الغياب الأسبوعي (من الأحد إلى الخميس) وتأهيل الطالبة للقب متألقة الأسبوع 🌟 (صفر غياب فقط)
     const weekMap = new Map<string, AttendanceRecord[]>();
     effectiveAttendance.forEach(rec => {
       if (!rec.date) return;
@@ -4049,42 +4049,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     const targetWeekSun = getWeekSundayISO(selectedDate || getTodayISO());
-    let activeWeekRecords = (weekMap.get(targetWeekSun) || []).filter(r => isSunThroughWed(r.date));
-    if (activeWeekRecords.length === 0 && weekMap.size > 0) {
-      const sortedWeeks = Array.from(weekMap.keys()).sort();
-      const latestWeek = sortedWeeks[sortedWeeks.length - 1];
-      activeWeekRecords = (weekMap.get(latestWeek) || []).filter(r => isSunThroughWed(r.date));
-    }
+    const activeWeekRecords = (weekMap.get(targetWeekSun) || []).filter(r => isSunThroughWed(r.date));
 
     const activeWeekAbsences = activeWeekRecords.filter(
       r => r.status === 'absent_unexcused' || r.status === 'absent_excused'
     ).length;
 
-    // إذا لم توجد سجلات في الأسبوع المحدد ولكن توجد غيابات مسجلة في الدورة الحالية من الأحد إلى الأربعاء
-    const allSunWedAbsences = effectiveAttendance.filter(
-      r => isSunThroughWed(r.date) && (r.status === 'absent_unexcused' || r.status === 'absent_excused')
-    ).length;
+    const weeklyAbsenceCount = activeWeekAbsences;
 
-    const weeklyAbsenceCount = weekMap.has(targetWeekSun)
-      ? activeWeekAbsences
-      : (activeWeekAbsences > 0 ? activeWeekAbsences : allSunWedAbsences);
-
-    // Check if teacher explicitly toggled weeklyStarOverride on the attendance table or challenge submission
-    const targetWeekAllRecords = weekMap.get(targetWeekSun) || [];
-    const attStarOverrideRec = [...targetWeekAllRecords, ...sAttendance]
-      .filter(r => r.weeklyStarOverride !== undefined)
-      .sort((a, b) => (Date.parse(b.recordedAt || '') || 0) - (Date.parse(a.recordedAt || '') || 0))[0];
-
-    const latestSubWithStarPref = [...sChallenges]
-      .filter(c => c.weeklyStarAwarded !== undefined)
-      .sort((a, b) => (Date.parse(b.updatedAt || b.evaluatedAt || '') || 0) - (Date.parse(a.updatedAt || a.evaluatedAt || '') || 0))[0];
-
+    // معيار الانضباط الكامل فقط: متألقة الأسبوع = صفر غياب (بدون عذر أو بعذر) خلال الأسبوع المحدد
     const autoQualifiesWeeklyStar = weeklyAbsenceCount === 0;
-    const hasWeeklyStar = attStarOverrideRec?.weeklyStarOverride !== undefined
-      ? attStarOverrideRec.weeklyStarOverride
-      : latestSubWithStarPref?.weeklyStarAwarded !== undefined
-        ? latestSubWithStarPref.weeklyStarAwarded
-        : autoQualifiesWeeklyStar;
+    const hasWeeklyStar = autoQualifiesWeeklyStar;
 
     // حساب إجمالي نجوم الانضباط الأسبوعية خلال الشهر (٤ أسابيع دراسية في الخطة الشهرية)
     const totalActiveWeeksCount = 4;
@@ -4102,14 +4077,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       weeksWithSunWedAbsence = Math.min(totalActiveWeeksCount, totalAbsencesMonth);
     }
 
-    let weeklyStarsCount = Math.max(0, totalActiveWeeksCount - weeksWithSunWedAbsence);
-    // Adjust if teacher explicitly overrode the weekly star
-    if (hasWeeklyStar === false && autoQualifiesWeeklyStar) {
-      weeklyStarsCount = Math.max(0, weeklyStarsCount - 1);
-    } else if (hasWeeklyStar === true && !autoQualifiesWeeklyStar) {
-      weeklyStarsCount = Math.min(totalActiveWeeksCount, weeklyStarsCount + 1);
-    }
-
+    const weeklyStarsCount = Math.max(0, totalActiveWeeksCount - weeksWithSunWedAbsence);
     const hasFullWeeklyStarsHonor = weeklyStarsCount >= totalActiveWeeksCount && totalAbsencesMonth === 0 && hasWeeklyStar;
 
     return {

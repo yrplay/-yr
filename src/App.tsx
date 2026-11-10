@@ -28,6 +28,7 @@ import { UpdateNotification } from './components/UpdateNotification';
 import { isLocalDemoMode } from './demoMode';
 import { hasFullAccess } from './types';
 import { syncInstitutionLogoAsPWAAppIcon } from './services/pwaIconSync';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const VIEW_TYPES: ViewType[] = [
   'dashboard', 'tracks_circles', 'track_detail', 'students', 'subscriptions',
@@ -95,6 +96,8 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  const hasRestoredSessionRef = React.useRef(false);
+
   useEffect(() => {
     let active = true;
     const restoreSession = async () => {
@@ -104,9 +107,10 @@ const AppContent: React.FC = () => {
         const savedUserId = localStorage.getItem('ghaith_active_user_id') || localStorage.getItem('ghaith_current_user_id');
 
         if (isAuth && !isLocked) {
-          if (savedUserId && authDataRef.current.users.length > 0) {
+          if (savedUserId && authDataRef.current.users.length > 0 && !hasRestoredSessionRef.current) {
             const found = authDataRef.current.users.find(u => u.id === savedUserId);
             if (found) {
+              hasRestoredSessionRef.current = true;
               try {
                 await authDataRef.current.switchUser(found.id, true);
               } catch (e) {
@@ -471,8 +475,12 @@ const AppContent: React.FC = () => {
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <ErrorBoundary>
+          <AppContent />
+        </ErrorBoundary>
+      </AppProvider>
+    </ErrorBoundary>
   );
 }
