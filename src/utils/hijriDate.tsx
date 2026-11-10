@@ -4,21 +4,42 @@ import { Calendar, ChevronRight, ChevronLeft } from 'lucide-react';
 export const HIJRI_LOCALE = 'ar-SA-u-ca-islamic-umalqura';
 
 export const HIJRI_MONTHS = [
-  { number: 1, name: 'المحرم' },
-  { number: 2, name: 'صفر' },
-  { number: 3, name: 'ربيع الأول' },
-  { number: 4, name: 'ربيع الآخر' },
-  { number: 5, name: 'جمادى الأولى' },
-  { number: 6, name: 'جمادى الآخرة' },
-  { number: 7, name: 'رجب' },
-  { number: 8, name: 'شعبان' },
-  { number: 9, name: 'رمضان' },
-  { number: 10, name: 'شوال' },
-  { number: 11, name: 'ذو القعدة' },
-  { number: 12, name: 'ذو الحجة' }
-];
+  'المحرم',
+  'صفر',
+  'ربيع الأول',
+  'ربيع الآخر',
+  'جمادى الأولى',
+  'جمادى الآخرة',
+  'رجب',
+  'شعبان',
+  'رمضان',
+  'شوال',
+  'ذو القعدة',
+  'ذو الحجة'
+] as const;
 
-export const HIJRI_YEARS = Array.from({ length: 16 }, (_, i) => 1440 + i); // 1440 to 1455
+export const HIJRI_YEARS = Array.from({ length: 16 }, (_, idx) => 1440 + idx); // 1440 هـ إلى 1455 هـ
+
+export const parseHijriJoinDate = (input?: string): { year: number; month: number; day: number } => {
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    const directHijriMatch = trimmed.match(/^(14\d{2})-(\d{1,2})-(\d{1,2})$/);
+    if (directHijriMatch) {
+      const y = Math.min(1455, Math.max(1440, Number(directHijriMatch[1]) || 1448));
+      const m = Math.min(12, Math.max(1, Number(directHijriMatch[2]) || 1));
+      const d = Math.min(30, Math.max(1, Number(directHijriMatch[3]) || 1));
+      return { year: y, month: m, day: d };
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const parts = getHijriParts(trimmed);
+      const y = parts.year >= 1440 && parts.year <= 1455 ? parts.year : 1448;
+      const m = Math.min(12, Math.max(1, parts.month || 1));
+      const d = Math.min(30, Math.max(1, parts.day || 1));
+      return { year: y, month: m, day: d };
+    }
+  }
+  return { year: 1448, month: 1, day: 1 };
+};
 
 const parseDateInput = (input?: string | Date | number): Date | null => {
   if (!input) return null;
@@ -49,26 +70,20 @@ export const formatHijriDate = (
   options?: { includeWeekday?: boolean; short?: boolean }
 ): string => {
   if (!input) return '—';
-  const str = String(input).trim();
-  // If already a formatted Hijri string (contains Arabic letters and no ISO pattern), return as is
-  if (!/^\d{4}-\d{2}-\d{2}/.test(str) && /[\u0600-\u06FF]/.test(str)) {
-    return str;
-  }
-
-  // Handle pure Hijri YYYY-MM-DD string (where YYYY is between 1300 and 1600 e.g. 1440-1455)
-  const hijriIsoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (hijriIsoMatch) {
-    const y = Number(hijriIsoMatch[1]);
-    const m = Number(hijriIsoMatch[2]);
-    const d = Number(hijriIsoMatch[3]);
-    if (y >= 1300 && y <= 1600) {
-      const mon = HIJRI_MONTHS.find(monItem => monItem.number === m);
-      const monName = mon ? mon.name : `شهر ${m}`;
-      const toAr = (n: number) => n.toLocaleString('ar-SA');
-      return `${toAr(d)} ${monName} ${toAr(y)} هـ`;
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    const directHijriMatch = trimmed.match(/^(14\d{2})-(\d{1,2})-(\d{1,2})$/);
+    if (directHijriMatch) {
+      const y = Number(directHijriMatch[1]);
+      const m = Math.min(12, Math.max(1, Number(directHijriMatch[2]) || 1));
+      const d = Math.min(30, Math.max(1, Number(directHijriMatch[3]) || 1));
+      return `${d} ${HIJRI_MONTHS[m - 1]} ${y} هـ`;
+    }
+    // If already a formatted Hijri string (contains Arabic letters and no ISO pattern), return as is
+    if (!/^\d{4}-\d{2}-\d{2}/.test(trimmed) && /[\u0600-\u06FF]/.test(trimmed)) {
+      return trimmed;
     }
   }
-
   const date = parseDateInput(input);
   if (!date) return String(input);
 
@@ -179,69 +194,6 @@ export const getHijriParts = (input?: string | Date | number): {
       weekLabel: 'الأسبوع الأول'
     };
   }
-};
-
-/**
- * Parses any date (Hijri YYYY-MM-DD, Gregorian ISO, or formatted Arabic string) into Hijri year, month, day
- */
-export const parseHijriDateParts = (input?: string | Date | number): { year: number; month: number; day: number } => {
-  if (!input) {
-    return { year: 1448, month: 1, day: 1 };
-  }
-  const str = String(input).trim();
-  const hijriIsoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (hijriIsoMatch) {
-    const y = Number(hijriIsoMatch[1]);
-    const m = Number(hijriIsoMatch[2]);
-    const d = Number(hijriIsoMatch[3]);
-    if (y >= 1300 && y <= 1600) {
-      return {
-        year: y,
-        month: Math.min(12, Math.max(1, m)),
-        day: Math.min(30, Math.max(1, d))
-      };
-    }
-  }
-
-  // If text contains arabic month name and hijri year
-  const normalized = str.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
-  const yearMatch = normalized.match(/(14\d{2})/);
-  const dayMatch = normalized.match(/^(\d{1,2})[\s/]|[\s/](\d{1,2})[\s/]/);
-  let foundMonth = 1;
-  HIJRI_MONTHS.forEach(m => {
-    if (str.includes(m.name)) {
-      foundMonth = m.number;
-    }
-  });
-  if (yearMatch) {
-    const y = Number(yearMatch[1]);
-    const d = dayMatch ? Number(dayMatch[1] || dayMatch[2]) : 1;
-    return {
-      year: y,
-      month: foundMonth,
-      day: Math.min(30, Math.max(1, d))
-    };
-  }
-
-  try {
-    const parts = getHijriParts(input);
-    return {
-      year: parts.year || 1448,
-      month: parts.month || 1,
-      day: parts.day || 1
-    };
-  } catch {
-    return { year: 1448, month: 1, day: 1 };
-  }
-};
-
-/**
- * Returns a standardized Hijri ISO format YYYY-MM-DD
- */
-export const formatHijriFromParts = (year: number, month: number, day: number): string => {
-  const m = String(month).padStart(2, '0');
-  const d = String(day).padStart(2, '0');
-  return `${year}-${m}-${d}`;
 };
 
 /**
@@ -489,3 +441,100 @@ export const HijriDateNavigationBar: React.FC<HijriDateNavigationBarProps> = ({
     </div>
   );
 };
+
+interface HijriJoinDateSelectorProps {
+  value?: string;
+  onChange: (hijriIsoDate: string) => void;
+  label?: string;
+}
+
+/**
+ * Flexible Hijri Join Date Selector with 3 dropdowns:
+ * - Day (1 to 30)
+ * - Hijri Month (1 to 12: المحرم to ذو الحجة)
+ * - Hijri Year (1440 هـ to 1455 هـ, default 1448 هـ)
+ */
+export const HijriJoinDateSelector: React.FC<HijriJoinDateSelectorProps> = ({
+  value,
+  onChange,
+  label
+}) => {
+  const parsed = parseHijriJoinDate(value);
+
+  const handlePartChange = (nextYear: number, nextMonth: number, nextDay: number) => {
+    const formatted = `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(nextDay).padStart(2, '0')}`;
+    onChange(formatted);
+  };
+
+  return (
+    <div dir="rtl" className="space-y-1.5">
+      {label && (
+        <label className="block text-xs font-bold text-stone-700 dark:text-stone-300">
+          {label}
+        </label>
+      )}
+      <div className="grid grid-cols-3 gap-2 bg-[#FAF7F5] dark:bg-stone-800 p-2 rounded-2xl border border-[#E2D5CC] dark:border-stone-700">
+        {/* اليوم */}
+        <div>
+          <label className="block text-[10px] font-bold text-stone-500 dark:text-stone-400 mb-1">
+            اليوم
+          </label>
+          <select
+            value={parsed.day}
+            onChange={e => handlePartChange(parsed.year, parsed.month, Number(e.target.value))}
+            className="w-full px-2.5 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-xs font-bold text-stone-800 dark:text-stone-100 focus:outline-none focus:border-[#8E5364] cursor-pointer"
+          >
+            {Array.from({ length: 30 }, (_, i) => i + 1).map(d => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* الشهر الهجري */}
+        <div>
+          <label className="block text-[10px] font-bold text-stone-500 dark:text-stone-400 mb-1">
+            الشهر الهجري
+          </label>
+          <select
+            value={parsed.month}
+            onChange={e => handlePartChange(parsed.year, Number(e.target.value), parsed.day)}
+            className="w-full px-2.5 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-xs font-bold text-stone-800 dark:text-stone-100 focus:outline-none focus:border-[#8E5364] cursor-pointer"
+          >
+            {HIJRI_MONTHS.map((mName, idx) => (
+              <option key={mName} value={idx + 1}>
+                {mName}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* السنة الهجرية */}
+        <div>
+          <label className="block text-[10px] font-bold text-stone-500 dark:text-stone-400 mb-1">
+            السنة الهجرية
+          </label>
+          <select
+            value={parsed.year}
+            onChange={e => handlePartChange(Number(e.target.value), parsed.month, parsed.day)}
+            className="w-full px-2.5 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-xs font-bold text-stone-800 dark:text-stone-100 focus:outline-none focus:border-[#8E5364] cursor-pointer"
+          >
+            {HIJRI_YEARS.map(yr => (
+              <option key={yr} value={yr}>
+                {yr} هـ
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="flex items-center justify-between px-1 text-[11px] text-stone-500 dark:text-stone-400">
+        <span>التاريخ المختار:</span>
+        <span className="font-bold text-[#8E5364] dark:text-[#E8BDC8]">
+          {parsed.day} {HIJRI_MONTHS[parsed.month - 1]} {parsed.year} هـ
+        </span>
+      </div>
+    </div>
+  );
+};
+

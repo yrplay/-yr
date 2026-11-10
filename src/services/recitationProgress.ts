@@ -15,14 +15,35 @@ export function summarizeDailyPageProgress(records: readonly DailyRecord[]): Dai
   return records.reduce<DailyPageProgress>((totals, record) => {
     if (record.status !== 'completed') return totals;
 
-    const newPages = nonNegativeNumber(record.newMemorizationPages);
-    const minorPages = nonNegativeNumber(
-      record.minorRevisionPortion?.pagesCount ?? (record as any).minorPages
-    );
-    const tamkeenPages = nonNegativeNumber(
-      record.tamkeenRevisionPortion?.pagesCount ?? (record as any).majorPages
-    );
-    const recordedRevisionPages = nonNegativeNumber(record.revisionPages);
+    const newOutcome = record.newOutcome;
+    const minorOutcome = record.minorOutcome;
+    const majorOutcome = record.majorOutcome;
+
+    const newPages =
+      newOutcome === 'redo' || newOutcome === 'excused' || record.isRedoSession
+        ? 0
+        : nonNegativeNumber(record.newMemorizationPages);
+
+    const minorPages =
+      minorOutcome === 'redo' || minorOutcome === 'excused'
+        ? 0
+        : nonNegativeNumber(
+            record.minorRevisionPortion?.pagesCount ?? (record as any).minorPages
+          );
+
+    const tamkeenPages =
+      majorOutcome === 'redo' || majorOutcome === 'excused'
+        ? 0
+        : nonNegativeNumber(
+            record.tamkeenRevisionPortion?.pagesCount ?? (record as any).majorPages
+          );
+
+    const recordedRevisionPages =
+      (minorOutcome === 'redo' || minorOutcome === 'excused') &&
+      (majorOutcome === 'redo' || majorOutcome === 'excused')
+        ? 0
+        : nonNegativeNumber(record.revisionPages);
+
     const revisionTotal = Math.max(recordedRevisionPages, minorPages + tamkeenPages);
 
     return {

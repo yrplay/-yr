@@ -7,8 +7,6 @@ import {
   Eye, Edit3, Palette, X, RefreshCw, Upload, Trash2, Printer
 } from 'lucide-react';
 import { OfficialSeal } from '../components/OfficialSeal';
-import { optimizeImageForStorage } from '../utils/imageOptimizer';
-import { syncInstitutionLogoAsPWAAppIcon } from '../services/pwaIconSync';
 
 interface StudentPortfolioViewProps {
   initialStudentId?: string;
@@ -47,7 +45,6 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   const student = availableStudents.find(s => s.id === selectedStudentId) || availableStudents[0] || students[0];
   const circle = circles.find(c => c.id === student?.circleId);
   const track = tracks.find(t => t.id === student?.trackId) || tracks[0];
-  const effectiveLogoUrl = settings.logoUrl || track?.logoUrl || '';
   const score = allStudentScores[student?.id];
 
   // Specific student records
@@ -80,73 +77,40 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
 
   const totalAbsentDays = (score?.absentUnexcusedCount || 0) + (score?.absentExcusedCount || 0);
 
-  // سجلات الطالبة اليومية وحسابات درجات الحفظ من 10 (تصحيح خطأ 23.8 / 10)
-  const studentRecords = (dailyRecords || []).filter(r => r.studentId === student?.id);
-  const memScore = score?.memorizationScore ?? 25;
-  const memMax = score?.memorizationMax || 25;
-  const normMemScore = Number(((memScore / memMax) * 10).toFixed(1));
-
-  // التحقق من إتمام خطة الحفظ الشهري أو وجود جلسات تثبيت وسرد
-  const hasConsolidation = studentRecords.some((r: any) => r.isConsolidationSession);
-  const isPlanCompleted = doneNewPages >= targetNewPages && targetNewPages > 0;
-
-  // حساب معدل الالتزام بمعايير التحضير والإتقان (درجة من 10 ونسبة مئوية ووسام تقييمي)
-  const preparationMetrics = React.useMemo(() => {
-    if (studentRecords.length === 0) {
-      return {
-        averageScore: 10,
-        percentage: 100,
-        count: 0,
+  // حساب معدل الالتزام بمعايير التحضير والإتقان (من 10 ونسبة مئوية %)
+  const studentDailyCompleted = dailyRecords.filter(d => d.studentId === student?.id && d.status === 'completed');
+  const prepAvgOutOf10 = studentDailyCompleted.length > 0
+    ? Number((score?.preparationAvgOutOf10 ?? score?.conditionsFulfilledScore ?? 10).toFixed(1))
+    : 10;
+  const prepRatePercent = studentDailyCompleted.length > 0
+    ? Math.min(100, Math.max(0, score?.preparationRatePercent ?? Math.round(prepAvgOutOf10 * 10)))
+    : 100;
+  const prepEvaluation = prepAvgOutOf10 >= 9
+    ? {
         badgeText: 'ممتازة وملتزمة بالتحضير المتقن ⭐',
-        badgeColor: 'emerald' as const,
-        badgeBg: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-      };
-    }
-
-    const scores = studentRecords.map(r => {
-      if (typeof r.preparationScore === 'number') {
-        return r.preparationScore;
+        badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+        barColor: '#2D5A43',
+        htmlColor: '#047857',
+        htmlBg: '#ecfdf5',
+        htmlBorder: '#a7f3d0'
       }
-      const listen = r.criteriaListenCount ?? (r.conditions?.listenedToReader ? 5 : 0);
-      const recite = r.criteriaReciteCount ?? (r.conditions?.recitedLooking ? 5 : 0);
-      const repeat = r.criteriaRepeatCount ?? (r.conditions?.masteryRepetition ? 10 : 0);
-      const listenPts = Math.min(3, (listen / 5) * 3);
-      const recitePts = Math.min(3, (recite / 5) * 3);
-      const repeatPts = Math.min(4, (repeat / 10) * 4);
-      return Math.min(10, Math.max(0, Math.round((listenPts + recitePts + repeatPts) * 10) / 10));
-    });
-
-    const sum = scores.reduce((acc, s) => acc + s, 0);
-    const avg = Math.round((sum / scores.length) * 10) / 10;
-    const pct = Math.min(100, Math.round((avg / 10) * 100));
-
-    let badgeText = '';
-    let badgeColor: 'emerald' | 'amber' | 'rose' = 'emerald';
-    let badgeBg = '';
-
-    if (avg >= 9) {
-      badgeText = 'ممتازة وملتزمة بالتحضير المتقن ⭐';
-      badgeColor = 'emerald';
-      badgeBg = 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
-    } else if (avg >= 7) {
-      badgeText = 'جيدة جداً - تحتاج زيادة التكرار 📈';
-      badgeColor = 'amber';
-      badgeBg = 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800';
-    } else {
-      badgeText = 'دون المستوى المطلوب - يلزم العناية بالاستماع والتكرار ⚠️';
-      badgeColor = 'rose';
-      badgeBg = 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800';
-    }
-
-    return {
-      averageScore: avg,
-      percentage: pct,
-      count: scores.length,
-      badgeText,
-      badgeColor,
-      badgeBg
-    };
-  }, [dailyRecords, student?.id]);
+    : prepAvgOutOf10 >= 7
+    ? {
+        badgeText: 'جيدة جداً - تحتاج زيادة التكرار 📈',
+        badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
+        barColor: '#D97706',
+        htmlColor: '#b45309',
+        htmlBg: '#fffbeb',
+        htmlBorder: '#fde68a'
+      }
+    : {
+        badgeText: 'دون المستوى المطلوب - يلزم العناية بالاستماع والتكرار ⚠️',
+        badgeClass: 'bg-rose-50 text-rose-800 border-rose-200',
+        barColor: '#E11D48',
+        htmlColor: '#be123c',
+        htmlBg: '#fff1f2',
+        htmlBorder: '#fecdd3'
+      };
 
   // Dynamic Free Color Customization state
   const [customPrimaryColor, setCustomPrimaryColor] = useState<string>(settings.primaryColor || '#8E5364');
@@ -205,36 +169,21 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
     { name: 'العنابي الداكن', primary: '#831843', secondary: '#1E293B' }
   ];
 
-  const handleCustomLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCustomSealUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    try {
-      const dataUrl = await optimizeImageForStorage(file, 512, 512);
-      await updateSettings({ logoUrl: dataUrl });
-      syncInstitutionLogoAsPWAAppIcon({ ...settings, logoUrl: dataUrl });
-      showToast('تم حفظ وتحديث شعار المقرأة في الشهادة وتثبيته فوراً 🖼️✨');
-    } catch (err: any) {
-      showToast('تعذر معالجة الشعار: ' + err.message, 'error');
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('حجم صورة الختم يجب أن يكون أقل من 2 ميجابايت', 'error');
+      return;
     }
-  };
-
-  const handleRemoveCustomLogo = async () => {
-    await updateSettings({ logoUrl: '' });
-    syncInstitutionLogoAsPWAAppIcon({ ...settings, logoUrl: '' });
-    showToast('تم إزالة الشعار واستعادة الرمز الافتراضي 📖');
-  };
-
-  const handleCustomSealUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const dataUrl = await optimizeImageForStorage(file, 400, 400);
-      await updateSettings({ sealImageUrl: dataUrl, showOfficialSeal: true });
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const dataUrl = ev.target?.result as string;
+      updateSettings({ sealImageUrl: dataUrl, showOfficialSeal: true });
       setShowSeal(true);
       showToast('تم حفظ وتركيب صورة الختم المخصص بنجاح 💮');
-    } catch (err: any) {
-      showToast('تعذر معالجة الختم: ' + err.message, 'error');
-    }
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleRemoveCustomSeal = () => {
@@ -564,8 +513,8 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   <div class="cert-card">
     <div class="header">
       <div style="display: flex; align-items: center; gap: 16px;">
-        ${effectiveLogoUrl ? `
-          <img src="${effectiveLogoUrl}" alt="شعار مقرأة ${settings.name}" crossorigin="anonymous" style="height: 65px; max-width: 140px; object-fit: contain; border-radius: 12px; background: white; padding: 2px; border: 1px solid #E8DFD8;" />
+        ${settings.logoUrl ? `
+          <img src="${settings.logoUrl}" alt="شعار مقرأة ${settings.name}" style="height: 65px; max-width: 130px; object-fit: contain; border-radius: 12px; background: white; padding: 2px; border: 1px solid #E8DFD8;" />
         ` : `
           <div style="width: 58px; height: 58px; border-radius: 16px; background: ${customPrimaryColor}15; border: 1.5px solid ${customPrimaryColor}35; display: flex; align-items: center; justify-content: center; font-size: 28px;">
             📖
@@ -624,29 +573,11 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         <div style="font-size: 9px; color: #78716c; margin-top: 2px;">المستهدف: ${targetRevPages} ص</div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">معايير التحضير</div>
-        <div class="stat-value" style="color: #047857;">${preparationMetrics.averageScore} / 10</div>
-        <div style="font-size: 9px; color: #78716c; margin-top: 2px;">نسبة ${preparationMetrics.percentage}% (${preparationMetrics.count} جلسات)</div>
-      </div>
-      <div class="stat-box">
         <div class="stat-label">الترتيب في الحلقة</div>
         <div class="stat-value" style="color: ${customPrimaryColor};">المركز ${score?.rankInCircle || 1}</div>
         <div style="font-size: 9px; color: #78716c; margin-top: 2px;">في حلقة ${circle?.name || ''}</div>
       </div>
     </div>
-
-    ${(hasConsolidation || isPlanCompleted) ? `
-      <div style="background: linear-gradient(135deg, #ECFDF5, #F0FDF4); border: 1.5px solid #10B981; border-radius: 12px; padding: 7px 14px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 16px;">⭐</span>
-          <div>
-            <strong style="color: #065F46; font-size: 12px;">أتمت الخطة وتم تثبيت وسرد المقرّر بنجاح ⭐</strong>
-            <span style="font-size: 10.5px; color: #047857; margin-right: 6px;">(إنجاز كامل للحفظ الجديد مع استمرار التثبيت والسرد دون المساس بصفحات المراجعة)</span>
-          </div>
-        </div>
-        <span style="background: #10B981; color: white; padding: 2px 10px; border-radius: 20px; font-size: 10px; font-weight: bold;">خطة مكتملة ومثبتة 🏆</span>
-      </div>
-    ` : ''}
 
     <div class="section-title">تفاصيل الأداء التراكمي المعتمد:</div>
     <table class="table-custom">
@@ -668,8 +599,8 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         <tr>
           <td><strong>الحفظ الجديد</strong></td>
           <td>${targetNewPages} صفحات</td>
-          <td>${doneNewPages} صفحات ${hasConsolidation || isPlanCompleted ? '• تثبيت وسرد ⭐' : ''}</td>
-          <td>${normMemScore} / 10 <span style="font-size: 9.5px; color: #78716c;">(${memScore} / ${memMax} نقطة)</span></td>
+          <td>${doneNewPages} صفحات</td>
+          <td>${score?.memorizationScore || 10} / 10</td>
         </tr>
         <tr>
           <td><strong>المراجعة الصغرى</strong></td>
@@ -682,6 +613,12 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           <td>${targetRevPages} صفحات</td>
           <td>${doneTamkeenPages} صفحات</td>
           <td>متقن بالشروط ✅</td>
+        </tr>
+        <tr>
+          <td><strong>معدل الالتزام بمعايير التحضير والإتقان</strong></td>
+          <td>الاستماع (5) • التلاوة نظراً (5) • التكرار (10)</td>
+          <td><span style="display:inline-block; padding: 2px 8px; border-radius: 10px; background: ${prepEvaluation.htmlBg}; color: ${prepEvaluation.htmlColor}; border: 1px solid ${prepEvaluation.htmlBorder}; font-weight: bold;">${prepEvaluation.badgeText} (${prepRatePercent}%)</span></td>
+          <td><strong>${prepAvgOutOf10} / 10</strong></td>
         </tr>
         ${doneUnclassifiedRevisionPages > 0 ? `<tr><td><strong>مراجعة مسجلة دون تفصيل (سجلات سابقة)</strong></td><td>—</td><td>${doneUnclassifiedRevisionPages} صفحات</td><td>غير مصنفة</td></tr>` : ''}
         <tr>
@@ -701,12 +638,6 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           <td>اختبار تمكيني شامل</td>
           <td>${studentExam ? studentExam.score : 95} درجة</td>
           <td>${studentExam ? studentExam.score : 95} / 100</td>
-        </tr>
-        <tr>
-          <td><strong>معايير التحضير والإتقان ⭐</strong></td>
-          <td>الاستماع (5 مرات) • التلاوة (5 مرات) • التكرار (10 مرات)</td>
-          <td>المعدل: ${preparationMetrics.averageScore} من 10 (${preparationMetrics.percentage}%)</td>
-          <td><span style="font-weight: bold; color: ${preparationMetrics.badgeColor === 'emerald' ? '#047857' : preparationMetrics.badgeColor === 'amber' ? '#b45309' : '#b91c1c'};">${preparationMetrics.badgeText}</span></td>
         </tr>
       </tbody>
     </table>
@@ -778,24 +709,13 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         printWindow.document.close();
         printWindow.focus();
         showToast('جاري فتح نافذة حفظ وتصدير الشهادة كـ PDF... اختر "حفظ بتنسيق PDF" (Save as PDF) 📄', 'success');
-
-        // انتظار اكتمال تحميل صورة الشعار والختم قبل الطباعة
-        const triggerPrint = () => {
+        setTimeout(() => {
           try {
-            printWindow.focus();
             printWindow.print();
           } catch (e) {
             console.log('PDF window print handled', e);
           }
-        };
-
-        if (printWindow.document.readyState === 'complete') {
-          setTimeout(triggerPrint, 350);
-        } else {
-          printWindow.onload = () => setTimeout(triggerPrint, 350);
-          // ضمان تشغيل الطباعة بعد مهلة كافية حتى لو لم يطلق المتصفح حدث onload
-          setTimeout(triggerPrint, 700);
-        }
+        }, 400);
       } else {
         // Fallback: download HTML so user has the certified document
         handleDownloadHtml();
@@ -881,34 +801,20 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         {/* Certificate Frame Pattern Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-[#E8DFD8] pb-6 text-center sm:text-right">
           <div className="flex items-center justify-center sm:justify-start gap-3">
-            <div className="relative group">
-              {effectiveLogoUrl ? (
-                <img
-                  src={effectiveLogoUrl}
-                  alt="شعار المقرأة"
-                  className="w-16 h-16 object-contain rounded-2xl border border-stone-200 p-1 bg-white shadow-2xs"
-                />
-              ) : (
-                <div
-                  className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shadow-2xs"
-                  style={{ backgroundColor: `${customPrimaryColor}15`, border: `1.5px solid ${customPrimaryColor}30` }}
-                >
-                  📖
-                </div>
-              )}
-              <label
-                className="absolute inset-0 bg-black/60 text-white rounded-2xl opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center text-[10px] font-bold cursor-pointer"
-                title="انقري لتغيير أو رفع شعار المقرأة للشهادة"
+            {settings.logoUrl ? (
+              <img
+                src={settings.logoUrl}
+                alt="شعار المقرأة"
+                className="w-16 h-16 object-contain rounded-2xl border border-stone-200 p-1 bg-white shadow-2xs"
+              />
+            ) : (
+              <div
+                className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shadow-2xs"
+                style={{ backgroundColor: `${customPrimaryColor}15`, border: `1.5px solid ${customPrimaryColor}30` }}
               >
-                <span>تغيير</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleCustomLogoUpload}
-                />
-              </label>
-            </div>
+                📖
+              </div>
+            )}
             <div>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-900 font-quran">
                 مقرأة {settings.name}
@@ -992,112 +898,58 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           </div>
         </div>
 
-        {/* Dedicated Consolidation Honor Badge when plan completed / consolidation session recorded */}
-        {(hasConsolidation || isPlanCompleted) && (
-          <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-amber-50 dark:from-emerald-950/30 dark:via-teal-950/20 dark:to-amber-950/20 rounded-3xl border-2 border-emerald-400/40 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-emerald-500 text-white flex items-center justify-center text-xl shadow-xs shrink-0">
-                ⭐
-              </div>
-              <div>
-                <div className="text-sm sm:text-base font-extrabold text-emerald-950 dark:text-emerald-200 font-quran flex items-center gap-2">
-                  <span>أتمت الخطة وتم تثبيت وسرد المقرّر بنجاح ⭐</span>
-                  <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 px-2 py-0.5 rounded-full font-sans font-bold">
-                    إنجاز استثنائي 🏆
-                  </span>
-                </div>
-                <p className="text-xs text-stone-600 dark:text-stone-300 mt-1">
-                  أكملت الطالبة مستهدف الحفظ الجديد بالكامل ({doneNewPages} / {targetNewPages} ص) وخُصصت بقية الجلسات للتثبيت والسرد اليومي مع الحفاظ على برنامج المراجعة الصغرى والتمكين مستقلاً تماماً.
-                </p>
-              </div>
-            </div>
-            <div className="shrink-0 text-center bg-white dark:bg-stone-900 px-4 py-2 rounded-2xl border border-emerald-200 dark:border-emerald-800 self-end sm:self-center">
-              <span className="text-[10px] text-stone-500 font-bold block">مستهدف الحفظ الجديد</span>
-              <span className="text-xs font-black text-emerald-700 dark:text-emerald-400">100% مكتمل ومثبت ✨</span>
-            </div>
-          </div>
-        )}
-
         {/* Dedicated Metric Card & Monthly Progress Bar: معدل الالتزام بمعايير التحضير والإتقان */}
-        <div className="bg-white dark:bg-stone-900 rounded-3xl border-2 border-[#E8DFD8] dark:border-stone-800 p-5 shadow-xs space-y-4 hover:border-[#8E5364]/40 transition">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 dark:border-stone-800 pb-3">
+        <div
+          onClick={() => onNavigateToSection?.('recitation')}
+          className="p-5 rounded-2xl border-2 border-[#E8DFD8] bg-gradient-to-l from-[#FAF6F3] via-white to-[#F4F9F6] space-y-3.5 shadow-2xs hover:border-[#8E5364] transition cursor-pointer"
+          title="انقر لفتح سجل التسميع ومعايير التحضير اليومي"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-700 dark:text-amber-400 flex items-center justify-center text-lg font-bold shrink-0">
-                ⭐
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shadow-2xs shrink-0"
+                style={{ backgroundColor: prepEvaluation.barColor }}
+              >
+                <CheckCircle2 className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-bold text-stone-900 dark:text-stone-100 text-sm flex items-center gap-2 font-quran">
-                  <span>معدل الالتزام بمعايير التحضير والإتقان</span>
-                  <span className="text-[10px] text-stone-400 font-sans font-normal">(دليل مشكاة الغيم)</span>
-                </h3>
-                <p className="text-[11px] text-stone-500 dark:text-stone-400">
-                  متوسط درجات التحضير اليومي من 10 ونسبة الإنجاز التراكمية الشهرية
+                <h4 className="font-extrabold text-stone-900 text-sm sm:text-base font-quran">
+                  معدل الالتزام بمعايير التحضير والإتقان
+                </h4>
+                <p className="text-[11px] text-stone-500">
+                  الاستماع للمقرئ (5 مرات = 3 درجات) • التلاوة نظراً (5 مرات = 3 درجات) • التكرار المتقن (10 مرات = 4 درجات)
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className={`px-3 py-1 rounded-full text-xs font-bold border ${preparationMetrics.badgeBg}`}>
-                {preparationMetrics.badgeText}
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+              <span className={`px-3 py-1.5 rounded-xl text-xs font-extrabold border ${prepEvaluation.badgeClass}`}>
+                {prepEvaluation.badgeText}
               </span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-            <div className="bg-[#FAF7F5] dark:bg-stone-800/60 p-3.5 rounded-2xl border border-[#EFE8E2] dark:border-stone-700 text-center">
-              <span className="text-stone-400 block text-[10px] font-bold">متوسط درجة التحضير</span>
-              <div className="text-2xl font-black font-mono text-emerald-700 dark:text-emerald-400 mt-0.5">
-                {preparationMetrics.averageScore} <span className="text-xs text-stone-400 font-normal">/ 10</span>
-              </div>
-              <span className="text-[10px] text-stone-500 block mt-0.5">من إجمالي {preparationMetrics.count} جلسات تسميع</span>
-            </div>
-
-            <div className="bg-[#FAF7F5] dark:bg-stone-800/60 p-3.5 rounded-2xl border border-[#EFE8E2] dark:border-stone-700 text-center">
-              <span className="text-stone-400 block text-[10px] font-bold">نسبة الالتزام المئوية</span>
-              <div className="text-2xl font-black font-mono text-[#8E5364] dark:text-[#E8BDC8] mt-0.5">
-                {preparationMetrics.percentage}%
-              </div>
-              <span className="text-[10px] text-stone-500 block mt-0.5">وفق المعايير المستهدفة</span>
-            </div>
-
-            <div className="bg-[#FAF7F5] dark:bg-stone-800/60 p-3.5 rounded-2xl border border-[#EFE8E2] dark:border-stone-700 flex flex-col justify-center px-4">
-              <span className="text-stone-700 dark:text-stone-300 font-bold text-[10px] mb-1">تفاصيل المعايير اليومية:</span>
-              <div className="space-y-0.5 text-[10px] text-stone-600 dark:text-stone-400">
-                <div className="flex justify-between">
-                  <span>• الاستماع للمقرئ (5 مرات):</span>
-                  <strong className="text-emerald-700 dark:text-emerald-400">3 درجات</strong>
-                </div>
-                <div className="flex justify-between">
-                  <span>• التلاوة نظراً (5 مرات):</span>
-                  <strong className="text-emerald-700 dark:text-emerald-400">3 درجات</strong>
-                </div>
-                <div className="flex justify-between">
-                  <span>• التكرار المتقن (10 مرات):</span>
-                  <strong className="text-emerald-700 dark:text-emerald-400">4 درجات</strong>
-                </div>
+              <div className="bg-white px-3.5 py-1.5 rounded-xl border border-stone-200 text-center shadow-2xs">
+                <span className="text-[10px] text-stone-400 block">متوسط التحضير</span>
+                <strong className="text-sm font-black privacy-score-digit" style={{ color: prepEvaluation.barColor }}>
+                  {prepAvgOutOf10} / 10 ({prepRatePercent}%)
+                </strong>
               </div>
             </div>
           </div>
 
           {/* Monthly Progress Bar */}
-          <div className="space-y-1.5 pt-1">
-            <div className="flex justify-between text-xs font-bold text-stone-700 dark:text-stone-300">
-              <span className="flex items-center gap-1.5">
-                <span>مستوى الإنجاز والالتزام بالتحضير الشهري:</span>
-                <span className="text-stone-400 text-[11px] font-normal font-mono">({preparationMetrics.percentage}% من المستهدف)</span>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[11px] font-bold text-stone-600">
+              <span>مؤشر الإنجاز الشهري لمعايير التحضير المسبق</span>
+              <span className="privacy-score-digit" style={{ color: prepEvaluation.barColor }}>
+                {prepRatePercent}% ({prepAvgOutOf10} من 10 درجات)
               </span>
-              <span className="font-mono text-emerald-700 dark:text-emerald-400 font-bold">{preparationMetrics.averageScore} / 10</span>
             </div>
-            <div className="w-full h-3.5 bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden p-0.5 border border-stone-200 dark:border-stone-700">
+            <div className="w-full h-3 bg-stone-200/80 rounded-full overflow-hidden p-0.5">
               <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  preparationMetrics.averageScore >= 9
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
-                    : preparationMetrics.averageScore >= 7
-                    ? 'bg-gradient-to-r from-amber-500 to-emerald-500'
-                    : 'bg-gradient-to-r from-rose-500 to-amber-500'
-                }`}
-                style={{ width: `${Math.max(5, preparationMetrics.percentage)}%` }}
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${Math.min(100, Math.max(4, prepRatePercent))}%`,
+                  backgroundColor: prepEvaluation.barColor
+                }}
               />
             </div>
           </div>
@@ -1138,14 +990,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             <div className="space-y-1.5 text-stone-600">
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>الحفظ الجديد المنجز (بشروط):</span>
-                <strong className="text-stone-900 flex items-center gap-1.5">
-                  <span>{doneNewPages} من {targetNewPages} صفحات</span>
-                  {(hasConsolidation || isPlanCompleted) && (
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 px-1.5 py-0.5 rounded-md font-bold">
-                      تثبيت وسرد ⭐
-                    </span>
-                  )}
-                </strong>
+                <strong className="text-stone-900">{doneNewPages} من {targetNewPages} صفحات</strong>
               </div>
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>المراجعة الصغرى المنجزة:</span>
@@ -1171,9 +1016,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               </div>
               <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900 items-center">
                 <span>درجة الحفظ والمراجعة:</span>
-                <span style={{ color: customPrimaryColor }}>
-                  {normMemScore} / 10 <span className="text-xs font-normal text-stone-500 font-mono">({score?.memorizationScore} / {score?.memorizationMax} نقطة)</span>
-                </span>
+                <span style={{ color: customPrimaryColor }}>{score?.memorizationScore} / {score?.memorizationMax} نقطة</span>
               </div>
             </div>
           </div>
@@ -1554,7 +1397,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                     <span>توقيع القائدة</span>
                   </label>
 
-                    <label
+                  <label
                     style={{ backgroundColor: customPrimaryColor }}
                     className="px-2.5 py-1.5 hover:brightness-105 text-white rounded-xl cursor-pointer text-[11px] font-bold transition shadow-xs flex items-center gap-1"
                   >
@@ -1576,33 +1419,6 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                     >
                       <Trash2 className="w-3 h-3" />
                       <span>حذف الختم</span>
-                    </button>
-                  )}
-
-                  {/* زر رفع / تغيير شعار المقرأة للشهادة */}
-                  <label
-                    className="px-2.5 py-1.5 bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200 border border-stone-200 dark:border-stone-700 hover:border-[#8E5364] rounded-xl cursor-pointer text-[11px] font-bold transition shadow-xs flex items-center gap-1.5"
-                    title="تغيير أو رفع شعار المقرأة ليظهر في أعلى الشهادة والتقارير"
-                  >
-                    <Upload className="w-3.5 h-3.5 text-[#8E5364]" />
-                    <span>{effectiveLogoUrl ? 'تغيير الشعار' : 'رفع شعار المقرأة'}</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleCustomLogoUpload}
-                    />
-                  </label>
-
-                  {effectiveLogoUrl && (
-                    <button
-                      type="button"
-                      onClick={handleRemoveCustomLogo}
-                      className="px-2 py-1.5 bg-stone-100 hover:bg-rose-50 text-stone-500 hover:text-rose-700 border border-stone-200 hover:border-rose-200 rounded-xl cursor-pointer text-[10px] font-bold transition flex items-center gap-1"
-                      title="إزالة الشعار واستعادة الرمز الافتراضي"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      <span>إزالة الشعار</span>
                     </button>
                   )}
                 </div>
@@ -1642,34 +1458,20 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                 {/* Header with Logo and editable Date */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-[#E8DFD8] pb-5 text-center sm:text-right">
                   <div className="flex items-center justify-center sm:justify-start gap-3">
-                    <div className="relative group">
-                      {effectiveLogoUrl ? (
-                        <img
-                          src={effectiveLogoUrl}
-                          alt="شعار المقرأة"
-                          className="w-14 h-14 object-contain rounded-2xl border border-stone-200 p-1 bg-white shadow-2xs"
-                        />
-                      ) : (
-                        <div
-                          className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-2xs"
-                          style={{ backgroundColor: `${customPrimaryColor}15`, border: `1.5px solid ${customPrimaryColor}30` }}
-                        >
-                          📖
-                        </div>
-                      )}
-                      <label
-                        className="absolute inset-0 bg-black/60 text-white rounded-2xl opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center text-[9px] font-bold cursor-pointer"
-                        title="انقري لتغيير الشعار فوراً"
+                    {settings.logoUrl ? (
+                      <img
+                        src={settings.logoUrl}
+                        alt="شعار المقرأة"
+                        className="w-14 h-14 object-contain rounded-2xl border border-stone-200 p-1 bg-white shadow-2xs"
+                      />
+                    ) : (
+                      <div
+                        className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-2xs"
+                        style={{ backgroundColor: `${customPrimaryColor}15`, border: `1.5px solid ${customPrimaryColor}30` }}
                       >
-                        <span>تغيير</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={handleCustomLogoUpload}
-                        />
-                      </label>
-                    </div>
+                        📖
+                      </div>
+                    )}
                     <div>
                       <h2 className="text-xl sm:text-2xl font-extrabold text-stone-900 font-quran">
                         مقرأة {settings.name}
@@ -1746,29 +1548,11 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                     <span className="text-[9px] text-stone-400 block mt-0.5">المستهدف: {targetRevPages} ص</span>
                   </div>
                   <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
-                    <span className="text-[10px] text-stone-500 block">معايير التحضير</span>
-                    <strong className="text-sm font-bold text-emerald-700">{preparationMetrics.averageScore} / 10</strong>
-                    <span className="text-[9px] text-stone-400 block mt-0.5">نسبة {preparationMetrics.percentage}%</span>
-                  </div>
-                  <div className="bg-[#FCFAF8] p-2.5 rounded-xl border border-[#EFE8E2]">
                     <span className="text-[10px] text-stone-500 block">الترتيب في الحلقة</span>
                     <strong className="text-sm font-bold" style={{ color: customPrimaryColor }}>المركز #{score?.rankInCircle || 1}</strong>
                     <span className="text-[9px] text-stone-400 block mt-0.5">حلقة {circle?.name}</span>
                   </div>
                 </div>
-
-                {/* Consolidation Honor Banner in Preview */}
-                {(hasConsolidation || isPlanCompleted) && (
-                  <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-2.5 flex items-center justify-between text-xs text-emerald-900">
-                    <span className="font-bold flex items-center gap-1.5">
-                      <span>⭐</span>
-                      <span>أتمت الخطة وتم تثبيت وسرد المقرّر بنجاح ⭐</span>
-                    </span>
-                    <span className="text-[10px] bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
-                      مكتملة ومثبتة 🏆
-                    </span>
-                  </div>
-                )}
 
                 {/* Table Overview */}
                 <div className="border border-stone-200 rounded-xl overflow-hidden text-xs">
@@ -1791,17 +1575,8 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                       <tr>
                         <td className="p-2.5 font-bold text-stone-900">الحفظ الجديد</td>
                         <td className="p-2.5">{targetNewPages} صفحات</td>
-                        <td className="p-2.5">
-                          {doneNewPages} صفحات
-                          {(hasConsolidation || isPlanCompleted) && (
-                            <span className="mr-1.5 text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md font-bold">
-                              تثبيت وسرد ⭐
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-2.5 font-bold" style={{ color: customPrimaryColor }}>
-                          {normMemScore} / 10 <span className="text-[11px] font-normal text-stone-500 font-mono">({memScore} / {memMax} نقطة)</span>
-                        </td>
+                        <td className="p-2.5">{doneNewPages} صفحات</td>
+                        <td className="p-2.5 font-bold" style={{ color: customPrimaryColor }}>{score?.memorizationScore || 10} / 10</td>
                       </tr>
                       <tr>
                         <td className="p-2.5 font-bold text-stone-900">المراجعة الصغرى</td>
@@ -1814,6 +1589,16 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                         <td className="p-2.5">{targetRevPages} صفحات</td>
                         <td className="p-2.5">{doneTamkeenPages} صفحات</td>
                         <td className="p-2.5 text-emerald-700 font-bold">متقن بالشروط ✅</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2.5 font-bold text-stone-900">الالتزام بمعايير التحضير والإتقان</td>
+                        <td className="p-2.5">الاستماع (5) • التلاوة (5) • التكرار (10)</td>
+                        <td className="p-2.5">
+                          <span className={`inline-block px-2 py-0.5 rounded-lg text-[10px] font-bold border ${prepEvaluation.badgeClass}`}>
+                            {prepEvaluation.badgeText} ({prepRatePercent}%)
+                          </span>
+                        </td>
+                        <td className="p-2.5 font-bold" style={{ color: prepEvaluation.barColor }}>{prepAvgOutOf10} / 10</td>
                       </tr>
                       {doneUnclassifiedRevisionPages > 0 && (
                         <tr>
@@ -1840,14 +1625,6 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                         <td className="p-2.5">اختبار تمكيني شامل</td>
                         <td className="p-2.5">{studentExam ? studentExam.score : 95} درجة</td>
                         <td className="p-2.5 font-bold text-emerald-800">{studentExam ? studentExam.score : 95} / 100</td>
-                      </tr>
-                      <tr>
-                        <td className="p-2.5 font-bold text-stone-900">معايير التحضير والإتقان ⭐</td>
-                        <td className="p-2.5">الاستماع (5) • التلاوة (5) • التكرار (10)</td>
-                        <td className="p-2.5">المعدل: {preparationMetrics.averageScore} من 10 ({preparationMetrics.percentage}%)</td>
-                        <td className="p-2.5 font-bold" style={{ color: preparationMetrics.badgeColor === 'emerald' ? '#047857' : preparationMetrics.badgeColor === 'amber' ? '#b45309' : '#b91c1c' }}>
-                          {preparationMetrics.badgeText}
-                        </td>
                       </tr>
                     </tbody>
                   </table>

@@ -76,6 +76,44 @@ function formatPortionText(fromSurahNum: number, fromAyah: number, toSurahNum: n
   return `من سورة ${s1.name} آية ${fromAyah || 1} إلى سورة ${s2.name} آية ${toAyah || s2.versesCount}`;
 }
 
+function formatPaceLabel(pages: number): string {
+  if (pages === 0.25) return 'ربع وجه (0.25 ص)';
+  if (pages === 0.5) return 'نصف وجه (0.5 ص)';
+  if (pages === 0.75) return 'ثلاثة أرباع وجه (0.75 ص)';
+  if (pages === 1) return 'وجه كامل (1.0 ص)';
+  if (pages === 1.5) return 'وجه ونصف (1.5 ص)';
+  if (pages === 2) return 'وجهان (2.0 ص)';
+  return `${pages} وجه`;
+}
+
+/**
+ * دالة حساب نهاية المقرر اليومي أو انتقال المقرر لليوم التالي تلقائياً حسب مقدار الأوجه اليومي
+ */
+function computeDailyPortionEnd(fromSurahNum: number, fromAyah: number, dailyPages: number): { toSurah: number; toAyah: number } {
+  const s = QURAN_SURAHS.find(x => x.number === fromSurahNum);
+  if (!s) return { toSurah: fromSurahNum, toAyah: fromAyah + 7 };
+  const nextS = QURAN_SURAHS.find(x => x.number === fromSurahNum + 1);
+  const surahEndPage = nextS ? nextS.startPage : 604;
+  const surahTotalPages = Math.max(1, surahEndPage - s.startPage);
+  const versesPerPage = Math.max(4, Math.round(s.versesCount / surahTotalPages));
+  const targetVersesCount = Math.max(2, Math.round(versesPerPage * (dailyPages || 0.5)));
+  const endAyah = Math.min(s.versesCount, (fromAyah || 1) + targetVersesCount - 1);
+  return { toSurah: fromSurahNum, toAyah: endAyah };
+}
+
+function computeNextDayStart(lastToSurah: number, lastToAyah: number): { fromSurah: number; fromAyah: number } {
+  const s = QURAN_SURAHS.find(x => x.number === lastToSurah);
+  if (!s) return { fromSurah: lastToSurah, fromAyah: lastToAyah + 1 };
+  if (lastToAyah < s.versesCount) {
+    return { fromSurah: lastToSurah, fromAyah: lastToAyah + 1 };
+  }
+  const nextSurah = QURAN_SURAHS.find(x => x.number === lastToSurah + 1);
+  if (nextSurah) {
+    return { fromSurah: nextSurah.number, fromAyah: 1 };
+  }
+  return { fromSurah: lastToSurah, fromAyah: s.versesCount };
+}
+
 /**
  * مكوّن عداد تفاعلي بأزرار إضافة وإنقاص مع إمكانية الكتابة اليدوية
  */
@@ -257,25 +295,6 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     ? (modalStudentPlan.tamkeenRevision?.enabled ?? modalStudentPlan.revision?.enabled) !== false
     : true;
 
-  // فحص إتمام مستهدف الحفظ الجديد الشهري للطالبة المعروضة في نافذة الرصد
-  const modalStudentScore = useMemo(() => {
-    if (!modalStudent) return null;
-    return allStudentScores ? allStudentScores[modalStudent.id] : null;
-  }, [modalStudent, allStudentScores]);
-
-  const targetNewPages = useMemo(() => {
-    if (modalStudentPlan?.newMemorization?.targetPages !== undefined) {
-      return modalStudentPlan.newMemorization.targetPages;
-    }
-    return modalStudentScore?.newMemorizationPagesTarget ?? 8;
-  }, [modalStudentPlan, modalStudentScore]);
-
-  const doneNewPages = useMemo(() => {
-    return modalStudentScore?.newMemorizationPagesDone ?? 0;
-  }, [modalStudentScore]);
-
-  const isTargetCompleted = targetNewPages > 0 && doneNewPages >= targetNewPages;
-
   const studentStats = useMemo(() => {
     if (!studentRecords.length) {
       return { totalPages: 0, totalUnconditionedPages: 0, avgScore: 10, totalSessions: 0, totalMistakes: 0 };
@@ -297,15 +316,24 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
 
   const trackMastery: MasteryGuideConfig = modalTrack?.systemRules?.masteryGuide || settings?.defaultMasteryGuide || defaultMasteryGuideConfig;
   
-  // معايير المسار موحدة بالكامل (كلها زي بعض بدون تقسيم أساسي وإضافي)
+  // معايير المسار موحدة بالكامل — الأهداف المعتمدة لدرجة التحضير من 10:
+  // الاستماع للمقرئ (5 مرات = 3 درجات)، التلاوة نظراً (5 مرات = 3 درجات)، التكرار المتقن (10 مرات = 4 درجات)
   const activeCriteriaList = useMemo(() => {
     if (trackMastery?.unifiedCriteria && trackMastery.unifiedCriteria.length > 0) {
-      return trackMastery.unifiedCriteria;
+      return trackMastery.unifiedCriteria.map(c => {
+        if (c.id === 'crit-listen' && c.count === 3) return { ...c, count: 5 };
+        if (c.id === 'crit-repeat' && c.count === 20) return { ...c, count: 10 };
+        return c;
+      });
     }
+    const listenCountTarget = trackMastery?.listenToReciterTimes === 3 ? 5 : (trackMastery?.listenToReciterTimes || 5);
+    const reciteCountTarget = trackMastery?.reciteLookingTimes || 5;
+    const repeatCountTarget = trackMastery?.masteryRepetitionTimes === 20 ? 10 : (trackMastery?.masteryRepetitionTimes || 10);
+
     const list: Array<{ id: string; title: string; count: number; unit: string }> = [
-      { id: 'crit-listen', title: 'الاستماع للمقرئ', count: trackMastery?.listenToReciterTimes || 5, unit: 'مرات' },
-      { id: 'crit-recite', title: 'التلاوة نظراً من المصحف', count: trackMastery?.reciteLookingTimes || 5, unit: 'مرات' },
-      { id: 'crit-repeat', title: 'التكرار المتقن للوجه', count: trackMastery?.masteryRepetitionTimes || 10, unit: 'مرات' }
+      { id: 'crit-listen', title: 'الاستماع للمقرئ', count: listenCountTarget, unit: 'مرات' },
+      { id: 'crit-recite', title: 'التلاوة نظراً من المصحف', count: reciteCountTarget, unit: 'مرات' },
+      { id: 'crit-repeat', title: 'التكرار المتقن للوجه', count: repeatCountTarget, unit: 'مرات' }
     ];
     if (trackMastery?.customCriteria && Array.isArray(trackMastery.customCriteria)) {
       trackMastery.customCriteria.forEach((c, i) => {
@@ -376,21 +404,25 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     newFromAyah: 1,
     newToSurah: 2,
     newToAyah: 15,
-    newPages: 1,
+    newPages: 0.5,
+    attemptedNewPages: 0.5,
+    newOutcome: 'mastered' as 'mastered' | 'redo' | 'excused',
+    isRolledOverRedo: false,
     newWithConditions: true, // رصد كمنجز بشروط
     recitedPortion: 'سورة البقرة (من آية 1 إلى آية 15)',
     hifzErrors: 0,
     alerts: 0,
     tajweedErrors: 0,
     notes: '',
-    isConsolidation: false, // جلسة تثبيت وسرد المقرّر الشهري (تفعيل عند إتمام المستهدف الشهري)
 
     // المراجعة الصغرى (الربط القريب)
     minorFromSurah: 2,
     minorFromAyah: 1,
     minorToSurah: 2,
     minorToAyah: 25,
-    minorPages: 3,
+    minorPages: 1,
+    attemptedMinorPages: 1,
+    minorOutcome: 'mastered' as 'mastered' | 'redo' | 'excused',
     minorDone: true,
 
     // مراجعة التمكين (المراجعة الكبرى)
@@ -398,7 +430,9 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     majorFromAyah: 36,
     majorToSurah: 11,
     majorToAyah: 50,
-    majorPages: 2,
+    majorPages: 1,
+    attemptedMajorPages: 1,
+    majorOutcome: 'mastered' as 'mastered' | 'redo' | 'excused',
     majorDone: true,
 
     // معايير التحضير والإتقان
@@ -414,33 +448,53 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
   const alertDeduction = settings?.gradingRules?.alertDeduction ?? 0.25;
   const tajweedDeduction = settings?.gradingRules?.tajweedErrorDeduction ?? 0.25;
 
-  // الحساب الفوري التلقائي للدرجة النهائية (من 10)
+  // الحساب الفوري التلقائي لدرجة التحضير اليومي (من 10):
+  // الاستماع للمقرئ (الهدف: 5 مرات) -> 3 درجات
+  // التلاوة نظراً من المصحف (الهدف: 5 مرات) -> 3 درجات
+  // التكرار المتقن للوجه (الهدف: 10 مرات) -> 4 درجات
+  const prepScoreBreakdown = useMemo(() => {
+    const listenCrit = activeCriteriaList.find(c => c.id === 'crit-listen' || c.title.includes('استماع')) || activeCriteriaList[0];
+    const reciteCrit = activeCriteriaList.find(c => c.id === 'crit-recite' || c.title.includes('نظراً')) || activeCriteriaList[1];
+    const repeatCrit = activeCriteriaList.find(c => c.id === 'crit-repeat' || c.title.includes('تكرار')) || activeCriteriaList[2];
+
+    const listenTarget = Math.max(1, listenCrit?.count || 5);
+    const reciteTarget = Math.max(1, reciteCrit?.count || 5);
+    const repeatTarget = Math.max(1, repeatCrit?.count || 10);
+
+    const listenDone = Math.max(0, Number(listenCrit ? criteriaCounts[listenCrit.id] ?? 0 : 0));
+    const reciteDone = Math.max(0, Number(reciteCrit ? criteriaCounts[reciteCrit.id] ?? 0 : 0));
+    const repeatDone = Math.max(0, Number(repeatCrit ? criteriaCounts[repeatCrit.id] ?? 0 : 0));
+
+    const listenPoints = Math.round(Math.min(1, listenDone / listenTarget) * 3 * 100) / 100;
+    const recitePoints = Math.round(Math.min(1, reciteDone / reciteTarget) * 3 * 100) / 100;
+    const repeatPoints = Math.round(Math.min(1, repeatDone / repeatTarget) * 4 * 100) / 100;
+
+    const totalOutOf10 = Math.min(10, Math.round((listenPoints + recitePoints + repeatPoints) * 10) / 10);
+    return {
+      listenTarget,
+      reciteTarget,
+      repeatTarget,
+      listenDone,
+      reciteDone,
+      repeatDone,
+      listenPoints,
+      recitePoints,
+      repeatPoints,
+      totalOutOf10
+    };
+  }, [activeCriteriaList, criteriaCounts]);
+
+  // الحساب الفوري التلقائي للدرجة النهائية للتسميع (من 10)
   const calculatedNewScore = useMemo(() => {
+    const redoDeduction = form.newOutcome === 'redo' ? 1.5 : 0;
     const totalDeductions = 
       (Number(form.hifzErrors || 0) * hifzDeduction) +
       (Number(form.alerts || 0) * alertDeduction) +
-      (Number(form.tajweedErrors || 0) * tajweedDeduction);
+      (Number(form.tajweedErrors || 0) * tajweedDeduction) +
+      redoDeduction;
     
     return Math.max(0, Math.round((baseScore - totalDeductions) * 100) / 100);
-  }, [form.hifzErrors, form.alerts, form.tajweedErrors, baseScore, hifzDeduction, alertDeduction, tajweedDeduction]);
-
-  // حساب درجة التحضير اليومي الآلية من 10 (الاستماع 3 + التلاوة 3 + التكرار المتقن 4) مع الخصم النسبي التلقائي
-  const calculatedPrepScore = useMemo(() => {
-    const listenCount = criteriaCounts['crit-listen'] ?? (activeCriteriaList[0] ? criteriaCounts[activeCriteriaList[0].id] : 0) ?? 0;
-    const reciteCount = criteriaCounts['crit-recite'] ?? (activeCriteriaList[1] ? criteriaCounts[activeCriteriaList[1].id] : 0) ?? 0;
-    const repeatCount = criteriaCounts['crit-repeat'] ?? (activeCriteriaList[2] ? criteriaCounts[activeCriteriaList[2].id] : 0) ?? 0;
-
-    const listenTarget = (activeCriteriaList.find(c => c.id === 'crit-listen' || c.title.includes('استماع'))?.count) || 5;
-    const reciteTarget = (activeCriteriaList.find(c => c.id === 'crit-recite' || c.title.includes('تلاوة'))?.count) || 5;
-    const repeatTarget = (activeCriteriaList.find(c => c.id === 'crit-repeat' || c.title.includes('تكرار'))?.count) || 10;
-
-    const listenPts = Math.min(3, (listenCount / listenTarget) * 3);
-    const recitePts = Math.min(3, (reciteCount / reciteTarget) * 3);
-    const repeatPts = Math.min(4, (repeatCount / repeatTarget) * 4);
-
-    const sum = listenPts + recitePts + repeatPts;
-    return Math.min(10, Math.max(0, Math.round(sum * 10) / 10));
-  }, [criteriaCounts, activeCriteriaList]);
+  }, [form.hifzErrors, form.alerts, form.tajweedErrors, form.newOutcome, baseScore, hifzDeduction, alertDeduction, tajweedDeduction]);
 
   // تصفية الطالبات
   const circleStudents = useMemo(() => {
@@ -471,11 +525,6 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     const studentPlan = (studentPlans || []).find(p => p.studentId === studentId && p.status === 'active')
       || (studentPlans || []).find(p => p.studentId === studentId);
 
-    const studentScore = allStudentScores ? allStudentScores[studentId] : null;
-    const targetPages = studentPlan?.newMemorization?.targetPages ?? studentScore?.newMemorizationPagesTarget ?? 8;
-    const donePages = studentScore?.newMemorizationPagesDone ?? 0;
-    const hasMetTarget = targetPages > 0 && donePages >= targetPages;
-
     const planNewEnabled = studentPlan ? studentPlan.newMemorization?.enabled !== false : true;
     const planMinorEnabled = studentPlan ? studentPlan.minorRevision?.enabled !== false : true;
     const planTamkeenEnabled = studentPlan
@@ -503,34 +552,53 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     setCriteriaCounts(initCounts);
 
     if (existing) {
-      const isConsolidation = existing.isConsolidationSession ?? (hasMetTarget && (existing.newMemorizationPages === 0 || existing.newPages === 0));
+      const exAttemptedNew = existing.attemptedNewPages ?? existing.newMemorizationPages ?? existing.newPages ?? 0.5;
+      const exNewOutcome: 'mastered' | 'redo' | 'excused' =
+        existing.newOutcome || (existing.isRedoSession ? 'redo' : 'mastered');
+      const exMinorOutcome: 'mastered' | 'redo' | 'excused' =
+        existing.minorOutcome || (existing.minorRevisionPortion?.status === 'needs_repetition' ? 'redo' : existing.minorDone === false ? 'excused' : 'mastered');
+      const exMajorOutcome: 'mastered' | 'redo' | 'excused' =
+        existing.majorOutcome || (existing.tamkeenRevisionPortion?.status === 'needs_repetition' ? 'redo' : existing.majorDone === false ? 'excused' : 'mastered');
+
       setForm({
         newFromSurah: existing.newFromSurah ?? 2,
         newFromAyah: existing.newFromAyah ?? 1,
         newToSurah: existing.newToSurah ?? 2,
         newToAyah: existing.newToAyah ?? 15,
-        newPages: isConsolidation ? 0 : (planNewEnabled ? (existing.newMemorizationPages ?? existing.newPages ?? 1) : 0),
+        newPages: planNewEnabled
+          ? (exNewOutcome === 'mastered' ? (existing.newMemorizationPages ?? existing.newPages ?? exAttemptedNew) : 0)
+          : 0,
+        attemptedNewPages: exAttemptedNew,
+        newOutcome: exNewOutcome,
+        isRolledOverRedo: !!existing.isRedoSession || exNewOutcome === 'redo',
         newWithConditions: true,
-        recitedPortion: existing.requiredPortionText ?? existing.recitedPortion ?? (isConsolidation ? 'تثبيت وسرد المقرّر الشهري' : ''),
+        recitedPortion: existing.requiredPortionText ?? existing.recitedPortion ?? '',
         hifzErrors: existing.memorizationMistakes ?? existing.hifzErrors ?? 0,
         alerts: existing.hintsCount ?? existing.alerts ?? 0,
         tajweedErrors: existing.tajweedErrorsCount ?? existing.tajweedErrors ?? 0,
         notes: existing.notes || '',
-        isConsolidation,
 
         minorFromSurah: existing.minorRevisionPortion?.surahNumber ?? existing.minorFromSurah ?? 2,
         minorFromAyah: existing.minorRevisionPortion?.fromAyah ?? existing.minorFromAyah ?? 1,
         minorToSurah: existing.minorToSurah ?? existing.minorRevisionPortion?.surahNumber ?? 2,
         minorToAyah: existing.minorRevisionPortion?.toAyah ?? existing.minorToAyah ?? 25,
-        minorPages: planMinorEnabled ? (existing.minorRevisionPortion?.pagesCount ?? existing.minorPages ?? 1) : 0,
-        minorDone: planMinorEnabled ? (existing.minorDone ?? existing.conditions?.minorRevision ?? true) : false,
+        minorPages: planMinorEnabled
+          ? (exMinorOutcome === 'mastered' ? (existing.minorRevisionPortion?.pagesCount ?? existing.minorPages ?? 1) : 0)
+          : 0,
+        attemptedMinorPages: existing.minorRevisionPortion?.pagesCount ?? existing.minorPages ?? 1,
+        minorOutcome: exMinorOutcome,
+        minorDone: planMinorEnabled ? exMinorOutcome === 'mastered' : false,
 
         majorFromSurah: existing.tamkeenRevisionPortion?.surahNumber ?? existing.majorFromSurah ?? 11,
         majorFromAyah: existing.tamkeenRevisionPortion?.fromAyah ?? existing.majorFromAyah ?? 36,
         majorToSurah: existing.majorToSurah ?? existing.tamkeenRevisionPortion?.surahNumber ?? 11,
         majorToAyah: existing.tamkeenRevisionPortion?.toAyah ?? existing.majorToAyah ?? 50,
-        majorPages: planTamkeenEnabled ? (existing.tamkeenRevisionPortion?.pagesCount ?? existing.majorPages ?? 1) : 0,
-        majorDone: planTamkeenEnabled ? (existing.majorDone ?? existing.conditions?.tamkeenRevision ?? true) : false,
+        majorPages: planTamkeenEnabled
+          ? (exMajorOutcome === 'mastered' ? (existing.tamkeenRevisionPortion?.pagesCount ?? existing.majorPages ?? 1) : 0)
+          : 0,
+        attemptedMajorPages: existing.tamkeenRevisionPortion?.pagesCount ?? existing.majorPages ?? 1,
+        majorOutcome: exMajorOutcome,
+        majorDone: planTamkeenEnabled ? exMajorOutcome === 'mastered' : false,
 
         criteriaListen: existing.conditions?.listenedToReader ?? existing.criteriaListen ?? true,
         criteriaRecite: existing.conditions?.recitedLooking ?? existing.criteriaRecite ?? true,
@@ -538,16 +606,52 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         hasMedal: existing.conditions?.achievedDistinction ?? existing.hasMedal ?? false
       });
     } else {
-      // إعداد القيم الافتراضية من الخطة الشهرية للطالبة
-      const defFromS = studentPlan?.newMemorization?.fromSurah || 2;
-      const defFromA = studentPlan?.newMemorization?.fromAyah || 1;
-      const defToS = studentPlan?.newMemorization?.toSurah || 2;
-      const defToA = studentPlan?.newMemorization?.toAyah || 15;
-      const initialNewPages = planNewEnabled
-        ? (typeof studentPlan?.newMemorization?.dailyAmountPages === 'number' && studentPlan.newMemorization.dailyAmountPages > 0
-            ? studentPlan.newMemorization.dailyAmountPages
-            : calculatePortionPages(defFromS, defFromA, defToS, defToA))
-        : 0;
+      // فحص آخر سجل سابق للطالبة لمعرفة ما إذا كان هناك مقرر مُعاد للتثبيت (Redo) أو التقدم للمقرر التالي تلقائياً
+      const priorRecords = (dailyRecords || [])
+        .filter(r => r.studentId === studentId && r.date < targetDate)
+        .sort((a, b) => b.date.localeCompare(a.date));
+      const lastRec = priorRecords[0];
+
+      const dailyPaceNew =
+        typeof studentPlan?.newMemorization?.dailyAmountPages === 'number' && studentPlan.newMemorization.dailyAmountPages > 0
+          ? studentPlan.newMemorization.dailyAmountPages
+          : 0.5;
+
+      let defFromS = studentPlan?.newMemorization?.fromSurah || 2;
+      let defFromA = studentPlan?.newMemorization?.fromAyah || 1;
+      let defToS = studentPlan?.newMemorization?.toSurah || defFromS;
+      let defToA = studentPlan?.newMemorization?.toAyah || 15;
+      let rolledOverRedo = false;
+      let initialNewPages = planNewEnabled ? dailyPaceNew : 0;
+      let portionLabel = '';
+
+      if (lastRec && (lastRec.newOutcome === 'redo' || lastRec.isRedoSession)) {
+        // ترحيل نفس المقرر المُعاد للتثبيت دون زيادة الأوجه أو التقدم
+        rolledOverRedo = true;
+        defFromS = lastRec.newFromSurah ?? defFromS;
+        defFromA = lastRec.newFromAyah ?? defFromA;
+        defToS = lastRec.newToSurah ?? defToS;
+        defToA = lastRec.newToAyah ?? defToA;
+        initialNewPages = planNewEnabled
+          ? (lastRec.attemptedNewPages || dailyPaceNew)
+          : 0;
+        portionLabel = lastRec.requiredPortionText || formatPortionText(defFromS, defFromA, defToS, defToA);
+      } else if (lastRec && lastRec.newOutcome === 'mastered' && lastRec.newToSurah && lastRec.newToAyah) {
+        // التقدم التلقائي للمقطع التالي بعد الإنجاز المتقن
+        const nextStart = computeNextDayStart(lastRec.newToSurah, lastRec.newToAyah);
+        defFromS = nextStart.fromSurah;
+        defFromA = nextStart.fromAyah;
+        const nextEnd = computeDailyPortionEnd(defFromS, defFromA, dailyPaceNew);
+        defToS = nextEnd.toSurah;
+        defToA = nextEnd.toAyah;
+        portionLabel = formatPortionText(defFromS, defFromA, defToS, defToA);
+      } else {
+        // أول جلسة أو استناداً لبداية الخطة الشهرية ومقدار الوجه اليومي
+        const computedEnd = computeDailyPortionEnd(defFromS, defFromA, dailyPaceNew);
+        defToS = computedEnd.toSurah;
+        defToA = computedEnd.toAyah;
+        portionLabel = formatPortionText(defFromS, defFromA, defToS, defToA);
+      }
 
       const minFromS = studentPlan?.minorRevision?.fromSurah || 2;
       const minFromA = studentPlan?.minorRevision?.fromAyah || 1;
@@ -575,22 +679,24 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         newFromAyah: defFromA,
         newToSurah: defToS,
         newToAyah: defToA,
-        newPages: hasMetTarget ? 0 : initialNewPages,
+        newPages: initialNewPages,
+        attemptedNewPages: initialNewPages,
+        newOutcome: 'mastered',
+        isRolledOverRedo: rolledOverRedo,
         newWithConditions: true,
-        recitedPortion: hasMetTarget
-          ? 'تثبيت وسرد المقرّر الشهري'
-          : (planNewEnabled ? formatPortionText(defFromS, defFromA, defToS, defToA) : 'خطة الحفظ الجديد معطّلة لهذا الشهر'),
+        recitedPortion: planNewEnabled ? portionLabel : 'خطة الحفظ الجديد معطّلة لهذا الشهر',
         hifzErrors: 0,
         alerts: 0,
         tajweedErrors: 0,
         notes: '',
-        isConsolidation: hasMetTarget,
 
         minorFromSurah: minFromS,
         minorFromAyah: minFromA,
         minorToSurah: minToS,
         minorToAyah: minToA,
         minorPages: initialMinorPages,
+        attemptedMinorPages: initialMinorPages,
+        minorOutcome: 'mastered',
         minorDone: planMinorEnabled,
 
         majorFromSurah: majFromS,
@@ -598,6 +704,8 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
         majorToSurah: majToS,
         majorToAyah: majToA,
         majorPages: initialMajorPages,
+        attemptedMajorPages: initialMajorPages,
+        majorOutcome: 'mastered',
         majorDone: planTamkeenEnabled,
 
         criteriaListen: true,
@@ -618,7 +726,8 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       const text = formatPortionText(next.newFromSurah, next.newFromAyah, next.newToSurah, next.newToAyah);
       return {
         ...next,
-        newPages: autoPages,
+        attemptedNewPages: autoPages,
+        newPages: prev.newOutcome === 'mastered' ? autoPages : 0,
         recitedPortion: text
       };
     });
@@ -631,7 +740,8 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       const autoPages = calculatePortionPages(next.minorFromSurah, next.minorFromAyah, next.minorToSurah, next.minorToAyah);
       return {
         ...next,
-        minorPages: autoPages
+        attemptedMinorPages: autoPages,
+        minorPages: prev.minorOutcome === 'mastered' ? autoPages : 0
       };
     });
   };
@@ -643,7 +753,8 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       const autoPages = calculatePortionPages(next.majorFromSurah, next.majorFromAyah, next.majorToSurah, next.majorToAyah);
       return {
         ...next,
-        majorPages: autoPages
+        attemptedMajorPages: autoPages,
+        majorPages: prev.majorOutcome === 'mastered' ? autoPages : 0
       };
     });
   };
@@ -652,17 +763,25 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
   const handleSaveRecitation = async () => {
     if (!activeModalStudentId) return;
 
-    const listenCount = criteriaCounts['crit-listen'] ?? (activeCriteriaList[0] ? criteriaCounts[activeCriteriaList[0].id] : 0) ?? 0;
-    const reciteCount = criteriaCounts['crit-recite'] ?? (activeCriteriaList[1] ? criteriaCounts[activeCriteriaList[1].id] : 0) ?? 0;
-    const repeatCount = criteriaCounts['crit-repeat'] ?? (activeCriteriaList[2] ? criteriaCounts[activeCriteriaList[2].id] : 0) ?? 0;
+    const listenCount = prepScoreBreakdown.listenDone;
+    const reciteCount = prepScoreBreakdown.reciteDone;
+    const repeatCount = prepScoreBreakdown.repeatDone;
 
-    const effectiveNewPages = isNewMemPlanEnabled
-      ? (form.isConsolidation ? 0 : Number(form.newPages || 0))
-      : 0;
-    const effectiveMinorPages = isMinorRevPlanEnabled ? Number(form.minorPages || 0) : 0;
-    const effectiveMajorPages = isTamkeenRevPlanEnabled ? Number(form.majorPages || 0) : 0;
-    const effectiveMinorDone = isMinorRevPlanEnabled ? form.minorDone : false;
-    const effectiveMajorDone = isTamkeenRevPlanEnabled ? form.majorDone : false;
+    // إذا تم اختيار "🔄 إعادة وتثبيت" أو "❌ لم يتم الإنجاز / اعتذار"، تبقى الأوجه المضافة للخطة 0 (مجمّدة)
+    const isNewMastered = isNewMemPlanEnabled && form.newOutcome === 'mastered';
+    const isMinorMastered = isMinorRevPlanEnabled && form.minorOutcome === 'mastered';
+    const isMajorMastered = isTamkeenRevPlanEnabled && form.majorOutcome === 'mastered';
+
+    const effectiveNewPages = isNewMastered ? Number(form.newPages || form.attemptedNewPages || 0) : 0;
+    const effectiveMinorPages = isMinorMastered ? Number(form.minorPages || form.attemptedMinorPages || 0) : 0;
+    const effectiveMajorPages = isMajorMastered ? Number(form.majorPages || form.attemptedMajorPages || 0) : 0;
+
+    const autoStatusNote =
+      form.newOutcome === 'redo'
+        ? (form.notes ? `${form.notes} • [🔄 إعادة وتثبيت للمقرر في الجلسة القادمة]` : '🔄 يحتاج إعادة وتثبيت للمقرر في الجلسة القادمة')
+        : form.newOutcome === 'excused'
+        ? (form.notes ? `${form.notes} • [❌ اعتذار / لم يتم إنجاز المقرر]` : '❌ اعتذار / لم يتم إنجاز المقرر اليوم')
+        : form.notes;
 
     await saveDailyRecord({
       ...(editingRecordId ? { id: editingRecordId } : {}),
@@ -671,56 +790,65 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       date: selectedDate,
       dayName: getHijriParts(selectedDate).weekday,
       recitationScore: calculatedNewScore,
-      preparationScore: calculatedPrepScore,
+      preparationScore: prepScoreBreakdown.totalOutOf10,
       memorizationMistakes: form.hifzErrors,
       hintsCount: form.alerts,
       tajweedErrorsCount: form.tajweedErrors,
       newMemorizationPages: effectiveNewPages,
-      newMemorizationCompleted: isNewMemPlanEnabled,
+      attemptedNewPages: Number(form.attemptedNewPages || form.newPages || 0.5),
+      newOutcome: form.newOutcome,
+      minorOutcome: form.minorOutcome,
+      majorOutcome: form.majorOutcome,
+      isRedoSession: form.newOutcome === 'redo',
+      newMemorizationCompleted: isNewMastered,
       newMemorizationWithConditions: true,
-      isConsolidationSession: form.isConsolidation,
-      consolidationNotes: form.isConsolidation ? (form.notes || 'تثبيت وسرد المقرّر الشهري') : undefined,
-      requiredPortionText: form.isConsolidation
-        ? (form.recitedPortion || 'تثبيت وسرد المقرّر الشهري')
-        : (isNewMemPlanEnabled ? form.recitedPortion : 'مراجعة فقط (الحفظ الجديد معطّل)'),
-      revisionCompleted: effectiveMinorDone || effectiveMajorDone,
+      requiredPortionText: isNewMemPlanEnabled ? form.recitedPortion : 'مراجعة فقط (الحفظ الجديد معطّل)',
+      revisionCompleted: isMinorMastered || isMajorMastered,
       revisionPages: effectiveMinorPages + effectiveMajorPages,
       minorRevisionPortion: {
         surahNumber: form.minorFromSurah,
         fromAyah: Number(form.minorFromAyah) || 1,
         toAyah: Number(form.minorToAyah) || 1,
         pagesCount: effectiveMinorPages,
-        status: effectiveMinorDone ? 'excellent' : 'unrecited'
+        status: form.minorOutcome === 'mastered'
+          ? 'excellent'
+          : form.minorOutcome === 'redo'
+          ? 'needs_repetition'
+          : 'unrecited'
       },
       tamkeenRevisionPortion: {
         surahNumber: form.majorFromSurah,
         fromAyah: Number(form.majorFromAyah) || 1,
         toAyah: Number(form.majorToAyah) || 1,
         pagesCount: effectiveMajorPages,
-        status: effectiveMajorDone ? 'excellent' : 'unrecited'
+        status: form.majorOutcome === 'mastered'
+          ? 'excellent'
+          : form.majorOutcome === 'redo'
+          ? 'needs_repetition'
+          : 'unrecited'
       },
       conditions: {
-        listenedToReader: listenCount > 0,
-        recitedLooking: reciteCount > 0,
-        masteryRepetition: repeatCount > 0,
-        minorRevision: effectiveMinorDone,
-        tamkeenRevision: effectiveMajorDone,
-        achievedDistinction: form.hasMedal
+        listenedToReader: listenCount >= prepScoreBreakdown.listenTarget,
+        recitedLooking: reciteCount >= prepScoreBreakdown.reciteTarget,
+        masteryRepetition: repeatCount >= prepScoreBreakdown.repeatTarget,
+        minorRevision: isMinorMastered,
+        tamkeenRevision: isMajorMastered,
+        achievedDistinction: form.hasMedal || prepScoreBreakdown.totalOutOf10 >= 10
       },
       criteriaCounts,
       criteriaListenCount: listenCount,
       criteriaReciteCount: reciteCount,
       criteriaRepeatCount: repeatCount,
       status: 'completed',
-      notes: form.notes,
+      notes: autoStatusNote,
       recordedBy: currentUser?.name || 'معلمة الحلقة',
       recordedAt: new Date().toISOString(),
       ...(form as any),
       newPages: effectiveNewPages,
       minorPages: effectiveMinorPages,
       majorPages: effectiveMajorPages,
-      minorDone: effectiveMinorDone,
-      majorDone: effectiveMajorDone,
+      minorDone: isMinorMastered,
+      majorDone: isMajorMastered,
       newWithConditions: true
     });
 
@@ -928,31 +1056,29 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
 
                 <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
                   {record ? (
-                    <div className="flex items-center gap-3 text-left">
+                    <div className="flex flex-wrap items-center gap-2 text-left">
                       <div className="text-xs text-stone-500 text-right">
                         <span>الدرجة: <strong className="text-[#8E5364] font-bold"><span className="privacy-score-digit">{record.recitationScore}</span>/10</strong></span>
                         <span className="mx-1.5">•</span>
-                        {record.isConsolidationSession ? (
-                          <span className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 px-2 py-0.5 rounded-md font-bold text-[10px]">
-                            تثبيت وسرد 🔄
-                          </span>
-                        ) : (
-                          <span>الأوجه: <strong className="text-stone-800 dark:text-stone-200"><span className="privacy-score-digit">{record.newMemorizationPages ?? 1}</span></strong></span>
-                        )}
+                        <span>التحضير: <strong className="text-emerald-700 dark:text-emerald-400 font-bold"><span className="privacy-score-digit">{record.preparationScore ?? 10}</span>/10</strong></span>
+                        <span className="mx-1.5">•</span>
+                        <span>الأوجه المنجزة: <strong className="text-stone-800 dark:text-stone-200"><span className="privacy-score-digit">{record.newMemorizationPages ?? 0}</span></strong></span>
                         <span className="mx-1.5">•</span>
                         <span>أخطاء: <strong className="text-rose-600"><span className="privacy-score-digit">{record.memorizationMistakes ?? 0}</span></strong></span>
-                        <span className="mx-1.5">•</span>
-                        <span>تنبيهات: <strong className="text-amber-600"><span className="privacy-score-digit">{record.hintsCount ?? 0}</span></strong></span>
-                        {typeof record.preparationScore === 'number' && (
-                          <>
-                            <span className="mx-1.5">•</span>
-                            <span className="text-emerald-700 dark:text-emerald-400 font-bold">التحضير: <strong><span className="privacy-score-digit">{record.preparationScore}</span>/10</strong></span>
-                          </>
-                        )}
                       </div>
-                      <div className="px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-400 font-bold text-xs">
-                        تم الرصد ✅
-                      </div>
+                      {(record.newOutcome === 'redo' || record.isRedoSession) ? (
+                        <div className="px-3 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 font-bold text-xs flex items-center gap-1">
+                          <span>🔄 إعادة للتثبيت</span>
+                        </div>
+                      ) : record.newOutcome === 'excused' ? (
+                        <div className="px-3 py-1 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300 font-bold text-xs flex items-center gap-1">
+                          <span>❌ اعتذار / لم يُنجز</span>
+                        </div>
+                      ) : (
+                        <div className="px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-400 font-bold text-xs">
+                          تم الرصد ✅
+                        </div>
+                      )}
                     </div>
                   ) : isSelectedDateThursday ? (
                     <span className="px-3 py-1 rounded-xl bg-[#FAF6F2] dark:bg-stone-800 text-[#8E5364] dark:text-[#E8BDC8] border border-[#E8DFD8] dark:border-stone-700 text-xs font-bold">
@@ -1064,14 +1190,78 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
               </div>
             </div>
 
+            {/* ===================== لافتة عرض مقرر اليوم تلقائياً (Scheduled Daily Targets) ===================== */}
+            <div className="p-3.5 rounded-2xl bg-gradient-to-l from-[#FAF0F3] to-[#FAF7F5] dark:from-stone-900 dark:to-stone-900/70 border border-[#E2D5CC] dark:border-stone-700 space-y-2 shadow-2xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-extrabold text-[#744251] dark:text-[#E8BDC8] flex items-center gap-1.5">
+                  <span>🎯</span>
+                  <span>مقرر اليوم المجدول تلقائياً (حسب خطة الطالبة):</span>
+                </span>
+                {(form.isRolledOverRedo || form.newOutcome === 'redo') && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-[11px] font-extrabold animate-pulse">
+                    مقرر مُعاد للتثبيت ⏳
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <div className="p-2.5 rounded-xl bg-white/90 dark:bg-stone-800/90 border border-[#E8DFD8] dark:border-stone-700">
+                  <span className="text-[10px] font-bold text-stone-500 dark:text-stone-400 block mb-0.5">
+                    📖 مقرر الحفظ الجديد لليوم:
+                  </span>
+                  {isNewMemPlanEnabled ? (
+                    <div className="font-bold text-stone-800 dark:text-stone-100 flex flex-wrap items-center gap-1">
+                      <span>{form.recitedPortion}</span>
+                      <span className="text-[11px] font-extrabold text-[#8E5364] dark:text-[#E8BDC8]">
+                        (المقدار: {formatPaceLabel(Number(form.attemptedNewPages || 0.5))})
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-stone-400 font-bold">معطّل لهذا الشهر 🔒</span>
+                  )}
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-white/90 dark:bg-stone-800/90 border border-[#E8DFD8] dark:border-stone-700">
+                  <span className="text-[10px] font-bold text-stone-500 dark:text-stone-400 block mb-0.5">
+                    🔄 مقرر المراجعة لليوم:
+                  </span>
+                  {isMinorRevPlanEnabled || isTamkeenRevPlanEnabled ? (
+                    <div className="font-bold text-stone-800 dark:text-stone-100 space-y-0.5 text-[11px]">
+                      {isMinorRevPlanEnabled && (
+                        <div>
+                          <span className="text-stone-500">صغرى: </span>
+                          <span>{formatPortionText(form.minorFromSurah, form.minorFromAyah, form.minorToSurah, form.minorToAyah)}</span>
+                        </div>
+                      )}
+                      {isTamkeenRevPlanEnabled && (
+                        <div>
+                          <span className="text-stone-500">تمكين: </span>
+                          <span>{formatPortionText(form.majorFromSurah, form.majorFromAyah, form.majorToSurah, form.majorToAyah)}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-stone-400 font-bold">معطّل لهذا الشهر 🔒</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* ===================== 1. قسم الحفظ الجديد (المقرر والدرجة والأخطاء) ===================== */}
             <div className="p-4 rounded-3xl bg-[#FAF7F5] dark:bg-stone-900/60 border border-[#E2D5CC] dark:border-stone-800 space-y-4">
               
               {/* صندوق الدرجة النهائية المحصلة */}
               <div className="p-4 rounded-2xl bg-white dark:bg-stone-900 border border-[#EAE2DC] dark:border-stone-800 text-center space-y-1 shadow-2xs">
-                <span className="text-xs font-bold text-stone-700 dark:text-stone-300">
-                  الدرجة النهائية المحصلة (من 10):
-                </span>
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-xs font-bold text-stone-700 dark:text-stone-300">
+                    الدرجة النهائية المحصلة للحفظ (من 10):
+                  </span>
+                  {form.newOutcome === 'redo' && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                      يحتاج إعادة وتثبيت 🔄
+                    </span>
+                  )}
+                </div>
                 <div className="text-4xl font-extrabold text-[#744251] dark:text-[#E8BDC8] font-mono tracking-tight pt-1">
                   {calculatedNewScore}
                 </div>
@@ -1116,120 +1306,166 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
               {/* مقرر الحفظ الجديد (يتزامن مع تفعيل/تعطيل القسم في الخطة الشهرية) */}
               {isNewMemPlanEnabled ? (
                 <div className="p-3.5 bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-3">
-                  
-                  {/* خيارات إتمام الخطة المبكر: تثبيت وسرد المقرّر vs مواصلة حفظ جديد */}
-                  {(isTargetCompleted || form.isConsolidation) && (
-                    <div className="p-3 bg-gradient-to-r from-emerald-50 via-teal-50 to-amber-50 dark:from-emerald-950/40 dark:via-teal-950/30 dark:to-amber-950/30 rounded-2xl border-2 border-emerald-400/50 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
-                          <span>🏆</span>
-                          <span>أتمت الطالبة خطة الحفظ الشهري بنجاح ({doneNewPages} / {targetNewPages} ص)</span>
-                        </span>
-                        <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 px-2 py-0.5 rounded-full font-bold">
-                          المستهدف 100% ✨
-                        </span>
-                      </div>
-
-                      <p className="text-[11px] text-stone-600 dark:text-stone-300 leading-relaxed">
-                        اختاري مسار جلسة اليوم لحل الأيام المتبقية في الشهر دون التأثير على حساب مراجعة التمكين أو المراجعة الصغرى:
-                      </p>
-
-                      {/* زرّي الاختيار الواضحين */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setForm(prev => ({
-                              ...prev,
-                              isConsolidation: true,
-                              newPages: 0,
-                              recitedPortion: prev.recitedPortion && !prev.recitedPortion.includes('معطّل') ? prev.recitedPortion : 'تثبيت وسرد المقرّر الشهري'
-                            }));
-                          }}
-                          className={`p-2.5 rounded-xl text-right transition border cursor-pointer ${
-                            form.isConsolidation
-                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/20'
-                              : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-emerald-300'
-                          }`}
-                        >
-                          <div className="font-bold text-xs flex items-center justify-between">
-                            <span className="flex items-center gap-1">
-                              <span>🔄</span>
-                              <span>تثبيت وسرد المقرّر الشهري</span>
-                            </span>
-                            {form.isConsolidation && <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded">محدد ✓</span>}
-                          </div>
-                          <div className={`text-[10px] mt-1 leading-snug ${form.isConsolidation ? 'text-emerald-100' : 'text-stone-500'}`}>
-                            تثبيت الحفظ الجديد عند 100%، دون زيادته للمراجعة حفاظاً على دقة برنامجها، مع منح وسام شرفي بملف الإنجاز ⭐
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setForm(prev => ({
-                              ...prev,
-                              isConsolidation: false,
-                              newPages: prev.newPages > 0 ? prev.newPages : 1
-                            }));
-                          }}
-                          className={`p-2.5 rounded-xl text-right transition border cursor-pointer ${
-                            !form.isConsolidation
-                              ? 'bg-[#8E5364] text-white border-[#8E5364] shadow-xs ring-2 ring-[#8E5364]/20'
-                              : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-[#8E5364]'
-                          }`}
-                        >
-                          <div className="font-bold text-xs flex items-center justify-between">
-                            <span className="flex items-center gap-1">
-                              <span>🌟</span>
-                              <span>مواصلة حفظ جديد (تجاوز المستهدف)</span>
-                            </span>
-                            {!form.isConsolidation && <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded">محدد ✓</span>}
-                          </div>
-                          <div className={`text-[10px] mt-1 leading-snug ${!form.isConsolidation ? 'text-[#F9ECEF]' : 'text-stone-500'}`}>
-                            للطالبات المتقدمات: زيادة عدد الأوجه المنجزة فعلياً فوق المستهدف كإنجاز وتجاوز معتمد 📈
-                          </div>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
                       <Bookmark className="w-3.5 h-3.5 text-[#8E5364]" />
-                      <span>{form.isConsolidation ? 'مقرر التثبيت والسرد المعتمد:' : 'مقرر الحفظ الجديد:'}</span>
+                      <span>مقرر الحفظ الجديد:</span>
+                      {(form.isRolledOverRedo || form.newOutcome === 'redo') && (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                          مقرر مُعاد للتثبيت ⏳
+                        </span>
+                      )}
                     </span>
                     
                     <div className="flex items-center gap-1.5 bg-[#FAF7F5] dark:bg-stone-800 px-2.5 py-1 rounded-xl border border-[#E2D5CC] dark:border-stone-700">
-                      <span className="text-[11px] text-stone-500 font-bold">الأوجه المنجزة:</span>
-                      {form.isConsolidation ? (
-                        <span className="px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-xs font-extrabold font-mono" title="الحفظ الجديد مثبت عند 100% دون زيادة صفحات المراجعة">
-                          0 ص (تثبيت وسرد 🔒)
-                        </span>
-                      ) : (
-                        <input
-                          type="number"
-                          min="0"
-                          max="5"
-                          step="0.25"
-                          value={form.newPages}
-                          onChange={e => setForm({ ...form, newPages: Math.min(5, Math.max(0, parseFloat(e.target.value) || 0)) })}
-                          className="w-16 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364]"
-                        />
-                      )}
+                      <span className="text-[11px] text-stone-500 font-bold">الأوجه المعتمدة بالخطة:</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="2"
+                        step="0.25"
+                        value={form.newOutcome === 'mastered' ? form.newPages : 0}
+                        disabled={form.newOutcome !== 'mastered'}
+                        onChange={e => {
+                          const val = Math.min(2, Math.max(0, parseFloat(e.target.value) || 0));
+                          setForm({ ...form, newPages: val, attemptedNewPages: val || form.attemptedNewPages });
+                        }}
+                        className="w-16 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364] disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
+
+                  {/* أزرار الرصد الذكية بضغطة واحدة (أُنجز بإتقان / إعادة وتثبيت / اعتذار) */}
+                  <div className="space-y-1.5">
+                    <span className="block text-[11px] font-bold text-stone-600 dark:text-stone-400">
+                      حالة إنجاز الحفظ الجديد لليوم (بنقرة واحدة):
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm(prev => ({
+                            ...prev,
+                            newOutcome: 'mastered',
+                            newPages: prev.attemptedNewPages || 0.5
+                          }))
+                        }
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                          form.newOutcome === 'mastered'
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/20'
+                            : 'bg-[#FAF7F5] dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-emerald-400'
+                        }`}
+                      >
+                        <span>✅ أُنجز بإتقان</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm(prev => ({
+                            ...prev,
+                            newOutcome: 'redo',
+                            newPages: 0
+                          }))
+                        }
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                          form.newOutcome === 'redo'
+                            ? 'bg-amber-500 text-white border-amber-500 shadow-xs ring-2 ring-amber-400/20'
+                            : 'bg-[#FAF7F5] dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-amber-400'
+                        }`}
+                      >
+                        <span>🔄 إعادة وتثبيت</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm(prev => ({
+                            ...prev,
+                            newOutcome: 'excused',
+                            newPages: 0
+                          }))
+                        }
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                          form.newOutcome === 'excused'
+                            ? 'bg-rose-600 text-white border-rose-600 shadow-xs ring-2 ring-rose-500/20'
+                            : 'bg-[#FAF7F5] dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-rose-400'
+                        }`}
+                      >
+                        <span>❌ لم يتم الإنجاز / اعتذار</span>
+                      </button>
+                    </div>
+
+                    {form.newOutcome === 'redo' && (
+                      <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                        ⏳ تنبيه ذكي: سيتم تسجيل الطالبة «حاضرة»، وتجميد إضافة الأوجه (0 ص) في الخطة الشهرية اليوم، وترحيل نفس المقرر ({form.recitedPortion}) لجلسة الغد بوسم «مقرر مُعاد للتثبيت ⏳».
+                      </div>
+                    )}
+                    {form.newOutcome === 'excused' && (
+                      <div className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 text-[11px] font-bold text-rose-700 dark:text-rose-300">
+                        📌 تبقى الأوجه المنجزة مجمّدة (0 ص) ويترحّل المقرر للجلسة القادمة دون التقدم في الخطة.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* تحديد السورة والآيات للحفظ الجديد */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-1">
+                    <div>
+                      <label className="block text-[11px] text-stone-500 mb-1">من سورة</label>
+                      <select
+                        value={form.newFromSurah}
+                        onChange={e => handleNewPortionChange('newFromSurah', Number(e.target.value))}
+                        className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                      >
+                        {QURAN_SURAHS.map(s => (
+                          <option key={s.number} value={s.number}>{s.number}. {s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-stone-500 mb-1">من آية</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={form.newFromAyah}
+                        onChange={e => handleNewPortionChange('newFromAyah', Number(e.target.value))}
+                        className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-stone-500 mb-1">إلى سورة</label>
+                      <select
+                        value={form.newToSurah}
+                        onChange={e => handleNewPortionChange('newToSurah', Number(e.target.value))}
+                        className="w-full py-1.5 px-2 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                      >
+                        {QURAN_SURAHS.map(s => (
+                          <option key={s.number} value={s.number}>{s.number}. {s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-stone-500 mb-1">إلى آية</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={form.newToAyah}
+                        onChange={e => handleNewPortionChange('newToAyah', Number(e.target.value))}
+                        className="w-full text-center py-1.5 border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 rounded-xl font-bold text-xs"
+                      />
                     </div>
                   </div>
 
                   {/* نص المقرر التسميعي - كتابة وتعديل يدوي */}
                   <div className="space-y-1">
                     <label className="block text-[11px] font-bold text-stone-600 dark:text-stone-400">
-                      {form.isConsolidation ? 'المقرر الذي تم تثبيته وسرده اليوم:' : 'المقرر الذي تم تسميعه:'}
+                      نص المقرر الذي تم تسميعه:
                     </label>
                     <input
                       type="text"
                       value={form.recitedPortion}
                       onChange={e => setForm({ ...form, recitedPortion: e.target.value })}
-                      placeholder={form.isConsolidation ? 'مثال: سرد وتثبيت سورة البقرة من آية 1 إلى 50' : 'مثال: من سورة البقرة آية ١ إلى ٢٥'}
+                      placeholder="مثال: من سورة البقرة آية ١ إلى ٢٥"
                       className="w-full px-3.5 py-2.5 bg-[#FAF7F5] dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 rounded-xl text-xs text-stone-800 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-[#8E5364]"
                     />
                   </div>
@@ -1274,11 +1510,73 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                       type="number"
                       min="0"
                       step="0.25"
-                      value={form.minorPages}
-                      onChange={e => setForm({ ...form, minorPages: Math.max(0, parseFloat(e.target.value) || 0) })}
-                      className="w-16 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364]"
+                      value={form.minorOutcome === 'mastered' ? form.minorPages : 0}
+                      disabled={form.minorOutcome !== 'mastered'}
+                      onChange={e => {
+                        const val = Math.max(0, parseFloat(e.target.value) || 0);
+                        setForm({ ...form, minorPages: val, attemptedMinorPages: val || form.attemptedMinorPages });
+                      }}
+                      className="w-16 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364] disabled:opacity-50"
                     />
                   </div>
+                </div>
+
+                {/* أزرار الرصد الذكية للمراجعة الصغرى */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm(prev => ({
+                        ...prev,
+                        minorOutcome: 'mastered',
+                        minorPages: prev.attemptedMinorPages || 1,
+                        minorDone: true
+                      }))
+                    }
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer flex items-center justify-center gap-1 ${
+                      form.minorOutcome === 'mastered'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                        : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700'
+                    }`}
+                  >
+                    <span>✅ أُنجز بإتقان</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm(prev => ({
+                        ...prev,
+                        minorOutcome: 'redo',
+                        minorPages: 0,
+                        minorDone: false
+                      }))
+                    }
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer flex items-center justify-center gap-1 ${
+                      form.minorOutcome === 'redo'
+                        ? 'bg-amber-500 text-white border-amber-500 shadow-2xs'
+                        : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700'
+                    }`}
+                  >
+                    <span>🔄 إعادة وتثبيت</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm(prev => ({
+                        ...prev,
+                        minorOutcome: 'excused',
+                        minorPages: 0,
+                        minorDone: false
+                      }))
+                    }
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer flex items-center justify-center gap-1 ${
+                      form.minorOutcome === 'excused'
+                        ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
+                        : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700'
+                    }`}
+                  >
+                    <span>❌ لم يتم الإنجاز / اعتذار</span>
+                  </button>
                 </div>
 
                 {/* من سورة ومن آية إلى سورة وإلى آية */}
@@ -1357,11 +1655,73 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                       type="number"
                       min="0"
                       step="0.25"
-                      value={form.majorPages}
-                      onChange={e => setForm({ ...form, majorPages: Math.max(0, parseFloat(e.target.value) || 0) })}
-                      className="w-16 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364]"
+                      value={form.majorOutcome === 'mastered' ? form.majorPages : 0}
+                      disabled={form.majorOutcome !== 'mastered'}
+                      onChange={e => {
+                        const val = Math.max(0, parseFloat(e.target.value) || 0);
+                        setForm({ ...form, majorPages: val, attemptedMajorPages: val || form.attemptedMajorPages });
+                      }}
+                      className="w-16 text-center text-xs font-extrabold text-[#8E5364] dark:text-[#E8BDC8] font-mono bg-[#FAF7F5] dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-[#8E5364] disabled:opacity-50"
                     />
                   </div>
+                </div>
+
+                {/* أزرار الرصد الذكية لمراجعة التمكين */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm(prev => ({
+                        ...prev,
+                        majorOutcome: 'mastered',
+                        majorPages: prev.attemptedMajorPages || 2,
+                        majorDone: true
+                      }))
+                    }
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer flex items-center justify-center gap-1 ${
+                      form.majorOutcome === 'mastered'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                        : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700'
+                    }`}
+                  >
+                    <span>✅ أُنجز بإتقان</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm(prev => ({
+                        ...prev,
+                        majorOutcome: 'redo',
+                        majorPages: 0,
+                        majorDone: false
+                      }))
+                    }
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer flex items-center justify-center gap-1 ${
+                      form.majorOutcome === 'redo'
+                        ? 'bg-amber-500 text-white border-amber-500 shadow-2xs'
+                        : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700'
+                    }`}
+                  >
+                    <span>🔄 إعادة وتثبيت</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm(prev => ({
+                        ...prev,
+                        majorOutcome: 'excused',
+                        majorPages: 0,
+                        majorDone: false
+                      }))
+                    }
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer flex items-center justify-center gap-1 ${
+                      form.majorOutcome === 'excused'
+                        ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
+                        : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700'
+                    }`}
+                  >
+                    <span>❌ لم يتم الإنجاز / اعتذار</span>
+                  </button>
                 </div>
 
                 {/* من سورة ومن آية إلى سورة وإلى آية */}
@@ -1443,43 +1803,6 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                 >
                   <span>{isEditingMastery ? 'إغلاق ✕' : '⚙️ تعديل أو إضافة معايير'}</span>
                 </button>
-              </div>
-
-              {/* بطاقة حساب درجة التحضير اليومي الآلية من 10 مع التحديث الحي المباشر */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-l from-emerald-50 via-[#FAF7F5] to-amber-50 dark:from-emerald-950/30 dark:via-stone-900 dark:to-amber-950/30 border border-emerald-300 dark:border-emerald-700/60 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
-                <div className="space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-base">⭐</span>
-                    <span className="text-xs font-bold text-stone-800 dark:text-stone-100">
-                      درجة التحضير اليومي الآلية:
-                    </span>
-                    <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full ${
-                      calculatedPrepScore >= 9
-                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                        : calculatedPrepScore >= 7
-                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                        : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                    }`}>
-                      {calculatedPrepScore >= 9
-                        ? 'ممتازة وملتزمة بالتحضير المتقن ⭐'
-                        : calculatedPrepScore >= 7
-                        ? 'جيدة جداً - تحتاج زيادة التكرار 📈'
-                        : 'دون المستوى المطلوب - يلزم العناية بالاستماع والتكرار ⚠️'}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-stone-500 dark:text-stone-400">
-                    الاستماع للمقرئ (3 درجات) • التلاوة نظراً (3 درجات) • التكرار المتقن للوجه (4 درجات)
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="text-center bg-white dark:bg-stone-800 px-3.5 py-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800 shadow-2xs">
-                    <span className="block text-[9px] text-stone-400 font-bold">الدرجة من 10</span>
-                    <span className="text-2xl font-black font-mono text-emerald-700 dark:text-emerald-400">
-                      {calculatedPrepScore} <span className="text-xs text-stone-400 font-normal">/ 10</span>
-                    </span>
-                  </div>
-                </div>
               </div>
 
               {/* لوحة التعديل الموحدة لكافة المعايير (كلها زي بعض) */}
@@ -1698,30 +2021,45 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                 })}
               </div>
 
-              {/* التقييم التحفيزي المباشر لمعايير التحضير والإتقان */}
+              {/* التقييم الآلي لدرجة التحضير اليومي من 10 */}
               {(() => {
-                const totalCrit = activeCriteriaList.length;
-                const fullCritCount = activeCriteriaList.filter(c => (criteriaCounts[c.id] ?? 0) >= c.count).length;
-                const anyCritCount = activeCriteriaList.filter(c => (criteriaCounts[c.id] ?? 0) > 0).length;
+                const prepScore = prepScoreBreakdown.totalOutOf10;
                 const prepStatus: 'full' | 'partial' | 'needs_care' =
-                  totalCrit > 0 && fullCritCount === totalCrit
+                  prepScore >= 9
                     ? 'full'
-                    : anyCritCount > 0
+                    : prepScore >= 5
                       ? 'partial'
                       : 'needs_care';
 
                 return (
-                  <div className="p-3 rounded-2xl bg-white dark:bg-stone-800 border border-[#E2D5CC] dark:border-stone-700 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-stone-600 dark:text-stone-300">
-                        تقييم التحضير اليومي (الاستماع • التلاوة • التكرار):
-                      </span>
-                      {prepStatus === 'full' && (
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold animate-in fade-in">
-                          +1 تشجيع الإتقان الكامل 🎉
+                  <div className="p-3.5 rounded-2xl bg-white dark:bg-stone-800 border border-[#E2D5CC] dark:border-stone-700 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 dark:border-stone-700/60 pb-2">
+                      <div>
+                        <span className="text-xs font-extrabold text-stone-800 dark:text-stone-100 block">
+                          درجة التحضير اليومي المحسوبة تلقائياً (من 10):
                         </span>
-                      )}
+                        <span className="text-[10px] text-stone-500">
+                          الاستماع ({prepScoreBreakdown.listenPoints}/3) • التلاوة نظراً ({prepScoreBreakdown.recitePoints}/3) • التكرار المتقن ({prepScoreBreakdown.repeatPoints}/4)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-3 py-1 rounded-xl font-mono text-base font-extrabold border ${
+                          prepScore >= 9
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                            : prepScore >= 7
+                            ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                            : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+                        }`}>
+                          {prepScore} / 10
+                        </span>
+                        {prepScore >= 10 && (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold animate-in fade-in">
+                            10/10 إتقان كامل ⭐
+                          </span>
+                        )}
+                      </div>
                     </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <button
                         type="button"
@@ -1731,12 +2069,12 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                           setCriteriaCounts(next);
                         }}
                         className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                          prepStatus === 'full'
+                          prepStatus === 'full' && prepScore === 10
                             ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/20'
                             : 'bg-[#FAF7F5] dark:bg-stone-900 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-emerald-300'
                         }`}
                       >
-                        <span>تحضير كامل ومتقن ⭐</span>
+                        <span>تحضير كامل (10/10) ⭐</span>
                       </button>
 
                       <button
@@ -1754,7 +2092,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                             : 'bg-[#FAF7F5] dark:bg-stone-900 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-amber-300'
                         }`}
                       >
-                        <span>تحضير جزئي ⏳</span>
+                        <span>تحضير جزئي (نصف العدد) ⏳</span>
                       </button>
 
                       <button
@@ -1765,12 +2103,12 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                           setCriteriaCounts(next);
                         }}
                         className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                          prepStatus === 'needs_care'
+                          prepStatus === 'needs_care' && prepScore === 0
                             ? 'bg-rose-600 text-white border-rose-600 shadow-xs ring-2 ring-rose-500/20'
                             : 'bg-[#FAF7F5] dark:bg-stone-900 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-rose-300'
                         }`}
                       >
-                        <span>يحتاج إلى عناية واهتمام 💡</span>
+                        <span>لم تحضّر (0/10) 💡</span>
                       </button>
                     </div>
                   </div>
@@ -1927,19 +2265,25 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                                   <span className="text-[10px] text-stone-400 font-normal">{r.dayName || getHijriParts(r.date).weekday}</span>
                                 </td>
                                 <td className="p-2.5 font-bold text-stone-800 dark:text-stone-200">
-                                  {r.requiredPortionText || 'مقرر الحفظ اليومي'}
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span>{r.requiredPortionText || 'مقرر الحفظ اليومي'}</span>
+                                    {(r.newOutcome === 'redo' || r.isRedoSession) && (
+                                      <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-bold">
+                                        🔄 إعادة للتثبيت
+                                      </span>
+                                    )}
+                                    {r.newOutcome === 'excused' && (
+                                      <span className="px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 text-[10px] font-bold">
+                                        ❌ اعتذار
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="p-2.5 text-center font-mono font-bold">
                                   <div className="flex flex-col items-center justify-center gap-0.5">
-                                    {r.isConsolidationSession ? (
-                                      <span className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 px-2 py-0.5 rounded-full text-[10px] font-sans font-bold">
-                                        تثبيت وسرد ⭐
-                                      </span>
-                                    ) : (
-                                      <span className="text-[#8E5364] dark:text-[#E8BDC8]">
-                                        {r.newMemorizationPages ?? 1} ص
-                                      </span>
-                                    )}
+                                    <span className="text-[#8E5364] dark:text-[#E8BDC8]">
+                                      {r.newMemorizationPages ?? 0} ص
+                                    </span>
                                   </div>
                                 </td>
                                 <td className="p-2.5 text-center whitespace-nowrap">
@@ -1948,13 +2292,18 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                                   <span className="text-amber-600 font-mono">{r.hintsCount ?? 0}</span>
                                 </td>
                                 <td className="p-2.5 text-center whitespace-nowrap">
-                                  <span className={`px-2 py-0.5 rounded-lg font-bold text-[10px] ${
-                                    (r.recitationScore ?? 10) >= 9 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
-                                    (r.recitationScore ?? 10) >= 7 ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
-                                    'bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300'
-                                  }`}>
-                                    {r.recitationScore ?? 10} / 10
-                                  </span>
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <span className={`px-2 py-0.5 rounded-lg font-bold text-[10px] ${
+                                      (r.recitationScore ?? 10) >= 9 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
+                                      (r.recitationScore ?? 10) >= 7 ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
+                                      'bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300'
+                                    }`}>
+                                      تسميع: {r.recitationScore ?? 10}/10
+                                    </span>
+                                    <span className="text-[10px] font-bold text-stone-500">
+                                      تحضير: {r.preparationScore ?? 10}/10
+                                    </span>
+                                  </div>
                                 </td>
                                 <td className="p-2.5 text-[10px] text-stone-600 dark:text-stone-400 max-w-[150px]">
                                   <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] inline-flex items-center gap-1 ${

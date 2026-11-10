@@ -96,9 +96,9 @@ export interface MasteryGuideConfig {
 }
 
 export const defaultMasteryGuideConfig: MasteryGuideConfig = {
-  listenToReciterTimes: 3,
+  listenToReciterTimes: 5,
   reciteLookingTimes: 5,
-  masteryRepetitionTimes: 20,
+  masteryRepetitionTimes: 10,
   minorRevisionAmount: 'آخر 3 أوجه',
   tamkeenRevisionAmount: 'ربع حزب',
   pointsPerCondition: 2
@@ -278,9 +278,6 @@ export interface DailyRecord {
   hintsCount: number;            // عدد التنبيهات
   tajweedErrorsCount: number;    // عدد الأخطاء التجويدية
   recitationScore: number;       // درجة التسميع المحسوبة
-  preparationScore?: number;     // درجة معايير التحضير من 10
-  isConsolidationSession?: boolean; // جلسة تثبيت وسرد المقرّر
-  consolidationNotes?: string;
   
   // شروط الحفظ المتقن (دليل مشكاة الغيم)
   conditions: {
@@ -291,8 +288,32 @@ export interface DailyRecord {
     tamkeenRevision: boolean;    // مراجعة التمكين غيباً
     achievedDistinction: boolean;// هل حققت معيار التميز؟
   };
+  criteriaCounts?: Record<string, number>;
+  criteriaListenCount?: number;
+  criteriaReciteCount?: number;
+  criteriaRepeatCount?: number;
+  preparationScore?: number; // درجة التحضير اليومي من 10
+  newOutcome?: 'mastered' | 'redo' | 'excused';
+  minorOutcome?: 'mastered' | 'redo' | 'excused';
+  majorOutcome?: 'mastered' | 'redo' | 'excused';
+  isRedoSession?: boolean;
+  attemptedNewPages?: number;
+  newFromSurah?: number;
+  newFromAyah?: number;
+  newToSurah?: number;
+  newToAyah?: number;
+  minorFromSurah?: number;
+  minorFromAyah?: number;
+  minorToSurah?: number;
+  minorToAyah?: number;
+  minorPages?: number;
+  majorFromSurah?: number;
+  majorFromAyah?: number;
+  majorToSurah?: number;
+  majorToAyah?: number;
+  majorPages?: number;
   
-  status: 'completed' | 'partial' | 'incomplete' | 'unrecorded';
+  status: 'completed' | 'partial' | 'incomplete' | 'unrecorded' | 'absent' | 'excused' | 'pending';
   notes: string;
   recordedBy: string;
   recordedAt: string;

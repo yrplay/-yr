@@ -49,6 +49,8 @@ export interface StudentScoreSummary {
   conditionsFulfilledScore: number;
   conditionsMax: number;
   conditionsDistinctionCount: number;
+  preparationAvgOutOf10: number;
+  preparationRatePercent: number;
   
   atqiniScore: number;
   atqiniMax: number;
@@ -71,9 +73,6 @@ export interface StudentScoreSummary {
   rankInTrack: number;
   hasUnrecordedLogs: boolean;
   hasFrequentAbsence: boolean;
-  preparationScoreAverage?: number;
-  preparationScoreRate?: number;
-  preparationBadgeText?: string;
 }
 
 interface AppContextType {
@@ -212,6 +211,7 @@ const DAILY_RECORDS_LOCAL_KEY = 'ghaith_daily_records_local_v1';
 const CHALLENGE_SUBS_LOCAL_KEY = 'ghaith_challenge_subs_local_v1';
 const TRACKS_LOCAL_KEY = 'ghaith_tracks_local_v1';
 const CIRCLES_LOCAL_KEY = 'ghaith_circles_local_v1';
+const STUDENTS_LOCAL_KEY = 'ghaith_students_local_v1';
 const SUBSCRIPTIONS_LOCAL_KEY = 'ghaith_subscriptions_local_v1';
 const STUDENT_PLANS_LOCAL_KEY = 'ghaith_student_plans_local_v1';
 
@@ -309,12 +309,37 @@ const ensureDefaultTrackIntegrity = (data: any) => {
     data.tracks = tracksList;
   }
 
-  // 2. Ensure all students have a valid trackId (default to t-1)
+  // 2. Ensure all students have a valid trackId (default to t-1) and merge local saved student edits
   if (Array.isArray(data.students)) {
-    data.students = data.students.map((s: any) => ({
+    let studentsList = data.students.map((s: any) => ({
       ...s,
       trackId: s.trackId || 't-1'
     }));
+    try {
+      if (typeof window !== 'undefined') {
+        const localStudentsRaw = localStorage.getItem(STUDENTS_LOCAL_KEY);
+        if (localStudentsRaw) {
+          const localStudents: any[] = JSON.parse(localStudentsRaw);
+          if (Array.isArray(localStudents) && localStudents.length > 0) {
+            const byId = new Map<string, any>();
+            studentsList.forEach((st: any) => st?.id && byId.set(st.id, st));
+            localStudents.forEach((loc: any) => {
+              if (!loc?.id) return;
+              const ex = byId.get(loc.id);
+              const locTime = Date.parse(loc.updatedAt || '') || 0;
+              const exTime = ex ? (Date.parse(ex.updatedAt || '') || 0) : -1;
+              if (!ex || locTime >= exTime) {
+                byId.set(loc.id, { ...ex, ...loc, trackId: loc.trackId || ex?.trackId || 't-1' });
+              }
+            });
+            studentsList = Array.from(byId.values());
+          }
+        }
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    data.students = studentsList;
   }
 
   // 3. Ensure all circles have a valid trackId (default to t-1) and clean emojis from circle names
@@ -1386,6 +1411,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       try {
         if (typeof window !== 'undefined') {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(rawPayload));
+          localStorage.setItem(STUDENTS_LOCAL_KEY, JSON.stringify(rawPayload.students));
           localStorage.setItem('ghaith_attendance_local_v1', JSON.stringify(rawPayload.attendanceRecords));
           localStorage.setItem('ghaith_daily_records_local_v1', JSON.stringify(rawPayload.dailyRecords));
           localStorage.setItem('ghaith_challenge_subs_local_v1', JSON.stringify(rawPayload.studentChallengeSubmissions));
@@ -1826,7 +1852,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       name: student.name || 'طالبة جديدة',
       phone: student.phone || '',
       email: student.email || '',
-      joinDate: student.joinDate || new Date().toISOString().split('T')[0],
+      joinDate: student.joinDate || '1448-01-01',
       status: student.status || 'active',
       trackId: student.trackId || circle?.trackId || (tracks[0]?.id ?? 't-1'),
       circleId: student.circleId || circles[0]?.id || '',
@@ -1841,6 +1867,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = [...currentStudents.filter((s: Student) => s.id !== newStudent.id), newStudent];
     masterStateRef.current.students = next;
     setStudents(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STUDENTS_LOCAL_KEY, JSON.stringify(next));
+      }
+    } catch {}
     const nextLogs = appendAuditEntry(
       'create',
       'student',
@@ -1858,6 +1889,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = currentStudents.map((s: Student) => s.id === id ? { ...s, ...student, updatedAt: new Date().toISOString() } : s);
     masterStateRef.current.students = next;
     setStudents(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STUDENTS_LOCAL_KEY, JSON.stringify(next));
+      }
+    } catch {}
     const nextLogs = appendAuditEntry(
       'update',
       'student',
@@ -3570,17 +3606,33 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       memorizationScoreSum += Math.min(10, Math.max(0, dr.recitationScore || 0));
       
-      const cond = dr.conditions;
-      if (cond) {
-        let cPoints = 0;
-        if (cond.listenedToReader) cPoints += 2;
-        if (cond.recitedLooking) cPoints += 2;
-        if (cond.masteryRepetition) cPoints += 2;
-        if (cond.minorRevision) cPoints += 2;
-        if (cond.tamkeenRevision) cPoints += 2;
-        if (cond.achievedDistinction) conditionsDistinctionCount++;
-        conditionsSum += cPoints;
+      // حساب درجة التحضير اليومي من 10:
+      // الاستماع للمقرئ (الهدف: 5 مرات) -> 3 درجات
+      // التلاوة نظراً من المصحف (الهدف: 5 مرات) -> 3 درجات
+      // التكرار المتقن للوجه (الهدف: 10 مرات) -> 4 درجات
+      let dayPrepScore = 0;
+      if (typeof dr.preparationScore === 'number' && Number.isFinite(dr.preparationScore)) {
+        dayPrepScore = Math.min(10, Math.max(0, dr.preparationScore));
+      } else if (
+        typeof dr.criteriaListenCount === 'number' ||
+        typeof dr.criteriaReciteCount === 'number' ||
+        typeof dr.criteriaRepeatCount === 'number'
+      ) {
+        const listenRatio = Math.min(1, Math.max(0, (dr.criteriaListenCount ?? 0) / 5));
+        const reciteRatio = Math.min(1, Math.max(0, (dr.criteriaReciteCount ?? 0) / 5));
+        const repeatRatio = Math.min(1, Math.max(0, (dr.criteriaRepeatCount ?? 0) / 10));
+        dayPrepScore = Math.round(((listenRatio * 3) + (reciteRatio * 3) + (repeatRatio * 4)) * 100) / 100;
+      } else if (dr.conditions) {
+        const cond = dr.conditions;
+        const listenPts = cond.listenedToReader ? 3 : 0;
+        const recitePts = cond.recitedLooking ? 3 : 0;
+        const repeatPts = cond.masteryRepetition ? 4 : 0;
+        dayPrepScore = listenPts + recitePts + repeatPts;
       }
+      if (dr.conditions?.achievedDistinction || dayPrepScore >= 9.9) {
+        conditionsDistinctionCount++;
+      }
+      conditionsSum += dayPrepScore;
     }
 
     // سجل اليوم هو مصدر المنجز. نستخدم الأرقام القديمة بالخطة فقط عندما لا توجد سجلات يومية.
@@ -3606,6 +3658,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const conditionsMax = conditionsItem?.maxScore ?? 10;
     const hasConditionsData = completedDailyRecords.length > 0;
     const avgConditionsOutOf10 = hasConditionsData ? (conditionsSum / completedDailyRecords.length) : 0;
+    const preparationAvgOutOf10 = Number(avgConditionsOutOf10.toFixed(1));
+    const preparationRatePercent = Math.min(100, Math.max(0, Math.round(avgConditionsOutOf10 * 10)));
     const conditionsFulfilledScore = hasConditionsData ? (avgConditionsOutOf10 / 10) * conditionsMax : 0;
 
     const newMemorizationPagesTarget = (typeof sPlan?.newMemorization?.targetPages === 'number' && sPlan.newMemorization.targetPages > 0) ? sPlan.newMemorization.targetPages : 8;
@@ -3697,27 +3751,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const matchedScale = scale.find(s => finalPercentage >= s.minPercentage) || scale[scale.length - 1];
 
-    const prepScores = sDaily.map(dr => {
-      if (typeof dr.preparationScore === 'number') {
-        return dr.preparationScore;
-      }
-      const listen = dr.criteriaListenCount ?? (dr.conditions?.listenedToReader ? 5 : 0);
-      const recite = dr.criteriaReciteCount ?? (dr.conditions?.recitedLooking ? 5 : 0);
-      const repeat = dr.criteriaRepeatCount ?? (dr.conditions?.masteryRepetition ? 10 : 0);
-      const listenPts = Math.min(3, (listen / 5) * 3);
-      const recitePts = Math.min(3, (recite / 5) * 3);
-      const repeatPts = Math.min(4, (repeat / 10) * 4);
-      return Math.min(10, Math.max(0, Math.round((listenPts + recitePts + repeatPts) * 10) / 10));
-    });
-    const prepSum = prepScores.reduce((acc, s) => acc + s, 0);
-    const prepAvg = prepScores.length > 0 ? Math.round((prepSum / prepScores.length) * 10) / 10 : 10;
-    const prepRate = Math.min(100, Math.round((prepAvg / 10) * 100));
-    const prepBadge = prepAvg >= 9
-      ? 'ممتازة وملتزمة بالتحضير المتقن ⭐'
-      : prepAvg >= 7
-      ? 'جيدة جداً - تحتاج زيادة التكرار 📈'
-      : 'دون المستوى المطلوب - يلزم العناية بالاستماع والتكرار ⚠️';
-
     return {
       studentId,
       attendanceScore: Number(attendanceScore.toFixed(1)),
@@ -3744,6 +3777,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       conditionsFulfilledScore: Number(conditionsFulfilledScore.toFixed(1)),
       conditionsMax,
       conditionsDistinctionCount,
+      preparationAvgOutOf10,
+      preparationRatePercent,
       atqiniScore: Number(atqiniScore.toFixed(1)),
       atqiniMax,
       atqiniCompletedCount,
@@ -3761,10 +3796,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       rankInCircle: 1,
       rankInTrack: 1,
       hasUnrecordedLogs: completedDailyRecords.length === 0,
-      hasFrequentAbsence: absentUnexcusedCount >= 2,
-      preparationScoreAverage: prepAvg,
-      preparationScoreRate: prepRate,
-      preparationBadgeText: prepBadge
+      hasFrequentAbsence: absentUnexcusedCount >= 2
     };
   };
 
@@ -3895,6 +3927,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       conditionsFulfilledScore: 0,
       conditionsMax: 10,
       conditionsDistinctionCount: 0,
+      preparationAvgOutOf10: 0,
+      preparationRatePercent: 0,
       atqiniScore: 0,
       atqiniMax: 10,
       atqiniCompletedCount: 0,
@@ -3912,10 +3946,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       rankInCircle: 1,
       rankInTrack: 1,
       hasUnrecordedLogs: true,
-      hasFrequentAbsence: false,
-      preparationScoreAverage: 10,
-      preparationScoreRate: 100,
-      preparationBadgeText: 'ممتازة وملتزمة بالتحضير المتقن ⭐'
+      hasFrequentAbsence: false
     };
   };
 

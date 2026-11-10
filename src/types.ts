@@ -244,13 +244,6 @@ export interface DailyRecord {
   tajweedErrorsCount: number;
   recitationScore: number;
   
-  // الدرجة الآلية لمعايير التحضير والإتقان من 10
-  preparationScore?: number;
-  
-  // جلسات تثبيت وسرد المقرّر بعد إتمام الخطة الشهرية
-  isConsolidationSession?: boolean;
-  consolidationNotes?: string;
-  
   // الخانات المستقلة للمراجعة الصغرى والتمكين
   minorRevisionPortion?: RevisionPortion;
   tamkeenRevisionPortion?: RevisionPortion;
@@ -267,7 +260,27 @@ export interface DailyRecord {
   criteriaListenCount?: number;
   criteriaReciteCount?: number;
   criteriaRepeatCount?: number;
-  status: 'completed' | 'absent' | 'excused' | 'pending';
+  preparationScore?: number; // درجة التحضير اليومي من 10
+  newOutcome?: 'mastered' | 'redo' | 'excused';
+  minorOutcome?: 'mastered' | 'redo' | 'excused';
+  majorOutcome?: 'mastered' | 'redo' | 'excused';
+  isRedoSession?: boolean;
+  attemptedNewPages?: number;
+  newFromSurah?: number;
+  newFromAyah?: number;
+  newToSurah?: number;
+  newToAyah?: number;
+  minorFromSurah?: number;
+  minorFromAyah?: number;
+  minorToSurah?: number;
+  minorToAyah?: number;
+  minorPages?: number;
+  majorFromSurah?: number;
+  majorFromAyah?: number;
+  majorToSurah?: number;
+  majorToAyah?: number;
+  majorPages?: number;
+  status: 'completed' | 'absent' | 'excused' | 'pending' | 'partial' | 'incomplete' | 'unrecorded';
   signatureUrl?: string; // التوقيع اليدوي للمعلمة
   notes?: string;
   recordedBy: string;
@@ -515,9 +528,9 @@ export interface AuditLog {
 
 // معايير دليل الإتقان الافتراضية
 export const defaultMasteryGuideConfig: MasteryGuideConfig = {
-  listenToReciterTimes: 3,
+  listenToReciterTimes: 5,
   reciteLookingTimes: 5,
-  masteryRepetitionTimes: 20,
+  masteryRepetitionTimes: 10,
   minorRevisionAmount: 'آخر ٣ أوجه',
   tamkeenRevisionAmount: 'ربع حزب',
   pointsPerCondition: 2,

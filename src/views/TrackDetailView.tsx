@@ -8,6 +8,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { hasFullAccess, Track, CustomMasteryCriterion, Circle, Student } from '../types';
 import { RenderEntityIcon } from '../components/CircleIconLibrary';
+import { HijriJoinDateSelector, formatHijriShort } from '../utils/hijriDate';
 
 interface TrackDetailViewProps {
   trackId: string;
@@ -47,7 +48,8 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
     name: '',
     trackId: '',
     circleId: '',
-    phone: ''
+    phone: '',
+    joinDate: '1448-01-01'
   });
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
 
@@ -91,9 +93,9 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
       return mg.unifiedCriteria;
     }
     const list: Array<{ id: string; title: string; count: number; unit: string; description?: string }> = [
-      { id: 'crit-listen', title: 'الاستماع للمقرئ', count: mg?.listenToReciterTimes || 3, unit: 'مرات تكرار', description: 'الاستماع المتقن لمصحف الترتيل بصوت أحد مشاهير القراء المعتمدين لضبط الأداء والتجويد.' },
-      { id: 'crit-recite', title: 'التلاوة نظراً من المصحف', count: mg?.reciteLookingTimes || 5, unit: 'مرات تلاوة', description: 'القراءة البصرية من المصحف مع مطابقة مخارج الحروف والوقف والابتداء ورسم المصحف.' },
-      { id: 'crit-repeat', title: 'التكرار المتقن غيباً', count: mg?.masteryRepetitionTimes || 20, unit: 'مرة غيباً', description: 'التكرار الغيبي المركز للآيات حتى بلوغ درجة الانسيابية التامة ورسوخ الحفظ في الصدر.' }
+      { id: 'crit-listen', title: 'الاستماع للمقرئ', count: mg?.listenToReciterTimes || 5, unit: 'مرات تكرار', description: 'الاستماع المتقن لمصحف الترتيل بصوت أحد مشاهير القراء المعتمدين لضبط الأداء والتجويد (3 درجات).' },
+      { id: 'crit-recite', title: 'التلاوة نظراً من المصحف', count: mg?.reciteLookingTimes || 5, unit: 'مرات تلاوة', description: 'القراءة البصرية من المصحف مع مطابقة مخارج الحروف والوقف والابتداء ورسم المصحف (3 درجات).' },
+      { id: 'crit-repeat', title: 'التكرار المتقن غيباً', count: mg?.masteryRepetitionTimes || 10, unit: 'مرة غيباً', description: 'التكرار الغيبي المركز للآيات حتى بلوغ درجة الانسيابية التامة ورسوخ الحفظ في الصدر (4 درجات).' }
     ];
     if (mg?.customCriteria && Array.isArray(mg.customCriteria)) {
       mg.customCriteria.forEach((c, idx) => {
@@ -258,7 +260,8 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
       name: s.name || '',
       trackId: s.trackId || track?.id || '',
       circleId: s.circleId || '',
-      phone: s.phone || ''
+      phone: s.phone || '',
+      joinDate: s.joinDate || '1448-01-01'
     });
   };
 
@@ -269,7 +272,8 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
       name: studentForm.name.trim(),
       trackId: studentForm.trackId,
       circleId: studentForm.circleId,
-      phone: studentForm.phone.trim()
+      phone: studentForm.phone.trim(),
+      joinDate: studentForm.joinDate || '1448-01-01'
     });
     setEditingStudent(null);
   };
@@ -1251,6 +1255,14 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
                   value={studentForm.phone}
                   onChange={e => setStudentForm({ ...studentForm, phone: e.target.value })}
                   className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden font-mono text-right"
+                />
+              </div>
+
+              <div>
+                <HijriJoinDateSelector
+                  label="تاريخ الانضمام (تقويم أم القرى)"
+                  value={studentForm.joinDate}
+                  onChange={date => setStudentForm({ ...studentForm, joinDate: date })}
                 />
               </div>
 
