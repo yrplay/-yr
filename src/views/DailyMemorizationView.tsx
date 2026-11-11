@@ -1013,14 +1013,14 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
               طالبات حلقة ({selectedCircle?.name || 'المحددة'}) — تاريخ: {formatHijriDate(selectedDate)}
             </h3>
             <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-stone-500">
-              <span>إجمالي طالبات الحلقة: <strong>{circleStudents.length}</strong> طالبة</span>
+              <span>إجمالي طالبات الحلقة: <strong className="privacy-count-digit">{circleStudents.length}</strong> طالبة</span>
               <span>•</span>
               <span className="text-emerald-700 dark:text-emerald-400 font-bold">
-                الحاضرات: {dayPresentCount} / {circleStudents.length} ✅
+                الحاضرات: <span className="privacy-count-digit">{dayPresentCount}</span> / <span className="privacy-count-digit">{circleStudents.length}</span> ✅
               </span>
               <span>•</span>
               <span className="text-emerald-700 dark:text-emerald-400 font-bold">
-                ⚡ تحضير مبكر: {dayEarlyPrepCount}
+                ⚡ تحضير مبكر: <span className="privacy-count-digit">{dayEarlyPrepCount}</span>
               </span>
             </div>
           </div>

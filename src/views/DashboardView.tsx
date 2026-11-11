@@ -121,11 +121,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span className="font-bold text-white/95">{settings.name || 'مقرأة غيث الغيم'}</span>
               <span className="text-white/40">•</span>
               <span className="text-white/80 text-[11px]">المسار المعروض:</span>
-              <div className="inline-flex items-center gap-1.5 bg-black/25 hover:bg-black/40 text-white font-bold text-xs rounded-xl px-2.5 py-1 border border-white/30 transition shadow-2xs">
+              <div className="relative inline-flex items-center gap-1.5 bg-black/25 hover:bg-black/40 text-white font-bold text-xs rounded-xl px-3 py-1 border border-white/30 transition shadow-2xs cursor-pointer">
+                <span>
+                  {currentTrack
+                    ? (currentTrack.name || '').replace(/[🪴🤎]/g, '').trim()
+                    : 'كافة المسارات'}
+                </span>
+                <span
+                  className={`privacy-count-digit text-[11px] font-bold text-amber-200 ${
+                    isPrivacyMode ? 'blur-[5px] select-none' : ''
+                  }`}
+                  style={isPrivacyMode ? { filter: 'blur(5px)', userSelect: 'none' } : undefined}
+                >
+                  ({isPrivacyMode ? '••' : displayedStudents.length} طالبة)
+                </span>
+                <span className="text-[10px] text-white/75 mr-0.5">▾</span>
                 <select
                   value={selectedTrackId || 'all'}
                   onChange={e => setSelectedTrackId(e.target.value === 'all' ? null : e.target.value)}
-                  className="bg-transparent text-white font-bold text-xs outline-none cursor-pointer"
+                  aria-label="المسار المعروض"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 >
                   <option value="all" className="bg-stone-800 text-white">
                     {isPrivacyMode ? 'كافة المسارات (•• طالبة)' : `كافة المسارات (${students.length} طالبة)`}
@@ -140,12 +155,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     );
                   })}
                 </select>
-                <span
-                  className={`text-[11px] font-bold text-amber-200 select-none ${isPrivacyMode ? 'blur-[5px] select-none' : ''}`}
-                  style={isPrivacyMode ? { filter: 'blur(5px)', userSelect: 'none' } : undefined}
-                >
-                  ({isPrivacyMode ? '••' : displayedStudents.length} طالبة)
-                </span>
               </div>
             </div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/15 backdrop-blur text-xs font-bold text-white border border-white/20">

@@ -1072,11 +1072,20 @@ export const MonthlyPlansView: React.FC = () => {
                     <label className="block text-xs font-bold text-stone-700 mb-1">
                       {isNooraniaBranch ? 'المنجز الفعلي (تلقائياً من سجل القاعدة النورانية)' : 'الصفحات المنجزة (تلقائياً من سجل التسميع)'}
                     </label>
-                    <div className="px-3 py-2 rounded-xl bg-emerald-50/70 border border-emerald-200/80 flex items-center justify-between">
-                      <span className="text-xs font-extrabold text-emerald-900">
+                    <div
+                      className="px-3 py-2 rounded-xl border border-[#E2D5CC] flex items-center justify-between"
+                      style={{ backgroundColor: '#F6EFEA' }}
+                    >
+                      <span
+                        className="text-xs font-extrabold"
+                        style={{ color: '#7B3F30' }}
+                      >
                         <span className="privacy-score-digit">{donePages}</span> من <span className="privacy-score-digit">{targetPages}</span> {isNooraniaBranch ? 'درس / صفحة' : 'صفحة'}
                       </span>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
+                      <span
+                        className="px-2 py-0.5 rounded-full text-white text-[10px] font-bold"
+                        style={{ backgroundColor: '#9A5643' }}
+                      >
                         {percent}%
                       </span>
                     </div>
@@ -1214,12 +1223,12 @@ export const MonthlyPlansView: React.FC = () => {
                   <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2] flex items-center gap-3">
                     {/* Vertical Progress Capsule / Indicator */}
                     <div
-                      className="w-2.5 h-10 rounded-full overflow-hidden flex flex-col justify-end shrink-0"
+                      className="w-2.5 h-10 rounded-full overflow-hidden flex flex-col justify-end shrink-0 bg-[#F6EFEA]"
                       style={{ backgroundColor: '#F6EFEA' }}
                       title={`نسبة الإنجاز: ${isEnabled ? `${percent}%` : '0%'}`}
                     >
                       <div
-                        className="w-full rounded-full transition-all duration-300"
+                        className="w-full rounded-full transition-all duration-300 bg-[#9A5643]"
                         style={{
                           height: `${isEnabled ? percent : 0}%`,
                           backgroundColor: '#9A5643'
@@ -1230,18 +1239,18 @@ export const MonthlyPlansView: React.FC = () => {
                       <div className="flex items-center justify-between text-[11px] mb-1.5">
                         <span className="text-stone-500 font-medium">نسبة الإنجاز التلقائية:</span>
                         <span
-                          className="font-extrabold"
+                          className="font-extrabold text-[#7B3F30]"
                           style={{ color: '#7B3F30' }}
                         >
                           {isEnabled ? `${percent}%` : 'معطّل'}
                         </span>
                       </div>
                       <div
-                        className="w-full h-2.5 rounded-full overflow-hidden"
+                        className="w-full h-2.5 rounded-full overflow-hidden bg-[#F6EFEA]"
                         style={{ backgroundColor: '#F6EFEA' }}
                       >
                         <div
-                          className="h-full rounded-full transition-all duration-300"
+                          className="h-full rounded-full transition-all duration-300 bg-[#9A5643]"
                           style={{
                             width: `${isEnabled ? percent : 0}%`,
                             backgroundColor: '#9A5643'
@@ -1480,12 +1489,12 @@ export const MonthlyPlansView: React.FC = () => {
           <div className="flex items-center gap-3">
             {/* Vertical Progress Capsule / Indicator */}
             <div
-              className="w-3 h-11 rounded-full overflow-hidden flex flex-col justify-end shrink-0"
+              className="w-3 h-11 rounded-full overflow-hidden flex flex-col justify-end shrink-0 bg-[#F6EFEA]"
               style={{ backgroundColor: '#F6EFEA' }}
               title={`نسبة إنجاز الخطة الشهرية: ${overallPercent}%`}
             >
               <div
-                className="w-full rounded-full transition-all duration-300"
+                className="w-full rounded-full transition-all duration-300 bg-[#9A5643]"
                 style={{
                   height: `${overallPercent}%`,
                   backgroundColor: '#9A5643'
@@ -1501,7 +1510,7 @@ export const MonthlyPlansView: React.FC = () => {
                     يُحتسب تلقائياً من سجل التسميع ⚡
                   </span>
                 </div>
-                <span className="font-extrabold" style={{ color: '#7B3F30' }}>
+                <span className="font-extrabold text-[#7B3F30]" style={{ color: '#7B3F30' }}>
                   {isFreeMem ? (
                     <span>
                       إجمالي المنجز الكلي: <span className="privacy-score-digit">{totalEnabledDone}</span> صفحة متقنة 🌟 ({overallPercent}%)
@@ -1514,11 +1523,11 @@ export const MonthlyPlansView: React.FC = () => {
                 </span>
               </div>
               <div
-                className="w-full h-3 rounded-full overflow-hidden"
+                className="w-full h-3 rounded-full overflow-hidden bg-[#F6EFEA]"
                 style={{ backgroundColor: '#F6EFEA' }}
               >
                 <div
-                  className="h-full rounded-full transition-all duration-300"
+                  className="h-full rounded-full transition-all duration-300 bg-[#9A5643]"
                   style={{
                     width: `${overallPercent}%`,
                     backgroundColor: '#9A5643'
@@ -1533,7 +1542,7 @@ export const MonthlyPlansView: React.FC = () => {
               <span className="text-stone-600 font-bold">
                 {isFreeMem ? '١. الحفظ الحر:' : '١. الحفظ الجديد:'}
               </span>
-              <span className="font-extrabold" style={{ color: '#7B3F30' }}>
+              <span className="font-extrabold text-[#7B3F30]" style={{ color: '#7B3F30' }}>
                 {!isNewEnabled
                   ? 'معطّل لهذا الشهر'
                   : isFreeMem
@@ -1545,7 +1554,7 @@ export const MonthlyPlansView: React.FC = () => {
               <span className="text-stone-600 font-bold">
                 {isMinorNoorania ? '٢. مسار القاعدة النورانية:' : '٢. المراجعة الصغرى:'}
               </span>
-              <span className="font-extrabold" style={{ color: '#7B3F30' }}>
+              <span className="font-extrabold text-[#7B3F30]" style={{ color: '#7B3F30' }}>
                 {isMinorEnabled
                   ? `${minorDone} من ${minorTarget} ${isMinorNoorania ? 'درس/ص' : 'وجه'} (${minorPercent}%)`
                   : 'معطّل لهذا الشهر'}
@@ -1553,7 +1562,7 @@ export const MonthlyPlansView: React.FC = () => {
             </div>
             <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white border border-stone-200/70">
               <span className="text-stone-600 font-bold">٣. مراجعة التمكين:</span>
-              <span className="font-extrabold text-[#2D5A43]">
+              <span className="font-extrabold text-[#7B3F30]" style={{ color: '#7B3F30' }}>
                 {isTamkeenEnabled ? `${tamkeenDone} من ${tamkeenTarget} وجه (${tamkeenPercent}%)` : 'معطّل لهذا الشهر'}
               </span>
             </div>
