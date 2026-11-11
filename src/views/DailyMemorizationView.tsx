@@ -500,9 +500,9 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     return Math.max(0, Math.round((baseScore - totalDeductions) * 100) / 100);
   }, [form.hifzErrors, form.alerts, form.tajweedErrors, form.newOutcome, baseScore, hifzDeduction, alertDeduction, tajweedDeduction]);
 
-  // تصفية الطالبات
+  // تصفية الطالبات (إخفاء المؤرشفات من شاشة التسميع اليومي)
   const circleStudents = useMemo(() => {
-    let list = students.filter(s => s.status === 'active');
+    let list = students.filter(s => s.status === 'active' && !s.archived);
     if (selectedCircleId) {
       list = list.filter(s => s.circleId === selectedCircleId);
     }

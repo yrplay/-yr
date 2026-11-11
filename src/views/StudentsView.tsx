@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import {
   Users, Search, Filter, Plus, Edit, Archive, HeartHandshake,
   UserCheck, Shield, Phone, Mail, Award, ArrowUpDown, ChevronLeft,
-  Calendar, CheckCircle2, AlertCircle, Trash2
+  Calendar, CheckCircle2, AlertCircle, Trash2, RotateCcw
 } from 'lucide-react';
 import { hasFullAccess, StudentStatus } from '../types';
 import { formatHijriShort, HijriJoinDateSelector } from '../utils/hijriDate';
@@ -19,14 +19,14 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 }) => {
   const {
     students, circles, tracks, allStudentScores,
-    createStudent, updateStudent, archiveStudent, deleteStudent, assignPartner,
+    createStudent, updateStudent, archiveStudent, restoreStudent, deleteStudent, assignPartner,
     currentUser, quickModalAction, clearQuickModal, settings,
     selectedTrackId
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCircleId, setSelectedCircleId] = useState<string>('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [selectedStatus, setSelectedStatus] = useState<string>('active');
   const [sortBy, setSortBy] = useState<'name' | 'score' | 'code'>('score');
 
   // Modals state
@@ -58,11 +58,20 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
     }
   }, [quickModalAction]);
 
-  // Filtered & sorted students
-  const filteredStudents = students.filter(st => {
+  const scopedStudents = students.filter(st => {
     if (selectedTrackId && selectedTrackId !== 'all' && st.trackId !== selectedTrackId) return false;
     if (selectedCircleId !== 'all' && st.circleId !== selectedCircleId) return false;
-    if (selectedStatus !== 'all' && st.status !== selectedStatus) return false;
+    return true;
+  });
+  const activeScopedCount = scopedStudents.filter(st => st.status === 'active' && !st.archived).length;
+  const archivedScopedCount = scopedStudents.filter(st => st.status === 'archived' || st.archived).length;
+
+  // Filtered & sorted students
+  const filteredStudents = scopedStudents.filter(st => {
+    const isArchivedSt = st.status === 'archived' || Boolean(st.archived);
+    if (selectedStatus === 'active' && (st.status !== 'active' || isArchivedSt)) return false;
+    if (selectedStatus === 'archived' && !isArchivedSt) return false;
+    if (selectedStatus !== 'all' && selectedStatus !== 'active' && selectedStatus !== 'archived' && st.status !== selectedStatus) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchName = st.name.toLowerCase().includes(q);
@@ -174,6 +183,41 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 
       {/* Filter & Search Bar */}
       <div className="bg-white p-4 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-3">
+        {/* Prominent Roster vs Archive Tabs */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-stone-100">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedStatus('active')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 ${
+                selectedStatus === 'active'
+                  ? 'bg-[#8E5364] text-white shadow-2xs'
+                  : 'bg-[#FAF6F2] text-stone-700 hover:bg-stone-200/70 border border-stone-200'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>الطالبات النشطات ({activeScopedCount})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedStatus('archived')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 ${
+                selectedStatus === 'archived'
+                  ? 'bg-[#7B3F30] text-white shadow-2xs'
+                  : 'bg-[#F6EFEA] text-[#7B3F30] hover:bg-[#EDE0D6] border border-[#DFCEBF]'
+              }`}
+            >
+              <Archive className="w-3.5 h-3.5" />
+              <span>قسم الطالبات المؤرشفات ({archivedScopedCount})</span>
+            </button>
+          </div>
+          {selectedStatus === 'archived' && (
+            <span className="text-[11px] font-bold text-[#7B3F30] bg-[#F6EFEA] px-3 py-1 rounded-full border border-[#DFCEBF]">
+              📁 جميع سجلات التسميع والدرجات وملف الإنجاز محفوظة 100% ويمكن استعادة الطالبة بضغطة واحدة
+            </span>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           
           {/* Search */}
@@ -278,12 +322,22 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                     </td>
 
                     <td className="p-3.5">
-                      <div className="font-bold text-stone-900 text-sm group-hover:text-[#8E5364] transition">
+                      <div className="font-bold text-stone-900 text-sm group-hover:text-[#8E5364] transition flex flex-wrap items-center gap-1.5">
                         <span className="privacy-student-name">{student.name}</span>
+                        {((score?.absentUnexcusedCount ?? 0) >= 3 || student.status === 'archived' || student.archived) && (
+                          <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-bold">
+                            ⚠️ تجاوزت حد الغياب (منقطعة)
+                          </span>
+                        )}
                       </div>
                       <div className="text-[11px] text-stone-400">
                         <span className="privacy-phone">{student.phone}</span> {student.joinDate ? `• انضمت: ${formatHijriShort(student.joinDate)}` : ''}
                       </div>
+                      {(student.status === 'archived' || student.archived) && student.archivedReason && (
+                        <div className="text-[10px] text-rose-700 font-semibold mt-0.5">
+                          سبب الأرشفة: {student.archivedReason}
+                        </div>
+                      )}
                     </td>
 
                     <td className="p-3.5">
@@ -358,18 +412,42 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 
                     <td className="p-3.5">
                       <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold ${
-                        student.status === 'active'
+                        student.status === 'active' && !student.archived
                           ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                           : student.status === 'suspended'
                           ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                          : 'bg-rose-50 text-rose-800 border border-rose-200'
+                          : 'bg-[#F6EFEA] text-[#7B3F30] border border-[#DFCEBF]'
                       }`}>
-                        {student.status === 'active' ? 'نشطة' : student.status === 'suspended' ? 'موقوفة' : 'منسحبة'}
+                        {student.status === 'active' && !student.archived
+                          ? 'نشطة'
+                          : student.status === 'suspended'
+                          ? 'موقوفة'
+                          : 'مؤرشفة (منقطعة)'}
                       </span>
                     </td>
 
                     <td className="p-3.5 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
+                      <div className="flex flex-wrap items-center justify-center gap-1.5">
+                        {(student.status === 'archived' || student.archived) ? (
+                          <button
+                            type="button"
+                            onClick={() => restoreStudent(student.id)}
+                            className="px-3 py-1.5 bg-[#EBF3EE] hover:bg-[#DCEADA] text-[#2D5A43] border border-[#B8D8C5] rounded-lg text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>🔄 إلغاء الأرشفة واستعادة للحلقة</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => archiveStudent(student.id, 'نقل إلى قسم المؤرشفات (تجاوز حد الغياب)')}
+                            className="px-2.5 py-1 bg-[#F6EFEA] hover:bg-[#7B3F30] text-[#7B3F30] hover:text-white border border-[#DFCEBF] rounded-lg text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer"
+                            title="نقل إلى قسم المؤرشفات"
+                          >
+                            <Archive className="w-3 h-3" />
+                            <span>نقل إلى قسم المؤرشفات</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => onSelectStudent(student.id)}
                           style={{ backgroundColor: settings.primaryColor || '#8E5364' }}

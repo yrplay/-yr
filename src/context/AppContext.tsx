@@ -130,7 +130,8 @@ interface AppContextType {
   
   createStudent: (student: Partial<Student>) => Promise<Student>;
   updateStudent: (id: string, student: Partial<Student>) => Promise<void>;
-  archiveStudent: (id: string) => Promise<void>;
+  archiveStudent: (id: string, reason?: string) => Promise<void>;
+  restoreStudent: (id: string) => Promise<void>;
   deleteStudent: (id: string) => Promise<void>;
   assignPartner: (studentId: string, partnerId: string | null) => Promise<void>;
   
@@ -1915,15 +1916,103 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('تم تحديث ملف الطالبة بنجاح');
   };
 
-  const archiveStudent = async (id: string) => {
+  const archiveStudent = async (id: string, reason?: string) => {
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
     const existingStudent = currentStudents.find((s: Student) => s.id === id);
-    const next = currentStudents.map((s: Student) => s.id === id ? { ...s, status: 'archived' as const, updatedAt: new Date().toISOString() } : s);
+    const nowIso = new Date().toISOString();
+    const archiveNote = reason || 'تجاوزت حد الغياب بدون عذر (منقطعة)';
+    const next = currentStudents.map((s: Student) =>
+      s.id === id
+        ? {
+            ...s,
+            status: 'archived' as const,
+            archived: true,
+            archivedAt: nowIso,
+            archivedReason: archiveNote,
+            updatedAt: nowIso
+          }
+        : s
+    );
     masterStateRef.current.students = next;
     setStudents(next);
-    const nextLogs = appendAuditEntry('archive', 'student', `أرشفة سجل الطالبة: ${existingStudent?.name || id}`, id);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STUDENTS_LOCAL_KEY, JSON.stringify(next));
+      }
+    } catch {}
+    const nextLogs = appendAuditEntry(
+      'archive',
+      'student',
+      `نقل الطالبة إلى قسم المؤرشفات: ${existingStudent?.name || id} (${archiveNote})`,
+      id
+    );
     persistState({ students: next, auditLogs: nextLogs });
-    showToast('تمت أرشفة سجل الطالبة بنجاح');
+    showToast(`تم نقل الطالبة "${existingStudent?.name || ''}" إلى قسم المؤرشفات مع حفظ كامل سجلاتها 📁`);
+  };
+
+  const restoreStudent = async (id: string) => {
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const existingStudent = currentStudents.find((s: Student) => s.id === id);
+    const nowIso = new Date().toISOString();
+    const nextStudents = currentStudents.map((s: Student) =>
+      s.id === id
+        ? {
+            ...s,
+            status: 'active' as const,
+            archived: false,
+            archivedAt: undefined,
+            archivedReason: undefined,
+            updatedAt: nowIso
+          }
+        : s
+    );
+    masterStateRef.current.students = nextStudents;
+    setStudents(nextStudents);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STUDENTS_LOCAL_KEY, JSON.stringify(nextStudents));
+      }
+    } catch {}
+
+    // Convert previous unexcused absences to excused on restoration so she isn't immediately re-archived
+    const currentAtt = deduplicateAttendanceRecords<AttendanceRecord>(
+      masterStateRef.current.attendanceRecords || attendanceRecords || []
+    );
+    let attUpdated = false;
+    const nextAtt = currentAtt.map((a: AttendanceRecord) => {
+      if (a.studentId === id && a.status === 'absent_unexcused') {
+        attUpdated = true;
+        return {
+          ...a,
+          status: 'absent_excused' as const,
+          reason: a.reason ? `${a.reason} (تمت الاستعادة للحلقة)` : 'تمت الاستعادة للحلقة وإعادة ضبط عداد الغياب'
+        };
+      }
+      return a;
+    });
+
+    if (attUpdated) {
+      masterStateRef.current.attendanceRecords = nextAtt;
+      setAttendanceRecords(nextAtt);
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('ghaith_attendance_local_v1', JSON.stringify(nextAtt));
+        }
+      } catch {}
+    }
+
+    const nextLogs = appendAuditEntry(
+      'update',
+      'student',
+      `إلغاء أرشفة واستعادة الطالبة للحلقة: ${existingStudent?.name || id}`,
+      id
+    );
+    persistState(
+      attUpdated
+        ? { students: nextStudents, attendanceRecords: nextAtt, auditLogs: nextLogs }
+        : { students: nextStudents, auditLogs: nextLogs }
+    );
+    showToast(`تم إلغاء الأرشفة واستعادة الطالبة "${existingStudent?.name || ''}" للحلقة بنجاح 🔄✅`);
   };
 
   const deleteStudent = async (id: string) => {
@@ -2477,6 +2566,53 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       absent_unexcused: 'غائبة بدون عذر',
       unrecorded: 'غير مرصود'
     };
+
+    // Check if student exceeded 3 unexcused absences (> 3 بدون عذر) -> Auto-archive
+    const studentUnexcusedCount = next.filter(
+      (a: AttendanceRecord) => a.studentId === newRecord.studentId && a.status === 'absent_unexcused'
+    ).length;
+
+    if (
+      finalStatus === 'absent_unexcused' &&
+      studentUnexcusedCount > 3 &&
+      studentObj &&
+      studentObj.status !== 'archived' &&
+      !studentObj.archived
+    ) {
+      const nowIso = new Date().toISOString();
+      const autoReason = `تجاوزت حد الغياب (${studentUnexcusedCount} أيام بدون عذر) — منقطعة`;
+      const nextStudents = currentStudents.map((s: Student) =>
+        s.id === studentObj.id
+          ? {
+              ...s,
+              status: 'archived' as const,
+              archived: true,
+              archivedAt: nowIso,
+              archivedReason: autoReason,
+              updatedAt: nowIso
+            }
+          : s
+      );
+      masterStateRef.current.students = nextStudents;
+      setStudents(nextStudents);
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(STUDENTS_LOCAL_KEY, JSON.stringify(nextStudents));
+        }
+      } catch {}
+      const nextLogs = appendAuditEntry(
+        'archive',
+        'student',
+        `أرشفة تلقائية للطالبة ${studentObj.name} لتجاوزها حد الغياب بدون عذر (${studentUnexcusedCount} أيام)`,
+        studentObj.id
+      );
+      persistState({ attendanceRecords: next, students: nextStudents, auditLogs: nextLogs });
+      showToast(
+        `⚠️ تجاوزت الطالبة "${studentObj.name}" حد الغياب (${studentUnexcusedCount} بدون عذر) — تم نقلها تلقائياً إلى قسم المؤرشفات`
+      );
+      return;
+    }
+
     const nextLogs = appendAuditEntry(
       'update',
       'attendance',
@@ -4392,6 +4528,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         createStudent,
         updateStudent,
         archiveStudent,
+        restoreStudent,
         deleteStudent,
         assignPartner,
         createMonthlyPlan,

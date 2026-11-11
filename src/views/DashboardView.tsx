@@ -65,20 +65,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     ? circles.filter(c => !c.isArchived && c.trackId === selectedTrackId)
     : circles.filter(c => !c.isArchived);
 
-  const activeStudents = displayedStudents.filter(s => s.status === 'active');
-  const totalStudents = displayedStudents.length;
+  const activeStudents = displayedStudents.filter(s => s.status === 'active' && !s.archived);
+  const archivedStudentsCount = displayedStudents.filter(s => s.status === 'archived' || s.archived).length;
+  const totalStudents = activeStudents.length;
+  const totalAllActiveStudents = students.filter(s => s.status === 'active' && !s.archived).length;
 
-  // Today attendance for displayed track
+  // Today attendance for displayed track (active students only)
   const today = getTodayISO();
-  const displayedStudentIds = new Set(displayedStudents.map(s => s.id));
+  const displayedStudentIds = new Set(activeStudents.map(s => s.id));
   const todayAttendance = attendanceRecords.filter(
     a => a.date === today && displayedStudentIds.has(a.studentId)
   );
   const presentToday = todayAttendance.filter(a => a.status === 'present').length;
   const earlyPrepToday = todayAttendance.filter(a => a.earlyPrepCardSent).length;
 
-  // Average percentage of displayed students
-  const displayedScoresList = displayedStudents
+  // Average percentage of displayed active students
+  const displayedScoresList = activeStudents
     .map(s => allStudentScores[s.id])
     .filter(Boolean);
   const avgPercentage = displayedScoresList.length > 0
@@ -86,19 +88,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     : '0';
 
   // Outstanding students (Top 5 in displayed track)
-  const outstandingStudents = [...displayedStudents]
-    .filter(s => s.status === 'active')
+  const outstandingStudents = [...activeStudents]
     .sort((a, b) => (allStudentScores[b.id]?.finalPercentage || 0) - (allStudentScores[a.id]?.finalPercentage || 0))
     .slice(0, 5);
 
   // Frequent absence alerts
-  const atRiskAbsence = displayedStudents.filter(s => {
+  const atRiskAbsence = activeStudents.filter(s => {
     const score = allStudentScores[s.id];
     return score && score.absentUnexcusedCount >= 2;
   });
 
   // Students with incomplete/unrecorded daily logs
-  const incompleteDailyLogs = displayedStudents.filter(s => {
+  const incompleteDailyLogs = activeStudents.filter(s => {
     const recs = dailyRecords.filter(d => d.studentId === s.id);
     return recs.length === 0 || recs.some(r => r.status === 'pending' || (r.status as any) === 'incomplete' || (r.status as any) === 'partial');
   });
@@ -133,7 +134,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   }`}
                   style={isPrivacyMode ? { filter: 'blur(5px)', userSelect: 'none' } : undefined}
                 >
-                  ({isPrivacyMode ? '••' : displayedStudents.length} طالبة)
+                  ({isPrivacyMode ? '••' : activeStudents.length} طالبة)
                 </span>
                 <span className="text-[10px] text-white/75 mr-0.5">▾</span>
                 <select
@@ -143,10 +144,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 >
                   <option value="all" className="bg-stone-800 text-white">
-                    {isPrivacyMode ? 'كافة المسارات (•• طالبة)' : `كافة المسارات (${students.length} طالبة)`}
+                    {isPrivacyMode ? 'كافة المسارات (•• طالبة)' : `كافة المسارات (${totalAllActiveStudents} طالبة)`}
                   </option>
                   {tracks.filter(t => !t.isArchived).map(track => {
-                    const count = students.filter(s => s.trackId === track.id).length;
+                    const count = students.filter(s => s.trackId === track.id && s.status === 'active' && !s.archived).length;
                     const cleanTrackName = (track.name || '').replace(/[🪴🤎]/g, '').trim();
                     return (
                       <option key={track.id} value={track.id} className="bg-stone-800 text-white">
@@ -270,7 +271,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span className="text-xs font-normal text-stone-400 mr-1.5">طالبة</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-stone-500">
-            <span className={privacyBlurClass}>{activeStudents.length} نشطة في الحلقات</span>
+            <span className={privacyBlurClass}>
+              {activeStudents.length} نشطة في الحلقات{archivedStudentsCount > 0 ? ` • ${archivedStudentsCount} بالمؤرشفات` : ''}
+            </span>
             <ChevronLeft className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-[-2px] transition" />
           </div>
         </div>

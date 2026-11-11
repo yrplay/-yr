@@ -4,7 +4,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import {
   CheckSquare, Calendar, Users, Clock, CheckCircle2, XCircle,
   AlertCircle, Star, Sparkles, Filter, Save, ChevronLeft, ChevronRight, Trash2,
-  Download, Award, X, Camera, Palette, Image as ImageIcon, Type, Plus, Minus, RotateCcw
+  Download, Award, X, Camera, Palette, Image as ImageIcon, Type, Plus, Minus, RotateCcw, Archive
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { AttendanceRecord } from '../types';
@@ -21,6 +21,7 @@ export const AttendanceView: React.FC = () => {
     students, circles, tracks, attendanceRecords, dailyRecords, studentChallengeSubmissions,
     saveAttendance, saveBulkAttendance,
     clearStudentDayAttendance,
+    archiveStudent, restoreStudent,
     showToast, allStudentScores, selectedTrackId,
     selectedCircleId, setSelectedCircleId, selectedDate, setSelectedDate, settings
   } = useApp();
@@ -30,7 +31,7 @@ export const AttendanceView: React.FC = () => {
     return circles.filter(c => !c.isArchived && c.trackId === selectedTrackId);
   }, [circles, selectedTrackId]);
 
-  const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'early_prep' | 'absent'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'early_prep' | 'absent' | 'archived'>('all');
   const [reasonInputs, setReasonInputs] = useState<Record<string, string>>({});
   const [showHonorsBoardModal, setShowHonorsBoardModal] = useState(false);
   const [isExportingPng, setIsExportingPng] = useState(false);
@@ -56,7 +57,11 @@ export const AttendanceView: React.FC = () => {
     [tracks, activeCircle?.trackId]
   );
   const circleStudents = React.useMemo(
-    () => students.filter(s => s.circleId === activeCircle?.id && s.status === 'active'),
+    () => students.filter(s => s.circleId === activeCircle?.id && s.status === 'active' && !s.archived),
+    [students, activeCircle?.id]
+  );
+  const archivedCircleStudents = React.useMemo(
+    () => students.filter(s => s.circleId === activeCircle?.id && (s.status === 'archived' || s.archived)),
     [students, activeCircle?.id]
   );
 
@@ -1235,6 +1240,18 @@ export const AttendanceView: React.FC = () => {
             >
               الغياب والأعذار ({absentTotalCount})
             </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('archived')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 ${
+                statusFilter === 'archived'
+                  ? 'bg-[#7B3F30] text-white shadow-2xs'
+                  : 'bg-[#F6EFEA] text-[#7B3F30] hover:bg-[#EDE0D6] border border-[#DFCEBF]'
+              }`}
+            >
+              <Archive className="w-3.5 h-3.5" />
+              <span>الأرشيف / المؤرشفات ({archivedCircleStudents.length})</span>
+            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 text-xs text-stone-600">
@@ -1250,6 +1267,96 @@ export const AttendanceView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Dedicated Archive Section ("قسم الطالبات المؤرشفات") when tab is active */}
+      {statusFilter === 'archived' ? (
+        <div className="bg-white rounded-3xl border border-[#DFCEBF] shadow-2xs p-5 sm:p-6 space-y-4 animate-in fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-4">
+            <div>
+              <h3 className="text-base font-bold text-stone-900 flex items-center gap-2 font-quran">
+                <Archive className="w-5 h-5 text-[#9A5643]" />
+                <span>قسم الطالبات المؤرشفات — حلقة {activeCircle?.name} ({archivedCircleStudents.length})</span>
+              </h3>
+              <p className="text-xs text-stone-500 mt-1">
+                الطالبات اللاتي تجاوزن حد الغياب بدون عذر (&gt; 3 أيام) أو تم نقلهن للأرشيف. مخفيات من جدول الحضور اليومي وشاشة التسميع ومخصومات من عداد الحلقة النشط، مع الاحتفاظ بـ 100% من سجلاتهن وملف الإنجاز.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className="px-3.5 py-2 rounded-xl bg-[#FAF6F2] hover:bg-[#EFEAE5] text-stone-700 text-xs font-bold border border-stone-200 transition cursor-pointer self-start sm:self-auto"
+            >
+              ← العودة لجدول الحضور النشط
+            </button>
+          </div>
+
+          {archivedCircleStudents.length === 0 ? (
+            <div className="p-8 text-center bg-[#FAF7F5] rounded-2xl border border-dashed border-[#DFCEBF] space-y-2">
+              <div className="text-2xl">📁</div>
+              <p className="text-sm font-bold text-stone-700">لا توجد طالبات مؤرشفات في هذه الحلقة حالياً</p>
+              <p className="text-xs text-stone-500">
+                عند تجاوز الطالبة 3 أيام غياب بدون عذر (&gt; 3 بدون عذر) يتم نقلها تلقائياً إلى هذا القسم مع حفظ كامل بياناتها.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {archivedCircleStudents.map((st, i) => {
+                const stScore = allStudentScores[st.id];
+                const stUnexcused = stScore?.absentUnexcusedCount ?? 0;
+                return (
+                  <div
+                    key={st.id}
+                    className="p-4 rounded-2xl bg-[#FCFAF8] border border-[#E6D7CC] flex flex-col justify-between gap-3 shadow-2xs"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-[#F6EFEA] text-[#7B3F30] text-xs font-bold flex items-center justify-center">
+                            {i + 1}
+                          </span>
+                          <div>
+                            <h4 className="font-bold text-stone-900 text-sm">
+                              <span className="privacy-student-name">{st.name}</span>
+                            </h4>
+                            <span className="text-[11px] text-stone-400 font-mono">
+                              كود: <span className="privacy-phone">{st.code}</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[11px] font-bold inline-flex items-center gap-1">
+                          <span>⚠️ تجاوزت حد الغياب (منقطعة)</span>
+                        </span>
+                      </div>
+
+                      <div className="text-[11px] text-stone-600 bg-white px-3 py-2 rounded-xl border border-stone-100 flex flex-wrap items-center justify-between gap-2">
+                        <span>
+                          سبب الأرشفة: <strong className="text-rose-700">{st.archivedReason || `تجاوزت حد الغياب (${stUnexcused} بدون عذر)`}</strong>
+                        </span>
+                        <span>
+                          الحفظ المحفوظ: <strong className="text-[#2D5A43]">{stScore?.newMemorizationPagesDone ?? 0} ص</strong> • المعدل: <strong className="text-[#7B3F30]">{stScore?.finalPercentage ?? 100}%</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-stone-200/60">
+                      <button
+                        type="button"
+                        onClick={() => restoreStudent(st.id)}
+                        className="w-full sm:w-auto px-4 py-2 bg-[#EBF3EE] hover:bg-[#DCEADA] text-[#2D5A43] border border-[#B8D8C5] rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>🔄 إلغاء الأرشفة واستعادة للحلقة</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
 
       {/* Attendance Content: Mobile Cards View (sm/md screens) & Desktop Table View (lg screens) */}
       
@@ -1281,6 +1388,20 @@ export const AttendanceView: React.FC = () => {
                   <div className="text-[11px] text-stone-400 font-mono mt-0.5 mr-7">
                     كود: <span className="privacy-phone">{student.code}</span> • حضور: <strong className="text-[#2D5A43]"><span className="privacy-score-digit">{score?.attendanceRate ?? 100}</span>%</strong> • مبكر: <strong className="text-amber-700 privacy-score-digit">{score?.earlyPrepCount ?? 0}</strong>
                   </div>
+                  {(score?.absentUnexcusedCount ?? 0) >= 3 && (
+                    <div className="mt-1.5 mr-7 flex flex-wrap items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-bold">
+                        ⚠️ تجاوزت حد الغياب (منقطعة) ({score?.absentUnexcusedCount} بدون عذر)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => archiveStudent(student.id, `تجاوزت حد الغياب (${score?.absentUnexcusedCount ?? 4} بدون عذر) — منقطعة`)}
+                        className="px-2.5 py-0.5 rounded-lg bg-[#7B3F30] hover:bg-[#613024] text-white text-[10px] font-bold transition cursor-pointer"
+                      >
+                        نقل إلى قسم المؤرشفات
+                      </button>
+                    </div>
+                  )}
                   {rec.syncSource && rec.status === 'present' && (
                     <div className="mt-1 mr-7">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/70 text-[10px] font-bold">
@@ -1426,12 +1547,27 @@ export const AttendanceView: React.FC = () => {
                     <td className="p-3.5 font-semibold text-stone-400">{idx + 1}</td>
 
                     <td className="p-3.5">
-                      <div className="font-bold text-stone-900 text-sm">
+                      <div className="font-bold text-stone-900 text-sm flex flex-wrap items-center gap-1.5">
                         <span className="privacy-student-name">{student.name}</span>
+                        {(score?.absentUnexcusedCount ?? 0) >= 3 && (
+                          <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-bold">
+                            ⚠️ تجاوزت حد الغياب (منقطعة)
+                          </span>
+                        )}
                       </div>
                       <div className="text-[11px] text-stone-400 font-mono">
                         <span className="privacy-phone">{student.code}</span>
                       </div>
+                      {(score?.absentUnexcusedCount ?? 0) >= 3 && (
+                        <button
+                          type="button"
+                          onClick={() => archiveStudent(student.id, `تجاوزت حد الغياب (${score?.absentUnexcusedCount ?? 4} بدون عذر) — منقطعة`)}
+                          className="mt-1 px-2.5 py-1 rounded-lg bg-[#7B3F30] hover:bg-[#613024] text-white text-[10px] font-bold inline-flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                        >
+                          <Archive className="w-3 h-3" />
+                          <span>نقل إلى قسم المؤرشفات</span>
+                        </button>
+                      )}
                     </td>
 
                     {/* Early Prep 2-Way Toggle */}
@@ -1566,21 +1702,31 @@ export const AttendanceView: React.FC = () => {
                       </div>
                     </td>
 
-                    {/* Actions: Reset/Delete Day Attendance */}
+                    {/* Actions: Reset/Delete Day Attendance or Quick Archive */}
                     <td className="p-3.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleClearStudentAttendance(student.id, student.name)}
-                        disabled={!hasActiveLog}
-                        className={`p-2 rounded-xl transition inline-flex items-center justify-center border ${
-                          hasActiveLog
-                            ? 'text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border-rose-200 shadow-2xs cursor-pointer'
-                            : 'text-stone-300 bg-stone-50 border-stone-100 cursor-not-allowed'
-                        }`}
-                        title="حذف وإعادة ضبط حالة الحضور والتحضير المبكر لهذا اليوم"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleClearStudentAttendance(student.id, student.name)}
+                          disabled={!hasActiveLog}
+                          className={`p-2 rounded-xl transition inline-flex items-center justify-center border ${
+                            hasActiveLog
+                              ? 'text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border-rose-200 shadow-2xs cursor-pointer'
+                              : 'text-stone-300 bg-stone-50 border-stone-100 cursor-not-allowed'
+                          }`}
+                          title="حذف وإعادة ضبط حالة الحضور والتحضير المبكر لهذا اليوم"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => archiveStudent(student.id, 'نقل يدوي إلى قسم المؤرشفات (منقطعة)')}
+                          className="p-2 rounded-xl transition inline-flex items-center justify-center border text-[#7B3F30] hover:text-white bg-[#F6EFEA] hover:bg-[#7B3F30] border-[#DFCEBF] shadow-2xs cursor-pointer"
+                          title="نقل إلى قسم المؤرشفات"
+                        >
+                          <Archive className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1589,6 +1735,8 @@ export const AttendanceView: React.FC = () => {
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {/* ==========================================================================
           Weekly Honors Board Visual Studio Modal (محرر وتصميم لوحة الشرف التفاعلي)

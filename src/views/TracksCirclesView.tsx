@@ -37,6 +37,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     tracks, circles, students, users, allStudentScores,
     createTrack, updateTrack, archiveTrack, restoreTrack, deleteTrack,
     createCircle, updateCircle, archiveCircle, restoreCircle, deleteCircle,
+    archiveStudent, restoreStudent,
     currentUser, quickModalAction, clearQuickModal, settings,
     selectedTrackId: globalSelectedTrackId, setSelectedTrackId: setGlobalSelectedTrackId
   } = useApp();
@@ -46,6 +47,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
   );
   const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [circleStudentTab, setCircleStudentTab] = useState<'active' | 'archived'>('active');
 
   useEffect(() => {
     if (globalSelectedTrackId && globalSelectedTrackId !== 'all') {
@@ -106,7 +108,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
 
   const trackCircles = circles.filter(c => c.trackId === currentTrack?.id && !c.isArchived);
   const archivedTrackCircles = circles.filter(c => c.trackId === currentTrack?.id && c.isArchived);
-  const trackStudents = students.filter(s => s.trackId === currentTrack?.id && s.status === 'active');
+  const trackStudents = students.filter(s => s.trackId === currentTrack?.id && s.status === 'active' && !s.archived);
 
   const teachers = users.filter(u => u.role === 'teacher' || u.role === 'leader');
   const supervisors = users.filter(u => u.role === 'supervisor' || u.role === 'leader');
@@ -330,7 +332,10 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
 
   const activeCircle = selectedCircleId ? circles.find(c => c.id === selectedCircleId) : null;
   const activeCircleStudents = activeCircle
-    ? students.filter(s => s.circleId === activeCircle.id && s.status === 'active')
+    ? students.filter(s => s.circleId === activeCircle.id && s.status === 'active' && !s.archived)
+    : [];
+  const archivedCircleStudents = activeCircle
+    ? students.filter(s => s.circleId === activeCircle.id && (s.status === 'archived' || s.archived))
     : [];
 
   return (
@@ -598,7 +603,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {trackCircles.map((circle) => {
-              const cStudents = students.filter(s => s.circleId === circle.id && s.status === 'active');
+              const cStudents = students.filter(s => s.circleId === circle.id && s.status === 'active' && !s.archived);
               const isSelected = selectedCircleId === circle.id;
               const avgCircleScore = cStudents.length > 0
                 ? Math.round(cStudents.reduce((acc, s) => acc + (allStudentScores[s.id]?.finalPercentage || 0), 0) / cStudents.length)
@@ -809,12 +814,34 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
             </div>
           </div>
 
-          {/* Students in Circle Table */}
+          {/* Students in Circle Table + Dedicated Archive Tab */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="font-bold text-stone-800 text-xs">
-                طالبات الحلقة المسجلات ({activeCircleStudents.length} / {activeCircle.maxStudents})
-              </h4>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCircleStudentTab('active')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    circleStudentTab === 'active'
+                      ? 'bg-[#8E5364] text-white shadow-2xs'
+                      : 'bg-[#FAF7F5] text-stone-600 hover:bg-stone-200/70 border border-stone-200'
+                  }`}
+                >
+                  طالبات الحلقة المسجلات ({activeCircleStudents.length} / {activeCircle.maxStudents})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCircleStudentTab('archived')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 ${
+                    circleStudentTab === 'archived'
+                      ? 'bg-[#7B3F30] text-white shadow-2xs'
+                      : 'bg-[#F6EFEA] text-[#7B3F30] hover:bg-[#EDE0D6] border border-[#DFCEBF]'
+                  }`}
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  <span>الأرشيف / المؤرشفات ({archivedCircleStudents.length})</span>
+                </button>
+              </div>
               <button
                 onClick={() => onNavigateToSection('students')}
                 className="text-xs text-[#8E5364] font-bold hover:underline"
@@ -823,7 +850,78 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
               </button>
             </div>
 
-            {activeCircleStudents.length > 0 ? (
+            {circleStudentTab === 'archived' ? (
+              archivedCircleStudents.length > 0 ? (
+                <div className="overflow-x-auto rounded-2xl border border-[#DFCEBF] bg-[#FCFAF8]">
+                  <table className="w-full text-right text-xs">
+                    <thead>
+                      <tr className="bg-[#F6EFEA] text-[#7B3F30] border-b border-[#DFCEBF]">
+                        <th className="p-3">#</th>
+                        <th className="p-3">كود الطالبة</th>
+                        <th className="p-3">اسم الطالبة</th>
+                        <th className="p-3">حالة الانقطاع / السبب</th>
+                        <th className="p-3">الحفظ المحفوظ</th>
+                        <th className="p-3">المعدل التراكمي</th>
+                        <th className="p-3 text-center">استعادة وملف الإنجاز</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EFE6DE]">
+                      {archivedCircleStudents.map((st, idx) => {
+                        const score = allStudentScores[st.id];
+                        return (
+                          <tr key={st.id} className="hover:bg-[#FAF5F0] transition">
+                            <td className="p-3 font-semibold text-stone-400">{idx + 1}</td>
+                            <td className="p-3 font-mono text-[11px] text-stone-500">
+                              <span className="privacy-phone">{st.code}</span>
+                            </td>
+                            <td className="p-3 font-bold text-stone-900">
+                              <span className="privacy-student-name">{st.name}</span>
+                            </td>
+                            <td className="p-3">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[11px] font-bold">
+                                ⚠️ تجاوزت حد الغياب (منقطعة)
+                              </span>
+                              {st.archivedReason && (
+                                <div className="text-[10px] text-stone-500 mt-0.5">{st.archivedReason}</div>
+                              )}
+                            </td>
+                            <td className="p-3 font-semibold text-stone-700">
+                              {score?.newMemorizationPagesDone ?? 0} / {score?.newMemorizationPagesTarget ?? 0} ص
+                            </td>
+                            <td className="p-3 font-extrabold text-sm text-[#7B3F30]">
+                              {score?.finalPercentage ?? 100}%
+                            </td>
+                            <td className="p-3 text-center">
+                              <div className="inline-flex flex-wrap items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => restoreStudent(st.id)}
+                                  className="px-3 py-1.5 bg-[#EBF3EE] hover:bg-[#DCEADA] text-[#2D5A43] border border-[#B8D8C5] rounded-lg text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                  <span>🔄 إلغاء الأرشفة واستعادة للحلقة</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => onSelectStudent(st.id)}
+                                  className="px-2.5 py-1.5 bg-[#8E5364] text-white rounded-lg text-[11px] font-semibold hover:bg-[#744251] transition cursor-pointer"
+                                >
+                                  ملف الإنجاز
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="p-6 text-center text-xs text-stone-500 bg-[#FAF7F5] rounded-2xl border border-dashed border-[#DFCEBF]">
+                  لا توجد طالبات مؤرشفات في هذه الحلقة حالياً.
+                </div>
+              )
+            ) : activeCircleStudents.length > 0 ? (
               <div className="overflow-x-auto rounded-2xl border border-stone-100">
                 <table className="w-full text-right text-xs">
                   <thead>
@@ -849,7 +947,14 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                             <span className="privacy-phone">{st.code}</span>
                           </td>
                           <td className="p-3 font-bold text-stone-900">
-                            <span className="privacy-student-name">{st.name}</span>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="privacy-student-name">{st.name}</span>
+                              {(score?.absentUnexcusedCount ?? 0) >= 3 && (
+                                <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-bold">
+                                  ⚠️ تجاوزت حد الغياب (منقطعة)
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-3 text-stone-600">
                             {st.partnerStudentName ? (
@@ -882,12 +987,23 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                             </span>
                           </td>
                           <td className="p-3 text-center">
-                            <button
-                              onClick={() => onSelectStudent(st.id)}
-                              className="px-3 py-1 bg-[#8E5364] text-white rounded-lg text-[11px] font-semibold hover:bg-[#744251] transition"
-                            >
-                              ملف الإنجاز
-                            </button>
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                onClick={() => onSelectStudent(st.id)}
+                                className="px-3 py-1 bg-[#8E5364] text-white rounded-lg text-[11px] font-semibold hover:bg-[#744251] transition cursor-pointer"
+                              >
+                                ملف الإنجاز
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => archiveStudent(st.id, 'نقل إلى قسم المؤرشفات')}
+                                className="px-2.5 py-1 bg-[#F6EFEA] hover:bg-[#7B3F30] text-[#7B3F30] hover:text-white border border-[#DFCEBF] rounded-lg text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer"
+                                title="نقل إلى قسم المؤرشفات"
+                              >
+                                <Archive className="w-3 h-3" />
+                                <span>نقل إلى قسم المؤرشفات</span>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );

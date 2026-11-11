@@ -139,6 +139,9 @@ export interface Student {
   email?: string;
   joinDate: string;
   status: 'active' | 'archived' | 'suspended';
+  archived?: boolean;
+  archivedAt?: string;
+  archivedReason?: string;
   trackId: string;
   circleId: string;
   partnerStudentId?: string;
