@@ -1211,19 +1211,43 @@ export const MonthlyPlansView: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2]">
-                    <div className="flex items-center justify-between text-[11px] mb-1.5">
-                      <span className="text-stone-400">نسبة الإنجاز التلقائية:</span>
-                      <span className="font-extrabold text-stone-800">{isEnabled ? `${percent}%` : 'معطّل'}</span>
-                    </div>
-                    <div className="w-full bg-stone-200/80 h-2 rounded-full overflow-hidden">
+                  <div className="p-3 bg-[#FAF6F2] rounded-xl border border-[#EFE8E2] flex items-center gap-3">
+                    {/* Vertical Progress Capsule / Indicator */}
+                    <div
+                      className="w-2.5 h-10 rounded-full overflow-hidden flex flex-col justify-end shrink-0"
+                      style={{ backgroundColor: '#F6EFEA' }}
+                      title={`نسبة الإنجاز: ${isEnabled ? `${percent}%` : '0%'}`}
+                    >
                       <div
-                        className="h-full rounded-full transition-all duration-300"
+                        className="w-full rounded-full transition-all duration-300"
                         style={{
-                          width: `${isEnabled ? percent : 0}%`,
-                          backgroundColor: accentColor
+                          height: `${isEnabled ? percent : 0}%`,
+                          backgroundColor: '#9A5643'
                         }}
                       />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between text-[11px] mb-1.5">
+                        <span className="text-stone-500 font-medium">نسبة الإنجاز التلقائية:</span>
+                        <span
+                          className="font-extrabold"
+                          style={{ color: '#7B3F30' }}
+                        >
+                          {isEnabled ? `${percent}%` : 'معطّل'}
+                        </span>
+                      </div>
+                      <div
+                        className="w-full h-2.5 rounded-full overflow-hidden"
+                        style={{ backgroundColor: '#F6EFEA' }}
+                      >
+                        <div
+                          className="h-full rounded-full transition-all duration-300"
+                          style={{
+                            width: `${isEnabled ? percent : 0}%`,
+                            backgroundColor: '#9A5643'
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1453,58 +1477,84 @@ export const MonthlyPlansView: React.FC = () => {
 
         {/* Automated Plan Progress Indicator */}
         <div className="bg-[#FCFAF8] p-4 rounded-2xl border border-[#EFE8E2] space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-stone-800">
-            <div className="flex items-center gap-2">
-              <span>📊 مؤشر إنجاز الخطة الشهرية التلقائي للطالبة (<span className="privacy-student-name">{selectedStudent?.name}</span>)</span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                يُحتسب تلقائياً من سجل التسميع ⚡
-              </span>
-            </div>
-            <span className="text-[#8E5364] font-extrabold">
-              {isFreeMem ? (
-                <span>
-                  إجمالي المنجز الكلي: <span className="privacy-score-digit">{totalEnabledDone}</span> صفحة متقنة 🌟 ({overallPercent}%)
-                </span>
-              ) : (
-                <span>
-                  <span className="privacy-score-digit">{totalEnabledDone}</span> من أصل <span className="privacy-score-digit">{totalEnabledTarget}</span> صفحة منجزة ({overallPercent}%)
-                </span>
-              )}
-            </span>
-          </div>
-          <div className="w-full bg-[#EFEAE5] h-3 rounded-full overflow-hidden">
+          <div className="flex items-center gap-3">
+            {/* Vertical Progress Capsule / Indicator */}
             <div
-              className="bg-gradient-to-r from-[#9E5B6D] to-[#2D5A43] h-full rounded-full transition-all duration-300"
-              style={{ width: `${overallPercent}%` }}
-            />
+              className="w-3 h-11 rounded-full overflow-hidden flex flex-col justify-end shrink-0"
+              style={{ backgroundColor: '#F6EFEA' }}
+              title={`نسبة إنجاز الخطة الشهرية: ${overallPercent}%`}
+            >
+              <div
+                className="w-full rounded-full transition-all duration-300"
+                style={{
+                  height: `${overallPercent}%`,
+                  backgroundColor: '#9A5643'
+                }}
+              />
+            </div>
+
+            <div className="flex-1 min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-stone-800">
+                <div className="flex items-center gap-2">
+                  <span>📊 مؤشر إنجاز الخطة الشهرية التلقائي للطالبة (<span className="privacy-student-name">{selectedStudent?.name}</span>)</span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                    يُحتسب تلقائياً من سجل التسميع ⚡
+                  </span>
+                </div>
+                <span className="font-extrabold" style={{ color: '#7B3F30' }}>
+                  {isFreeMem ? (
+                    <span>
+                      إجمالي المنجز الكلي: <span className="privacy-score-digit">{totalEnabledDone}</span> صفحة متقنة 🌟 ({overallPercent}%)
+                    </span>
+                  ) : (
+                    <span>
+                      <span className="privacy-score-digit">{totalEnabledDone}</span> من أصل <span className="privacy-score-digit">{totalEnabledTarget}</span> صفحة منجزة ({overallPercent}%)
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div
+                className="w-full h-3 rounded-full overflow-hidden"
+                style={{ backgroundColor: '#F6EFEA' }}
+              >
+                <div
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{
+                    width: `${overallPercent}%`,
+                    backgroundColor: '#9A5643'
+                  }}
+                />
+              </div>
+            </div>
           </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
             <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white border border-stone-200/70">
               <span className="text-stone-600 font-bold">
                 {isFreeMem ? '١. الحفظ الحر:' : '١. الحفظ الجديد:'}
               </span>
-              <span className="font-extrabold text-[#8E5364]">
+              <span className="font-extrabold" style={{ color: '#7B3F30' }}>
                 {!isNewEnabled
                   ? 'معطّل لهذا الشهر'
                   : isFreeMem
                     ? `إجمالي المنجز: ${newDone} صفحة متقنة 🌟`
-                    : `${newDone} / ${newTarget} وجه (${newPercent}%)`}
+                    : `${newDone} من ${newTarget} وجه (${newPercent}%)`}
               </span>
             </div>
             <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white border border-stone-200/70">
               <span className="text-stone-600 font-bold">
                 {isMinorNoorania ? '٢. مسار القاعدة النورانية:' : '٢. المراجعة الصغرى:'}
               </span>
-              <span className="font-extrabold text-[#96503E]">
+              <span className="font-extrabold" style={{ color: '#7B3F30' }}>
                 {isMinorEnabled
-                  ? `${minorDone} / ${minorTarget} ${isMinorNoorania ? 'درس/ص' : 'وجه'} (${minorPercent}%)`
+                  ? `${minorDone} من ${minorTarget} ${isMinorNoorania ? 'درس/ص' : 'وجه'} (${minorPercent}%)`
                   : 'معطّل لهذا الشهر'}
               </span>
             </div>
             <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white border border-stone-200/70">
               <span className="text-stone-600 font-bold">٣. مراجعة التمكين:</span>
               <span className="font-extrabold text-[#2D5A43]">
-                {isTamkeenEnabled ? `${tamkeenDone} / ${tamkeenTarget} وجه (${tamkeenPercent}%)` : 'معطّل لهذا الشهر'}
+                {isTamkeenEnabled ? `${tamkeenDone} من ${tamkeenTarget} وجه (${tamkeenPercent}%)` : 'معطّل لهذا الشهر'}
               </span>
             </div>
           </div>
@@ -1517,8 +1567,8 @@ export const MonthlyPlansView: React.FC = () => {
           isFreeMem
             ? 'الحفظ الحر: رصد تراكمي مفتوح حسب استطاعة الطالبة'
             : 'بمضاعفات ربع وجه (0.25) يومياً — يُجمع الإنجاز تلقائياً من سجل التسميع',
-          '#8E5364',
-          'bg-[#FAF0F3] text-[#8E5364]',
+          '#9A5643',
+          'bg-[#F6EFEA] text-[#7B3F30]',
           newDone,
           newTarget || 8,
           newPercent,

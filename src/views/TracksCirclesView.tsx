@@ -642,10 +642,16 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                         <span className="privacy-count-digit">{cStudents.length}</span> / {circle.maxStudents} طالبة
                       </span>
                     </div>
-                    <div className="w-full bg-[#EFEAE5] h-1.5 rounded-full overflow-hidden">
+                    <div
+                      className="w-full h-1.5 rounded-full overflow-hidden"
+                      style={{ backgroundColor: '#F6EFEA' }}
+                    >
                       <div
-                        className="bg-[#8E5364] h-full rounded-full transition-all"
-                        style={{ width: `${Math.min(100, (cStudents.length / circle.maxStudents) * 100)}%` }}
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${Math.min(100, (cStudents.length / circle.maxStudents) * 100)}%`,
+                          backgroundColor: '#9A5643'
+                        }}
                       />
                     </div>
                     <div className="flex justify-between text-[11px] text-stone-400 pt-1">

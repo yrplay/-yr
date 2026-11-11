@@ -121,24 +121,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span className="font-bold text-white/95">{settings.name || 'مقرأة غيث الغيم'}</span>
               <span className="text-white/40">•</span>
               <span className="text-white/80 text-[11px]">المسار المعروض:</span>
-              <select
-                value={selectedTrackId || 'all'}
-                onChange={e => setSelectedTrackId(e.target.value === 'all' ? null : e.target.value)}
-                className="bg-black/25 hover:bg-black/40 text-white font-bold text-xs rounded-xl px-2.5 py-1 border border-white/30 outline-none cursor-pointer transition shadow-2xs"
-              >
-                <option value="all" className="bg-stone-800 text-white">
-                  كافة المسارات ({students.length} طالبة)
-                </option>
-                {tracks.filter(t => !t.isArchived).map(track => {
-                  const count = students.filter(s => s.trackId === track.id).length;
-                  const cleanTrackName = (track.name || '').replace(/[🪴🤎]/g, '').trim();
-                  return (
-                    <option key={track.id} value={track.id} className="bg-stone-800 text-white">
-                      {cleanTrackName} ({count} طالبة)
-                    </option>
-                  );
-                })}
-              </select>
+              <div className="inline-flex items-center gap-1.5 bg-black/25 hover:bg-black/40 text-white font-bold text-xs rounded-xl px-2.5 py-1 border border-white/30 transition shadow-2xs">
+                <select
+                  value={selectedTrackId || 'all'}
+                  onChange={e => setSelectedTrackId(e.target.value === 'all' ? null : e.target.value)}
+                  className="bg-transparent text-white font-bold text-xs outline-none cursor-pointer"
+                >
+                  <option value="all" className="bg-stone-800 text-white">
+                    {isPrivacyMode ? 'كافة المسارات (•• طالبة)' : `كافة المسارات (${students.length} طالبة)`}
+                  </option>
+                  {tracks.filter(t => !t.isArchived).map(track => {
+                    const count = students.filter(s => s.trackId === track.id).length;
+                    const cleanTrackName = (track.name || '').replace(/[🪴🤎]/g, '').trim();
+                    return (
+                      <option key={track.id} value={track.id} className="bg-stone-800 text-white">
+                        {isPrivacyMode ? `${cleanTrackName} (•• طالبة)` : `${cleanTrackName} (${count} طالبة)`}
+                      </option>
+                    );
+                  })}
+                </select>
+                <span
+                  className={`text-[11px] font-bold text-amber-200 select-none ${isPrivacyMode ? 'blur-[5px] select-none' : ''}`}
+                  style={isPrivacyMode ? { filter: 'blur(5px)', userSelect: 'none' } : undefined}
+                >
+                  ({isPrivacyMode ? '••' : displayedStudents.length} طالبة)
+                </span>
+              </div>
             </div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/15 backdrop-blur text-xs font-bold text-white border border-white/20">
               <Calendar className="w-3.5 h-3.5 text-amber-200" />
@@ -389,10 +397,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <span>النصاب وعدد الطالبات:</span>
                     <span className="font-semibold text-stone-800"><span className={privacyBlurClass}>{circleStudents.length}</span> من {circle.maxStudents} طالبة</span>
                   </div>
-                  <div className="w-full bg-[#EFEAE5] h-1.5 rounded-full overflow-hidden">
+                  <div
+                    className="w-full h-1.5 rounded-full overflow-hidden"
+                    style={{ backgroundColor: '#F6EFEA' }}
+                  >
                     <div
-                      className="bg-[#8E5364] h-full rounded-full transition-all"
-                      style={{ width: `${Math.min(100, (circleStudents.length / circle.maxStudents) * 100)}%` }}
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(100, (circleStudents.length / circle.maxStudents) * 100)}%`,
+                        backgroundColor: '#9A5643'
+                      }}
                     />
                   </div>
                   <div className="flex justify-between text-[11px] text-stone-400 pt-1">

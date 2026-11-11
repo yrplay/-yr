@@ -80,12 +80,22 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         : 'لم تختبر / مؤجل';
 
   const examGradeCellText = hasValidExamScore
-    ? `${studentExam!.score} / ${examMaxScore}`
+    ? `${studentExam!.score} من ${examMaxScore}`
     : effectiveExamStatus === 'absent_unexcused'
-      ? `0 / ${examMaxScore}`
+      ? `0 من ${examMaxScore}`
       : effectiveExamStatus === 'exempt'
         ? 'معفاة (—)'
         : 'مؤجل (—)';
+
+  const attendanceMaxScore = score?.attendanceMax ?? 20;
+  const attendanceEarnedScore = score?.attendanceScore ?? attendanceMaxScore;
+  const memorizationMaxScore = score?.memorizationMax ?? 25;
+  const memorizationEarnedScore = score?.memorizationScore ?? memorizationMaxScore;
+  const conditionsMaxScore = score?.conditionsMax ?? 10;
+  const atqiniMaxScore = score?.atqiniMax ?? 10;
+  const atqiniEarnedScore = score?.atqiniScore ?? atqiniMaxScore;
+  const challengesMaxScore = score?.challengesMax ?? 10;
+  const challengesEarnedScore = score?.challengesScore ?? challengesMaxScore;
 
   const teacher = users.find(u => u.id === circle?.teacherId);
   const leader = users.find(u => u.role === 'leader');
@@ -670,16 +680,16 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           <td>حضور جلسات التسميع المقررة</td>
           <td>
             <div>نسبة ${score?.attendanceRate || 0}% • غياب: ${totalAbsentDays} أيام (${score?.absentExcusedCount || 0} بعذر • ${score?.absentUnexcusedCount || 0} دون عذر)</div>
-            <div style="margin-top: 3px; font-weight: bold; color: #92400e;">نجوم الانضباط الأسبوعية: ${weeklyStarsEmojis} (${weeklyStarsCount}/${totalActiveWeeksCount})</div>
+            <div style="margin-top: 3px; font-weight: bold; color: #92400e;">نجوم الانضباط الأسبوعية: ${weeklyStarsEmojis} (${weeklyStarsCount} من ${totalActiveWeeksCount})</div>
             ${hasFullWeeklyStarsHonor ? `<div style="margin-top: 3px; display: inline-block; padding: 2px 8px; border-radius: 10px; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; font-weight: 800; font-size: 10px;">طالبة ملتزمة بنجوم الانضباط الكاملة 🌟</div>` : ''}
           </td>
-          <td>${score?.attendanceScore || 10} / 10</td>
+          <td><strong>${attendanceEarnedScore} من ${attendanceMaxScore}</strong></td>
         </tr>
         ${isNewMemPlanEnabled ? `<tr>
           <td><strong>${isFreeMemorization ? 'الحفظ الحر' : 'الحفظ الجديد'}</strong></td>
           <td>${isFreeMemorization ? 'نوع الخطة: الحفظ الحر' : `${targetNewPages} صفحات`}</td>
           <td>${isFreeMemorization ? `<strong>إجمالي المنجز: ${doneNewPages} صفحة متقنة 🌟</strong>` : `${doneNewPages} صفحات`}</td>
-          <td>${score?.memorizationScore || 10} / 10</td>
+          <td><strong>${memorizationEarnedScore} من ${memorizationMaxScore}</strong></td>
         </tr>` : ''}
         <tr>
           <td><strong>${minorSectionLabel}</strong></td>
@@ -697,20 +707,20 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           <td><strong>معدل الالتزام بمعايير التحضير والإتقان</strong></td>
           <td>الاستماع (5) • التلاوة نظراً (5) • التكرار (10)</td>
           <td><span style="display:inline-block; padding: 2px 8px; border-radius: 10px; background: ${prepEvaluation.htmlBg}; color: ${prepEvaluation.htmlColor}; border: 1px solid ${prepEvaluation.htmlBorder}; font-weight: bold;">${prepEvaluation.badgeText} (${prepRatePercent}%)</span></td>
-          <td><strong>${prepAvgOutOf10} / 10</strong></td>
+          <td><strong>${score?.conditionsFulfilledScore ?? prepAvgOutOf10} من ${conditionsMaxScore}</strong></td>
         </tr>` : ''}
         ${doneUnclassifiedRevisionPages > 0 ? `<tr><td><strong>مراجعة مسجلة دون تفصيل (سجلات سابقة)</strong></td><td>—</td><td>${doneUnclassifiedRevisionPages} صفحات</td><td>غير مصنفة</td></tr>` : ''}
         <tr>
           <td><strong>واجبات «أتقني» للتجويد</strong></td>
           <td>تطبيق أحكام التجويد واستخراج الأمثلة</td>
           <td>${score?.atqiniCompletedCount || 1} واجب منجز</td>
-          <td>${score?.atqiniScore || 10} / 10</td>
+          <td><strong>${atqiniEarnedScore} من ${atqiniMaxScore}</strong></td>
         </tr>
         <tr>
           <td><strong>التحديات والمراجعة الثنائية</strong></td>
           <td>مع الرفيقة: ${student.partnerStudentName || 'الرفيقة المعتمدة'}</td>
           <td>منجز بتميز وتعاون مثمر ⭐</td>
-          <td>${score?.challengesScore || 10} / 10</td>
+          <td><strong>${challengesEarnedScore} من ${challengesMaxScore}</strong></td>
         </tr>
         <tr>
           <td><strong>الاختبار الشهري</strong></td>
@@ -972,7 +982,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             <span className="text-xs text-white/80 font-medium block">النسبة المئوية العامة</span>
             <span className="text-4xl sm:text-5xl font-black">{score?.finalPercentage}%</span>
             <span className="text-[11px] text-white/70 block mt-1">
-              مجموع النقاط: {score?.totalEarnedPoints} / {score?.totalPossiblePoints}
+              مجموع النقاط: {score?.totalEarnedPoints} من {score?.totalPossiblePoints}
             </span>
           </div>
         </div>
@@ -1009,7 +1019,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                 <div className="bg-white px-3.5 py-1.5 rounded-xl border border-stone-200 text-center shadow-2xs">
                   <span className="text-[10px] text-stone-400 block">متوسط التحضير</span>
                   <strong className="text-sm font-black privacy-score-digit" style={{ color: prepEvaluation.barColor }}>
-                    {prepAvgOutOf10} / 10 ({prepRatePercent}%)
+                    {score?.conditionsFulfilledScore ?? prepAvgOutOf10} من {conditionsMaxScore} ({prepRatePercent}%)
                   </strong>
                 </div>
               </div>
@@ -1115,7 +1125,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               </div>
               <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900 items-center">
                 <span>درجة الحفظ والمراجعة:</span>
-                <span style={{ color: customPrimaryColor }}>{score?.memorizationScore} / {score?.memorizationMax} نقطة</span>
+                <span style={{ color: customPrimaryColor }}>{memorizationEarnedScore} من {memorizationMaxScore} نقطة</span>
               </div>
             </div>
           </div>
@@ -1158,7 +1168,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               <div className="flex justify-between items-center py-1 px-1.5 rounded-xl bg-amber-50/70 border border-amber-200/70">
                 <span className="font-bold text-amber-900">نجوم الانضباط الأسبوعية:</span>
                 <strong className="text-amber-900 font-extrabold tracking-wide">
-                  {weeklyStarsEmojis} <span className="text-[10px] font-bold text-amber-700">({weeklyStarsCount}/{totalActiveWeeksCount})</span>
+                  {weeklyStarsEmojis} <span className="text-[10px] font-bold text-amber-700">({weeklyStarsCount} من {totalActiveWeeksCount})</span>
                 </strong>
               </div>
               {hasFullWeeklyStarsHonor && (
@@ -1168,7 +1178,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               )}
               <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900 items-center">
                 <span>درجة الحضور والانضباط:</span>
-                <span style={{ color: customSecondaryColor }}>{score?.attendanceScore} / {score?.attendanceMax} نقطة</span>
+                <span style={{ color: customSecondaryColor }}>{attendanceEarnedScore} من {attendanceMaxScore} نقطة</span>
               </div>
             </div>
           </div>
@@ -1204,7 +1214,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               </div>
               <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900 items-center">
                 <span>درجة التجويد «أتقني»:</span>
-                <span style={{ color: customPrimaryColor }}>{score?.atqiniScore} / {score?.atqiniMax} نقطة</span>
+                <span style={{ color: customPrimaryColor }}>{atqiniEarnedScore} من {atqiniMaxScore} نقطة</span>
               </div>
             </div>
           </div>
@@ -1240,7 +1250,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               </div>
               <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900 items-center">
                 <span>مجموع درجات التحديات:</span>
-                <span className="text-amber-800">{score?.challengesScore} / {score?.challengesMax} نقطة</span>
+                <span className="text-amber-800">{challengesEarnedScore} من {challengesMaxScore} نقطة</span>
               </div>
             </div>
           </div>
@@ -1272,7 +1282,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                 </div>
               ) : effectiveExamStatus === 'absent_unexcused' ? (
                 <span className="px-3 py-1 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-xs font-extrabold">
-                  غائبة بدون عذر (0 / {examMaxScore})
+                  غائبة بدون عذر (0 من {examMaxScore})
                 </span>
               ) : effectiveExamStatus === 'exempt' ? (
                 <span className="px-3 py-1 rounded-xl bg-sky-50 text-sky-800 border border-sky-200 text-xs font-extrabold">
@@ -1707,7 +1717,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                         <td className="p-2.5 space-y-1">
                           <div>حضور {score?.attendanceRate || 0}% • غياب {totalAbsentDays} أيام</div>
                           <div className="text-[11px] font-bold text-amber-800">
-                            نجوم الانضباط الأسبوعية: {weeklyStarsEmojis} ({weeklyStarsCount}/{totalActiveWeeksCount})
+                            نجوم الانضباط الأسبوعية: {weeklyStarsEmojis} ({weeklyStarsCount} من {totalActiveWeeksCount})
                           </div>
                           {hasFullWeeklyStarsHonor && (
                             <span className="inline-block px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold">
@@ -1715,7 +1725,9 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                             </span>
                           )}
                         </td>
-                        <td className="p-2.5 font-bold" style={{ color: customSecondaryColor }}>{score?.attendanceScore || 10} / 10</td>
+                        <td className="p-2.5 font-bold" style={{ color: customSecondaryColor }}>
+                          {attendanceEarnedScore} من {attendanceMaxScore}
+                        </td>
                       </tr>
                       {isNewMemPlanEnabled && (
                         <tr>
@@ -1728,7 +1740,9 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                           <td className="p-2.5 font-bold text-emerald-800">
                             {isFreeMemorization ? `إجمالي المنجز: ${doneNewPages} صفحة متقنة 🌟` : `${doneNewPages} صفحات`}
                           </td>
-                          <td className="p-2.5 font-bold" style={{ color: customPrimaryColor }}>{score?.memorizationScore || 10} / 10</td>
+                          <td className="p-2.5 font-bold" style={{ color: customPrimaryColor }}>
+                            {memorizationEarnedScore} من {memorizationMaxScore}
+                          </td>
                         </tr>
                       )}
                       <tr>
@@ -1758,7 +1772,9 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                               {prepEvaluation.badgeText} ({prepRatePercent}%)
                             </span>
                           </td>
-                          <td className="p-2.5 font-bold" style={{ color: prepEvaluation.barColor }}>{prepAvgOutOf10} / 10</td>
+                          <td className="p-2.5 font-bold" style={{ color: prepEvaluation.barColor }}>
+                            {score?.conditionsFulfilledScore ?? prepAvgOutOf10} من {conditionsMaxScore}
+                          </td>
                         </tr>
                       )}
                       {doneUnclassifiedRevisionPages > 0 && (
@@ -1773,13 +1789,17 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                         <td className="p-2.5 font-bold text-stone-900">واجبات التجويد «أتقني»</td>
                         <td className="p-2.5">استخراج وتطبيق الأحكام</td>
                         <td className="p-2.5">{score?.atqiniCompletedCount || 1} واجب منجز</td>
-                        <td className="p-2.5 font-bold" style={{ color: customPrimaryColor }}>{score?.atqiniScore || 10} / 10</td>
+                        <td className="p-2.5 font-bold" style={{ color: customPrimaryColor }}>
+                          {atqiniEarnedScore} من {atqiniMaxScore}
+                        </td>
                       </tr>
                       <tr>
                         <td className="p-2.5 font-bold text-stone-900">التحديات والمراجعة الثنائية</td>
                         <td className="p-2.5">مع الرفيقة القرآنية</td>
                         <td className="p-2.5">منجز بتميز ⭐</td>
-                        <td className="p-2.5 font-bold text-amber-800">{score?.challengesScore || 10} / 10</td>
+                        <td className="p-2.5 font-bold text-amber-800">
+                          {challengesEarnedScore} من {challengesMaxScore}
+                        </td>
                       </tr>
                       <tr>
                         <td className="p-2.5 font-bold text-stone-900">الاختبار الشهري</td>
