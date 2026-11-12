@@ -30,7 +30,24 @@ import { isLocalDemoMode } from './demoMode';
 import { hasFullAccess } from './types';
 import { syncInstitutionLogoAsPWAAppIcon } from './services/pwaIconSync';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { resolveUserWelcomeConfig, LOGIN_WELCOME_DURATION_MS } from './utils/staffHelpers';
+import {
+  resolveUserWelcomeConfig,
+  LOGIN_WELCOME_DURATION_MS,
+  readResolvedStaffChatMessages,
+  resolvePinnedStaffAnnouncement
+} from './utils/staffHelpers';
+import {
+  computeUnreadStaffChatCount,
+  deliverNativeOrPwaNotification,
+  evaluateShiftReminderForStaff,
+  getLastSeenStaffChatTimestamp,
+  hasAlreadyNotifiedItem,
+  isAuthoredByCurrentUser,
+  isStaffNotificationsEnabled,
+  markItemAsNotified,
+  markStaffChatSeenNow
+} from './utils/staffNotifications';
+import { getTodayISO } from './utils/hijriDate';
 
 const VIEW_TYPES: ViewType[] = [
   'dashboard', 'tracks_circles', 'track_detail', 'students', 'subscriptions',
@@ -56,6 +73,7 @@ const AppContent: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string>(initialNavigation.studentId);
   const [selectedTrackId, setSelectedTrackId] = useState<string>(initialNavigation.trackId);
+  const [unreadStaffChatCount, setUnreadStaffChatCount] = useState<number>(0);
   
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -147,6 +165,134 @@ const AppContent: React.FC = () => {
       showToast(resolvedWelcome, 'success', LOGIN_WELCOME_DURATION_MS);
     }
   }, [isAuthenticated, currentUser?.id, cloudDataReady, settings?.welcomeMessages, settings?.staffWelcomeConfigs]);
+
+  // Clear unread staff chat counter immediately when viewing "تحضير ومهام الكادر"
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+    if (currentView === 'staff-attendance') {
+      markStaffChatSeenNow(currentUser.id, settings);
+      setUnreadStaffChatCount(0);
+    } else {
+      setUnreadStaffChatCount(computeUnreadStaffChatCount(currentUser, settings));
+    }
+  }, [
+    isAuthenticated,
+    currentUser?.id,
+    currentView,
+    settings?.staffChatMessages,
+    settings?.pinnedStaffAnnouncement
+  ]);
+
+  // Listen for custom seen-updated events
+  useEffect(() => {
+    const syncUnread = () => {
+      if (!currentUser) return;
+      if (currentView === 'staff-attendance') {
+        setUnreadStaffChatCount(0);
+      } else {
+        setUnreadStaffChatCount(computeUnreadStaffChatCount(currentUser, settings));
+      }
+    };
+    window.addEventListener('ghaith-staff-chat-seen-updated', syncUnread);
+    return () => window.removeEventListener('ghaith-staff-chat-seen-updated', syncUnread);
+  }, [currentUser, currentView, settings]);
+
+  // Trigger native/PWA notification + gentle chime for ALL other users when a new message
+  // or pinned announcement update arrives (strictly excluding the sender/updater).
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser || !cloudDataReady) return;
+
+    const lastSeen = getLastSeenStaffChatTimestamp(currentUser.id);
+    const activeMsgs = readResolvedStaffChatMessages(settings);
+
+    // Check newest messages authored by other users
+    for (const msg of activeMsgs) {
+      if (isAuthoredByCurrentUser(currentUser, msg.senderId, msg.senderName)) {
+        continue;
+      }
+      const msgTs = msg.editedAt || msg.createdAt;
+      const itemKey = `msg_${msg.id}_${msgTs}`;
+      if (msgTs > lastSeen && !hasAlreadyNotifiedItem(currentUser.id, itemKey)) {
+        markItemAsNotified(currentUser.id, itemKey);
+        if (isStaffNotificationsEnabled()) {
+          void deliverNativeOrPwaNotification({
+            title: `رسالة جديدة في مساحة تواصل الكادر — ${msg.senderName}`,
+            body: msg.text,
+            tag: `staff-chat-${msg.id}`,
+            playChime: true
+          });
+        }
+        if (currentView === 'staff-attendance') {
+          markStaffChatSeenNow(currentUser.id, settings);
+        }
+      }
+    }
+
+    // Check pinned administrative announcement updates authored by Reefa or Omar
+    const pinned = resolvePinnedStaffAnnouncement(settings);
+    if (
+      pinned.text &&
+      pinned.updatedAt > lastSeen &&
+      !isAuthoredByCurrentUser(currentUser, undefined, pinned.updatedBy)
+    ) {
+      const pinnedKey = `pinned_${pinned.updatedAt}`;
+      if (!hasAlreadyNotifiedItem(currentUser.id, pinnedKey)) {
+        markItemAsNotified(currentUser.id, pinnedKey);
+        if (isStaffNotificationsEnabled()) {
+          void deliverNativeOrPwaNotification({
+            title: `تعميم إداري مثبت جديد — ${pinned.updatedBy || 'إدارة المنصة'}`,
+            body: pinned.text,
+            tag: `staff-pinned-${pinned.updatedAt}`,
+            playChime: true
+          });
+        }
+        if (currentView === 'staff-attendance') {
+          markStaffChatSeenNow(currentUser.id, settings);
+        }
+      }
+    }
+  }, [
+    isAuthenticated,
+    currentUser?.id,
+    cloudDataReady,
+    currentView,
+    settings?.staffChatMessages,
+    settings?.pinnedStaffAnnouncement
+  ]);
+
+  // Role-Based Shift Check-In Reminders (15 minutes prior & at shift start)
+  // Strictly for Supervisors (مشرفة حلقات) & Teachers (معلمة حلقة) ONLY — never for Reefa or Omar.
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser || !cloudDataReady) return;
+
+    const checkShiftReminder = () => {
+      if (!isStaffNotificationsEnabled()) return;
+      const evaluation = evaluateShiftReminderForStaff({
+        user: currentUser,
+        settings,
+        todayIso: getTodayISO()
+      });
+      if (evaluation.shouldTrigger && evaluation.title && evaluation.body) {
+        void deliverNativeOrPwaNotification({
+          title: evaluation.title,
+          body: evaluation.body,
+          tag: evaluation.tag,
+          playChime: true
+        });
+        showToast(evaluation.body, 'info', 15000);
+      }
+    };
+
+    checkShiftReminder();
+    const interval = setInterval(checkShiftReminder, 30000);
+    return () => clearInterval(interval);
+  }, [
+    isAuthenticated,
+    currentUser?.id,
+    cloudDataReady,
+    settings?.staffAttendanceRecords,
+    settings?.staffProfiles
+  ]);
 
   // تطبيق الهوية البصرية ونوع الخط تلقائياً
   React.useEffect(() => {
@@ -318,6 +464,7 @@ const AppContent: React.FC = () => {
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           onLockSession={handleLockSession}
+          unreadStaffChatCount={unreadStaffChatCount}
         />
 
         {/* مساحة عرض المحتوى */}

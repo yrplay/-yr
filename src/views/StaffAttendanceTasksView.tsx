@@ -4,7 +4,7 @@ import {
   UserCheck, Clock, Wallet, ListTodo, FileText, CheckCircle2,
   AlertCircle, Trash2, PenLine, CheckSquare, Square, Calendar,
   Eye, EyeOff, Lock, Plus, X, Check, ClipboardList, ShieldCheck,
-  MessageSquare, Pin, Send
+  MessageSquare, Pin, Send, BellRing, Bell
 } from 'lucide-react';
 import {
   User,
@@ -44,6 +44,13 @@ import {
   writeLocalPinnedAnnouncement,
   STAFF_CHAT_TTL_MS
 } from '../utils/staffHelpers';
+import {
+  deliverNativeOrPwaNotification,
+  enableStaffNotifications,
+  isStaffNotificationsEnabled,
+  markItemAsNotified,
+  markStaffChatSeenNow
+} from '../utils/staffNotifications';
 
 export const StaffAttendanceTasksView: React.FC = () => {
   const {
@@ -66,6 +73,56 @@ export const StaffAttendanceTasksView: React.FC = () => {
   const todayIso = getTodayISO();
   const [selectedAttendanceDate, setSelectedAttendanceDate] = useState<string>(todayIso);
 
+  // Notification Activation & Test State
+  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(() =>
+    isStaffNotificationsEnabled()
+  );
+
+  useEffect(() => {
+    const syncNotifState = () => {
+      setNotificationsEnabled(isStaffNotificationsEnabled());
+    };
+    window.addEventListener('ghaith-staff-notifications-changed', syncNotifState);
+    return () => window.removeEventListener('ghaith-staff-notifications-changed', syncNotifState);
+  }, []);
+
+  // Mark staff chat as seen whenever this view is mounted or updated
+  useEffect(() => {
+    if (currentUser?.id) {
+      markStaffChatSeenNow(currentUser.id, settings);
+    }
+  }, [currentUser?.id, settings?.staffChatMessages, settings?.pinnedStaffAnnouncement]);
+
+  const handleActivateNotifications = async () => {
+    const res = await enableStaffNotifications();
+    setNotificationsEnabled(res.enabled);
+    const roleSpecificMsg = isCurrentOperationalStaff
+      ? 'تم تفعيل إشعارات الدوام (قبل الدوام بـ 15 دقيقة وعند بدايته) وإشعارات مساحة تواصل الكادر بنجاح'
+      : 'تم تفعيل إشعارات الرسائل والتعاميم الفورية في مساحة تواصل الكادر بنجاح';
+
+    await deliverNativeOrPwaNotification({
+      title: 'تم تفعيل الإشعارات — مقرأة غيث الغيم',
+      body: roleSpecificMsg,
+      tag: 'ghaith-notif-enabled',
+      playChime: true
+    });
+    showToast(roleSpecificMsg, 'success');
+  };
+
+  const handleTestNotification = async () => {
+    const testBody = isCurrentOperationalStaff
+      ? `تجربة إشعار ناجحة لـ ${currentUser?.name || 'عضو الكادر'} — ستصلكِ تنبيهات الدوام قبل موعده بـ 15 دقيقة ورسائل الكادر الجديدة فوراً.`
+      : `تجربة إشعار ناجحة لـ ${currentUser?.name || 'إدارة المنصة'} — ستصلكِ إشعارات فورية عند إرسال أي رسالة جديدة في مساحة تواصل الكادر.`;
+
+    await deliverNativeOrPwaNotification({
+      title: 'إشعار تجريبي — مساحة تواصل وتحضير الكادر',
+      body: testBody,
+      tag: `ghaith-notif-test-${Date.now()}`,
+      playChime: true
+    });
+    showToast(testBody, 'info');
+  };
+
   // Strictly include ONLY Supervisors (مشرفة) and Teachers (معلمة)
   // Completely EXCLUDE Founders (مؤسس المنصة) and Platform Owners/Leaders (مالك المنصة / قائدة)
   const operationalStaffMembers = users.filter(u => isSupervisorOrTeacherOnly(u));
@@ -75,6 +132,10 @@ export const StaffAttendanceTasksView: React.FC = () => {
     isCurrentOperationalStaff && currentUser
       ? allAttendanceRecords[`${currentUser.id}_${todayIso}`]
       : undefined;
+  const selfResolvedProfile =
+    isCurrentOperationalStaff && currentUser
+      ? resolveStaffProfile(currentUser, settings)
+      : null;
 
   const [showSelfExcuseForm, setShowSelfExcuseForm] = useState(false);
   const [selfExcuseText, setSelfExcuseText] = useState('');
@@ -157,11 +218,18 @@ export const StaffAttendanceTasksView: React.FC = () => {
       hijriTimeLabel: formatCurrentArabicTime(new Date(nowMs))
     };
 
+    if (sender?.id) {
+      markItemAsNotified(sender.id, `msg_${newMsg.id}_${nowMs}`);
+    }
+
     const currentValid = readResolvedStaffChatMessages(settings, nowMs);
     const nextMessages = [...currentValid, newMsg];
     writeLocalStaffChatMessages(nextMessages);
     setChatInputText('');
     setNowTick(nowMs);
+    if (sender?.id) {
+      markStaffChatSeenNow(sender.id, { ...settings, staffChatMessages: nextMessages });
+    }
     await updateSettings({ staffChatMessages: nextMessages }, true);
     setTimeout(() => {
       chatListEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -176,6 +244,9 @@ export const StaffAttendanceTasksView: React.FC = () => {
       return;
     }
     const nowMs = Date.now();
+    if (currentUser?.id) {
+      markItemAsNotified(currentUser.id, `msg_${msgId}_${nowMs}`);
+    }
     const currentValid = readResolvedStaffChatMessages(settings, nowMs);
     const nextMessages = currentValid.map(m =>
       m.id === msgId
@@ -191,6 +262,9 @@ export const StaffAttendanceTasksView: React.FC = () => {
     setEditingChatMsgId(null);
     setEditingChatMsgText('');
     setNowTick(nowMs);
+    if (currentUser?.id) {
+      markStaffChatSeenNow(currentUser.id, { ...settings, staffChatMessages: nextMessages });
+    }
     await updateSettings({ staffChatMessages: nextMessages }, true);
     showToast('تم تعديل الرسالة ومزامنتها فوراً', 'success');
   };
@@ -224,13 +298,20 @@ export const StaffAttendanceTasksView: React.FC = () => {
     e.preventDefault();
     if (!canModerateStaffChat) return;
     const cleanText = pinnedAnnouncementDraft.trim();
+    const updatedAt = Date.now();
     const nextPinned: PinnedStaffAnnouncement = {
       text: cleanText,
-      updatedAt: Date.now(),
+      updatedAt,
       updatedBy: currentUser?.name || 'إدارة المنصة'
     };
+    if (currentUser?.id) {
+      markItemAsNotified(currentUser.id, `pinned_${updatedAt}`);
+    }
     writeLocalPinnedAnnouncement(nextPinned);
     setIsEditingPinnedAnnouncement(false);
+    if (currentUser?.id) {
+      markStaffChatSeenNow(currentUser.id, { ...settings, pinnedStaffAnnouncement: nextPinned });
+    }
     await updateSettings({ pinnedStaffAnnouncement: nextPinned }, true);
     showToast(cleanText ? 'تم تحديث التعميم الإداري المثبت بنجاح' : 'تم مسح التعميم الإداري المثبت', 'success');
   };
@@ -518,6 +599,39 @@ export const StaffAttendanceTasksView: React.FC = () => {
     ? [currentUser]
     : operationalStaffMembers;
 
+  const renderNotificationControlBar = () => {
+    if (!notificationsEnabled) {
+      return (
+        <button
+          type="button"
+          onClick={handleActivateNotifications}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold transition shadow-2xs cursor-pointer active:scale-95"
+        >
+          <BellRing className="w-3.5 h-3.5 shrink-0" />
+          <span>تفعيل إشعارات الدوام والرسائل</span>
+        </button>
+      );
+    }
+
+    return (
+      <div className="inline-flex items-center gap-1.5 flex-wrap">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF6F3] text-[#7B3F30] border border-[#E5C3B3] text-xs font-bold">
+          <CheckCircle2 className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+          <span>الإشعارات مفعّلة</span>
+        </span>
+        <button
+          type="button"
+          onClick={handleTestNotification}
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white hover:bg-[#F6EFEA] text-[#9A5643] border border-[#E8E2DC] text-[11px] font-bold transition cursor-pointer active:scale-95"
+          title="إرسال إشعار تجريبي فوري للتأكد من عمل التنبيهات على جهازك"
+        >
+          <Bell className="w-3 h-3 shrink-0" />
+          <span>تجربة إشعار</span>
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6" dir="rtl">
       {/* Page Header */}
@@ -541,12 +655,16 @@ export const StaffAttendanceTasksView: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-stone-500 mt-1">
-              مخصص للمشرفات والمعلمات فقط — سجل التحضير اليومي والشهري بتقويم أم القرى، ساعات الدوام، المهام والمسؤوليات، والراتب الشهري الثابت
+              {isAdminOversight
+                ? 'مخصص للمشرفات والمعلمات — تصلكِ إشعارات فورية عند إرسال رسائل جديدة في مساحة تواصل الكادر دون إشعارات تحضير الدوام'
+                : 'مخصص للمشرفات والمعلمات — تنبيه ذكي قبل الدوام بـ 15 دقيقة وعند بدايته، وإشعارات فورية لرسائل وتعاميم مساحة تواصل الكادر'}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-start lg:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+          {renderNotificationControlBar()}
+
           <button
             type="button"
             onClick={togglePrivacyMode}
@@ -563,6 +681,57 @@ export const StaffAttendanceTasksView: React.FC = () => {
         </div>
       </div>
 
+      {/* Role-Based Top Shift Banner — Strictly for Supervisors (مشرفة حلقات) & Teachers (معلمة حلقة) ONLY.
+          Never shown for Platform Owner (ريفة المنصوري) or Founder (أ. عمر عبدالرحمن). */}
+      {!isAdminOversight && isCurrentOperationalStaff && currentUser && selfResolvedProfile && (
+        <div className="bg-white rounded-3xl border border-[#E5C3B3] p-4 sm:p-5 shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-[#F6EFEA] border border-[#E5C3B3] text-[#9A5643] flex items-center justify-center shrink-0">
+              <Clock className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs sm:text-sm font-bold text-stone-900">
+                  ساعات الدوام المجدولة لليوم ({formatHijriDate(todayIso, { includeWeekday: true })}):
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-lg bg-[#FAF6F3] text-[#7B3F30] border border-[#E5C3B3] text-xs font-bold">
+                  <Clock className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+                  <span>{selfResolvedProfile.workingHours}</span>
+                </span>
+              </div>
+              <p className="text-[11px] text-stone-500 mt-1 flex items-center gap-1.5">
+                <BellRing className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+                <span>
+                  يتم إرسال تنبيه صوتي وإشعار للجهاز قبل موعد دوامكِ بـ 15 دقيقة وتذكير ثانٍ عند بداية الدوام إذا لم يُسجّل الحضور
+                </span>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 self-start lg:self-auto shrink-0">
+            {!selfTodayRecord ? (
+              <button
+                type="button"
+                onClick={handleSelfCheckInPresent}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold transition shadow-2xs cursor-pointer active:scale-95"
+              >
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>تسجيل حضور اليوم</span>
+              </button>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#EBF3EE] text-[#2D5A43] border border-[#C5DEC9] text-xs font-bold">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>
+                  {selfTodayRecord.status === 'present'
+                    ? `تم تسجيل حضور اليوم (${selfTodayRecord.checkInTime || 'حاضرة'})`
+                    : 'تم تسجيل حالة اليوم'}
+                </span>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* =====================================================================
           TOP SECTION: 24-HOUR STAFF GROUP CHAT ("مساحة تواصل الكادر")
           Always visible and usable for ALL roles (Reefa, Omar, Supervisors, Teachers).
@@ -570,7 +739,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
          ===================================================================== */}
       <div className="bg-white rounded-3xl border border-[#E8E2DC] shadow-2xs overflow-hidden">
         {/* Chat Card Header */}
-        <div className="p-4 sm:p-5 bg-white border-b border-[#E8E2DC] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="p-4 sm:p-5 bg-white border-b border-[#E8E2DC] flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex items-start sm:items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-[#F6EFEA] border border-[#E5C3B3] text-[#9A5643] flex items-center justify-center shrink-0">
               <MessageSquare className="w-5 h-5" />
@@ -591,20 +760,24 @@ export const StaffAttendanceTasksView: React.FC = () => {
             </div>
           </div>
 
-          {/* Add / Edit Pinned Announcement quick trigger for Reefa & Omar if announcement was deleted */}
-          {canModerateStaffChat && !pinnedAnnouncement.text && !isEditingPinnedAnnouncement && (
-            <button
-              type="button"
-              onClick={() => {
-                setPinnedAnnouncementDraft('');
-                setIsEditingPinnedAnnouncement(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF6F3] hover:bg-[#F3EAE3] text-[#7B3F30] border border-[#E8E2DC] text-xs font-bold transition cursor-pointer self-start sm:self-auto"
-            >
-              <Pin className="w-3.5 h-3.5 text-[#9A5643]" />
-              <span>إضافة تعميم إداري مثبت</span>
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+            {renderNotificationControlBar()}
+
+            {/* Add / Edit Pinned Announcement quick trigger for Reefa & Omar if announcement was deleted */}
+            {canModerateStaffChat && !pinnedAnnouncement.text && !isEditingPinnedAnnouncement && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPinnedAnnouncementDraft('');
+                  setIsEditingPinnedAnnouncement(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF6F3] hover:bg-[#F3EAE3] text-[#7B3F30] border border-[#E8E2DC] text-xs font-bold transition cursor-pointer"
+              >
+                <Pin className="w-3.5 h-3.5 text-[#9A5643]" />
+                <span>إضافة تعميم إداري مثبت</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Pinned Administrative Announcement ("تعميم إداري مثبت") */}

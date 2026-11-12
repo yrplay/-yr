@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 import { hasFullAccess } from '../types';
+import { computeUnreadStaffChatCount, markStaffChatSeenNow } from '../utils/staffNotifications';
 
 export type ViewType =
   | 'dashboard'
@@ -35,12 +36,28 @@ interface SidebarProps {
   onClose: () => void;
   onLockSession?: () => void;
   onOpenAuditLog?: () => void;
+  unreadStaffChatCount?: number;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isOpen, onClose, onLockSession, onOpenAuditLog }) => {
+export const Sidebar: React.FC<SidebarProps> = ({
+  currentView,
+  onSelectView,
+  isOpen,
+  onClose,
+  onLockSession,
+  onOpenAuditLog,
+  unreadStaffChatCount: externalUnreadCount
+}) => {
   const { circles, students, settings, isDarkMode, currentUser } = useApp();
   const primaryColor = settings?.primaryColor || '#8E5364';
   const hasAdminAccess = hasFullAccess(currentUser);
+
+  const computedUnreadCount =
+    currentView === 'staff-attendance'
+      ? 0
+      : externalUnreadCount !== undefined
+      ? externalUnreadCount
+      : computeUnreadStaffChatCount(currentUser, settings);
 
   const rawMenuItems: { id: ViewType; label: string; icon: any; badge?: string | number; accent?: string; adminOnly?: boolean }[] = [
     { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
@@ -57,7 +74,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
     { id: 'portfolio', label: 'ملف الإنجاز الشهري', icon: UserCheck },
     { id: 'reports', label: 'التقارير والإحصائيات', icon: BarChart3 },
     { id: 'staff', label: 'المعلمات والمشرفات', icon: UserCog, adminOnly: true },
-    { id: 'staff-attendance', label: 'تحضير ومهام الكادر', icon: ClipboardList },
+    {
+      id: 'staff-attendance',
+      label: 'تحضير ومهام الكادر',
+      icon: ClipboardList,
+      badge: computedUnreadCount > 0 ? computedUnreadCount : undefined
+    },
     { id: 'settings', label: 'الإعدادات والنسخ الاحتياطي', icon: Settings, adminOnly: true },
   ];
 
@@ -134,6 +156,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
                 key={item.id}
                 type="button"
                 onClick={() => {
+                  if (item.id === 'staff-attendance') {
+                    markStaffChatSeenNow(currentUser?.id, settings);
+                  }
                   onSelectView(item.id);
                   onClose();
                 }}
@@ -162,7 +187,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
                 {item.badge !== undefined && (
                   <span
                     className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                      isActive ? 'text-white' : 'bg-[#EAE2D8] text-stone-600'
+                      isActive
+                        ? 'text-white'
+                        : item.id === 'staff-attendance'
+                        ? 'bg-[#9A5643] text-white font-bold shadow-2xs'
+                        : 'bg-[#EAE2D8] text-stone-600'
                     }`}
                     style={isActive ? { backgroundColor: isDarkMode ? '#9E5B6D' : primaryColor } : undefined}
                   >
