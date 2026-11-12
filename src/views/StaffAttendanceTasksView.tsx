@@ -47,9 +47,13 @@ import {
 import {
   deliverNativeOrPwaNotification,
   enableStaffNotifications,
+  formatMinutesToArabicTime,
+  getChatMessageSeenKey,
+  getPinnedAnnouncementSeenKey,
   isStaffNotificationsEnabled,
-  markItemAsNotified,
-  markStaffChatSeenNow
+  markMessageIdAsSeenByUser,
+  markStaffChatSeenNow,
+  parseShiftStartMinutes
 } from '../utils/staffNotifications';
 
 export const StaffAttendanceTasksView: React.FC = () => {
@@ -86,12 +90,12 @@ export const StaffAttendanceTasksView: React.FC = () => {
     return () => window.removeEventListener('ghaith-staff-notifications-changed', syncNotifState);
   }, []);
 
-  // Mark staff chat as seen whenever this view is mounted or updated
+  // Mark staff chat as seen when opening this view
   useEffect(() => {
     if (currentUser?.id) {
       markStaffChatSeenNow(currentUser.id, settings);
     }
-  }, [currentUser?.id, settings?.staffChatMessages, settings?.pinnedStaffAnnouncement]);
+  }, [currentUser?.id]);
 
   const handleActivateNotifications = async () => {
     const res = await enableStaffNotifications();
@@ -219,7 +223,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
     };
 
     if (sender?.id) {
-      markItemAsNotified(sender.id, `msg_${newMsg.id}_${nowMs}`);
+      markMessageIdAsSeenByUser(sender.id, getChatMessageSeenKey(newMsg));
     }
 
     const currentValid = readResolvedStaffChatMessages(settings, nowMs);
@@ -244,9 +248,6 @@ export const StaffAttendanceTasksView: React.FC = () => {
       return;
     }
     const nowMs = Date.now();
-    if (currentUser?.id) {
-      markItemAsNotified(currentUser.id, `msg_${msgId}_${nowMs}`);
-    }
     const currentValid = readResolvedStaffChatMessages(settings, nowMs);
     const nextMessages = currentValid.map(m =>
       m.id === msgId
@@ -258,6 +259,10 @@ export const StaffAttendanceTasksView: React.FC = () => {
           }
         : m
     );
+    const updatedTarget = nextMessages.find(m => m.id === msgId);
+    if (currentUser?.id && updatedTarget) {
+      markMessageIdAsSeenByUser(currentUser.id, getChatMessageSeenKey(updatedTarget));
+    }
     writeLocalStaffChatMessages(nextMessages);
     setEditingChatMsgId(null);
     setEditingChatMsgText('');
@@ -305,7 +310,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
       updatedBy: currentUser?.name || 'إدارة المنصة'
     };
     if (currentUser?.id) {
-      markItemAsNotified(currentUser.id, `pinned_${updatedAt}`);
+      markMessageIdAsSeenByUser(currentUser.id, getPinnedAnnouncementSeenKey(nextPinned));
     }
     writeLocalPinnedAnnouncement(nextPinned);
     setIsEditingPinnedAnnouncement(false);
@@ -600,37 +605,47 @@ export const StaffAttendanceTasksView: React.FC = () => {
     : operationalStaffMembers;
 
   const renderNotificationControlBar = () => {
-    if (!notificationsEnabled) {
-      return (
-        <button
-          type="button"
-          onClick={handleActivateNotifications}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold transition shadow-2xs cursor-pointer active:scale-95"
-        >
-          <BellRing className="w-3.5 h-3.5 shrink-0" />
-          <span>تفعيل إشعارات الدوام والرسائل</span>
-        </button>
-      );
-    }
-
     return (
-      <div className="inline-flex items-center gap-1.5 flex-wrap">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF6F3] text-[#7B3F30] border border-[#E5C3B3] text-xs font-bold">
-          <CheckCircle2 className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
-          <span>الإشعارات مفعّلة</span>
-        </span>
-        <button
-          type="button"
-          onClick={handleTestNotification}
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white hover:bg-[#F6EFEA] text-[#9A5643] border border-[#E8E2DC] text-[11px] font-bold transition cursor-pointer active:scale-95"
-          title="إرسال إشعار تجريبي فوري للتأكد من عمل التنبيهات على جهازك"
-        >
-          <Bell className="w-3 h-3 shrink-0" />
-          <span>تجربة إشعار</span>
-        </button>
+      <div className="flex flex-col items-start lg:items-end gap-1.5">
+        {!notificationsEnabled ? (
+          <button
+            type="button"
+            onClick={handleActivateNotifications}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold transition shadow-2xs cursor-pointer active:scale-95"
+          >
+            <BellRing className="w-3.5 h-3.5 shrink-0" />
+            <span>تفعيل إشعارات الدوام والرسائل</span>
+          </button>
+        ) : (
+          <div className="inline-flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF6F3] text-[#7B3F30] border border-[#E5C3B3] text-xs font-bold">
+              <CheckCircle2 className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+              <span>الإشعارات مفعّلة</span>
+            </span>
+            <button
+              type="button"
+              onClick={handleTestNotification}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white hover:bg-[#F6EFEA] text-[#9A5643] border border-[#E8E2DC] text-[11px] font-bold transition cursor-pointer active:scale-95"
+              title="إرسال إشعار تجريبي فوري للتأكد من عمل التنبيهات على جهازك"
+            >
+              <Bell className="w-3 h-3 shrink-0" />
+              <span>تجربة إشعار</span>
+            </button>
+          </div>
+        )}
+        <p className="text-[10px] text-stone-500 flex items-center gap-1 leading-relaxed">
+          <BellRing className="w-3 h-3 text-[#9A5643] shrink-0" />
+          <span>
+            لضمان وصول الإشعارات على الجوال، فعّلي الزر من جهازكِ (وفي الآيفون أضيفي المنصة للشاشة الرئيسية أولاً).
+          </span>
+        </p>
       </div>
     );
   };
+
+  const parsedSelfShiftStartMins = selfResolvedProfile
+    ? parseShiftStartMinutes(selfResolvedProfile.workingHours)
+    : null;
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -662,7 +677,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+        <div className="flex flex-wrap items-start lg:items-center gap-2.5 self-start lg:self-auto">
           {renderNotificationControlBar()}
 
           <button
@@ -698,6 +713,11 @@ export const StaffAttendanceTasksView: React.FC = () => {
                   <Clock className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
                   <span>{selfResolvedProfile.workingHours}</span>
                 </span>
+                {parsedSelfShiftStartMins !== null && (
+                  <span className="text-[11px] font-semibold text-[#9A5643] bg-[#F6EFEA] px-2.5 py-0.5 rounded-md border border-[#E5C3B3]">
+                    بداية الدوام: {formatMinutesToArabicTime(parsedSelfShiftStartMins)}
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-stone-500 mt-1 flex items-center gap-1.5">
                 <BellRing className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />

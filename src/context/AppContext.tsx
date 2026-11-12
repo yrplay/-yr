@@ -1277,6 +1277,55 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const applyState = (incomingData: any, isFromCloud = false) => {
     if (!incomingData || typeof incomingData !== 'object') return;
+    // Even if there was a recent local mutation, always merge additive real-time staff chat messages
+    // and pinned announcements from the cloud so cross-device messages are never dropped.
+    if (isFromCloud && incomingData.settings && typeof incomingData.settings === 'object') {
+      const localSettings = masterStateRef.current.settings || {};
+      const incomingSettings = incomingData.settings || {};
+      const mergedDeletedChatIds = [
+        ...new Set([
+          ...readLocalDeletedStaffChatIds(),
+          ...(Array.isArray(localSettings.deletedStaffChatIds) ? localSettings.deletedStaffChatIds : []),
+          ...(Array.isArray(incomingSettings.deletedStaffChatIds) ? incomingSettings.deletedStaffChatIds : [])
+        ].map(String))
+      ];
+      writeLocalDeletedStaffChatIds(mergedDeletedChatIds);
+
+      const mergedStaffChatMessages = filterAndSortActiveStaffChatMessages(
+        [
+          ...readLocalStaffChatMessages(),
+          ...(Array.isArray(localSettings.staffChatMessages) ? localSettings.staffChatMessages : []),
+          ...(Array.isArray(incomingSettings.staffChatMessages) ? incomingSettings.staffChatMessages : [])
+        ],
+        mergedDeletedChatIds
+      );
+      writeLocalStaffChatMessages(mergedStaffChatMessages);
+
+      const localPin = localSettings.pinnedStaffAnnouncement || readLocalPinnedAnnouncement();
+      const incomingPin = incomingSettings.pinnedStaffAnnouncement;
+      const mergedPinnedAnnouncement =
+        localPin && incomingPin
+          ? (incomingPin.updatedAt || 0) >= (localPin.updatedAt || 0)
+            ? incomingPin
+            : localPin
+          : incomingPin || localPin;
+      if (mergedPinnedAnnouncement) {
+        writeLocalPinnedAnnouncement(mergedPinnedAnnouncement);
+      }
+
+      if (hasPendingLocalChangesRef.current || Date.now() - lastLocalMutationTimeRef.current < 6000) {
+        const nextSettings = {
+          ...localSettings,
+          staffChatMessages: mergedStaffChatMessages,
+          deletedStaffChatIds: mergedDeletedChatIds,
+          ...(mergedPinnedAnnouncement ? { pinnedStaffAnnouncement: mergedPinnedAnnouncement } : {})
+        };
+        masterStateRef.current.settings = nextSettings;
+        setSettings(nextSettings);
+        return;
+      }
+    }
+
     // Never allow an asynchronous cloud echo to overwrite recent local user actions
     if (isFromCloud && (hasPendingLocalChangesRef.current || Date.now() - lastLocalMutationTimeRef.current < 6000)) {
       return;
@@ -1750,9 +1799,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Always connect to cloud database immediately for real-time synchronization
     startCloudSubscription();
 
+    const handleStorageSync = (e: StorageEvent) => {
+      if (
+        e.key === 'ghaith_staff_chat_messages_v1' ||
+        e.key === 'ghaith_deleted_staff_chat_ids_v1' ||
+        e.key === 'ghaith_pinned_staff_announcement_v1' ||
+        e.key === STORAGE_KEY
+      ) {
+        const localSettings = masterStateRef.current.settings || {};
+        const mergedDeleted = readLocalDeletedStaffChatIds();
+        const mergedChat = filterAndSortActiveStaffChatMessages(
+          readLocalStaffChatMessages(),
+          mergedDeleted
+        );
+        const localPin = readLocalPinnedAnnouncement() || localSettings.pinnedStaffAnnouncement;
+        const nextSettings = {
+          ...localSettings,
+          staffChatMessages: mergedChat,
+          deletedStaffChatIds: mergedDeleted,
+          ...(localPin ? { pinnedStaffAnnouncement: localPin } : {})
+        };
+        masterStateRef.current.settings = nextSettings;
+        setSettings(nextSettings);
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', handleStorageSync);
+    }
+
     return () => {
       if (unsubscribeCloud) unsubscribeCloud();
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('storage', handleStorageSync);
+      }
     };
   }, []);
 

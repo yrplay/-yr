@@ -6,11 +6,12 @@ import {
   resolvePinnedStaffAnnouncement,
   resolveStaffProfile
 } from './staffHelpers';
+import { formatHijriShort } from './hijriDate';
 
 const NOTIFICATIONS_ENABLED_KEY = 'ghaith_staff_notifications_enabled';
 const LAST_SEEN_CHAT_PREFIX = 'ghaith_staff_chat_last_seen_';
-const NOTIFIED_ITEMS_PREFIX = 'ghaith_staff_notified_items_';
-const SHIFT_REMINDER_LOG_PREFIX = 'ghaith_staff_shift_reminder_';
+const SEEN_MESSAGE_IDS_PREFIX = 'ghaith_seen_staff_chat_ids_';
+const SHIFT_REMINDER_LOG_PREFIX = 'ghaith_staff_shift_reminder_hijri_';
 
 /**
  * Checks whether the current user/device has enabled staff notifications.
@@ -71,7 +72,9 @@ export async function enableStaffNotifications(): Promise<{
 export function playGentleNotificationChime(): void {
   if (typeof window === 'undefined') return;
   try {
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
     const now = ctx.currentTime;
@@ -93,12 +96,12 @@ export function playGentleNotificationChime(): void {
     };
 
     // Warm, calm two-note chime (E5 -> G#5)
-    playTone(659.25, 0, 0.22, 0.08);
-    playTone(830.61, 0.14, 0.32, 0.07);
+    playTone(659.25, 0, 0.22, 0.09);
+    playTone(830.61, 0.14, 0.34, 0.08);
 
     setTimeout(() => {
       void ctx.close().catch(() => {});
-    }, 700);
+    }, 750);
   } catch {
     // AudioContext may be blocked if no user gesture has occurred yet
   }
@@ -171,42 +174,75 @@ export async function deliverNativeOrPwaNotification(options: {
 }
 
 /**
- * Normalizes Arabic-Indic digits (٠-٩) to standard ASCII digits (0-9).
+ * Normalizes Arabic-Indic digits (٠-٩) and Persian digits (۰-۹) to standard ASCII digits (0-9).
  */
-function normalizeDigits(input: string): string {
-  return String(input || '').replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+function normalizeArabicDigits(input: string): string {
+  return String(input || '')
+    .replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    // Remove Arabic diacritics (tashkeel like fathatan ً ) for easier token matching
+    .replace(/[\u064B-\u065F]/g, '');
 }
 
 /**
- * Parses the start time from an Arabic working hours string such as:
- * "من 4:00 عصراً إلى 6:00 مساءً" or "من 8:30 صباحاً إلى 11:30 صباحاً"
+ * Dedicated Arabic time parser for `ساعات الدوام`.
+ * Accurately extracts the shift start time from formats such as:
+ * - "من 3:30 عصراً إلى 6:30 مساءً" -> 15:30 (930 mins)
+ * - "من 4:00 عصراً" -> 16:00 (960 mins)
+ * - "8:30 صباحاً" -> 08:30 (510 mins)
+ * - "04:00 م" -> 16:00 (960 mins)
+ * - "16:00" -> 16:00 (960 mins)
  * Returns minutes from midnight (0 - 1439) or null if unparseable.
  */
 export function parseShiftStartMinutes(workingHours: string | undefined): number | null {
   if (!workingHours) return null;
-  const normalized = normalizeDigits(workingHours);
+  const normalized = normalizeArabicDigits(workingHours).trim();
+  if (!normalized) return null;
 
-  // Match the first time occurrence (typically after "من" or at start of string)
-  const timeMatch = normalized.match(/(\d{1,2})(?::(\d{2}))?\s*(صباحا|صباحاً|ص|عصرا|عصراً|مساء|مساءً|ظهرا|ظهراً|م)?/);
+  // Isolate the start segment (before "الى" / "إلى" / "-" / "حتى") so we always parse the START time
+  const startSegment = normalized.split(/\b(?:الى|إلى|حتى)\b|[-–—]/)[0] || normalized;
+
+  // Match hours, optional :minutes, and optional Arabic/English period indicator
+  const timeMatch = startSegment.match(
+    /(\d{1,2})(?:\s*[:.]\s*(\d{1,2}))?\s*(صباحا|صباح|ص|فجرا|فجر|عصرا|عصر|مساء|م|ظهرا|ظهر|ليلا|ليل|am|pm|a\.m\.|p\.m\.)?/i
+  );
   if (!timeMatch) return null;
 
   let hours = parseInt(timeMatch[1], 10);
   const minutes = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
-  if (isNaN(hours) || isNaN(minutes) || hours > 23 || minutes > 59) return null;
+  if (isNaN(hours) || isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
 
-  const periodToken = timeMatch[3] || '';
-  const hasMorningContext = /صباح|ص\b|فجر/.test(periodToken) || /من\s*\d+(?::\d+)?\s*(?:صباح|ص)/.test(normalized);
-  const hasAfternoonEveningContext =
-    /عصر|مساء|م\b|ظهر/.test(periodToken) ||
-    (!hasMorningContext && /عصر|مساء/.test(normalized));
+  // If already in 24-hour format (13..23), keep as-is
+  if (hours >= 13 && hours <= 23) {
+    return hours * 60 + minutes;
+  }
 
-  if (hasMorningContext) {
+  const immediateToken = (timeMatch[3] || '').toLowerCase().trim();
+  const isImmediateMorning =
+    /^(صباحا|صباح|ص|فجرا|فجر|am|a\.m\.)$/.test(immediateToken) ||
+    /\b(صباحا|صباح|ص|فجرا|فجر)\b/.test(startSegment);
+  const isImmediatePM =
+    /^(عصرا|عصر|مساء|م|ظهرا|ظهر|ليلا|ليل|pm|p\.m\.)$/.test(immediateToken) ||
+    /\b(عصرا|عصر|مساء|م|ظهرا|ظهر|ليلا|ليل)\b/.test(startSegment);
+
+  // If the start segment didn't have an explicit AM/PM word (e.g. "من 4:00 إلى 6:00 مساءً"),
+  // check the full string context
+  const hasFullStringMorning = /\b(صباحا|صباح|ص|فجرا|فجر)\b/.test(normalized);
+  const hasFullStringPM = /\b(عصرا|عصر|مساء|م|ظهرا|ظهر)\b/.test(normalized);
+
+  if (isImmediateMorning) {
     if (hours === 12) hours = 0;
-  } else if (hasAfternoonEveningContext) {
+  } else if (isImmediatePM) {
+    if (hours < 12) hours += 12;
+  } else if (hasFullStringMorning && !hasFullStringPM) {
+    if (hours === 12) hours = 0;
+  } else if (hasFullStringPM) {
     if (hours < 12) hours += 12;
   } else {
-    // Default heuristic for Maqra'ah afternoon shifts (e.g. 3:00 - 9:00 without explicit suffix)
-    if (hours >= 1 && hours <= 8) {
+    // Default heuristic for Maqra'ah afternoon shifts when no suffix is written (e.g. "4:00 - 6:00")
+    if (hours >= 1 && hours <= 7) {
       hours += 12;
     }
   }
@@ -215,22 +251,48 @@ export function parseShiftStartMinutes(workingHours: string | undefined): number
 }
 
 /**
- * Checks if a shift reminder (15 minutes prior or at shift start) should fire
- * strictly for Supervisors & Teachers whose attendance for today is unlogged.
+ * Formats 24-hour minutes from midnight into a readable Arabic time label (e.g., "4:00 عصراً").
+ */
+export function formatMinutesToArabicTime(totalMinutes: number): string {
+  const hours24 = Math.floor(totalMinutes / 60) % 24;
+  const mins = totalMinutes % 60;
+  const minsStr = String(mins).padStart(2, '0');
+  const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+  let period = 'صباحاً';
+  if (hours24 >= 12 && hours24 < 15) period = 'ظهراً';
+  else if (hours24 >= 15 && hours24 < 18) period = 'عصراً';
+  else if (hours24 >= 18) period = 'مساءً';
+  return `${hours12}:${minsStr} ${period}`;
+}
+
+export interface ShiftReminderEvaluation {
+  shouldTrigger: boolean;
+  reminderType?: 'pre_15m' | 'shift_start';
+  title?: string;
+  body?: string;
+  bannerTitle?: string;
+  bannerSubtitle?: string;
+  tag?: string;
+  hijriDayKey?: string;
+}
+
+/**
+ * Evaluates whether a shift reminder should fire right now for a Supervisor or Teacher:
+ * - Strictly excludes Reefa Al-Mansouri (Platform Owner) and Omar Abdulrahman (Founder).
+ * - Checks if the Supervisor/Teacher has NOT logged attendance for Today's Umm al-Qura Hijri date.
+ * - 15 minutes before shift start (within the 15-to-1 minute window before start):
+ *   triggers `تنبيه: تبقّى 15 دقيقة على بداية دوامكِ` (once per day using a daily Hijri key).
+ * - At shift start time (within the first 15 minutes after start if still unlogged):
+ *   triggers `بدأ وقت دوامكِ الآن، يرجى تسجيل الحضور` (once per day using a daily Hijri key).
  */
 export function evaluateShiftReminderForStaff(params: {
   user: User | null | undefined;
   settings?: InstitutionSettings | null;
   todayIso: string;
   nowDate?: Date;
-}): {
-  shouldTrigger: boolean;
-  reminderType?: 'pre_15m' | 'shift_start';
-  title?: string;
-  body?: string;
-  tag?: string;
-} {
+}): ShiftReminderEvaluation {
   const { user, settings, todayIso, nowDate = new Date() } = params;
+
   // Strictly for Supervisors (مشرفة حلقات) and Teachers (معلمة حلقة) ONLY.
   // Never trigger shift reminders for Reefa Al-Mansouri or Omar Abdulrahman.
   if (!user || !isSupervisorOrTeacherOnly(user)) {
@@ -240,7 +302,7 @@ export function evaluateShiftReminderForStaff(params: {
   const allAttendance = readAllStaffAttendanceRecords(settings ?? undefined);
   const todayRecord = allAttendance[`${user.id}_${todayIso}`];
   if (todayRecord) {
-    // Already logged attendance for today
+    // Attendance for Today's Umm al-Qura Hijri date is already logged
     return { shouldTrigger: false };
   }
 
@@ -251,13 +313,14 @@ export function evaluateShiftReminderForStaff(params: {
   }
 
   const currentMinutes = nowDate.getHours() * 60 + nowDate.getMinutes();
+  // Positive diffMinutes = minutes remaining BEFORE shift start.
+  // Zero or negative diffMinutes = minutes elapsed SINCE shift start.
   const diffMinutes = shiftStartMinutes - currentMinutes;
 
-  // 15 minutes before shift window: [14..16] minutes before start
   let reminderType: 'pre_15m' | 'shift_start' | null = null;
-  if (diffMinutes >= 14 && diffMinutes <= 16) {
+  if (diffMinutes >= 1 && diffMinutes <= 15) {
     reminderType = 'pre_15m';
-  } else if (diffMinutes >= -2 && diffMinutes <= 1) {
+  } else if (diffMinutes <= 0 && diffMinutes >= -15) {
     reminderType = 'shift_start';
   }
 
@@ -265,12 +328,14 @@ export function evaluateShiftReminderForStaff(params: {
     return { shouldTrigger: false };
   }
 
-  const storageKey = `${SHIFT_REMINDER_LOG_PREFIX}${user.id}_${todayIso}_${reminderType}`;
+  const hijriShortKey = formatHijriShort(todayIso).replace(/\s+/g, '_');
+  const dailyHijriKey = `${SHIFT_REMINDER_LOG_PREFIX}${user.id}_${todayIso}_${hijriShortKey}_${reminderType}`;
+
   try {
-    if (localStorage.getItem(storageKey) === 'sent') {
+    if (localStorage.getItem(dailyHijriKey) === 'fired') {
       return { shouldTrigger: false };
     }
-    localStorage.setItem(storageKey, 'sent');
+    localStorage.setItem(dailyHijriKey, 'fired');
   } catch {
     // ignore storage errors
   }
@@ -279,8 +344,11 @@ export function evaluateShiftReminderForStaff(params: {
     return {
       shouldTrigger: true,
       reminderType: 'pre_15m',
-      title: 'تذكير بقرب موعد الدوام — مقرأة غيث الغيم',
-      body: `أهلاً بكِ ${user.name}، يتبقى 15 دقيقة على بداية دوامكِ (${profile.workingHours}). نسعد بتسجيل حضوركِ اليوم.`,
+      hijriDayKey: dailyHijriKey,
+      bannerTitle: 'تنبيه: تبقّى 15 دقيقة على بداية دوامكِ',
+      bannerSubtitle: `أهلاً بكِ ${user.name} — موعد دوامكِ المجدول (${profile.workingHours}). يمكنكِ تسجيل حضور اليوم مباشرة.`,
+      title: 'تنبيه: تبقّى 15 دقيقة على بداية دوامكِ',
+      body: `أهلاً بكِ ${user.name}، موعد دوامكِ (${profile.workingHours}). بادري بتسجيل حضور اليوم في مقرأة غيث الغيم.`,
       tag: `shift-pre15-${user.id}-${todayIso}`
     };
   }
@@ -288,22 +356,91 @@ export function evaluateShiftReminderForStaff(params: {
   return {
     shouldTrigger: true,
     reminderType: 'shift_start',
-    title: 'حان موعد بداية الدوام — مقرأة غيث الغيم',
-    body: `أهلاً بكِ ${user.name}، بدأ وقت دوامكِ (${profile.workingHours}) ولم يتم تسجيل الحضور لليوم بعد. بادري بتسجيل الحضور من قسم تحضير ومهام الكادر.`,
+    hijriDayKey: dailyHijriKey,
+    bannerTitle: 'بدأ وقت دوامكِ الآن، يرجى تسجيل الحضور',
+    bannerSubtitle: `أهلاً بكِ ${user.name} — حان موعد بداية دوامكِ (${profile.workingHours}) ولم يتم تسجيل حضور اليوم بعد.`,
+    title: 'بدأ وقت دوامكِ الآن، يرجى تسجيل الحضور',
+    body: `أهلاً بكِ ${user.name}، بدأ وقت دوامكِ (${profile.workingHours}) ولم يُسجّل الحضور لليوم بعد. يرجى تسجيل الحضور الآن.`,
     tag: `shift-start-${user.id}-${todayIso}`
   };
 }
 
 /**
- * Unread Staff Chat & Pinned Announcement Tracking per user.
+ * Checks whether a chat message or announcement was authored by the current user.
+ */
+export function isAuthoredByCurrentUser(
+  currentUser: User | null | undefined,
+  authorId?: string,
+  authorName?: string
+): boolean {
+  if (!currentUser) return false;
+  if (authorId && currentUser.id === authorId) return true;
+  if (authorName && currentUser.name.trim() === authorName.trim()) return true;
+  return false;
+}
+
+/**
+ * Global Seen Message IDs Tracker (`seenMessageIds` in localStorage).
+ * Ensures cross-device incoming messages and pinned announcements are reliably detected
+ * whenever cloud sync delivers an item whose ID has not been seen yet.
+ */
+export function readSeenMessageIdsForUser(
+  userId: string,
+  seedItemsOnFirstInit?: string[]
+): Set<string> {
+  if (typeof window === 'undefined' || !userId) return new Set();
+  const storageKey = `${SEEN_MESSAGE_IDS_PREFIX}${userId}`;
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (raw === null) {
+      const initialList = Array.isArray(seedItemsOnFirstInit) ? seedItemsOnFirstInit : [];
+      localStorage.setItem(storageKey, JSON.stringify(initialList));
+      return new Set(initialList);
+    }
+    const parsed = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function writeSeenMessageIdsForUser(userId: string, ids: Set<string>): void {
+  if (typeof window === 'undefined' || !userId) return;
+  const storageKey = `${SEEN_MESSAGE_IDS_PREFIX}${userId}`;
+  try {
+    const trimmed = Array.from(ids).slice(-200);
+    localStorage.setItem(storageKey, JSON.stringify(trimmed));
+  } catch {
+    // ignore
+  }
+}
+
+export function markMessageIdAsSeenByUser(userId: string | undefined, itemKey: string): void {
+  if (!userId || !itemKey) return;
+  const current = readSeenMessageIdsForUser(userId);
+  current.add(itemKey);
+  writeSeenMessageIdsForUser(userId, current);
+}
+
+/**
+ * Builds the canonical seen-key for a chat message or pinned announcement.
+ */
+export function getChatMessageSeenKey(msg: StaffChatMessage): string {
+  return msg.editedAt ? `msg_${msg.id}_edit_${msg.editedAt}` : `msg_${msg.id}`;
+}
+
+export function getPinnedAnnouncementSeenKey(pinned: PinnedStaffAnnouncement): string {
+  return `pin_${pinned.updatedAt || 0}_${(pinned.text || '').slice(0, 24)}`;
+}
+
+/**
+ * Unread Staff Chat & Pinned Announcement Tracking per user for Sidebar Badge.
  */
 export function getLastSeenStaffChatTimestamp(userId: string | undefined): number {
   if (!userId || typeof window === 'undefined') return 0;
   try {
     const raw = localStorage.getItem(`${LAST_SEEN_CHAT_PREFIX}${userId}`);
     if (!raw) {
-      // Initialize to current time on very first load so historical seed data doesn't spam notifications,
-      // while any new message or announcement after this moment is counted.
       const initialNow = Date.now() - 1000;
       localStorage.setItem(`${LAST_SEEN_CHAT_PREFIX}${userId}`, String(initialNow));
       return initialNow;
@@ -339,20 +476,6 @@ export function markStaffChatSeenNow(
 }
 
 /**
- * Checks whether a chat message or announcement was authored by the current user.
- */
-export function isAuthoredByCurrentUser(
-  currentUser: User | null | undefined,
-  authorId?: string,
-  authorName?: string
-): boolean {
-  if (!currentUser) return false;
-  if (authorId && currentUser.id === authorId) return true;
-  if (authorName && currentUser.name.trim() === authorName.trim()) return true;
-  return false;
-}
-
-/**
  * Computes the unread message + pinned announcement count for the sidebar badge
  * on "تحضير ومهام الكادر", strictly excluding items sent/updated by the current user.
  */
@@ -383,32 +506,4 @@ export function computeUnreadStaffChatCount(
   }
 
   return count;
-}
-
-/**
- * Tracks already-notified message/announcement IDs per user so each incoming message
- * or pinned announcement update triggers at most one alert on that device.
- */
-export function hasAlreadyNotifiedItem(userId: string, itemKey: string): boolean {
-  if (typeof window === 'undefined') return true;
-  try {
-    const raw = localStorage.getItem(`${NOTIFIED_ITEMS_PREFIX}${userId}`);
-    if (!raw) return false;
-    const list: string[] = JSON.parse(raw);
-    return Array.isArray(list) && list.includes(itemKey);
-  } catch {
-    return false;
-  }
-}
-
-export function markItemAsNotified(userId: string, itemKey: string): void {
-  if (typeof window === 'undefined') return;
-  try {
-    const raw = localStorage.getItem(`${NOTIFIED_ITEMS_PREFIX}${userId}`);
-    const list: string[] = raw ? JSON.parse(raw) : [];
-    const next = Array.isArray(list) ? [...new Set([...list, itemKey])].slice(-80) : [itemKey];
-    localStorage.setItem(`${NOTIFIED_ITEMS_PREFIX}${userId}`, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
 }

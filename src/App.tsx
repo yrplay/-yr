@@ -24,7 +24,7 @@ import { TrackDetailPage } from './views/TrackDetailPage';
 import { SubscriptionsFinancialsView } from './views/SubscriptionsFinancialsView';
 import { StaffLoginGate } from './components/StaffLoginGate';
 import { Footer } from './components/Footer';
-import { CheckCircle2, AlertCircle, Info, Lock, X } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, Lock, X, BellRing, MessageSquare, Clock, Pin } from 'lucide-react';
 import { UpdateNotification } from './components/UpdateNotification';
 import { isLocalDemoMode } from './demoMode';
 import { hasFullAccess } from './types';
@@ -34,18 +34,25 @@ import {
   resolveUserWelcomeConfig,
   LOGIN_WELCOME_DURATION_MS,
   readResolvedStaffChatMessages,
-  resolvePinnedStaffAnnouncement
+  resolvePinnedStaffAnnouncement,
+  isSupervisorOrTeacherOnly,
+  readAllStaffAttendanceRecords,
+  writeLocalStaffAttendanceRecords,
+  buildStaffAttendanceRecord,
+  formatCurrentArabicTime
 } from './utils/staffHelpers';
 import {
   computeUnreadStaffChatCount,
   deliverNativeOrPwaNotification,
   evaluateShiftReminderForStaff,
-  getLastSeenStaffChatTimestamp,
-  hasAlreadyNotifiedItem,
+  getChatMessageSeenKey,
+  getPinnedAnnouncementSeenKey,
   isAuthoredByCurrentUser,
-  isStaffNotificationsEnabled,
-  markItemAsNotified,
-  markStaffChatSeenNow
+  markStaffChatSeenNow,
+  playGentleNotificationChime,
+  readSeenMessageIdsForUser,
+  writeSeenMessageIdsForUser,
+  type ShiftReminderEvaluation
 } from './utils/staffNotifications';
 import { getTodayISO } from './utils/hijriDate';
 
@@ -66,14 +73,33 @@ const readNavigationFromUrl = () => {
   };
 };
 
+interface FloatingChatAlert {
+  id: string;
+  senderName: string;
+  senderTitle: string;
+  messagePreview: string;
+  isPinnedAnnouncement?: boolean;
+}
+
 const AppContent: React.FC = () => {
-  const { loading, error, toast, triggerQuickModal, settings, currentUser, users, switchUser, showToast, dismissToast, cloudDataReady, cloudStatus, isPrivacyMode } = useApp();
+  const { loading, error, toast, triggerQuickModal, settings, updateSettings, currentUser, users, switchUser, showToast, dismissToast, cloudDataReady, cloudStatus, isPrivacyMode } = useApp();
   const [initialNavigation] = useState(readNavigationFromUrl);
   const [currentView, setCurrentView] = useState<ViewType>(initialNavigation.view);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string>(initialNavigation.studentId);
   const [selectedTrackId, setSelectedTrackId] = useState<string>(initialNavigation.trackId);
   const [unreadStaffChatCount, setUnreadStaffChatCount] = useState<number>(0);
+
+  // Sleek 15-second auto-dismissing top floating alert banner for incoming chat messages / announcements
+  const [floatingChatAlert, setFloatingChatAlert] = useState<FloatingChatAlert | null>(null);
+  const floatingChatTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Global pre-shift / shift-start reminder banner state for Supervisors & Teachers ONLY
+  const [activeShiftReminder, setActiveShiftReminder] = useState<ShiftReminderEvaluation | null>(null);
+
+  // Per-user seenMessageIds ref synced with localStorage
+  const seenMessageIdsRef = React.useRef<Set<string>>(new Set());
+  const initializedSeenForUserRef = React.useRef<string>('');
   
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -166,9 +192,125 @@ const AppContent: React.FC = () => {
     }
   }, [isAuthenticated, currentUser?.id, cloudDataReady, settings?.welcomeMessages, settings?.staffWelcomeConfigs]);
 
-  // Clear unread staff chat counter immediately when viewing "تحضير ومهام الكادر"
+  const triggerTopFloatingChatAlert = (alertData: FloatingChatAlert) => {
+    if (floatingChatTimerRef.current) {
+      clearTimeout(floatingChatTimerRef.current);
+    }
+    setFloatingChatAlert(alertData);
+    floatingChatTimerRef.current = setTimeout(() => {
+      setFloatingChatAlert(null);
+      floatingChatTimerRef.current = null;
+    }, 15000);
+  };
+
+  // =========================================================================
+  // 1. GLOBAL ROOT-LEVEL CLOUD SYNC WATCHER FOR STAFF CHAT & ANNOUNCEMENTS
+  // Monitors `settings.staffChatMessages` & `settings.pinnedStaffAnnouncement`
+  // Tracks `seenMessageIds` in localStorage / ref. Whenever cloud sync delivers
+  // a new message or updated pinned announcement whose `id` has not been seen yet
+  // AND `senderId !== currentUser.id`:
+  //   1) Triggers native browser/PWA notification (`Notification` / `ServiceWorkerRegistration.showNotification`)
+  //   2) Plays soft notification chime AND shows sleek 15s in-app floating alert banner at top of screen
+  // =========================================================================
   useEffect(() => {
-    if (!isAuthenticated || !currentUser) return;
+    if (!isAuthenticated || !currentUser || !cloudDataReady) return;
+
+    const activeMsgs = readResolvedStaffChatMessages(settings);
+    const pinned = resolvePinnedStaffAnnouncement(settings);
+    const nowMs = Date.now();
+
+    // Initialize `seenMessageIdsRef` for the active user on first mount
+    if (initializedSeenForUserRef.current !== currentUser.id) {
+      // Seed only historical messages older than 45 seconds or authored by currentUser on first-ever init
+      const seedIds: string[] = [];
+      for (const m of activeMsgs) {
+        const msgAge = nowMs - (m.editedAt || m.createdAt);
+        if (msgAge > 45000 || isAuthoredByCurrentUser(currentUser, m.senderId, m.senderName)) {
+          seedIds.push(getChatMessageSeenKey(m));
+        }
+      }
+      if (
+        pinned.text &&
+        (nowMs - (pinned.updatedAt || 0) > 45000 ||
+          isAuthoredByCurrentUser(currentUser, undefined, pinned.updatedBy))
+      ) {
+        seedIds.push(getPinnedAnnouncementSeenKey(pinned));
+      }
+      seenMessageIdsRef.current = readSeenMessageIdsForUser(currentUser.id, seedIds);
+      initializedSeenForUserRef.current = currentUser.id;
+    }
+
+    const seenSet = seenMessageIdsRef.current;
+    let seenMutated = false;
+    let latestIncomingAlert: FloatingChatAlert | null = null;
+
+    // Inspect all active messages from cloud sync
+    for (const msg of activeMsgs) {
+      const seenKey = getChatMessageSeenKey(msg);
+      if (seenSet.has(seenKey)) continue;
+
+      seenSet.add(seenKey);
+      seenMutated = true;
+
+      // Strictly exclude the user who sent/updated the message themselves
+      if (isAuthoredByCurrentUser(currentUser, msg.senderId, msg.senderName)) {
+        continue;
+      }
+
+      // 1) Trigger native browser / PWA notification with sender name and message preview
+      void deliverNativeOrPwaNotification({
+        title: `رسالة جديدة من ${msg.senderName}`,
+        body: msg.text,
+        tag: `staff-chat-${msg.id}`,
+        playChime: false
+      });
+
+      // 2) Queue soft chime + sleek 15s floating alert banner at the top of the screen
+      latestIncomingAlert = {
+        id: seenKey,
+        senderName: msg.senderName,
+        senderTitle: msg.senderTitle || 'عضو الكادر',
+        messagePreview: msg.text,
+        isPinnedAnnouncement: false
+      };
+    }
+
+    // Inspect pinned administrative announcement updates
+    if (pinned.text) {
+      const pinnedKey = getPinnedAnnouncementSeenKey(pinned);
+      if (!seenSet.has(pinnedKey)) {
+        seenSet.add(pinnedKey);
+        seenMutated = true;
+
+        if (!isAuthoredByCurrentUser(currentUser, undefined, pinned.updatedBy)) {
+          void deliverNativeOrPwaNotification({
+            title: `تعميم إداري مثبت — ${pinned.updatedBy || 'إدارة المنصة'}`,
+            body: pinned.text,
+            tag: `staff-pinned-${pinned.updatedAt}`,
+            playChime: false
+          });
+
+          latestIncomingAlert = {
+            id: pinnedKey,
+            senderName: pinned.updatedBy || 'إدارة المنصة',
+            senderTitle: 'تعميم إداري مثبت',
+            messagePreview: pinned.text,
+            isPinnedAnnouncement: true
+          };
+        }
+      }
+    }
+
+    if (seenMutated) {
+      writeSeenMessageIdsForUser(currentUser.id, seenSet);
+    }
+
+    if (latestIncomingAlert) {
+      playGentleNotificationChime();
+      triggerTopFloatingChatAlert(latestIncomingAlert);
+    }
+
+    // Update unread sidebar badge (or clear if currently viewing staff-attendance)
     if (currentView === 'staff-attendance') {
       markStaffChatSeenNow(currentUser.id, settings);
       setUnreadStaffChatCount(0);
@@ -178,6 +320,7 @@ const AppContent: React.FC = () => {
   }, [
     isAuthenticated,
     currentUser?.id,
+    cloudDataReady,
     currentView,
     settings?.staffChatMessages,
     settings?.pinnedStaffAnnouncement
@@ -197,94 +340,58 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('ghaith-staff-chat-seen-updated', syncUnread);
   }, [currentUser, currentView, settings]);
 
-  // Trigger native/PWA notification + gentle chime for ALL other users when a new message
-  // or pinned announcement update arrives (strictly excluding the sender/updater).
+  // =========================================================================
+  // 2. GLOBAL ROOT-LEVEL PRE-SHIFT & SHIFT-START REMINDERS (Every 30 Seconds)
+  // Strictly for Supervisors (`مشرفة حلقات`) & Teachers (`معلمة حلقة`) ONLY
+  // (strictly excluding Reefa Al-Mansouri & Omar Abdulrahman).
+  // =========================================================================
   useEffect(() => {
-    if (!isAuthenticated || !currentUser || !cloudDataReady) return;
-
-    const lastSeen = getLastSeenStaffChatTimestamp(currentUser.id);
-    const activeMsgs = readResolvedStaffChatMessages(settings);
-
-    // Check newest messages authored by other users
-    for (const msg of activeMsgs) {
-      if (isAuthoredByCurrentUser(currentUser, msg.senderId, msg.senderName)) {
-        continue;
-      }
-      const msgTs = msg.editedAt || msg.createdAt;
-      const itemKey = `msg_${msg.id}_${msgTs}`;
-      if (msgTs > lastSeen && !hasAlreadyNotifiedItem(currentUser.id, itemKey)) {
-        markItemAsNotified(currentUser.id, itemKey);
-        if (isStaffNotificationsEnabled()) {
-          void deliverNativeOrPwaNotification({
-            title: `رسالة جديدة في مساحة تواصل الكادر — ${msg.senderName}`,
-            body: msg.text,
-            tag: `staff-chat-${msg.id}`,
-            playChime: true
-          });
-        }
-        if (currentView === 'staff-attendance') {
-          markStaffChatSeenNow(currentUser.id, settings);
-        }
-      }
+    if (!isAuthenticated || !currentUser || !cloudDataReady) {
+      setActiveShiftReminder(null);
+      return;
     }
 
-    // Check pinned administrative announcement updates authored by Reefa or Omar
-    const pinned = resolvePinnedStaffAnnouncement(settings);
-    if (
-      pinned.text &&
-      pinned.updatedAt > lastSeen &&
-      !isAuthoredByCurrentUser(currentUser, undefined, pinned.updatedBy)
-    ) {
-      const pinnedKey = `pinned_${pinned.updatedAt}`;
-      if (!hasAlreadyNotifiedItem(currentUser.id, pinnedKey)) {
-        markItemAsNotified(currentUser.id, pinnedKey);
-        if (isStaffNotificationsEnabled()) {
-          void deliverNativeOrPwaNotification({
-            title: `تعميم إداري مثبت جديد — ${pinned.updatedBy || 'إدارة المنصة'}`,
-            body: pinned.text,
-            tag: `staff-pinned-${pinned.updatedAt}`,
-            playChime: true
-          });
-        }
-        if (currentView === 'staff-attendance') {
-          markStaffChatSeenNow(currentUser.id, settings);
-        }
-      }
+    if (!isSupervisorOrTeacherOnly(currentUser)) {
+      setActiveShiftReminder(null);
+      return;
     }
-  }, [
-    isAuthenticated,
-    currentUser?.id,
-    cloudDataReady,
-    currentView,
-    settings?.staffChatMessages,
-    settings?.pinnedStaffAnnouncement
-  ]);
 
-  // Role-Based Shift Check-In Reminders (15 minutes prior & at shift start)
-  // Strictly for Supervisors (مشرفة حلقات) & Teachers (معلمة حلقة) ONLY — never for Reefa or Omar.
-  useEffect(() => {
-    if (!isAuthenticated || !currentUser || !cloudDataReady) return;
+    const todayIso = getTodayISO();
+    const allAttendance = readAllStaffAttendanceRecords(settings);
+    if (allAttendance[`${currentUser.id}_${todayIso}`]) {
+      // Attendance for today is logged -> clear any active shift reminder banner
+      setActiveShiftReminder(null);
+      return;
+    }
 
-    const checkShiftReminder = () => {
-      if (!isStaffNotificationsEnabled()) return;
+    const runGlobalShiftCheck = () => {
+      const currentTodayIso = getTodayISO();
+      const latestAttendance = readAllStaffAttendanceRecords(settings);
+      if (latestAttendance[`${currentUser.id}_${currentTodayIso}`]) {
+        setActiveShiftReminder(null);
+        return;
+      }
+
       const evaluation = evaluateShiftReminderForStaff({
         user: currentUser,
         settings,
-        todayIso: getTodayISO()
+        todayIso: currentTodayIso
       });
+
       if (evaluation.shouldTrigger && evaluation.title && evaluation.body) {
+        // Trigger native device notification + gentle chime + prominent in-app reminder banner
         void deliverNativeOrPwaNotification({
           title: evaluation.title,
           body: evaluation.body,
           tag: evaluation.tag,
           playChime: true
         });
-        showToast(evaluation.body, 'info', 15000);
+        setActiveShiftReminder(evaluation);
       }
     };
 
-    checkShiftReminder();
-    const interval = setInterval(checkShiftReminder, 30000);
+    runGlobalShiftCheck();
+    const interval = setInterval(runGlobalShiftCheck, 30000);
     return () => clearInterval(interval);
   }, [
     isAuthenticated,
@@ -293,6 +400,29 @@ const AppContent: React.FC = () => {
     settings?.staffAttendanceRecords,
     settings?.staffProfiles
   ]);
+
+  // Quick Direct Self Check-In Handler from the Global Pre-Shift / Shift-Start Reminder Banner
+  const handleGlobalQuickCheckInToday = async () => {
+    if (!currentUser || !isSupervisorOrTeacherOnly(currentUser)) return;
+    const todayIso = getTodayISO();
+    const nowTime = formatCurrentArabicTime();
+    const record = buildStaffAttendanceRecord({
+      user: currentUser,
+      dateIso: todayIso,
+      status: 'present',
+      checkInTime: nowTime,
+      excuseText: '',
+      recordedBy: currentUser.name
+    });
+    const nextRecords = {
+      ...readAllStaffAttendanceRecords(settings),
+      [record.id]: record
+    };
+    writeLocalStaffAttendanceRecords(nextRecords);
+    setActiveShiftReminder(null);
+    await updateSettings({ staffAttendanceRecords: nextRecords }, true);
+    showToast(`تم تسجيل حضوركِ لليوم (${nowTime}) بنجاح`, 'success');
+  };
 
   // تطبيق الهوية البصرية ونوع الخط تلقائياً
   React.useEffect(() => {
@@ -453,6 +583,112 @@ const AppContent: React.FC = () => {
         onLockSession={handleLockSession}
         onNavigateToSettings={() => setCurrentView('settings')}
       />
+
+      {/* شريط التذكير الذكي بالدوام في أعلى الشاشة — للمشرفات والمعلمات فقط (قبل الدوام بـ 15 دقيقة وعند بداية الدوام) */}
+      {activeShiftReminder && isSupervisorOrTeacherOnly(currentUser) && (
+        <div className="bg-[#FAF6F3] border-b border-[#E5C3B3] px-4 py-3 shadow-xs animate-in fade-in slide-in-from-top duration-200" dir="rtl">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-9 h-9 rounded-2xl bg-white border border-[#E5C3B3] text-[#9A5643] flex items-center justify-center shrink-0">
+                <Clock className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs sm:text-sm font-bold text-[#7B3F30]">
+                    {activeShiftReminder.bannerTitle}
+                  </span>
+                </div>
+                {activeShiftReminder.bannerSubtitle && (
+                  <p className="text-[11px] text-stone-600 mt-0.5">
+                    {activeShiftReminder.bannerSubtitle}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+              <button
+                type="button"
+                onClick={handleGlobalQuickCheckInToday}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold transition shadow-2xs cursor-pointer active:scale-95"
+              >
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>تسجيل حضور اليوم</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveShiftReminder(null)}
+                title="إغلاق التنبيه"
+                aria-label="إغلاق التنبيه"
+                className="p-1.5 rounded-xl bg-white hover:bg-stone-100 text-stone-500 border border-[#E8E2DC] transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* الإشعار العائم العلوي للرسائل والتعاميم الواردة (يختفي تلقائياً بعد 15 ثانية) */}
+      {floatingChatAlert && (
+        <div
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-xl animate-in fade-in slide-in-from-top duration-200"
+          dir="rtl"
+        >
+          <div className="bg-white rounded-2xl border border-[#E5C3B3] shadow-xl p-3.5 sm:p-4 flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-[#F6EFEA] border border-[#E5C3B3] text-[#9A5643] flex items-center justify-center shrink-0">
+                {floatingChatAlert.isPinnedAnnouncement ? (
+                  <Pin className="w-4 h-4" />
+                ) : (
+                  <MessageSquare className="w-4 h-4" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-stone-900">
+                    {floatingChatAlert.senderName}
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#FAF6F3] text-[#7B3F30] border border-[#E5C3B3]">
+                    {floatingChatAlert.senderTitle}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#9A5643]">
+                    <BellRing className="w-3 h-3 shrink-0" />
+                    <span>إشعار مساحة تواصل الكادر</span>
+                  </span>
+                </div>
+                <p className="text-xs text-stone-700 mt-1 line-clamp-2 leading-relaxed break-words">
+                  {floatingChatAlert.messagePreview}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {currentView !== 'staff-attendance' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentView('staff-attendance');
+                    setFloatingChatAlert(null);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-[11px] font-bold transition cursor-pointer"
+                >
+                  عرض الرسالة
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setFloatingChatAlert(null)}
+                title="إغلاق الإشعار"
+                aria-label="إغلاق الإشعار"
+                className="p-1.5 rounded-xl bg-[#FAF6F3] hover:bg-[#EFE3DA] text-stone-500 border border-[#E8E2DC] transition cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* الحاوية الرئيسية للمنصة */}
       <div className="flex-1 max-w-7xl w-full mx-auto flex">
