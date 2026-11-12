@@ -278,7 +278,7 @@ const AppContent: React.FC = () => {
 
 
   return (
-    <div className="min-h-screen bg-[#F9F7F5] dark:bg-[#0E0E11] text-stone-900 dark:text-stone-100 flex flex-col antialiased selection:bg-[#E8D5D8] dark:selection:bg-[#5B3946] selection:text-[#5B3946] dark:selection:text-white transition-colors duration-200">
+    <div className="min-h-screen bg-[#FAF8F6] dark:bg-[#0E0E11] text-stone-900 dark:text-stone-100 flex flex-col antialiased selection:bg-[#E8D5D8] dark:selection:bg-[#5B3946] selection:text-[#5B3946] dark:selection:text-white transition-colors duration-200">
       {/* تنبيه التحديث التلقائي للتطبيق */}
       {isLocalDemoMode && (
         <div className="bg-amber-100 text-amber-950 border-b border-amber-300 px-4 py-2 text-center text-xs font-bold" role="status">

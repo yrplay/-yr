@@ -215,7 +215,12 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
         ? 'مشرفة المقرأة'
         : 'معلمة الحلقة';
 
-      showToast(`مرحباً بكِ ${targetUser.name} (${roleBadge}) 🌸`, 'success');
+      const customWelcome =
+        settings?.staffWelcomeConfigs?.[targetUser.id]?.welcomeTitle?.trim() ||
+        targetUser.welcomeTitle?.trim() ||
+        `مرحباً بك ${targetUser.name} (${roleBadge})`;
+
+      showToast(customWelcome, 'success');
       onSuccess?.();
       onClose?.();
     } catch (err: any) {

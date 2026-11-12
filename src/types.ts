@@ -20,7 +20,16 @@ export interface UserPermissions {
   canManageCircles?: boolean;
   canEditScores?: boolean;
   canExportReports?: boolean;
+  canEditOwnWelcome?: boolean;
   [key: string]: boolean | undefined;
+}
+
+export interface StaffWelcomeConfig {
+  welcomeTitle: string;
+  personalGoal: string;
+  animatedEmojis: string[];
+  canEditOwnWelcome?: boolean;
+  updatedAt?: string;
 }
 
 export interface User {
@@ -37,6 +46,10 @@ export interface User {
   permissions?: UserPermissions;
   signatureUrl?: string;
   passcode?: string;
+  welcomeTitle?: string;
+  personalGoal?: string;
+  animatedEmojis?: string[];
+  canEditOwnWelcome?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -513,6 +526,9 @@ export interface InstitutionSettings {
   fontFamily?: string;
   welcomeTitle?: string;
   welcomeSubtext?: string;
+  personalGoal?: string;
+  animatedEmojis?: string[];
+  staffWelcomeConfigs?: Record<string, StaffWelcomeConfig>;
   activeTrackName?: string;
   sealText?: string;
   sealSubtitle?: string;
@@ -630,7 +646,8 @@ export const defaultPermissionsByRole: Record<string, UserPermissions> = {
     canManageTracks: false,
     canManageCircles: true,
     canEditScores: true,
-    canExportReports: true
+    canExportReports: true,
+    canEditOwnWelcome: false
   },
   teacher: {
     canRecordAttendance: true,
@@ -649,6 +666,7 @@ export const defaultPermissionsByRole: Record<string, UserPermissions> = {
     canManageTracks: false,
     canManageCircles: false,
     canEditScores: true,
-    canExportReports: false
+    canExportReports: false,
+    canEditOwnWelcome: false
   }
 };

@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { ViewType } from '../components/Sidebar';
 import {
-  Users, Layers, Award, CheckCircle2, AlertTriangle, ArrowUpRight,
-  TrendingUp, Calendar, Sparkles, BookOpen, Clock, HeartHandshake,
-  UserCheck, UserCog, ShieldAlert, Plus, ChevronLeft, Edit3, Filter, Check, History, Eye, EyeOff, Star, Send
+  Users, Layers, Award, CheckCircle2, AlertTriangle,
+  TrendingUp, Calendar, Sparkles, BookOpen, Clock,
+  UserCheck, UserCog, Plus, ChevronLeft, History, Eye, EyeOff, Star, Send,
+  PenLine, X
 } from 'lucide-react';
 import { AuditLogModal } from '../components/AuditLogModal';
-import { hasFullAccess } from '../types';
+import { hasFullAccess, User, StaffWelcomeConfig } from '../types';
 import { formatHijriDate, formatHijriShort, getTodayISO } from '../utils/hijriDate';
 import { RenderEntityIcon } from '../components/CircleIconLibrary';
 import { triggerStudentTelegramAlert } from '../utils/telegramAlert';
@@ -24,10 +25,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onSelectStudent
 }) => {
   const {
-    students, circles, tracks, attendanceRecords, dailyRecords,
-    studentAtqiniSubmissions, studentChallengeSubmissions,
+    users, students, circles, tracks, attendanceRecords, dailyRecords,
     allStudentScores, settings, auditLogs, selectedTrackId, setSelectedTrackId,
-    updateSettings, currentUser, isPrivacyMode, togglePrivacyMode, showToast
+    updateSettings, updateUser, currentUser, isPrivacyMode, togglePrivacyMode, showToast
   } = useApp();
 
   const privacyBlurClass = isPrivacyMode
@@ -36,21 +36,127 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const [auditModalOpen, setAuditModalOpen] = useState(false);
 
-  // Banner text inline quick edit state
-  const [editBannerModalOpen, setEditBannerModalOpen] = useState(false);
-  const [bannerTitleInput, setBannerTitleInput] = useState(
-    settings.welcomeTitle || 'مرحباً بكِ في منصة غيث الغيم الإدارية'
-  );
-  const [bannerSubtextInput, setBannerSubtextInput] = useState(
-    settings.welcomeSubtext || `${settings.motto || 'المقرأة القرآنية النموذجية'} — إشراف قائدة المقرأة: ${settings.leaderName}`
+  const isLeaderOrAdmin = hasFullAccess(currentUser);
+
+  const getRoleBadgeLabel = (user: User | null | undefined) => {
+    if (!user) return 'مالك المنصة العام';
+    if (user.role === 'developer') return 'المطور التقني';
+    if (user.role === 'owner') return 'مالك المنصة العام';
+    if (user.role === 'leader') return 'قائدة المقرأة';
+    if (user.role === 'supervisor') return 'مشرفة المقرأة';
+    return 'معلمة الحلقة';
+  };
+
+  // Resolve personalized login welcome toast config for any user (Leader or Staff)
+  const resolveUserLoginToastConfig = (targetUser: User | null | undefined): {
+    welcomeTitle: string;
+    canEditOwnWelcome: boolean;
+  } => {
+    if (!targetUser) {
+      return {
+        welcomeTitle: `مرحباً بك ${settings.leaderName || 'ريفة المنصوري'} (مالك المنصة العام)`,
+        canEditOwnWelcome: false
+      };
+    }
+
+    const savedMapConfig = settings.staffWelcomeConfigs?.[targetUser.id];
+    const isTargetLeader = hasFullAccess(targetUser);
+    const defaultLoginToast = `مرحباً بك ${targetUser.name} (${getRoleBadgeLabel(targetUser)})`;
+
+    const resolvedCanEdit = isTargetLeader
+      ? true
+      : typeof savedMapConfig?.canEditOwnWelcome === 'boolean'
+      ? savedMapConfig.canEditOwnWelcome
+      : typeof targetUser.canEditOwnWelcome === 'boolean'
+      ? targetUser.canEditOwnWelcome
+      : !!targetUser.permissions?.canEditOwnWelcome;
+
+    return {
+      welcomeTitle:
+        savedMapConfig?.welcomeTitle?.trim() ||
+        targetUser.welcomeTitle?.trim() ||
+        defaultLoginToast,
+      canEditOwnWelcome: resolvedCanEdit
+    };
+  };
+
+  const currentLoginToastConfig = resolveUserLoginToastConfig(currentUser);
+  const canCurrentUserEditWelcome = isLeaderOrAdmin || !!currentLoginToastConfig.canEditOwnWelcome;
+
+  // Editable staff list for Leader's target dropdown (Leader's own account + all Supervisors & Teachers)
+  const customizableStaffList = users.filter(
+    u => u.role === 'supervisor' || u.role === 'teacher'
   );
 
-  const handleSaveBannerTexts = async (e: React.FormEvent) => {
+  // Simple Login Welcome Toast Customization Modal State
+  const [editBannerModalOpen, setEditBannerModalOpen] = useState(false);
+  const [selectedTargetUserId, setSelectedTargetUserId] = useState<string>(currentUser?.id || 'leader');
+  const [loginToastTextInput, setLoginToastTextInput] = useState(currentLoginToastConfig.welcomeTitle);
+  const [targetCanEditOwnWelcome, setTargetCanEditOwnWelcome] = useState<boolean>(!!currentLoginToastConfig.canEditOwnWelcome);
+
+  const loadTargetUserIntoModal = (targetId: string) => {
+    setSelectedTargetUserId(targetId);
+    const targetUserObj =
+      targetId === 'leader' || targetId === currentUser?.id
+        ? currentUser
+        : users.find(u => u.id === targetId) || currentUser;
+    const cfg = resolveUserLoginToastConfig(targetUserObj);
+    setLoginToastTextInput(cfg.welcomeTitle);
+    setTargetCanEditOwnWelcome(!!cfg.canEditOwnWelcome);
+  };
+
+  const handleOpenWelcomeModal = () => {
+    if (!canCurrentUserEditWelcome) return;
+    const initialTargetId = currentUser?.id || 'leader';
+    loadTargetUserIntoModal(initialTargetId);
+    setEditBannerModalOpen(true);
+  };
+
+  const handleSaveLoginToastText = async (e: React.FormEvent) => {
     e.preventDefault();
-    await updateSettings({
-      welcomeTitle: bannerTitleInput,
-      welcomeSubtext: bannerSubtextInput
-    });
+    const targetUserObj =
+      isLeaderOrAdmin
+        ? (users.find(u => u.id === selectedTargetUserId) || currentUser)
+        : currentUser;
+
+    const fallbackText = targetUserObj
+      ? `مرحباً بك ${targetUserObj.name} (${getRoleBadgeLabel(targetUserObj)})`
+      : `مرحباً بك ${settings.leaderName || 'ريفة المنصوري'} (مالك المنصة العام)`;
+    const cleanTitle = loginToastTextInput.trim() || fallbackText;
+
+    if (targetUserObj) {
+      const isTargetLeader = hasFullAccess(targetUserObj);
+      const nextCanEdit = isTargetLeader ? true : targetCanEditOwnWelcome;
+
+      await updateUser(targetUserObj.id, {
+        welcomeTitle: cleanTitle,
+        canEditOwnWelcome: nextCanEdit,
+        permissions: {
+          ...(targetUserObj.permissions || {}),
+          canEditOwnWelcome: nextCanEdit
+        }
+      }, true);
+
+      const nextStaffConfigs: Record<string, StaffWelcomeConfig> = {
+        ...(settings.staffWelcomeConfigs || {}),
+        [targetUserObj.id]: {
+          welcomeTitle: cleanTitle,
+          personalGoal: '',
+          animatedEmojis: [],
+          canEditOwnWelcome: nextCanEdit,
+          updatedAt: new Date().toISOString()
+        }
+      };
+
+      await updateSettings({
+        staffWelcomeConfigs: nextStaffConfigs
+      }, true);
+
+      showToast(cleanTitle, 'success');
+    } else {
+      showToast(cleanTitle, 'success');
+    }
+
     setEditBannerModalOpen(false);
   };
 
@@ -108,7 +214,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   return (
     <div className="space-y-6">
       
-      {/* Welcome Banner (Always sharp and readable, never blurred) */}
+      {/* Welcome Banner (Exact Compact Hero Banner Layout) */}
       <div
         style={{
           backgroundColor: settings.primaryColor || '#8E5364'
@@ -167,83 +273,87 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="flex items-center justify-between gap-2 mb-1.5">
             <h2 className="text-lg sm:text-xl font-bold tracking-normal text-white">
-              {settings.welcomeTitle || 'مرحباً بكِ في منصة غيث الغيم الإدارية'}
+              مرحباً بكِ في منصة غيث الغيم الإدارية
             </h2>
-            <button
-              onClick={() => {
-                setBannerTitleInput(settings.welcomeTitle || 'مرحباً بكِ في منصة غيث الغيم الإدارية');
-                setBannerSubtextInput(settings.welcomeSubtext || `${settings.motto || 'المقرأة القرآنية النموذجية'} — إشراف قائدة المقرأة: ${settings.leaderName}`);
-                setEditBannerModalOpen(true);
-              }}
-              className="p-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white border border-white/20 transition cursor-pointer flex items-center justify-center hover:scale-105 active:scale-95 shadow-2xs"
-              title="تعديل نصوص الواجهة الترحيبية"
-              aria-label="تعديل نصوص الواجهة الترحيبية"
-            >
-              <Edit3 className="w-3.5 h-3.5" />
-            </button>
+            {canCurrentUserEditWelcome && (
+              <button
+                type="button"
+                onClick={handleOpenWelcomeModal}
+                className="p-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white border border-white/20 transition cursor-pointer flex items-center justify-center hover:scale-105 active:scale-95 shadow-2xs"
+                title={isLeaderOrAdmin ? 'تعديل نص ترحيب الدخول لكِ أو للمشرفات والمعلمات' : 'تعديل نص ترحيب الدخول'}
+                aria-label="تعديل نص ترحيب الدخول"
+              >
+                <PenLine className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <p className="text-white/85 text-xs sm:text-sm leading-relaxed mb-5">
-            {settings.welcomeSubtext || `${settings.motto || 'المقرأة القرآنية النموذجية'} — إشراف قائدة المقرأة: ${settings.leaderName}. متابعة الخطط والحلقات والاختبارات المعتمدة.`}
+            لوحة قيادة المقرأة، متابعة الحلقات، التحضير والإنجاز، ورصد التحديات والاختبارات المعتمدة
           </p>
           
-          {/* Quick Buttons Bar (Always sharp and readable) */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            <button
-              onClick={() => onOpenQuickModal('student')}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white text-[#744251] text-xs font-bold hover:bg-white/90 shadow-xs transition cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>إضافة طالبة</span>
-            </button>
-            <button
-              onClick={() => onNavigate('attendance')}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/15 backdrop-blur text-white text-xs font-medium hover:bg-white/25 border border-white/20 transition cursor-pointer"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>رصد الحضور السريع</span>
-            </button>
-            <button
-              onClick={() => onNavigate('recitation')}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/15 backdrop-blur text-white text-xs font-medium hover:bg-white/25 border border-white/20 transition cursor-pointer"
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>تسجيل التسميع</span>
-            </button>
-            <button
-              onClick={() => onNavigate('atqini')}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/15 backdrop-blur text-white text-xs font-medium hover:bg-white/25 border border-white/20 transition cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>واجبات «أتقني»</span>
-            </button>
-            {hasFullAccess(currentUser) && (
+          {/* Quick Buttons Bar: Row 1 + Row 2 */}
+          <div className="space-y-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
               <button
-                onClick={() => onNavigate('staff')}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/15 backdrop-blur text-white text-xs font-medium hover:bg-white/25 border border-white/20 transition cursor-pointer"
-                title="الوصول إلى قسم المعلمات والمشرفات"
+                onClick={() => onOpenQuickModal('student')}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white text-[#744251] text-xs font-bold hover:bg-white/90 shadow-xs transition cursor-pointer"
               >
-                <UserCog className="w-3.5 h-3.5" />
-                <span>المعلمات والمشرفات</span>
+                <Plus className="w-3.5 h-3.5" />
+                <span>إضافة طالبة</span>
               </button>
-            )}
-            <button
-              type="button"
-              onClick={togglePrivacyMode}
-              className={`flex items-center justify-center w-9 h-9 rounded-xl text-xs font-bold border transition cursor-pointer shadow-xs ${
-                isPrivacyMode
-                  ? 'bg-amber-400 text-stone-900 border-amber-300 hover:bg-amber-300'
-                  : 'bg-white/15 backdrop-blur text-white border-white/25 hover:bg-white/25'
-              }`}
-              title={isPrivacyMode ? 'إلغاء وضع الخصوصية وإظهار الأرقام والأسماء' : 'تفعيل وضع الخصوصية وتمويه الأرقام الحساسة'}
-              aria-label="وضع الخصوصية"
-            >
-              {isPrivacyMode ? (
-                <EyeOff className="w-4 h-4" />
-              ) : (
-                <Eye className="w-4 h-4" />
+              <button
+                onClick={() => onNavigate('attendance')}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/15 backdrop-blur text-white text-xs font-medium hover:bg-white/25 border border-white/20 transition cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>رصد الحضور السريع</span>
+              </button>
+              <button
+                onClick={() => onNavigate('recitation')}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/15 backdrop-blur text-white text-xs font-medium hover:bg-white/25 border border-white/20 transition cursor-pointer"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>تسجيل التسميع</span>
+              </button>
+              <button
+                onClick={() => onNavigate('atqini')}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/15 backdrop-blur text-white text-xs font-medium hover:bg-white/25 border border-white/20 transition cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>واجبات «أتقني»</span>
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              {hasFullAccess(currentUser) && (
+                <button
+                  onClick={() => onNavigate('staff')}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/15 backdrop-blur text-white text-xs font-medium hover:bg-white/25 border border-white/20 transition cursor-pointer"
+                  title="الوصول إلى قسم المعلمات والمشرفات"
+                >
+                  <UserCog className="w-3.5 h-3.5" />
+                  <span>المعلمات والمشرفات</span>
+                </button>
               )}
-            </button>
+              <button
+                type="button"
+                onClick={togglePrivacyMode}
+                className={`flex items-center justify-center w-9 h-9 rounded-xl text-xs font-bold border transition cursor-pointer shadow-xs ${
+                  isPrivacyMode
+                    ? 'bg-amber-400 text-stone-900 border-amber-300 hover:bg-amber-300'
+                    : 'bg-white/15 backdrop-blur text-white border-white/25 hover:bg-white/25'
+                }`}
+                title={isPrivacyMode ? 'إلغاء وضع الخصوصية وإظهار الأرقام والأسماء' : 'تفعيل وضع الخصوصية وتمويه الأرقام الحساسة'}
+                aria-label="وضع الخصوصية"
+              >
+                {isPrivacyMode ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -608,68 +718,106 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       </div>
 
-      {/* Edit Banner Texts Modal */}
-      {editBannerModalOpen && (
-        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-xl border border-stone-200 space-y-4">
+      {/* Simple Login Welcome Toast Customization Modal (No Goal Box, No Emojis) */}
+      {editBannerModalOpen && canCurrentUserEditWelcome && (
+        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4" dir="rtl">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-xl border border-[#E8DFD8] space-y-4">
             <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-              <h3 className="font-bold text-stone-900 text-base flex items-center gap-2">
-                <Edit3 className="w-4 h-4 text-[#8E5364]" />
-                <span>تعديل نصوص وعناوين الواجهة الترحيبية</span>
+              <h3 className="font-bold text-stone-900 text-base flex items-center gap-2 font-quran">
+                <PenLine className="w-4 h-4 text-[#9A5643] shrink-0" />
+                <span>تعديل نص ترحيب الدخول</span>
               </h3>
               <button
+                type="button"
                 onClick={() => setEditBannerModalOpen(false)}
-                className="text-stone-400 hover:text-stone-600 text-xs px-2 py-1 rounded-lg"
+                className="text-stone-400 hover:text-stone-600 p-1 rounded-lg cursor-pointer"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveBannerTexts} className="space-y-4">
+            <form onSubmit={handleSaveLoginToastText} className="space-y-4">
+              {/* 1. Leader's Target Selector Dropdown */}
+              {isLeaderOrAdmin && (
+                <div className="p-3.5 rounded-2xl bg-[#FDF6F2] border border-[#E5C3B3] space-y-2">
+                  <label className="block text-xs font-bold text-[#7B3F30] flex items-center gap-1.5">
+                    <UserCheck className="w-4 h-4 text-[#9A5643] shrink-0" />
+                    <span>تخصيص ترحيب الدخول لـ:</span>
+                  </label>
+                  <select
+                    value={selectedTargetUserId}
+                    onChange={e => loadTargetUserIntoModal(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-white border border-[#E5C3B3] rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#9A5643] cursor-pointer"
+                  >
+                    <option value={currentUser?.id || 'leader'}>
+                      حسابي الشخصي ({currentUser?.name || settings.leaderName})
+                    </option>
+                    {customizableStaffList.map(staff => (
+                      <option key={staff.id} value={staff.id}>
+                        {staff.name} ({staff.role === 'supervisor' ? 'مشرفة المقرأة' : 'معلمة الحلقة'})
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Quick permission toggle when a supervisor/teacher is selected */}
+                  {selectedTargetUserId !== (currentUser?.id || 'leader') && (
+                    <div className="pt-2 border-t border-[#E5C3B3]/60 flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-[#7B3F30]">
+                        صلاحية تعديل ترحيب الدخول:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setTargetCanEditOwnWelcome(prev => !prev)}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-bold transition cursor-pointer ${
+                          targetCanEditOwnWelcome
+                            ? 'bg-white text-[#7B3F30] border-[#9A5643]'
+                            : 'bg-stone-100 text-stone-500 border-stone-200'
+                        }`}
+                      >
+                        <div
+                          className={`w-7 h-4 flex items-center rounded-full p-0.5 transition duration-200 ${
+                            targetCanEditOwnWelcome ? 'bg-[#9A5643] justify-end' : 'bg-stone-300 justify-start'
+                          }`}
+                        >
+                          <div className="bg-white w-3 h-3 rounded-full shadow-2xs" />
+                        </div>
+                        <span>{targetCanEditOwnWelcome ? 'مسموح بالتعديل' : 'مخفي (افتراضي)'}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 2. Custom Login Welcome Toast Text Input */}
               <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">
-                  العنوان الترحيبي الرئيسي (H2):
+                <label className="block text-xs font-bold text-stone-700 mb-1.5 flex items-center gap-1.5">
+                  <PenLine className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+                  <span>نص إشعار ترحيب الدخول:</span>
                 </label>
                 <input
                   type="text"
                   required
-                  value={bannerTitleInput}
-                  onChange={e => setBannerTitleInput(e.target.value)}
-                  placeholder="مرحباً بكِ في منصة غيث الغيم الإدارية"
-                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs font-bold text-stone-800"
+                  value={loginToastTextInput}
+                  onChange={e => setLoginToastTextInput(e.target.value)}
+                  placeholder="مثال: مرحباً بك ريفة المنصوري (مالك المنصة العام)"
+                  className="w-full px-3.5 py-2.5 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#9A5643]"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">
-                  النص التعريفي والفرعي (P):
-                </label>
-                <textarea
-                  rows={3}
-                  value={bannerSubtextInput}
-                  onChange={e => setBannerSubtextInput(e.target.value)}
-                  placeholder="لوحة قيادة المقرأة، متابعة الحلقات، ورصد التحديات والاختبارات المعتمدة..."
-                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs text-stone-700 leading-relaxed"
-                />
-              </div>
-
-              <div className="p-3 rounded-xl bg-stone-50 border border-stone-200 text-[11px] text-stone-500">
-                💡 ملاحظة: يتم حفظ هذه النصوص فوراً في الإعدادات وقاعدة البيانات وتظل ثابتة دائماً.
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
                 <button
                   type="button"
                   onClick={() => setEditBannerModalOpen(false)}
-                  className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100"
+                  className="px-4 py-2 text-stone-600 text-xs rounded-xl hover:bg-stone-100 cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#8E5364] text-white text-xs font-bold rounded-xl hover:bg-[#744251] shadow-2xs"
+                  className="px-5 py-2 bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold rounded-xl shadow-2xs transition cursor-pointer flex items-center gap-1.5"
                 >
-                  حفظ واعتماد التعديلات فوراً
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>حفظ النص</span>
                 </button>
               </div>
             </form>
@@ -686,3 +834,4 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     </div>
   );
 };
+

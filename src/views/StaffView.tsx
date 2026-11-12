@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import {
   UserCog, Plus, Edit, Shield, ShieldCheck, CheckCircle2, UserCheck,
   Mail, Phone, Layers, Award, X, Upload, Trash2, Sparkles, FileSignature,
-  Copy, KeyRound, Check, Table, LayoutGrid, Lock
+  Copy, KeyRound, Check, Table, LayoutGrid, Lock, PenLine, Target
 } from 'lucide-react';
 import { User, UserRole, UserPermissions, defaultPermissionsByRole, hasFullAccess, isTechnicalDeveloper } from '../types';
 import { IslamicIconPicker, renderUserAvatarBadge, getAvatarLabel } from '../components/IslamicIconLibrary';
@@ -98,11 +98,18 @@ const PERMISSION_ITEMS: {
     description: 'تغيير الشعار والهوية البصرية والألوان وإدارة نصوص المنظومة.',
     category: 'الإدارة العليا',
     icon: '⚙️'
+  },
+  {
+    key: 'canEditOwnWelcome',
+    title: 'صلاحية تعديل ترحيب الدخول',
+    description: 'السماح للمشرفة أو المعلمة بتعديل نص رسالة ترحيب الدخول الخاصة بها.',
+    category: 'لوحة القيادة الشخصية',
+    icon: '✍️'
   }
 ];
 
 export const StaffView: React.FC = () => {
-  const { users, circles, currentUser, createUser, updateUser, deleteUser, showToast } = useApp();
+  const { users, circles, currentUser, createUser, updateUser, deleteUser, settings, updateSettings, showToast } = useApp();
 
   // تخصيص القسم بالكامل لإدارة المقرأة أو لمن تملك صلاحية الوصول لقسم المعلمات
   const canAccessThisSection = hasFullAccess(currentUser) || !!currentUser?.permissions?.canAccessStaff || !!currentUser?.permissions?.canManageUsers;
@@ -146,6 +153,7 @@ export const StaffView: React.FC = () => {
     canEditTrackCriteria: false,
     canAccessStaff: false,
     canManageSettings: false,
+    canEditOwnWelcome: false,
   });
 
   const [staffForm, setStaffForm] = useState({
@@ -229,6 +237,7 @@ export const StaffView: React.FC = () => {
       canEditTrackCriteria: true,
       canAccessStaff: true,
       canManageSettings: true,
+      canEditOwnWelcome: true,
     });
   };
 
@@ -246,6 +255,7 @@ export const StaffView: React.FC = () => {
       canEditTrackCriteria: false,
       canAccessStaff: false,
       canManageSettings: false,
+      canEditOwnWelcome: false,
     });
   };
 
@@ -257,11 +267,64 @@ export const StaffView: React.FC = () => {
 
   const handleSavePermissions = async () => {
     if (!permissionsModalUser) return;
+    const nextCanEditWelcome = !!userPermissionsState.canEditOwnWelcome;
     await updateUser(permissionsModalUser.id, {
+      canEditOwnWelcome: nextCanEditWelcome,
       permissions: userPermissionsState
     });
-    showToast(`تم حفظ وتحديث صلاحيات ${permissionsModalUser.name} بنجاح 🛡️`);
+    if (settings.staffWelcomeConfigs?.[permissionsModalUser.id]) {
+      await updateSettings({
+        staffWelcomeConfigs: {
+          ...settings.staffWelcomeConfigs,
+          [permissionsModalUser.id]: {
+            ...settings.staffWelcomeConfigs[permissionsModalUser.id],
+            canEditOwnWelcome: nextCanEditWelcome
+          }
+        }
+      }, true);
+    }
+    showToast(`تم حفظ وتحديث صلاحيات ${permissionsModalUser.name} بنجاح`);
     setPermissionsModalUser(null);
+  };
+
+  const isUserWelcomeSelfEditable = (user: User): boolean => {
+    if (hasFullAccess(user)) return true;
+    const fromConfig = settings.staffWelcomeConfigs?.[user.id]?.canEditOwnWelcome;
+    if (typeof fromConfig === 'boolean') return fromConfig;
+    if (typeof user.canEditOwnWelcome === 'boolean') return user.canEditOwnWelcome;
+    return !!user.permissions?.canEditOwnWelcome;
+  };
+
+  const handleToggleCanEditOwnWelcome = async (user: User) => {
+    const currentVal = isUserWelcomeSelfEditable(user);
+    const nextVal = !currentVal;
+    const currentPerms = getUserEffectivePermissions(user);
+    await updateUser(user.id, {
+      canEditOwnWelcome: nextVal,
+      permissions: {
+        ...currentPerms,
+        canEditOwnWelcome: nextVal
+      }
+    }, true);
+    const existingCfg = settings.staffWelcomeConfigs?.[user.id];
+    const roleBadge = user.role === 'supervisor' ? 'مشرفة المقرأة' : 'معلمة الحلقة';
+    await updateSettings({
+      staffWelcomeConfigs: {
+        ...(settings.staffWelcomeConfigs || {}),
+        [user.id]: {
+          welcomeTitle: existingCfg?.welcomeTitle || user.welcomeTitle || `مرحباً بكِ ${user.name} (${roleBadge})`,
+          personalGoal: '',
+          animatedEmojis: [],
+          canEditOwnWelcome: nextVal,
+          updatedAt: new Date().toISOString()
+        }
+      }
+    }, true);
+    showToast(
+      nextVal
+        ? `تم منح ${user.name} صلاحية تعديل ترحيب الدخول`
+        : `تم إيقاف صلاحية تعديل ترحيب الدخول لـ ${user.name}`
+    );
   };
 
   const handleOpenStaffModal = (user?: User) => {
@@ -551,6 +614,7 @@ export const StaffView: React.FC = () => {
                   <th className="py-3 px-4 font-bold">الجوال</th>
                   <th className="py-3 px-4 font-bold">الرمز السري للدخول (PIN)</th>
                   <th className="py-3 px-4 font-bold">الحلقات المسندة</th>
+                  <th className="py-3 px-4 font-bold">صلاحية تعديل ترحيب الدخول</th>
                   <th className="py-3 px-4 font-bold">التوقيع</th>
                   <th className="py-3 px-4 font-bold text-center">إجراءات الإدارة</th>
                 </tr>
@@ -687,6 +751,36 @@ export const StaffView: React.FC = () => {
                           </span>
                         ) : (
                           <span className="text-stone-400 text-[11px]">غير مسندة</span>
+                        )}
+                      </td>
+
+                      {/* صلاحية تعديل ترحيبها وهدفها الشخصي */}
+                      <td className="py-3 px-4">
+                        {hasFullAccess(user) ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#FDF6F2] text-[#7B3F30] border border-[#E5C3B3] text-[10px] font-bold">
+                            <CheckCircle2 className="w-3 h-3 text-[#9A5643] shrink-0" />
+                            <span>صلاحية كاملة (قائدة/إدارة)</span>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCanEditOwnWelcome(user)}
+                            className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-xl border text-[11px] font-bold transition cursor-pointer ${
+                              isUserWelcomeSelfEditable(user)
+                                ? 'bg-[#FDF6F2] text-[#7B3F30] border-[#9A5643]/40 shadow-2xs'
+                                : 'bg-stone-50 text-stone-500 border-stone-200 hover:bg-stone-100'
+                            }`}
+                            title="تفعيل أو إيقاف صلاحية تعديل ترحيبها وهدفها الشخصي في لوحة القيادة"
+                          >
+                            <div
+                              className={`w-7 h-4 flex items-center rounded-full p-0.5 transition duration-200 ${
+                                isUserWelcomeSelfEditable(user) ? 'bg-[#9A5643] justify-end' : 'bg-stone-300 justify-start'
+                              }`}
+                            >
+                              <div className="bg-white w-3 h-3 rounded-full shadow-2xs" />
+                            </div>
+                            <span>{isUserWelcomeSelfEditable(user) ? 'مسموح بالتعديل' : 'للقراءة فقط'}</span>
+                          </button>
                         )}
                       </td>
 
@@ -918,6 +1012,38 @@ export const StaffView: React.FC = () => {
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FAF0F3] text-[#8E5364] border border-[#F3DFE5]">
                     {Object.values(getUserEffectivePermissions(user)).filter(Boolean).length} من {PERMISSION_ITEMS.length} صلاحيات
                   </span>
+                </div>
+
+                {/* صلاحية تعديل ترحيب الدخول */}
+                <div className="pt-2 border-t border-stone-100 flex items-center justify-between gap-2 text-xs">
+                  <span className="text-stone-600 font-semibold flex items-center gap-1.5 text-[11px]">
+                    <PenLine className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+                    <span>صلاحية تعديل ترحيب الدخول:</span>
+                  </span>
+                  {hasFullAccess(user) ? (
+                    <span className="text-[10px] font-bold text-[#7B3F30] bg-[#FDF6F2] px-2 py-0.5 rounded-full border border-[#E5C3B3]">
+                      مفعلة دائماً
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleCanEditOwnWelcome(user)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[10px] font-bold transition cursor-pointer ${
+                        isUserWelcomeSelfEditable(user)
+                          ? 'bg-[#FDF6F2] text-[#7B3F30] border-[#9A5643]/40'
+                          : 'bg-stone-50 text-stone-500 border-stone-200 hover:bg-stone-100'
+                      }`}
+                    >
+                      <div
+                        className={`w-7 h-4 flex items-center rounded-full p-0.5 transition duration-200 ${
+                          isUserWelcomeSelfEditable(user) ? 'bg-[#9A5643] justify-end' : 'bg-stone-300 justify-start'
+                        }`}
+                      >
+                        <div className="bg-white w-3 h-3 rounded-full shadow-2xs" />
+                      </div>
+                      <span>{isUserWelcomeSelfEditable(user) ? 'مفعلة' : 'مغلقة'}</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* الرمز السري للدخول */}

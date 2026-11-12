@@ -825,9 +825,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const [theme, setThemeState] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('ghaith_theme');
-      if (saved === 'dark' || saved === 'light') return saved;
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      const root = document.documentElement;
+      root.classList.remove('dark');
+      root.setAttribute('data-theme', 'light');
+      root.style.colorScheme = 'light';
+      localStorage.setItem('ghaith_theme', 'light');
     }
     return 'light';
   });
@@ -1592,8 +1594,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           targetUser.id,
           targetUser
         );
+        const roleBadge = targetUser.role === 'developer'
+          ? 'المطور التقني'
+          : targetUser.role === 'owner'
+          ? 'مالك المنصة العام'
+          : targetUser.role === 'leader'
+          ? 'قائدة المقرأة'
+          : targetUser.role === 'supervisor'
+          ? 'مشرفة المقرأة'
+          : 'معلمة الحلقة';
+        const customWelcome =
+          masterStateRef.current.settings?.staffWelcomeConfigs?.[targetUser.id]?.welcomeTitle?.trim() ||
+          targetUser.welcomeTitle?.trim() ||
+          `مرحباً بك ${targetUser.name} (${roleBadge})`;
         persistState({ currentUser: targetUser, auditLogs: nextLogs });
-        showToast(`تم تسجيل الدخول: ${targetUser.name} (${targetUser.title || 'الكادر'}) 🌸`, 'info');
+        showToast(customWelcome, 'success');
       } else {
         persistState({ currentUser: targetUser });
       }
