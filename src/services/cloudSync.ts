@@ -10,6 +10,7 @@ import {
   deduplicateDailyRecords,
   type DeletedEntities
 } from './cloudSyncHelpers';
+import { filterAndSortActiveStaffChatMessages } from '../utils/staffHelpers';
 
 export type CloudSyncStatus = 'connected' | 'syncing' | 'offline' | 'error';
 
@@ -82,11 +83,77 @@ export const pushStateToCloud = async (statePayload: any): Promise<void> => {
     }
 
     const deletedEntities = mergeDeletedEntities(remoteData._deletedEntities, incomingState._deletedEntities);
+    const remoteSettings = remoteData.settings || {};
+    const incomingSettings = incomingState.settings || {};
+
+    const mergedStaffWelcomeConfigs: Record<string, any> = {
+      ...(remoteSettings.staffWelcomeConfigs || {})
+    };
+    for (const [k, incCfg] of Object.entries(incomingSettings.staffWelcomeConfigs || {})) {
+      if (!incCfg || typeof incCfg !== 'object') continue;
+      const exCfg = mergedStaffWelcomeConfigs[k];
+      const incTime = Date.parse((incCfg as any).updatedAt || '') || 0;
+      const exTime = exCfg ? (Date.parse(exCfg.updatedAt || '') || 0) : -1;
+      if (!exCfg || incTime >= exTime) {
+        mergedStaffWelcomeConfigs[k] = { ...(exCfg || {}), ...(incCfg as any) };
+      }
+    }
+
+    const mergedWelcomeMessages: Record<string, string> = {
+      ...(remoteSettings.welcomeMessages || {}),
+      ...(incomingSettings.welcomeMessages || {})
+    };
+    for (const [k, cfg] of Object.entries(mergedStaffWelcomeConfigs)) {
+      if (cfg && typeof cfg.welcomeTitle === 'string' && cfg.welcomeTitle.trim()) {
+        mergedWelcomeMessages[k] = cfg.welcomeTitle.trim();
+      }
+    }
+
+    const mergedDeletedChatIds = [
+      ...new Set([
+        ...(Array.isArray(remoteSettings.deletedStaffChatIds) ? remoteSettings.deletedStaffChatIds : []),
+        ...(Array.isArray(incomingSettings.deletedStaffChatIds) ? incomingSettings.deletedStaffChatIds : [])
+      ].map(String))
+    ];
+
+    const mergedStaffChatMessages = filterAndSortActiveStaffChatMessages(
+      [
+        ...(Array.isArray(remoteSettings.staffChatMessages) ? remoteSettings.staffChatMessages : []),
+        ...(Array.isArray(incomingSettings.staffChatMessages) ? incomingSettings.staffChatMessages : [])
+      ],
+      mergedDeletedChatIds
+    );
+
+    const remotePin = remoteSettings.pinnedStaffAnnouncement;
+    const incomingPin = incomingSettings.pinnedStaffAnnouncement;
+    const mergedPinnedAnnouncement =
+      remotePin && incomingPin
+        ? (incomingPin.updatedAt || 0) >= (remotePin.updatedAt || 0)
+          ? incomingPin
+          : remotePin
+        : incomingPin || remotePin;
+
     const finalPayload: Record<string, any> = {
       ...remoteData,
       ...incomingState,
       _deletedEntities: deletedEntities,
-      settings: { ...(remoteData.settings || {}), ...(incomingState.settings || {}) },
+      settings: {
+        ...remoteSettings,
+        ...incomingSettings,
+        welcomeMessages: mergedWelcomeMessages,
+        staffWelcomeConfigs: mergedStaffWelcomeConfigs,
+        staffChatMessages: mergedStaffChatMessages,
+        deletedStaffChatIds: mergedDeletedChatIds,
+        ...(mergedPinnedAnnouncement ? { pinnedStaffAnnouncement: mergedPinnedAnnouncement } : {}),
+        staffProfiles: {
+          ...(remoteSettings.staffProfiles || {}),
+          ...(incomingSettings.staffProfiles || {})
+        },
+        staffAttendanceRecords: {
+          ...(remoteSettings.staffAttendanceRecords || {}),
+          ...(incomingSettings.staffAttendanceRecords || {})
+        }
+      },
       lastSyncedAt: new Date().toISOString()
     };
 

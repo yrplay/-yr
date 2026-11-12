@@ -24,12 +24,13 @@ import { TrackDetailPage } from './views/TrackDetailPage';
 import { SubscriptionsFinancialsView } from './views/SubscriptionsFinancialsView';
 import { StaffLoginGate } from './components/StaffLoginGate';
 import { Footer } from './components/Footer';
-import { CheckCircle2, AlertCircle, Info, Lock } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, Lock, X } from 'lucide-react';
 import { UpdateNotification } from './components/UpdateNotification';
 import { isLocalDemoMode } from './demoMode';
 import { hasFullAccess } from './types';
 import { syncInstitutionLogoAsPWAAppIcon } from './services/pwaIconSync';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { resolveUserWelcomeConfig, LOGIN_WELCOME_DURATION_MS } from './utils/staffHelpers';
 
 const VIEW_TYPES: ViewType[] = [
   'dashboard', 'tracks_circles', 'track_detail', 'students', 'subscriptions',
@@ -49,7 +50,7 @@ const readNavigationFromUrl = () => {
 };
 
 const AppContent: React.FC = () => {
-  const { loading, error, toast, triggerQuickModal, settings, currentUser, users, switchUser, showToast, cloudDataReady, cloudStatus, isPrivacyMode } = useApp();
+  const { loading, error, toast, triggerQuickModal, settings, currentUser, users, switchUser, showToast, dismissToast, cloudDataReady, cloudStatus, isPrivacyMode } = useApp();
   const [initialNavigation] = useState(readNavigationFromUrl);
   const [currentView, setCurrentView] = useState<ViewType>(initialNavigation.view);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -136,6 +137,16 @@ const AppContent: React.FC = () => {
     restoreSession();
     return () => { active = false; };
   }, [users.length]);
+
+  const lastWelcomeUserIdRef = React.useRef<string>('');
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser || !cloudDataReady) return;
+    const resolvedWelcome = resolveUserWelcomeConfig(currentUser, settings).welcomeTitle;
+    if (lastWelcomeUserIdRef.current !== currentUser.id) {
+      lastWelcomeUserIdRef.current = currentUser.id;
+      showToast(resolvedWelcome, 'success', LOGIN_WELCOME_DURATION_MS);
+    }
+  }, [isAuthenticated, currentUser?.id, cloudDataReady, settings?.welcomeMessages, settings?.staffWelcomeConfigs]);
 
   // تطبيق الهوية البصرية ونوع الخط تلقائياً
   React.useEffect(() => {
@@ -461,7 +472,7 @@ const AppContent: React.FC = () => {
         </main>
       </div>
 
-      {/* التنبيهات المنبثقة (Toast) */}
+      {/* التنبيهات المنبثقة (Toast) — مع زر إغلاق يدوي وتوقيت دقيقتين لترحيب الدخول */}
       {toast && (
         <div className="fixed bottom-5 left-5 z-50 animate-in fade-in slide-in-from-bottom duration-200">
           <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold ${
@@ -478,7 +489,16 @@ const AppContent: React.FC = () => {
             ) : (
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             )}
-            <span>{toast.message}</span>
+            <span className="leading-relaxed">{toast.message}</span>
+            <button
+              type="button"
+              onClick={dismissToast}
+              title="إغلاق الإشعار"
+              aria-label="إغلاق الإشعار"
+              className="mr-1 p-1 rounded-lg opacity-60 hover:opacity-100 hover:bg-black/5 transition cursor-pointer shrink-0 flex items-center justify-center"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       )}

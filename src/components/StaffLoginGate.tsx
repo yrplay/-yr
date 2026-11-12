@@ -16,6 +16,10 @@ import {
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import type { User as UserType } from '../types';
+import {
+  resolveUserWelcomeConfig,
+  LOGIN_WELCOME_DURATION_MS
+} from '../utils/staffHelpers';
 
 interface StaffLoginGateProps {
   onSuccess?: () => void;
@@ -24,7 +28,7 @@ interface StaffLoginGateProps {
 }
 
 const DEVELOPER_EMAIL = 'yr.play.com@gmail.com';
-const OWNER_EMAIL = 'owner@ghaym.org';
+const OWNER_EMAIL = 'reef@ghaym.org';
 
 const normalizeString = (value?: string | null) => value?.trim().toLowerCase() || '';
 
@@ -70,19 +74,24 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
     }
 
     // 6. فحص مالك المنصة
-    if (clean === OWNER_EMAIL || clean === 'owner' || clean === 'مالك' || clean === 'مالك المنصة') {
-      const owner = users.find((u) => u.role === 'owner' || normalizeString(u.email) === OWNER_EMAIL);
+    if (clean === OWNER_EMAIL || clean === 'owner@ghaym.org' || clean === 'owner' || clean === 'مالك' || clean === 'مالك المنصة') {
+      const owner = users.find((u) => u.role === 'owner' || normalizeString(u.email) === OWNER_EMAIL || normalizeString(u.email) === 'owner@ghaym.org');
       if (owner) return owner;
     }
 
-    // 6. فحص مباشر من Firestore authorized_staff في حال لم تتزامن الذاكرة المحلية بعد على هذا الجهاز
+    // 7. فحص مباشر من Firestore authorized_staff في حال لم تتزامن الذاكرة المحلية بعد على هذا الجهاز
     try {
       if (clean.includes('@')) {
         const snap = await getDoc(doc(db, 'authorized_staff', clean));
         if (snap.exists()) {
           const data = snap.data();
           const found = users.find((u) => u.id === data.staffId || normalizeString(u.email) === clean);
-          if (found) return found;
+          if (found) {
+            return {
+              ...found,
+              ...(data.welcomeTitle ? { welcomeTitle: String(data.welcomeTitle).trim() } : {})
+            };
+          }
           return {
             id: data.staffId || 'u-' + Date.now(),
             name: data.name || 'عضوة الكادر',
@@ -92,6 +101,7 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
             phone: '',
             circleIds: [],
             passcode: data.passcode || '',
+            welcomeTitle: data.welcomeTitle || '',
             isActive: true
           };
         }
@@ -134,18 +144,22 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
       }
 
       const isDev = targetUser.role === 'developer' || normalizeString(targetUser.email) === DEVELOPER_EMAIL;
-      const isOwner = targetUser.role === 'owner' || normalizeString(targetUser.email) === OWNER_EMAIL;
+      const isOwner = targetUser.role === 'owner' || normalizeString(targetUser.email) === OWNER_EMAIL || normalizeString(targetUser.email) === 'owner@ghaym.org';
       let expectedPasscode = targetUser.passcode?.trim() || '';
+      let cloudWelcomeTitle = '';
 
-      // فحص احتياطي لرمز المرور من السحابة إذا كان الحقل فارغاً في الذاكرة
-      if (!expectedPasscode && targetUser.email) {
+      // فحص رمز المرور ورسالة الترحيب المحدثة من السحابة
+      if (targetUser.email) {
         try {
           const staffSnap = await getDoc(doc(db, 'authorized_staff', normalizeString(targetUser.email)));
           if (staffSnap.exists()) {
             const data = staffSnap.data();
-            if (data?.passcode) {
+            if (!expectedPasscode && data?.passcode) {
               expectedPasscode = String(data.passcode).trim();
-              void updateUser(targetUser.id, { passcode: expectedPasscode });
+              void updateUser(targetUser.id, { passcode: expectedPasscode }, true);
+            }
+            if (data?.welcomeTitle && String(data.welcomeTitle).trim()) {
+              cloudWelcomeTitle = String(data.welcomeTitle).trim();
             }
           }
         } catch {}
@@ -154,7 +168,7 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
       // إذا كان حساب المطور ولم يتم تحديد رمز سابق له، اعتماده وتعيينه فوراً (الافتراضي 8899 أو الرمز المدخل)
       if (!expectedPasscode && isDev) {
         expectedPasscode = cleanPassword || '8899';
-        await updateUser(targetUser.id, { passcode: expectedPasscode });
+        await updateUser(targetUser.id, { passcode: expectedPasscode }, true);
         if (typeof window !== 'undefined') {
           localStorage.setItem('ghaith_dev_passcode', expectedPasscode);
         }
@@ -162,8 +176,8 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
 
       // إذا كان حساب المالك ولم يتم تحديد رمز سابق له، اعتماده وتعيينه فوراً
       if (!expectedPasscode && isOwner) {
-        expectedPasscode = cleanPassword || '1234';
-        await updateUser(targetUser.id, { passcode: expectedPasscode });
+        expectedPasscode = cleanPassword || '2005';
+        await updateUser(targetUser.id, { passcode: expectedPasscode }, true);
         if (typeof window !== 'undefined') {
           localStorage.setItem('ghaith_owner_passcode', expectedPasscode);
         }
@@ -172,13 +186,17 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
       // التحقق من صحة كلمة المرور / الرمز السري
       const isValid = (expectedPasscode && cleanPassword === expectedPasscode) ||
         (isDev && (cleanPassword === '8899' || cleanPassword === (typeof window !== 'undefined' ? localStorage.getItem('ghaith_dev_passcode') : '8899'))) ||
-        (isOwner && (cleanPassword === '1234' || cleanPassword === (typeof window !== 'undefined' ? localStorage.getItem('ghaith_owner_passcode') : '1234')));
+        (isOwner && (cleanPassword === '2005' || cleanPassword === '1234' || cleanPassword === (typeof window !== 'undefined' ? localStorage.getItem('ghaith_owner_passcode') : '2005')));
 
       if (!isValid) {
         setLoading(false);
         setError('كلمة المرور أو الرمز السري غير صحيح. يرجى التأكد من الرمز المحدد لكِ.');
         return;
       }
+
+      const resolvedWelcome =
+        cloudWelcomeTitle ||
+        resolveUserWelcomeConfig(targetUser, settings).welcomeTitle;
 
       // نجاح تسجيل الدخول - حفظ الجلسة وتوجيه المستخدم
       await switchUser(targetUser.id);
@@ -188,7 +206,7 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
         localStorage.removeItem('ghaith_is_locked');
       }
 
-      // مزامنة حالة الوصول السحابية المعتمدة
+      // مزامنة حالة الوصول السحابية المعتمدة مع الحفاظ على رسالة الترحيب المخصصة
       if (targetUser.email) {
         try {
           const cleanEmail = normalizeString(targetUser.email);
@@ -198,6 +216,7 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
             role: targetUser.role,
             name: targetUser.name,
             passcode: expectedPasscode,
+            welcomeTitle: resolvedWelcome,
             active: true,
             lastLoginAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
@@ -205,24 +224,7 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
         } catch {}
       }
 
-      const roleBadge = targetUser.title?.trim() || (
-        targetUser.role === 'developer'
-          ? 'المطور التقني'
-          : targetUser.role === 'owner'
-          ? 'مالك المنصة العام'
-          : targetUser.role === 'leader'
-          ? 'قائدة المقرأة'
-          : targetUser.role === 'supervisor'
-          ? 'مشرفة حلقات'
-          : 'معلمة حلقة'
-      );
-
-      const customWelcome =
-        settings?.staffWelcomeConfigs?.[targetUser.id]?.welcomeTitle?.trim() ||
-        targetUser.welcomeTitle?.trim() ||
-        `مرحباً بك ${targetUser.name} (${roleBadge})`;
-
-      showToast(customWelcome, 'success');
+      showToast(resolvedWelcome, 'success', LOGIN_WELCOME_DURATION_MS);
       onSuccess?.();
       onClose?.();
     } catch (err: any) {

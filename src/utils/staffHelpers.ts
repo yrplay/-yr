@@ -6,6 +6,8 @@ import {
   StaffAttendanceRecord,
   StaffAttendanceStatus,
   StaffProfileConfig,
+  StaffChatMessage,
+  PinnedStaffAnnouncement,
   hasFullAccess
 } from '../types';
 import { formatHijriDate } from './hijriDate';
@@ -94,6 +96,178 @@ export const getStaffShortRoleLabel = (
   }
   if (role === 'supervisor') return 'مشرفة حلقات';
   return 'معلمة حلقة';
+};
+
+export const LOGIN_WELCOME_DURATION_MS = 120000; // 2 full minutes (120 seconds)
+export const WELCOME_MESSAGES_LOCAL_KEY = 'ghaith_welcome_messages_v1';
+
+/**
+ * Grants equal full edit access to customize welcome messages for ALL accounts to:
+ * - ريفة المنصوري (مالك المنصة / reef@ghaym.org)
+ * - أ. عمر عبدالرحمن (مؤسس غيث الغيم / omar@ghaym.org)
+ * - Any full-access leader/owner/developer
+ */
+export const canManageAllWelcomeMessages = (
+  user: Pick<User, 'id' | 'role' | 'name' | 'title' | 'email'> | null | undefined
+): boolean => {
+  if (!user) return false;
+  if (hasFullAccess(user)) return true;
+  const email = (user.email || '').trim().toLowerCase();
+  const name = (user.name || '').trim();
+  const title = (user.title || '').trim();
+  if (
+    email === 'reef@ghaym.org' ||
+    email === 'omar@ghaym.org' ||
+    email === 'owner@ghaym.org' ||
+    email === 'yr.play.com@gmail.com' ||
+    name.includes('ريفة المنصوري') ||
+    name.includes('عمر عبدالرحمن') ||
+    title.includes('مالك المنصة') ||
+    title.includes('مؤسس غيث الغيم')
+  ) {
+    return true;
+  }
+  return false;
+};
+
+/**
+ * Returns the descriptive role/title subtitle for the welcome target dropdown & default toast:
+ * - ريفة المنصوري -> مالك المنصة العام
+ * - أ. عمر عبدالرحمن -> مؤسس غيث الغيم
+ * - مشرفة -> مشرفة حلقات (or custom title)
+ * - معلمة -> معلمة حلقة (or custom title)
+ */
+export const getStaffDropdownRoleBadge = (
+  user: Pick<User, 'role' | 'name' | 'title' | 'email'> | null | undefined
+): string => {
+  if (!user) return 'مالك المنصة العام';
+  const email = (user.email || '').trim().toLowerCase();
+  const name = (user.name || '').trim();
+  const title = (user.title || '').trim();
+  if (email === 'reef@ghaym.org' || name.includes('ريفة المنصوري') || user.role === 'owner') {
+    return title || 'مالك المنصة العام';
+  }
+  if (email === 'omar@ghaym.org' || name.includes('عمر عبدالرحمن')) {
+    return title || 'مؤسس غيث الغيم';
+  }
+  if (user.role === 'developer' || email === 'yr.play.com@gmail.com') {
+    return title || 'المطور التقني';
+  }
+  if (user.role === 'leader') {
+    return title || 'قائدة المقرأة';
+  }
+  if (user.role === 'supervisor') {
+    return title || 'مشرفة حلقات';
+  }
+  return title || 'معلمة حلقة';
+};
+
+export const readLocalWelcomeMessages = (): Record<string, string> => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(WELCOME_MESSAGES_LOCAL_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch {}
+  return {};
+};
+
+export const writeLocalWelcomeMessages = (map: Record<string, string>): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(WELCOME_MESSAGES_LOCAL_KEY, JSON.stringify(map));
+  } catch {}
+};
+
+/**
+ * Resolves the cloud-synced personalized login welcome message for any user
+ * by checking id, email, and name keys across settings.welcomeMessages,
+ * settings.staffWelcomeConfigs, user.welcomeTitle, and localStorage cache.
+ */
+export const resolveUserWelcomeConfig = (
+  targetUser: User | null | undefined,
+  settings?: InstitutionSettings | null
+): {
+  welcomeTitle: string;
+  canEditOwnWelcome: boolean;
+} => {
+  if (!targetUser) {
+    return {
+      welcomeTitle: `مرحباً بك ${settings?.leaderName || 'ريفة المنصوري'} (مالك المنصة العام)`,
+      canEditOwnWelcome: false
+    };
+  }
+
+  const cleanEmail = (targetUser.email || '').trim().toLowerCase();
+  const cleanName = (targetUser.name || '').trim();
+  const lookupKeys = [targetUser.id, cleanEmail, cleanName].filter(Boolean);
+
+  // Also add canonical alias keys for Reefa and Omar so cross-device ID differences never miss
+  if (cleanEmail === 'reef@ghaym.org' || cleanName.includes('ريفة المنصوري') || targetUser.role === 'owner') {
+    lookupKeys.push('u-owner', 'reef@ghaym.org', 'ريفة المنصوري');
+  }
+  if (cleanEmail === 'omar@ghaym.org' || cleanName.includes('عمر عبدالرحمن')) {
+    lookupKeys.push('u-omar', 'u-founder-omar', 'omar@ghaym.org', 'أ. عمر عبدالرحمن');
+  }
+
+  const localMap = readLocalWelcomeMessages();
+  const welcomeMessagesMap = settings?.welcomeMessages || {};
+  const staffConfigsMap = settings?.staffWelcomeConfigs || {};
+
+  let resolvedMessage = '';
+  for (const key of lookupKeys) {
+    const fromConfigs = staffConfigsMap[key]?.welcomeTitle?.trim();
+    if (fromConfigs) {
+      resolvedMessage = fromConfigs;
+      break;
+    }
+    const fromWelcomeMap = welcomeMessagesMap[key]?.trim();
+    if (fromWelcomeMap) {
+      resolvedMessage = fromWelcomeMap;
+      break;
+    }
+  }
+
+  if (!resolvedMessage && targetUser.welcomeTitle?.trim()) {
+    resolvedMessage = targetUser.welcomeTitle.trim();
+  }
+
+  if (!resolvedMessage) {
+    for (const key of lookupKeys) {
+      const fromLocal = localMap[key]?.trim();
+      if (fromLocal) {
+        resolvedMessage = fromLocal;
+        break;
+      }
+    }
+  }
+
+  const defaultLoginToast = `مرحباً بك ${targetUser.name} (${getStaffDropdownRoleBadge(targetUser)})`;
+  const isTargetAdmin = canManageAllWelcomeMessages(targetUser);
+
+  let resolvedCanEdit = isTargetAdmin;
+  if (!resolvedCanEdit) {
+    for (const key of lookupKeys) {
+      const cfg = staffConfigsMap[key];
+      if (cfg && typeof cfg.canEditOwnWelcome === 'boolean') {
+        resolvedCanEdit = cfg.canEditOwnWelcome;
+        break;
+      }
+    }
+    if (!resolvedCanEdit) {
+      resolvedCanEdit =
+        typeof targetUser.canEditOwnWelcome === 'boolean'
+          ? targetUser.canEditOwnWelcome
+          : !!targetUser.permissions?.canEditOwnWelcome;
+    }
+  }
+
+  return {
+    welcomeTitle: resolvedMessage || defaultLoginToast,
+    canEditOwnWelcome: resolvedCanEdit
+  };
 };
 
 export const getDefaultWorkingHoursForRole = (role?: UserRole): string => {
@@ -290,4 +464,195 @@ export const buildStaffAttendanceRecord = (params: {
     recordedBy: params.recordedBy || params.user.name,
     updatedAt: new Date().toISOString()
   };
+};
+
+// ============================================================================
+// 24-Hour Staff Group Chat ("مساحة تواصل الكادر") & Pinned Announcement Helpers
+// ============================================================================
+
+export const STAFF_CHAT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+export const STAFF_CHAT_LOCAL_KEY = 'ghaith_staff_chat_messages_v1';
+export const STAFF_CHAT_DELETED_LOCAL_KEY = 'ghaith_staff_chat_deleted_ids_v1';
+export const STAFF_PINNED_ANNOUNCEMENT_LOCAL_KEY = 'ghaith_staff_pinned_announcement_v1';
+
+/**
+ * Exclusive Edit & Delete permission on Staff Chat messages and Pinned Announcement:
+ * Strictly returns true ONLY when the logged-in user is ريفة المنصوري or أ. عمر عبدالرحمن (or developer).
+ * Strictly returns false for all Supervisors (مشرفة حلقات) and Teachers (معلمة حلقة).
+ */
+export const canEditOrDeleteStaffChat = (
+  user: Pick<User, 'id' | 'role' | 'name' | 'title' | 'email'> | null | undefined
+): boolean => {
+  if (!user) return false;
+  if (user.role === 'supervisor' || user.role === 'teacher') return false;
+  const email = (user.email || '').trim().toLowerCase();
+  const name = (user.name || '').trim();
+  const title = (user.title || '').trim();
+  if (
+    email === 'reef@ghaym.org' ||
+    email === 'omar@ghaym.org' ||
+    email === 'owner@ghaym.org' ||
+    email === 'yr.play.com@gmail.com' ||
+    name.includes('ريفة المنصوري') ||
+    name.includes('عمر عبدالرحمن') ||
+    user.role === 'owner' ||
+    user.role === 'leader' ||
+    user.role === 'developer' ||
+    title.includes('مالك المنصة') ||
+    title.includes('مؤسس غيث الغيم')
+  ) {
+    return true;
+  }
+  return false;
+};
+
+export const parseMessageCreatedAtMs = (msg: Partial<StaffChatMessage> | any): number => {
+  if (!msg) return 0;
+  if (typeof msg.createdAt === 'number' && Number.isFinite(msg.createdAt)) {
+    return msg.createdAt;
+  }
+  if (typeof msg.createdAt === 'string') {
+    const parsed = Number(msg.createdAt) || Date.parse(msg.createdAt);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  if (typeof msg.createdAtIso === 'string') {
+    const parsed = Date.parse(msg.createdAtIso);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+};
+
+export const readLocalDeletedStaffChatIds = (): string[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(STAFF_CHAT_DELETED_LOCAL_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    }
+  } catch {}
+  return [];
+};
+
+export const writeLocalDeletedStaffChatIds = (ids: string[]): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STAFF_CHAT_DELETED_LOCAL_KEY, JSON.stringify([...new Set(ids.map(String))]));
+  } catch {}
+};
+
+/**
+ * Filters out deleted messages and messages older than 24 hours (Date.now() - msg.createdAt >= 24 * 60 * 60 * 1000),
+ * deduplicating by ID and sorting chronologically.
+ */
+export const filterAndSortActiveStaffChatMessages = (
+  messages: StaffChatMessage[] = [],
+  deletedIds: string[] = [],
+  nowMs: number = Date.now()
+): StaffChatMessage[] => {
+  if (!Array.isArray(messages)) return [];
+  const deletedSet = new Set(deletedIds.map(String));
+  const map = new Map<string, StaffChatMessage>();
+
+  for (const rawMsg of messages) {
+    if (!rawMsg || typeof rawMsg !== 'object' || !rawMsg.id) continue;
+    const id = String(rawMsg.id);
+    if (deletedSet.has(id)) continue;
+
+    const createdAtMs = parseMessageCreatedAtMs(rawMsg);
+    if (!createdAtMs || nowMs - createdAtMs >= STAFF_CHAT_TTL_MS) {
+      continue; // Auto-delete messages older than 24 hours
+    }
+
+    const normalized: StaffChatMessage = {
+      ...rawMsg,
+      id,
+      createdAt: createdAtMs
+    };
+
+    const existing = map.get(id);
+    if (!existing) {
+      map.set(id, normalized);
+    } else {
+      const existingUpdate = existing.editedAt || existing.createdAt || 0;
+      const incomingUpdate = normalized.editedAt || normalized.createdAt || 0;
+      map.set(id, incomingUpdate >= existingUpdate ? { ...existing, ...normalized } : { ...normalized, ...existing });
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt);
+};
+
+export const readLocalStaffChatMessages = (): StaffChatMessage[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(STAFF_CHAT_LOCAL_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+};
+
+export const writeLocalStaffChatMessages = (messages: StaffChatMessage[]): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STAFF_CHAT_LOCAL_KEY, JSON.stringify(messages));
+  } catch {}
+};
+
+export const readResolvedStaffChatMessages = (
+  settings?: InstitutionSettings | null,
+  nowMs: number = Date.now()
+): StaffChatMessage[] => {
+  const localDeleted = readLocalDeletedStaffChatIds();
+  const settingsDeleted = Array.isArray(settings?.deletedStaffChatIds) ? settings!.deletedStaffChatIds! : [];
+  const allDeleted = [...new Set([...localDeleted, ...settingsDeleted])];
+
+  const localMsgs = readLocalStaffChatMessages();
+  const settingsMsgs = Array.isArray(settings?.staffChatMessages) ? settings!.staffChatMessages! : [];
+
+  return filterAndSortActiveStaffChatMessages([...localMsgs, ...settingsMsgs], allDeleted, nowMs);
+};
+
+export const DEFAULT_PINNED_STAFF_ANNOUNCEMENT: PinnedStaffAnnouncement = {
+  text: 'يرجى من جميع المعلمات والمشرفات الالتزام بتسجيل التحضير اليومي فور بدء وقت الدوام، ومراجعة المهام اليومية المسندة.',
+  updatedAt: 0,
+  updatedBy: 'إدارة المقرأة'
+};
+
+export const readLocalPinnedAnnouncement = (): PinnedStaffAnnouncement | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(STAFF_PINNED_ANNOUNCEMENT_LOCAL_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && typeof parsed.text === 'string') {
+        return parsed;
+      }
+    }
+  } catch {}
+  return null;
+};
+
+export const writeLocalPinnedAnnouncement = (announcement: PinnedStaffAnnouncement): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STAFF_PINNED_ANNOUNCEMENT_LOCAL_KEY, JSON.stringify(announcement));
+  } catch {}
+};
+
+export const resolvePinnedStaffAnnouncement = (
+  settings?: InstitutionSettings | null
+): PinnedStaffAnnouncement => {
+  const localAnn = readLocalPinnedAnnouncement();
+  const settingsAnn = settings?.pinnedStaffAnnouncement;
+
+  if (localAnn && settingsAnn) {
+    return (settingsAnn.updatedAt || 0) >= (localAnn.updatedAt || 0) ? settingsAnn : localAnn;
+  }
+  if (settingsAnn && typeof settingsAnn.text === 'string') return settingsAnn;
+  if (localAnn && typeof localAnn.text === 'string') return localAnn;
+  return DEFAULT_PINNED_STAFF_ANNOUNCEMENT;
 };

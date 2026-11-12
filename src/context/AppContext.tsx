@@ -16,6 +16,19 @@ import {
 } from '../services/cloudSyncHelpers';
 import { summarizeDailyPageProgress } from '../services/recitationProgress';
 import { getTodayISO } from '../utils/hijriDate';
+import {
+  resolveUserWelcomeConfig,
+  writeLocalWelcomeMessages,
+  readLocalWelcomeMessages,
+  LOGIN_WELCOME_DURATION_MS,
+  filterAndSortActiveStaffChatMessages,
+  readLocalStaffChatMessages,
+  writeLocalStaffChatMessages,
+  readLocalDeletedStaffChatIds,
+  writeLocalDeletedStaffChatIds,
+  readLocalPinnedAnnouncement,
+  writeLocalPinnedAnnouncement
+} from '../utils/staffHelpers';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
@@ -193,7 +206,8 @@ interface AppContextType {
   allStudentScores: Record<string, StudentScoreSummary>;
   
   toast: { message: string; type: 'success' | 'error' | 'info' } | null;
-  showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  showToast: (message: string, type?: 'success' | 'error' | 'info', durationMs?: number) => void;
+  dismissToast: () => void;
 
   lastSynced: Date;
   cloudStatus: CloudSyncStatus;
@@ -659,7 +673,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       list = list.filter((u, idx) => u.role !== 'developer' || idx === list.findIndex(d => d.role === 'developer'));
     }
 
-    // Deduplicate owner accounts, preferring reef@ghaym.org (ريفة المنصوري)
+    // Deduplicate owner accounts, preferring reef@ghaym.org (ريفة المنصوري) and merging any welcomeTitle/passcode
     const owners = list.filter(u => u.role === 'owner');
     if (owners.length === 0) {
       list.push(defaultOwner);
@@ -668,15 +682,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         owners.find(u => (u.email || '').trim().toLowerCase() === 'reef@ghaym.org' && u.id !== 'u-owner') ||
         owners.find(u => (u.name || '').includes('ريفة')) ||
         owners[0];
-      list = list.filter(u => u.role !== 'owner' || u.id === preferredOwner.id);
+      const mergedWelcomeTitle = owners.map(o => o.welcomeTitle?.trim()).find(Boolean) || preferredOwner.welcomeTitle;
+      const mergedOwner: User = {
+        ...preferredOwner,
+        ...(mergedWelcomeTitle ? { welcomeTitle: mergedWelcomeTitle } : {})
+      };
+      list = list
+        .filter(u => u.role !== 'owner' || u.id === preferredOwner.id)
+        .map(u => (u.id === preferredOwner.id ? mergedOwner : u));
     }
 
-    // Ensure أ. عمر عبدالرحمن (omar@ghaym.org) is present
-    const hasOmar = list.some(
+    // Ensure أ. عمر عبدالرحمن (omar@ghaym.org) is present and deduplicated cleanly
+    const omarAccounts = list.filter(
       u => (u.email || '').trim().toLowerCase() === 'omar@ghaym.org' || (u.name || '').includes('عمر عبدالرحمن')
     );
-    if (!hasOmar) {
+    if (omarAccounts.length === 0) {
       list.push(defaultFounderLeader);
+    } else if (omarAccounts.length > 1) {
+      const primaryOmar = omarAccounts[0];
+      const mergedOmarWelcome = omarAccounts.map(o => o.welcomeTitle?.trim()).find(Boolean) || primaryOmar.welcomeTitle;
+      const mergedOmarPass = omarAccounts.map(o => o.passcode?.trim()).find(Boolean) || primaryOmar.passcode || '1446';
+      const mergedOmar: User = {
+        ...primaryOmar,
+        passcode: mergedOmarPass,
+        ...(mergedOmarWelcome ? { welcomeTitle: mergedOmarWelcome } : {})
+      };
+      const removeIds = new Set(omarAccounts.slice(1).map(o => o.id));
+      list = list
+        .filter(u => !removeIds.has(u.id))
+        .map(u => (u.id === primaryOmar.id ? mergedOmar : u));
     }
 
     return list;
@@ -939,9 +973,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const triggerQuickModal = (type: string) => setQuickModalAction({ type, timestamp: Date.now() });
   const clearQuickModal = () => setQuickModalAction(null);
 
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const dismissToast = () => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+    setToast(null);
+  };
+
+  const showToast = (
+    message: string,
+    type: 'success' | 'error' | 'info' = 'success',
+    durationMs?: number
+  ) => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+    const effectiveDuration =
+      typeof durationMs === 'number' && durationMs > 0
+        ? durationMs
+        : message.trim().startsWith('مرحباً') || message.trim().startsWith('أهلاً')
+        ? LOGIN_WELCOME_DURATION_MS
+        : 4000;
     setToast({ message, type });
-    setTimeout(() => setToast(null), 4000);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast(null);
+      toastTimeoutRef.current = null;
+    }, effectiveDuration);
   };
 
   const masterStateRef = useRef<any>({
@@ -1422,7 +1483,82 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     if (data.settings) {
-      const mergedSettings = { ...masterStateRef.current.settings, ...data.settings };
+      const localSettings = masterStateRef.current.settings || {};
+      const incomingSettings = data.settings || {};
+
+      const mergedStaffWelcomeConfigs: Record<string, any> = {
+        ...(localSettings.staffWelcomeConfigs || {})
+      };
+      for (const [k, incCfg] of Object.entries(incomingSettings.staffWelcomeConfigs || {})) {
+        if (!incCfg || typeof incCfg !== 'object') continue;
+        const exCfg = mergedStaffWelcomeConfigs[k];
+        const incTime = Date.parse((incCfg as any).updatedAt || '') || 0;
+        const exTime = exCfg ? (Date.parse(exCfg.updatedAt || '') || 0) : -1;
+        if (!exCfg || incTime >= exTime) {
+          mergedStaffWelcomeConfigs[k] = { ...(exCfg || {}), ...(incCfg as any) };
+        }
+      }
+
+      const mergedWelcomeMessages: Record<string, string> = {
+        ...readLocalWelcomeMessages(),
+        ...(localSettings.welcomeMessages || {}),
+        ...(incomingSettings.welcomeMessages || {})
+      };
+      for (const [k, cfg] of Object.entries(mergedStaffWelcomeConfigs)) {
+        if (cfg && typeof cfg.welcomeTitle === 'string' && cfg.welcomeTitle.trim()) {
+          mergedWelcomeMessages[k] = cfg.welcomeTitle.trim();
+        }
+      }
+      writeLocalWelcomeMessages(mergedWelcomeMessages);
+
+      const mergedDeletedChatIds = [
+        ...new Set([
+          ...readLocalDeletedStaffChatIds(),
+          ...(Array.isArray(localSettings.deletedStaffChatIds) ? localSettings.deletedStaffChatIds : []),
+          ...(Array.isArray(incomingSettings.deletedStaffChatIds) ? incomingSettings.deletedStaffChatIds : [])
+        ].map(String))
+      ];
+      writeLocalDeletedStaffChatIds(mergedDeletedChatIds);
+
+      const mergedStaffChatMessages = filterAndSortActiveStaffChatMessages(
+        [
+          ...readLocalStaffChatMessages(),
+          ...(Array.isArray(localSettings.staffChatMessages) ? localSettings.staffChatMessages : []),
+          ...(Array.isArray(incomingSettings.staffChatMessages) ? incomingSettings.staffChatMessages : [])
+        ],
+        mergedDeletedChatIds
+      );
+      writeLocalStaffChatMessages(mergedStaffChatMessages);
+
+      const localPin = localSettings.pinnedStaffAnnouncement || readLocalPinnedAnnouncement();
+      const incomingPin = incomingSettings.pinnedStaffAnnouncement;
+      const mergedPinnedAnnouncement =
+        localPin && incomingPin
+          ? (incomingPin.updatedAt || 0) >= (localPin.updatedAt || 0)
+            ? incomingPin
+            : localPin
+          : incomingPin || localPin;
+      if (mergedPinnedAnnouncement) {
+        writeLocalPinnedAnnouncement(mergedPinnedAnnouncement);
+      }
+
+      const mergedSettings = {
+        ...localSettings,
+        ...incomingSettings,
+        welcomeMessages: mergedWelcomeMessages,
+        staffWelcomeConfigs: mergedStaffWelcomeConfigs,
+        staffChatMessages: mergedStaffChatMessages,
+        deletedStaffChatIds: mergedDeletedChatIds,
+        ...(mergedPinnedAnnouncement ? { pinnedStaffAnnouncement: mergedPinnedAnnouncement } : {}),
+        staffProfiles: {
+          ...(localSettings.staffProfiles || {}),
+          ...(incomingSettings.staffProfiles || {})
+        },
+        staffAttendanceRecords: {
+          ...(localSettings.staffAttendanceRecords || {}),
+          ...(incomingSettings.staffAttendanceRecords || {})
+        }
+      };
       masterStateRef.current.settings = mergedSettings;
       setSettings(mergedSettings);
     }
@@ -1648,6 +1784,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         localStorage.setItem('ghaith_is_authenticated', 'true');
         localStorage.removeItem('ghaith_is_locked');
       }
+      const customWelcome = resolveUserWelcomeConfig(
+        targetUser,
+        masterStateRef.current.settings || settings
+      ).welcomeTitle;
+
       if (!silentRestore) {
         const nextLogs = appendAuditEntry(
           'login',
@@ -1656,23 +1797,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           targetUser.id,
           targetUser
         );
-        const roleBadge = targetUser.role === 'developer'
-          ? 'المطور التقني'
-          : targetUser.role === 'owner'
-          ? 'مالك المنصة العام'
-          : targetUser.role === 'leader'
-          ? 'قائدة المقرأة'
-          : targetUser.role === 'supervisor'
-          ? 'مشرفة المقرأة'
-          : 'معلمة الحلقة';
-        const customWelcome =
-          masterStateRef.current.settings?.staffWelcomeConfigs?.[targetUser.id]?.welcomeTitle?.trim() ||
-          targetUser.welcomeTitle?.trim() ||
-          `مرحباً بك ${targetUser.name} (${roleBadge})`;
         persistState({ currentUser: targetUser, auditLogs: nextLogs });
-        showToast(customWelcome, 'success');
+        showToast(customWelcome, 'success', LOGIN_WELCOME_DURATION_MS);
       } else {
         persistState({ currentUser: targetUser });
+        showToast(customWelcome, 'success', LOGIN_WELCOME_DURATION_MS);
       }
       return true;
     } catch (err: any) {
@@ -4634,6 +4763,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         allStudentScores,
         toast,
         showToast,
+        dismissToast,
         lastSynced,
         cloudStatus,
         cloudDataReady,

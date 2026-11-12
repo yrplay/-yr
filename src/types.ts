@@ -64,6 +64,26 @@ export interface StaffProfileConfig {
   updatedAt?: string;
 }
 
+export interface StaffChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole: UserRole;
+  senderTitle?: string;
+  text: string;
+  createdAt: number; // ms timestamp
+  createdAtIso?: string;
+  hijriTimeLabel?: string;
+  editedAt?: number;
+  editedBy?: string;
+}
+
+export interface PinnedStaffAnnouncement {
+  text: string;
+  updatedAt: number;
+  updatedBy?: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -564,9 +584,13 @@ export interface InstitutionSettings {
   welcomeSubtext?: string;
   personalGoal?: string;
   animatedEmojis?: string[];
+  welcomeMessages?: Record<string, string>;
   staffWelcomeConfigs?: Record<string, StaffWelcomeConfig>;
   staffProfiles?: Record<string, StaffProfileConfig>;
   staffAttendanceRecords?: Record<string, StaffAttendanceRecord>;
+  staffChatMessages?: StaffChatMessage[];
+  deletedStaffChatIds?: string[];
+  pinnedStaffAnnouncement?: PinnedStaffAnnouncement;
   activeTrackName?: string;
   sealText?: string;
   sealSubtitle?: string;

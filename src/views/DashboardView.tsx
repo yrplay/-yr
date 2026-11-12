@@ -12,6 +12,8 @@ import { hasFullAccess, User, StaffWelcomeConfig, StaffTaskItem } from '../types
 import { formatHijriDate, formatHijriShort, getTodayISO } from '../utils/hijriDate';
 import { RenderEntityIcon } from '../components/CircleIconLibrary';
 import { triggerStudentTelegramAlert } from '../utils/telegramAlert';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import {
   resolveStaffProfile,
   readAllStaffAttendanceRecords,
@@ -19,6 +21,12 @@ import {
   buildStaffAttendanceRecord,
   formatCurrentArabicTime,
   getStaffShortRoleLabel,
+  getStaffDropdownRoleBadge,
+  canManageAllWelcomeMessages,
+  resolveUserWelcomeConfig,
+  readLocalWelcomeMessages,
+  writeLocalWelcomeMessages,
+  LOGIN_WELCOME_DURATION_MS,
   readLocalStaffProfiles,
   writeLocalStaffProfiles,
   isSupervisorOrTeacherOnly
@@ -47,77 +55,47 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const [auditModalOpen, setAuditModalOpen] = useState(false);
 
-  const isLeaderOrAdmin = hasFullAccess(currentUser);
+  const isLeaderOrAdmin = hasFullAccess(currentUser) || canManageAllWelcomeMessages(currentUser);
 
-  const getRoleBadgeLabel = (user: User | null | undefined) => {
-    if (!user) return 'مالك المنصة (قائدة)';
-    if (user.role === 'developer') return 'مؤسس المنصة';
-    if (user.role === 'owner' || user.role === 'leader') return 'مالك المنصة (قائدة)';
-    if (user.role === 'supervisor') return 'مشرفة';
-    return 'معلمة';
-  };
-
-  // Resolve personalized login welcome toast config for any user (Leader or Staff)
-  const resolveUserLoginToastConfig = (targetUser: User | null | undefined): {
-    welcomeTitle: string;
-    canEditOwnWelcome: boolean;
-  } => {
-    if (!targetUser) {
-      return {
-        welcomeTitle: `مرحباً بك ${settings.leaderName || 'ريفة المنصوري'} (مالك المنصة العام)`,
-        canEditOwnWelcome: false
-      };
-    }
-
-    const savedMapConfig = settings.staffWelcomeConfigs?.[targetUser.id];
-    const isTargetLeader = hasFullAccess(targetUser);
-    const defaultLoginToast = `مرحباً بك ${targetUser.name} (${getRoleBadgeLabel(targetUser)})`;
-
-    const resolvedCanEdit = isTargetLeader
-      ? true
-      : typeof savedMapConfig?.canEditOwnWelcome === 'boolean'
-      ? savedMapConfig.canEditOwnWelcome
-      : typeof targetUser.canEditOwnWelcome === 'boolean'
-      ? targetUser.canEditOwnWelcome
-      : !!targetUser.permissions?.canEditOwnWelcome;
-
-    return {
-      welcomeTitle:
-        savedMapConfig?.welcomeTitle?.trim() ||
-        targetUser.welcomeTitle?.trim() ||
-        defaultLoginToast,
-      canEditOwnWelcome: resolvedCanEdit
-    };
-  };
-
-  const currentLoginToastConfig = resolveUserLoginToastConfig(currentUser);
+  const currentLoginToastConfig = resolveUserWelcomeConfig(currentUser, settings);
   const canCurrentUserEditWelcome = isLeaderOrAdmin || !!currentLoginToastConfig.canEditOwnWelcome;
 
-  // Editable staff list for Leader's target dropdown (Leader's own account + all Supervisors & Teachers)
-  const customizableStaffList = users.filter(
-    u => u.role === 'supervisor' || u.role === 'teacher'
-  );
+  // Populate the dropdown with ALL registered accounts from the staff roster without filtering anyone out:
+  // - ريفة المنصوري (مالك المنصة العام)
+  // - أ. عمر عبدالرحمن (مؤسس غيث الغيم)
+  // - All Supervisors (مشرفة حلقات) and All Teachers (معلمة حلقة)
+  const allRegisteredAccountsForWelcome: User[] = React.useMemo(() => {
+    const rolePriority = (u: User) => {
+      const email = (u.email || '').trim().toLowerCase();
+      const name = (u.name || '').trim();
+      if (email === 'reef@ghaym.org' || name.includes('ريفة المنصوري') || u.role === 'owner') return 1;
+      if (email === 'omar@ghaym.org' || name.includes('عمر عبدالرحمن') || u.role === 'leader') return 2;
+      if (u.role === 'supervisor') return 3;
+      if (u.role === 'teacher') return 4;
+      return 5;
+    };
+    return [...users].sort((a, b) => rolePriority(a) - rolePriority(b));
+  }, [users]);
 
   // Simple Login Welcome Toast Customization Modal State
   const [editBannerModalOpen, setEditBannerModalOpen] = useState(false);
-  const [selectedTargetUserId, setSelectedTargetUserId] = useState<string>(currentUser?.id || 'leader');
+  const [selectedTargetUserId, setSelectedTargetUserId] = useState<string>(currentUser?.id || allRegisteredAccountsForWelcome[0]?.id || 'u-owner');
   const [loginToastTextInput, setLoginToastTextInput] = useState(currentLoginToastConfig.welcomeTitle);
   const [targetCanEditOwnWelcome, setTargetCanEditOwnWelcome] = useState<boolean>(!!currentLoginToastConfig.canEditOwnWelcome);
 
   const loadTargetUserIntoModal = (targetId: string) => {
     setSelectedTargetUserId(targetId);
     const targetUserObj =
-      targetId === 'leader' || targetId === currentUser?.id
-        ? currentUser
-        : users.find(u => u.id === targetId) || currentUser;
-    const cfg = resolveUserLoginToastConfig(targetUserObj);
+      users.find(u => u.id === targetId) ||
+      (targetId === currentUser?.id ? currentUser : allRegisteredAccountsForWelcome[0] || currentUser);
+    const cfg = resolveUserWelcomeConfig(targetUserObj, settings);
     setLoginToastTextInput(cfg.welcomeTitle);
     setTargetCanEditOwnWelcome(!!cfg.canEditOwnWelcome);
   };
 
   const handleOpenWelcomeModal = () => {
     if (!canCurrentUserEditWelcome) return;
-    const initialTargetId = currentUser?.id || 'leader';
+    const initialTargetId = currentUser?.id || allRegisteredAccountsForWelcome[0]?.id || 'u-owner';
     loadTargetUserIntoModal(initialTargetId);
     setEditBannerModalOpen(true);
   };
@@ -130,13 +108,47 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         : currentUser;
 
     const fallbackText = targetUserObj
-      ? `مرحباً بك ${targetUserObj.name} (${getRoleBadgeLabel(targetUserObj)})`
+      ? `مرحباً بك ${targetUserObj.name} (${getStaffDropdownRoleBadge(targetUserObj)})`
       : `مرحباً بك ${settings.leaderName || 'ريفة المنصوري'} (مالك المنصة العام)`;
     const cleanTitle = loginToastTextInput.trim() || fallbackText;
+    const nowIso = new Date().toISOString();
 
     if (targetUserObj) {
-      const isTargetLeader = hasFullAccess(targetUserObj);
-      const nextCanEdit = isTargetLeader ? true : targetCanEditOwnWelcome;
+      const isTargetAdmin = canManageAllWelcomeMessages(targetUserObj);
+      const nextCanEdit = isTargetAdmin ? true : targetCanEditOwnWelcome;
+      const cleanEmail = (targetUserObj.email || '').trim().toLowerCase();
+      const cleanName = (targetUserObj.name || '').trim();
+
+      const aliasKeys = [targetUserObj.id, cleanEmail, cleanName].filter(Boolean);
+      if (cleanEmail === 'reef@ghaym.org' || cleanName.includes('ريفة المنصوري') || targetUserObj.role === 'owner') {
+        aliasKeys.push('u-owner', 'reef@ghaym.org', 'ريفة المنصوري');
+      }
+      if (cleanEmail === 'omar@ghaym.org' || cleanName.includes('عمر عبدالرحمن')) {
+        aliasKeys.push('u-omar', 'u-founder-omar', 'omar@ghaym.org', 'أ. عمر عبدالرحمن');
+      }
+
+      const nextWelcomeMessages: Record<string, string> = {
+        ...readLocalWelcomeMessages(),
+        ...(settings.welcomeMessages || {})
+      };
+      const nextStaffConfigs: Record<string, StaffWelcomeConfig> = {
+        ...(settings.staffWelcomeConfigs || {})
+      };
+
+      const configEntry: StaffWelcomeConfig = {
+        welcomeTitle: cleanTitle,
+        personalGoal: '',
+        animatedEmojis: [],
+        canEditOwnWelcome: nextCanEdit,
+        updatedAt: nowIso
+      };
+
+      for (const key of aliasKeys) {
+        nextWelcomeMessages[key] = cleanTitle;
+        nextStaffConfigs[key] = configEntry;
+      }
+
+      writeLocalWelcomeMessages(nextWelcomeMessages);
 
       await updateUser(targetUserObj.id, {
         welcomeTitle: cleanTitle,
@@ -147,24 +159,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         }
       }, true);
 
-      const nextStaffConfigs: Record<string, StaffWelcomeConfig> = {
-        ...(settings.staffWelcomeConfigs || {}),
-        [targetUserObj.id]: {
-          welcomeTitle: cleanTitle,
-          personalGoal: '',
-          animatedEmojis: [],
-          canEditOwnWelcome: nextCanEdit,
-          updatedAt: new Date().toISOString()
-        }
-      };
-
       await updateSettings({
+        welcomeMessages: nextWelcomeMessages,
         staffWelcomeConfigs: nextStaffConfigs
       }, true);
 
-      showToast(cleanTitle, 'success');
+      if (cleanEmail) {
+        try {
+          await setDoc(doc(db, 'authorized_staff', cleanEmail), {
+            email: cleanEmail,
+            staffId: targetUserObj.id,
+            role: targetUserObj.role,
+            name: targetUserObj.name,
+            welcomeTitle: cleanTitle,
+            updatedAt: nowIso
+          }, { merge: true });
+        } catch {}
+      }
+
+      showToast(cleanTitle, 'success', LOGIN_WELCOME_DURATION_MS);
     } else {
-      showToast(cleanTitle, 'success');
+      showToast(cleanTitle, 'success', LOGIN_WELCOME_DURATION_MS);
     }
 
     setEditBannerModalOpen(false);
@@ -1040,7 +1055,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveLoginToastText} className="space-y-4">
-              {/* 1. Leader's Target Selector Dropdown */}
+              {/* 1. Target Selector Dropdown (Includes ALL Registered Accounts) */}
               {isLeaderOrAdmin && (
                 <div className="p-3.5 rounded-2xl bg-[#FDF6F2] border border-[#E5C3B3] space-y-2">
                   <label className="block text-xs font-bold text-[#7B3F30] flex items-center gap-1.5">
@@ -1052,42 +1067,43 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     onChange={e => loadTargetUserIntoModal(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-white border border-[#E5C3B3] rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#9A5643] cursor-pointer"
                   >
-                    <option value={currentUser?.id || 'leader'}>
-                      حسابي الشخصي ({currentUser?.name || settings.leaderName})
-                    </option>
-                    {customizableStaffList.map(staff => (
+                    {allRegisteredAccountsForWelcome.map(staff => (
                       <option key={staff.id} value={staff.id}>
-                        {staff.name} ({staff.role === 'supervisor' ? 'مشرفة المقرأة' : 'معلمة الحلقة'})
+                        {staff.name} ({getStaffDropdownRoleBadge(staff)})
                       </option>
                     ))}
                   </select>
 
                   {/* Quick permission toggle when a supervisor/teacher is selected */}
-                  {selectedTargetUserId !== (currentUser?.id || 'leader') && (
-                    <div className="pt-2 border-t border-[#E5C3B3]/60 flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold text-[#7B3F30]">
-                        صلاحية تعديل ترحيب الدخول:
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setTargetCanEditOwnWelcome(prev => !prev)}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-bold transition cursor-pointer ${
-                          targetCanEditOwnWelcome
-                            ? 'bg-white text-[#7B3F30] border-[#9A5643]'
-                            : 'bg-stone-100 text-stone-500 border-stone-200'
-                        }`}
-                      >
-                        <div
-                          className={`w-7 h-4 flex items-center rounded-full p-0.5 transition duration-200 ${
-                            targetCanEditOwnWelcome ? 'bg-[#9A5643] justify-end' : 'bg-stone-300 justify-start'
+                  {(() => {
+                    const selectedStaffObj = users.find(u => u.id === selectedTargetUserId);
+                    if (!selectedStaffObj || canManageAllWelcomeMessages(selectedStaffObj)) return null;
+                    return (
+                      <div className="pt-2 border-t border-[#E5C3B3]/60 flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold text-[#7B3F30]">
+                          صلاحية تعديل ترحيب الدخول:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setTargetCanEditOwnWelcome(prev => !prev)}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-bold transition cursor-pointer ${
+                            targetCanEditOwnWelcome
+                              ? 'bg-white text-[#7B3F30] border-[#9A5643]'
+                              : 'bg-stone-100 text-stone-500 border-stone-200'
                           }`}
                         >
-                          <div className="bg-white w-3 h-3 rounded-full shadow-2xs" />
-                        </div>
-                        <span>{targetCanEditOwnWelcome ? 'مسموح بالتعديل' : 'مخفي (افتراضي)'}</span>
-                      </button>
-                    </div>
-                  )}
+                          <div
+                            className={`w-7 h-4 flex items-center rounded-full p-0.5 transition duration-200 ${
+                              targetCanEditOwnWelcome ? 'bg-[#9A5643] justify-end' : 'bg-stone-300 justify-start'
+                            }`}
+                          >
+                            <div className="bg-white w-3 h-3 rounded-full shadow-2xs" />
+                          </div>
+                          <span>{targetCanEditOwnWelcome ? 'مسموح بالتعديل' : 'مخفي (افتراضي)'}</span>
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

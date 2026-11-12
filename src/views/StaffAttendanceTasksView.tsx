@@ -1,15 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   UserCheck, Clock, Wallet, ListTodo, FileText, CheckCircle2,
   AlertCircle, Trash2, PenLine, CheckSquare, Square, Calendar,
-  Eye, EyeOff, Lock, Plus, X, Check, ClipboardList, ShieldCheck
+  Eye, EyeOff, Lock, Plus, X, Check, ClipboardList, ShieldCheck,
+  MessageSquare, Pin, Send
 } from 'lucide-react';
 import {
   User,
   UserRole,
   StaffTaskItem,
-  StaffAttendanceStatus
+  StaffAttendanceStatus,
+  StaffChatMessage,
+  PinnedStaffAnnouncement
 } from '../types';
 import { renderUserAvatarBadge } from '../components/IslamicIconLibrary';
 import {
@@ -26,11 +29,20 @@ import {
   buildStaffAttendanceRecord,
   formatCurrentArabicTime,
   getStaffShortRoleLabel,
+  getStaffDropdownRoleBadge,
   getDefaultWorkingHoursForRole,
   readLocalStaffProfiles,
   writeLocalStaffProfiles,
   isFounderOrOwnerOrLeader,
-  isSupervisorOrTeacherOnly
+  isSupervisorOrTeacherOnly,
+  canEditOrDeleteStaffChat,
+  readResolvedStaffChatMessages,
+  writeLocalStaffChatMessages,
+  readLocalDeletedStaffChatIds,
+  writeLocalDeletedStaffChatIds,
+  resolvePinnedStaffAnnouncement,
+  writeLocalPinnedAnnouncement,
+  STAFF_CHAT_TTL_MS
 } from '../utils/staffHelpers';
 
 export const StaffAttendanceTasksView: React.FC = () => {
@@ -89,6 +101,165 @@ export const StaffAttendanceTasksView: React.FC = () => {
 
   const [editingNotesUserId, setEditingNotesUserId] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState<string>('');
+
+  // =========================================================================
+  // 24-Hour Staff Group Chat ("مساحة تواصل الكادر") State & Exclusive Controls
+  // =========================================================================
+  const canModerateStaffChat = canEditOrDeleteStaffChat(currentUser);
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
+  const [chatInputText, setChatInputText] = useState<string>('');
+  const [editingChatMsgId, setEditingChatMsgId] = useState<string | null>(null);
+  const [editingChatMsgText, setEditingChatMsgText] = useState<string>('');
+
+  const [isEditingPinnedAnnouncement, setIsEditingPinnedAnnouncement] = useState<boolean>(false);
+  const [pinnedAnnouncementDraft, setPinnedAnnouncementDraft] = useState<string>('');
+  const chatListEndRef = useRef<HTMLDivElement | null>(null);
+
+  const activeChatMessages: StaffChatMessage[] = readResolvedStaffChatMessages(settings, nowTick);
+  const pinnedAnnouncement: PinnedStaffAnnouncement = resolvePinnedStaffAnnouncement(settings);
+
+  // Auto-prune expired messages (> 24 hours) periodically and sync with cloud
+  useEffect(() => {
+    const pruneExpiredMessages = () => {
+      const currentNow = Date.now();
+      setNowTick(currentNow);
+      const rawSettingsMsgs = Array.isArray(settings?.staffChatMessages) ? settings.staffChatMessages : [];
+      if (rawSettingsMsgs.length > 0) {
+        const validMsgs = readResolvedStaffChatMessages(settings, currentNow);
+        if (validMsgs.length < rawSettingsMsgs.length) {
+          writeLocalStaffChatMessages(validMsgs);
+          void updateSettings({ staffChatMessages: validMsgs }, true);
+        }
+      }
+    };
+
+    pruneExpiredMessages();
+    const timer = setInterval(pruneExpiredMessages, 60000);
+    return () => clearInterval(timer);
+  }, [settings?.staffChatMessages]);
+
+  const handleSendStaffChatMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanText = chatInputText.trim();
+    if (!cleanText) return;
+
+    const sender = currentUser || users[0];
+    const nowMs = Date.now();
+    const newMsg: StaffChatMessage = {
+      id: `schat-${nowMs}-${Math.random().toString(36).slice(2, 7)}`,
+      senderId: sender?.id || 'staff',
+      senderName: sender?.name || 'عضو الكادر',
+      senderRole: sender?.role || 'teacher',
+      senderTitle: getStaffDropdownRoleBadge(sender),
+      text: cleanText,
+      createdAt: nowMs,
+      createdAtIso: new Date(nowMs).toISOString(),
+      hijriTimeLabel: formatCurrentArabicTime(new Date(nowMs))
+    };
+
+    const currentValid = readResolvedStaffChatMessages(settings, nowMs);
+    const nextMessages = [...currentValid, newMsg];
+    writeLocalStaffChatMessages(nextMessages);
+    setChatInputText('');
+    setNowTick(nowMs);
+    await updateSettings({ staffChatMessages: nextMessages }, true);
+    setTimeout(() => {
+      chatListEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 80);
+  };
+
+  const handleSaveEditedChatMessage = async (msgId: string) => {
+    if (!canModerateStaffChat) return;
+    const cleanText = editingChatMsgText.trim();
+    if (!cleanText) {
+      showToast('لا يمكن حفظ رسالة فارغة', 'error');
+      return;
+    }
+    const nowMs = Date.now();
+    const currentValid = readResolvedStaffChatMessages(settings, nowMs);
+    const nextMessages = currentValid.map(m =>
+      m.id === msgId
+        ? {
+            ...m,
+            text: cleanText,
+            editedAt: nowMs,
+            editedBy: currentUser?.name || 'إدارة المنصة'
+          }
+        : m
+    );
+    writeLocalStaffChatMessages(nextMessages);
+    setEditingChatMsgId(null);
+    setEditingChatMsgText('');
+    setNowTick(nowMs);
+    await updateSettings({ staffChatMessages: nextMessages }, true);
+    showToast('تم تعديل الرسالة ومزامنتها فوراً', 'success');
+  };
+
+  const handleDeleteChatMessage = async (msgId: string) => {
+    if (!canModerateStaffChat) return;
+    const nowMs = Date.now();
+    const currentDeleted = [
+      ...new Set([
+        ...readLocalDeletedStaffChatIds(),
+        ...(Array.isArray(settings?.deletedStaffChatIds) ? settings.deletedStaffChatIds : []),
+        msgId
+      ])
+    ];
+    writeLocalDeletedStaffChatIds(currentDeleted);
+
+    const nextMessages = readResolvedStaffChatMessages(settings, nowMs).filter(m => m.id !== msgId);
+    writeLocalStaffChatMessages(nextMessages);
+    setNowTick(nowMs);
+    await updateSettings(
+      {
+        staffChatMessages: nextMessages,
+        deletedStaffChatIds: currentDeleted
+      },
+      true
+    );
+    showToast('تم حذف الرسالة من مساحة تواصل الكادر', 'info');
+  };
+
+  const handleSavePinnedAnnouncement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canModerateStaffChat) return;
+    const cleanText = pinnedAnnouncementDraft.trim();
+    const nextPinned: PinnedStaffAnnouncement = {
+      text: cleanText,
+      updatedAt: Date.now(),
+      updatedBy: currentUser?.name || 'إدارة المنصة'
+    };
+    writeLocalPinnedAnnouncement(nextPinned);
+    setIsEditingPinnedAnnouncement(false);
+    await updateSettings({ pinnedStaffAnnouncement: nextPinned }, true);
+    showToast(cleanText ? 'تم تحديث التعميم الإداري المثبت بنجاح' : 'تم مسح التعميم الإداري المثبت', 'success');
+  };
+
+  const handleDeletePinnedAnnouncement = async () => {
+    if (!canModerateStaffChat) return;
+    const clearedPinned: PinnedStaffAnnouncement = {
+      text: '',
+      updatedAt: Date.now(),
+      updatedBy: currentUser?.name || 'إدارة المنصة'
+    };
+    writeLocalPinnedAnnouncement(clearedPinned);
+    setIsEditingPinnedAnnouncement(false);
+    setPinnedAnnouncementDraft('');
+    await updateSettings({ pinnedStaffAnnouncement: clearedPinned }, true);
+    showToast('تم حذف التعميم الإداري المثبت', 'info');
+  };
+
+  const formatRemaining24hLabel = (createdAtMs: number): string => {
+    const elapsedMs = Math.max(0, nowTick - createdAtMs);
+    const remainingMs = Math.max(0, STAFF_CHAT_TTL_MS - elapsedMs);
+    const totalMinutes = Math.ceil(remainingMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours > 0) {
+      return `تُحذف بعد ${hours} س${minutes > 0 ? ` و${minutes} د` : ''}`;
+    }
+    return `تُحذف بعد ${ Math.max(1, minutes) } د`;
+  };
 
   const roleBadgeStyles: Record<UserRole, string> = {
     developer: 'bg-[#F6EFEA] text-[#7B3F30] border-[#E5C3B3]',
@@ -390,6 +561,300 @@ export const StaffAttendanceTasksView: React.FC = () => {
             <span>{isPrivacyMode ? 'إظهار الرواتب' : 'تمويه الرواتب'}</span>
           </button>
         </div>
+      </div>
+
+      {/* =====================================================================
+          TOP SECTION: 24-HOUR STAFF GROUP CHAT ("مساحة تواصل الكادر")
+          Always visible and usable for ALL roles (Reefa, Omar, Supervisors, Teachers).
+          Exclusive Edit & Delete (<PenLine /> & <Trash2 />) for Reefa & Omar ONLY.
+         ===================================================================== */}
+      <div className="bg-white rounded-3xl border border-[#E8E2DC] shadow-2xs overflow-hidden">
+        {/* Chat Card Header */}
+        <div className="p-4 sm:p-5 bg-white border-b border-[#E8E2DC] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[#F6EFEA] border border-[#E5C3B3] text-[#9A5643] flex items-center justify-center shrink-0">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-bold text-stone-900 font-quran">
+                  مساحة تواصل الكادر
+                </h3>
+                <span className="text-[11px] font-bold text-[#7B3F30] bg-[#FAF6F3] border border-[#E8E2DC] px-2.5 py-0.5 rounded-lg">
+                  {activeChatMessages.length} رسالة نشطة
+                </span>
+              </div>
+              <p className="text-xs text-[#9A5643] font-medium mt-1 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+                <span>الرسائل في هذه المساحة مؤقتة وتُحذف تلقائياً بعد مرور 24 ساعة</span>
+              </p>
+            </div>
+          </div>
+
+          {/* Add / Edit Pinned Announcement quick trigger for Reefa & Omar if announcement was deleted */}
+          {canModerateStaffChat && !pinnedAnnouncement.text && !isEditingPinnedAnnouncement && (
+            <button
+              type="button"
+              onClick={() => {
+                setPinnedAnnouncementDraft('');
+                setIsEditingPinnedAnnouncement(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF6F3] hover:bg-[#F3EAE3] text-[#7B3F30] border border-[#E8E2DC] text-xs font-bold transition cursor-pointer self-start sm:self-auto"
+            >
+              <Pin className="w-3.5 h-3.5 text-[#9A5643]" />
+              <span>إضافة تعميم إداري مثبت</span>
+            </button>
+          )}
+        </div>
+
+        {/* Pinned Administrative Announcement ("تعميم إداري مثبت") */}
+        {(pinnedAnnouncement.text || isEditingPinnedAnnouncement) && (
+          <div className="px-4 sm:px-5 py-3.5 bg-[#FAF6F3] border-b border-[#E8E2DC]">
+            {isEditingPinnedAnnouncement && canModerateStaffChat ? (
+              <form onSubmit={handleSavePinnedAnnouncement} className="space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#7B3F30]">
+                    <Pin className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+                    <span>تعديل التعميم الإداري المثبت:</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingPinnedAnnouncement(false)}
+                    className="p-1 text-stone-400 hover:text-stone-600 rounded-lg cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    value={pinnedAnnouncementDraft}
+                    onChange={e => setPinnedAnnouncementDraft(e.target.value)}
+                    placeholder="اكتبي نص التعميم الإداري المثبت لجميع المعلمات والمشرفات..."
+                    className="flex-1 px-3.5 py-2 bg-white border border-[#E8E2DC] rounded-xl text-xs font-semibold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#9A5643]"
+                  />
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="submit"
+                      className="inline-flex items-center gap-1 px-3.5 py-2 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold transition cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>حفظ التعميم</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingPinnedAnnouncement(false)}
+                      className="px-3 py-2 rounded-xl bg-white border border-[#E8E2DC] text-stone-600 text-xs font-semibold hover:bg-stone-50 transition cursor-pointer"
+                    >
+                      إلغاء
+                    </button>
+                  </div>
+                </div>
+              </form>
+            ) : (
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-xl bg-white border border-[#E8E2DC] text-[#9A5643] flex items-center justify-center shrink-0 mt-0.5">
+                    <Pin className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[11px] font-bold text-[#7B3F30]">
+                        تعميم إداري مثبت
+                      </span>
+                      {pinnedAnnouncement.updatedBy && (
+                        <span className="text-[10px] text-stone-500">
+                          • بواسطة: {pinnedAnnouncement.updatedBy}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs font-semibold text-stone-800 mt-0.5 leading-relaxed break-words">
+                      {pinnedAnnouncement.text}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Exclusive Edit & Delete on Pinned Announcement for Reefa & Omar ONLY */}
+                {canModerateStaffChat && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPinnedAnnouncementDraft(pinnedAnnouncement.text);
+                        setIsEditingPinnedAnnouncement(true);
+                      }}
+                      title="تعديل التعميم الإداري المثبت"
+                      aria-label="تعديل التعميم الإداري المثبت"
+                      className="p-1.5 rounded-lg bg-white hover:bg-[#F6EFEA] text-[#9A5643] border border-[#E8E2DC] transition cursor-pointer"
+                    >
+                      <PenLine className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeletePinnedAnnouncement}
+                      title="حذف التعميم الإداري المثبت"
+                      aria-label="حذف التعميم الإداري المثبت"
+                      className="p-1.5 rounded-lg bg-white hover:bg-rose-50 text-stone-500 hover:text-rose-600 border border-[#E8E2DC] transition cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Messages Feed (24-Hour Active Messages) */}
+        <div className="p-4 sm:p-5 bg-[#FAF8F6]/60 max-h-80 overflow-y-auto space-y-3">
+          {activeChatMessages.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-[#E8E2DC] p-6 text-center space-y-1.5">
+              <div className="w-9 h-9 rounded-2xl bg-[#FAF6F3] border border-[#E8E2DC] text-[#9A5643] flex items-center justify-center mx-auto">
+                <MessageSquare className="w-4 h-4" />
+              </div>
+              <p className="text-xs font-bold text-stone-700">
+                لا توجد رسائل خلال الـ 24 ساعة الماضية
+              </p>
+              <p className="text-[11px] text-stone-500">
+                اكتبي رسالتكِ أدناه للتواصل المباشر مع إدارة المقرأة والمشرفات والمعلمات
+              </p>
+            </div>
+          ) : (
+            activeChatMessages.map(msg => {
+              const isOwnMsg = currentUser?.id === msg.senderId || currentUser?.name === msg.senderName;
+              const isEditingThisMsg = editingChatMsgId === msg.id && canModerateStaffChat;
+              const isSenderLeaderOrOwner =
+                msg.senderRole === 'owner' || msg.senderRole === 'leader' || msg.senderRole === 'developer';
+
+              return (
+                <div
+                  key={msg.id}
+                  className={`p-3.5 rounded-2xl bg-white border transition ${
+                    isOwnMsg
+                      ? 'border-[#D4B8A8] shadow-2xs'
+                      : 'border-[#E8E2DC]'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-stone-900">
+                        {msg.senderName}
+                      </span>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                          isSenderLeaderOrOwner
+                            ? 'bg-[#F6EFEA] text-[#7B3F30] border-[#E5C3B3]'
+                            : msg.senderRole === 'supervisor'
+                            ? 'bg-[#FDF6F2] text-[#9A5643] border-[#E5C3B3]'
+                            : 'bg-[#EBF3EE] text-[#2D5A43] border-[#C5DEC9]'
+                        }`}
+                      >
+                        {msg.senderTitle || getStaffShortRoleLabel(msg.senderRole)}
+                      </span>
+                      <span className="text-[11px] text-stone-400 font-mono">
+                        {msg.hijriTimeLabel || formatCurrentArabicTime(new Date(msg.createdAt))}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-[10px] text-[#9A5643] bg-[#FAF6F3] px-2 py-0.5 rounded-md border border-[#E8E2DC]">
+                        <Clock className="w-2.5 h-2.5 shrink-0" />
+                        <span>{formatRemaining24hLabel(msg.createdAt)}</span>
+                      </span>
+                      {msg.editedAt && (
+                        <span className="text-[10px] text-stone-400">
+                          (معدّلة)
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Exclusive Edit & Delete Icons on Messages for Reefa & Omar ONLY */}
+                    {canModerateStaffChat && !isEditingThisMsg && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingChatMsgId(msg.id);
+                            setEditingChatMsgText(msg.text);
+                          }}
+                          title="تعديل نص الرسالة"
+                          aria-label="تعديل نص الرسالة"
+                          className="p-1.5 rounded-lg bg-[#FAF6F3] hover:bg-[#F3EAE3] text-[#9A5643] border border-[#E8E2DC] transition cursor-pointer"
+                        >
+                          <PenLine className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteChatMessage(msg.id)}
+                          title="حذف الرسالة"
+                          aria-label="حذف الرسالة"
+                          className="p-1.5 rounded-lg bg-[#FAF6F3] hover:bg-rose-50 text-stone-500 hover:text-rose-600 border border-[#E8E2DC] transition cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {isEditingThisMsg ? (
+                    <div className="mt-2 flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={editingChatMsgText}
+                        onChange={e => setEditingChatMsgText(e.target.value)}
+                        className="flex-1 px-3 py-2 bg-[#FAF8F6] border border-[#E8E2DC] rounded-xl text-xs font-semibold text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#9A5643]"
+                      />
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleSaveEditedChatMessage(msg.id)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold transition cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>حفظ</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingChatMsgId(null);
+                            setEditingChatMsgText('');
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-white border border-[#E8E2DC] text-stone-600 text-xs font-semibold hover:bg-stone-50 transition cursor-pointer"
+                        >
+                          إلغاء
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs sm:text-sm text-stone-800 leading-relaxed whitespace-pre-wrap break-words">
+                      {msg.text}
+                    </p>
+                  )}
+                </div>
+              );
+            })
+          )}
+          <div ref={chatListEndRef} />
+        </div>
+
+        {/* Message Input Bar — Visible and usable for ALL roles */}
+        <form
+          onSubmit={handleSendStaffChatMessage}
+          className="p-3.5 sm:p-4 bg-white border-t border-[#E8E2DC] flex items-center gap-2.5"
+        >
+          <input
+            type="text"
+            value={chatInputText}
+            onChange={e => setChatInputText(e.target.value)}
+            placeholder={`اكتبي رسالة للكادر باسم (${currentUser?.name || 'عضو الكادر'})...`}
+            className="flex-1 px-4 py-2.5 bg-[#FAF8F6] border border-[#E8E2DC] rounded-2xl text-xs sm:text-sm font-medium text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#9A5643] focus:bg-white transition"
+          />
+          <button
+            type="submit"
+            disabled={!chatInputText.trim()}
+            className="inline-flex items-center justify-center gap-1.5 px-4 sm:px-5 py-2.5 rounded-2xl bg-[#9A5643] hover:bg-[#7B3F30] disabled:opacity-50 text-white text-xs font-bold transition cursor-pointer shrink-0 shadow-2xs"
+          >
+            <Send className="w-3.5 h-3.5 shrink-0" />
+            <span>إرسال</span>
+          </button>
+        </form>
       </div>
 
       {/* =====================================================================
