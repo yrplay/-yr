@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Settings, Download, Upload, RotateCcw, ShieldAlert,
-  Save, CheckCircle2, History, Database, Cloud, AlertCircle,
+  Save, CheckCircle2, XCircle, History, Database, Cloud, AlertCircle,
   Palette, Lock, Sparkles, Check, Share2, Copy, FileSignature,
-  Stamp, Trash2, Type, Image as ImageIcon
+  Stamp, Trash2, Type, Image as ImageIcon, Sun, Moon, BookOpen, Shield, Star
 } from 'lucide-react';
 import { OfficialSeal } from '../components/OfficialSeal';
 import { PWAInstallButton } from '../components/PWAInstallButton';
@@ -317,7 +317,7 @@ export const SettingsView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">⚙️</span>
+            <Palette className="w-5 h-5 text-[#9A5643] shrink-0" />
             <h2 className="text-xl font-bold text-stone-900 font-quran">تخصيص الهوية والشعار والختم والتواقيع</h2>
           </div>
           <p className="text-xs text-stone-500">
@@ -352,7 +352,7 @@ export const SettingsView: React.FC = () => {
         <div className="bg-white p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4">
           <div className="flex items-center justify-between border-b border-stone-100 pb-3">
             <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
-              <span className="text-lg">🌓</span>
+              <Palette className="w-4 h-4 text-[#9A5643] shrink-0" />
               <span>مظهر المنصة: الوضع الليلي والوضع النهاري (Dark & Light Theme):</span>
             </h3>
             <span className="text-[11px] text-stone-400">ينطبق على كامل واجهات وشاشات التطبيق فورياً</span>
@@ -362,7 +362,7 @@ export const SettingsView: React.FC = () => {
             <div
               onClick={() => {
                 setTheme('light');
-                showToast('تم تفعيل الوضع النهاري ☀️');
+                showToast('تم تفعيل الوضع النهاري');
               }}
               className={`p-4 rounded-2xl border-2 transition cursor-pointer flex items-center justify-between ${
                 theme === 'light'
@@ -371,8 +371,8 @@ export const SettingsView: React.FC = () => {
               }`}
             >
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center text-2xl shadow-2xs">
-                  ☀️
+                <div className="w-11 h-11 rounded-2xl bg-amber-100 text-[#9A5643] flex items-center justify-center shadow-2xs">
+                  <Sun className="w-5 h-5" />
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-stone-900">الوضع النهاري (Light Mode)</h4>
@@ -380,8 +380,9 @@ export const SettingsView: React.FC = () => {
                 </div>
               </div>
               {theme === 'light' && (
-                <span className="text-xs font-bold text-[#8E5364] bg-white px-3 py-1 rounded-full border border-[#8E5364]/30 shadow-2xs">
-                  المفعل حالياً ✅
+                <span className="inline-flex items-center gap-1 text-xs font-bold text-[#8E5364] bg-white px-3 py-1 rounded-full border border-[#8E5364]/30 shadow-2xs">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>المفعل حالياً</span>
                 </span>
               )}
             </div>
@@ -389,7 +390,7 @@ export const SettingsView: React.FC = () => {
             <div
               onClick={() => {
                 setTheme('dark');
-                showToast('تم تفعيل الوضع الليلي 🌙');
+                showToast('تم تفعيل الوضع الليلي');
               }}
               className={`p-4 rounded-2xl border-2 transition cursor-pointer flex items-center justify-between ${
                 theme === 'dark'
@@ -398,8 +399,8 @@ export const SettingsView: React.FC = () => {
               }`}
             >
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-[#262632] text-amber-300 flex items-center justify-center text-2xl shadow-2xs">
-                  🌙
+                <div className="w-11 h-11 rounded-2xl bg-[#262632] text-amber-300 flex items-center justify-center shadow-2xs">
+                  <Moon className="w-5 h-5" />
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-stone-900">الوضع الليلي (Dark Mode)</h4>
@@ -407,8 +408,9 @@ export const SettingsView: React.FC = () => {
                 </div>
               </div>
               {theme === 'dark' && (
-                <span className="text-xs font-bold text-amber-300 bg-stone-800 px-3 py-1 rounded-full border border-amber-400/30 shadow-2xs">
-                  المفعل حالياً ✅
+                <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-300 bg-stone-800 px-3 py-1 rounded-full border border-amber-400/30 shadow-2xs">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>المفعل حالياً</span>
                 </span>
               )}
             </div>
@@ -419,7 +421,7 @@ export const SettingsView: React.FC = () => {
         <div className="bg-white p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4">
           <div className="flex items-center justify-between border-b border-stone-100 pb-3">
             <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
-              <span className="text-lg">🏛️</span>
+              <Settings className="w-4 h-4 text-[#9A5643] shrink-0" />
               <span>١. العناوين والمسميات الأساسية للمقرأة:</span>
             </h3>
             <span className="text-[11px] text-stone-400">تظهر في الترويسة والشهادات والتقارير</span>
@@ -579,7 +581,7 @@ export const SettingsView: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="p-4 bg-[#FCFAF8] dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-1.5">
               <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
-                <span>🎧</span>
+                <Sparkles className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
                 <span>عدد مرات الاستماع للقارئ المجوّد:</span>
               </label>
               <input
@@ -596,7 +598,7 @@ export const SettingsView: React.FC = () => {
 
             <div className="p-4 bg-[#FCFAF8] dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-1.5">
               <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
-                <span>📖</span>
+                <BookOpen className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
                 <span>عدد مرات التلاوة نظراً من المصحف:</span>
               </label>
               <input
@@ -613,7 +615,7 @@ export const SettingsView: React.FC = () => {
 
             <div className="p-4 bg-[#FCFAF8] dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-1.5">
               <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
-                <span>🔁</span>
+                <RotateCcw className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
                 <span>عدد مرات التكرار المتقن غيباً:</span>
               </label>
               <input
@@ -632,7 +634,7 @@ export const SettingsView: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="p-4 bg-[#FCFAF8] dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-1.5">
               <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
-                <span>🌿</span>
+                <BookOpen className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
                 <span>مقدار المراجعة الصغرى الافتراضي:</span>
               </label>
               <input
@@ -648,7 +650,7 @@ export const SettingsView: React.FC = () => {
 
             <div className="p-4 bg-[#FCFAF8] dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-1.5">
               <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
-                <span>🛡️</span>
+                <Shield className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
                 <span>مقدار مراجعة التمكين الافتراضي:</span>
               </label>
               <input
@@ -664,7 +666,7 @@ export const SettingsView: React.FC = () => {
 
             <div className="p-4 bg-[#FCFAF8] dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-1.5">
               <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
-                <span>⭐️</span>
+                <Star className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
                 <span>وزن كل شرط في درجات التسميع:</span>
               </label>
               <input
@@ -817,13 +819,23 @@ export const SettingsView: React.FC = () => {
                     updateSettings({ showOfficialSeal: nextVal });
                     showToast(nextVal ? 'تم تفعيل إظهار الختم في الشهادات والتقارير ✅' : 'تم إخفاء الختم بالكامل من الشهادات والتقارير 🚫');
                   }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border inline-flex items-center gap-1.5 ${
                     (form.showOfficialSeal ?? true)
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                       : 'bg-stone-100 text-stone-600 border-stone-300 hover:bg-stone-200'
                   }`}
                 >
-                  {(form.showOfficialSeal ?? true) ? 'الختم مُفعّل وظاهر ✅' : 'الختم مخفي / محذوف ❌'}
+                  {(form.showOfficialSeal ?? true) ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>الختم مُفعّل وظاهر</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>الختم مخفي / محذوف</span>
+                    </>
+                  )}
                 </button>
               </div>
 

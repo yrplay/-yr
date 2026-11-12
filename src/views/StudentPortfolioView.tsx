@@ -4,7 +4,8 @@ import {
   Download, Award, Calendar, CheckCircle2,
   Clock, BookOpen, Sparkles, Trophy, HeartHandshake, FileText,
   UserCheck, Shield, ChevronLeft, Check, FileSignature,
-  Eye, Edit3, Palette, X, RefreshCw, Upload, Trash2, Printer
+  Eye, Edit3, Palette, X, RefreshCw, Upload, Trash2, Printer,
+  ScrollText, Star, Unlock, AlertTriangle, Save
 } from 'lucide-react';
 import { OfficialSeal } from '../components/OfficialSeal';
 import { isStudentDefaultNoorania } from './MonthlyPlansView';
@@ -155,7 +156,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
     : 100;
   const prepEvaluation = prepAvgOutOf10 >= 9
     ? {
-        badgeText: 'ممتازة وملتزمة بالتحضير المتقن ⭐',
+        badgeText: 'ممتازة وملتزمة بالتحضير المتقن',
         badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
         barColor: '#2D5A43',
         htmlColor: '#047857',
@@ -164,7 +165,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
       }
     : prepAvgOutOf10 >= 7
     ? {
-        badgeText: 'جيدة جداً - تحتاج زيادة التكرار 📈',
+        badgeText: 'جيدة جداً - تحتاج زيادة التكرار',
         badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
         barColor: '#D97706',
         htmlColor: '#b45309',
@@ -172,12 +173,12 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         htmlBorder: '#fde68a'
       }
     : {
-        badgeText: 'دون المستوى المطلوب - يلزم العناية بالاستماع والتكرار ⚠️',
-        badgeClass: 'bg-rose-50 text-rose-800 border-rose-200',
-        barColor: '#E11D48',
-        htmlColor: '#be123c',
-        htmlBg: '#fff1f2',
-        htmlBorder: '#fecdd3'
+        badgeText: 'دون المستوى المطلوب - يلزم العناية بالاستماع والتكرار',
+        badgeClass: 'bg-[#FDF6F2] text-[#9A5643] border-[#E5C3B3]',
+        barColor: '#9A5643',
+        htmlColor: '#9A5643',
+        htmlBg: '#FDF6F2',
+        htmlBorder: '#E5C3B3'
       };
 
   // Dynamic Free Color Customization state
@@ -825,7 +826,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
       {/* Selector & Actions Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div className="flex items-center gap-3">
-          <span className="text-xl">📜</span>
+          <ScrollText className="w-6 h-6 text-[#9A5643] shrink-0" />
           <div>
             <label className="block text-[11px] font-bold text-stone-600 mb-0.5">
               اختاري الطالبة لعرض ملف إنجازها وشهادتها الشهرية:
@@ -876,7 +877,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             className="flex items-center gap-1.5 px-4 py-2 hover:brightness-105 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs transition cursor-pointer active:scale-95"
           >
             <Eye className="w-4 h-4" />
-            <span>معاينة الشهادة وتنسيقها 👁️</span>
+            <span>معاينة الشهادة وتنسيقها</span>
           </button>
         </div>
       </div>
@@ -898,10 +899,10 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               />
             ) : (
               <div
-                className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shadow-2xs"
+                className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-2xs"
                 style={{ backgroundColor: `${customPrimaryColor}15`, border: `1.5px solid ${customPrimaryColor}30` }}
               >
-                📖
+                <BookOpen className="w-7 h-7 text-[#9A5643]" />
               </div>
             )}
             <div>
@@ -947,7 +948,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             <strong className="text-stone-800">أ. {circle?.teacherName} • أ. {circle?.supervisorName}</strong>
           </div>
           <div>
-            <span className="text-stone-400 block text-[10px]">الرفيقة القرآنية 🤝:</span>
+            <span className="text-stone-400 block text-[10px]">الرفيقة القرآنية:</span>
             <strong className="text-[#7A4B37]">
               {student.partnerStudentName ? <span className="privacy-student-name">{student.partnerStudentName}</span> : 'لم تعين'}
             </strong>
@@ -1013,8 +1014,9 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               </div>
 
               <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
-                <span className={`px-3 py-1.5 rounded-xl text-xs font-extrabold border ${prepEvaluation.badgeClass}`}>
-                  {prepEvaluation.badgeText}
+                <span className={`px-3 py-1.5 rounded-xl text-xs font-extrabold border inline-flex items-center gap-1.5 ${prepEvaluation.badgeClass}`}>
+                  {prepAvgOutOf10 < 7 ? <AlertTriangle className="w-3.5 h-3.5 text-[#9A5643]" /> : <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />}
+                  <span>{prepEvaluation.badgeText}</span>
                 </span>
                 <div className="bg-white px-3.5 py-1.5 rounded-xl border border-stone-200 text-center shadow-2xs">
                   <span className="text-[10px] text-stone-400 block">متوسط التحضير</span>
@@ -1082,15 +1084,19 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               {isFreeMemorization && isNewMemPlanEnabled && (
                 <div className="flex justify-between items-center py-1 px-2 rounded-xl bg-amber-50/80 border border-amber-200/80">
                   <span className="font-bold text-amber-900">نوع الخطة: الحفظ الحر</span>
-                  <span className="text-[11px] font-extrabold text-[#8E5364]">رصد تراكمي مفتوح 🔓</span>
+                  <span className="text-[11px] font-extrabold text-[#8E5364] inline-flex items-center gap-1">
+                    <span>رصد تراكمي مفتوح</span>
+                    <Unlock className="w-3 h-3 text-[#9A5643]" />
+                  </span>
                 </div>
               )}
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>{isFreeMemorization ? 'الحفظ الحر:' : 'الحفظ الجديد المنجز (بشروط):'}</span>
                 {isNewMemPlanEnabled ? (
                   isFreeMemorization ? (
-                    <strong className="text-emerald-800 font-extrabold">
-                      إجمالي المنجز: {doneNewPages} صفحة متقنة 🌟
+                    <strong className="text-emerald-800 font-extrabold inline-flex items-center gap-1">
+                      <span>إجمالي المنجز: {doneNewPages} صفحة متقنة</span>
+                      <Star className="w-3.5 h-3.5 text-[#9A5643] fill-[#9A5643]" />
                     </strong>
                   ) : (
                     <strong className="text-stone-900">{doneNewPages} من {targetNewPages} صفحات</strong>
@@ -1162,18 +1168,20 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                 </strong>
               </div>
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
-                <span>بطاقات التحضير المبكر ⭐:</span>
+                <span>بطاقات التحضير المبكر:</span>
                 <strong className="text-amber-800">{score?.earlyPrepCount} بطاقات في الموعد</strong>
               </div>
               <div className="flex justify-between items-center py-1 px-1.5 rounded-xl bg-amber-50/70 border border-amber-200/70">
                 <span className="font-bold text-amber-900">نجوم الانضباط الأسبوعية:</span>
-                <strong className="text-amber-900 font-extrabold tracking-wide">
-                  {weeklyStarsEmojis} <span className="text-[10px] font-bold text-amber-700">({weeklyStarsCount} من {totalActiveWeeksCount})</span>
+                <strong className="text-amber-900 font-extrabold tracking-wide inline-flex items-center gap-1">
+                  <Star className="w-3.5 h-3.5 text-[#9A5643] fill-[#9A5643]" />
+                  <span className="text-[10px] font-bold text-amber-700">({weeklyStarsCount} من {totalActiveWeeksCount})</span>
                 </strong>
               </div>
               {hasFullWeeklyStarsHonor && (
                 <div className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-100 via-yellow-50 to-amber-100 border border-amber-300 text-amber-950 font-extrabold text-[11px] flex items-center justify-center gap-1.5 shadow-2xs">
-                  <span>طالبة ملتزمة بنجوم الانضباط الكاملة 🌟</span>
+                  <Star className="w-3.5 h-3.5 text-[#9A5643] fill-[#9A5643]" />
+                  <span>طالبة ملتزمة بنجوم الانضباط الكاملة</span>
                 </div>
               )}
               <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900 items-center">
@@ -1206,11 +1214,17 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
               </div>
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>استخراج الأمثلة من المحفوظ:</span>
-                <strong className="text-emerald-700">متقن ✅</strong>
+                <strong className="text-emerald-700 inline-flex items-center gap-1">
+                  <span>متقن</span>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                </strong>
               </div>
               <div className="flex justify-between items-center py-0.5 hover:bg-stone-50 rounded px-1 transition">
                 <span>تطبيق الأحكام أثناء التسميع:</span>
-                <strong className="text-emerald-700">ممتاز ✅</strong>
+                <strong className="text-emerald-700 inline-flex items-center gap-1">
+                  <span>ممتاز</span>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                </strong>
               </div>
               <div className="flex justify-between pt-1 border-t border-stone-100 font-bold text-stone-900 items-center">
                 <span>درجة التجويد «أتقني»:</span>
@@ -1227,8 +1241,8 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
           >
             <div className="flex items-center justify-between border-b border-stone-100 pb-2">
               <h4 className="font-bold text-stone-900 text-sm flex items-center gap-2">
-                <Trophy className="w-4 h-4 text-amber-600" />
-                <span>تحدي الخميس والمراجعة الثنائية 🤝</span>
+                <Trophy className="w-4 h-4 text-[#9A5643]" />
+                <span>تحدي الخميس والمراجعة الثنائية</span>
               </h4>
               <span className="text-[10px] font-bold text-amber-800 group-hover:underline flex items-center gap-0.5 bg-amber-50 px-2 py-0.5 rounded-lg">
                 فتح قسم التحديات ↗
@@ -1368,7 +1382,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
         {/* Certificate Issuance & Development Note */}
         <div className="mt-4 pt-3 border-t border-[#E8DFD8]/60 flex flex-col sm:flex-row items-center justify-between text-[11px] text-stone-400 gap-2">
           <div className="flex items-center gap-1.5">
-            <span>🛡️</span>
+            <Shield className="w-3.5 h-3.5 text-[#9A5643]" />
             <span>شهادة إنجاز رسمية موثقة ومعتمدة من إدارة مقرأة {settings.name || 'غيث الغيم'}</span>
           </div>
           <div className="flex items-center gap-1 text-[10px] text-stone-500 font-mono">
@@ -1389,7 +1403,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
             {/* Modal Top Header */}
             <div className="px-6 py-4 bg-[#FAF7F5] border-b border-[#E8DFD8] flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
-                <span className="text-xl">📜</span>
+                <ScrollText className="w-5 h-5 text-[#9A5643]" />
                 <div>
                   <h3 className="text-base sm:text-lg font-bold text-stone-900 font-quran">
                     معاينة واعتماد شهادة إنجاز: {student.name}

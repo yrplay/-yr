@@ -4,12 +4,13 @@ import { ViewType } from '../components/Sidebar';
 import {
   Users, Layers, Award, CheckCircle2, AlertTriangle, ArrowUpRight,
   TrendingUp, Calendar, Sparkles, BookOpen, Clock, HeartHandshake,
-  UserCheck, UserCog, ShieldAlert, Plus, ChevronLeft, Edit3, Filter, Check, History, Eye, EyeOff
+  UserCheck, UserCog, ShieldAlert, Plus, ChevronLeft, Edit3, Filter, Check, History, Eye, EyeOff, Star, Send
 } from 'lucide-react';
 import { AuditLogModal } from '../components/AuditLogModal';
 import { hasFullAccess } from '../types';
 import { formatHijriDate, formatHijriShort, getTodayISO } from '../utils/hijriDate';
 import { RenderEntityIcon } from '../components/CircleIconLibrary';
+import { triggerStudentTelegramAlert } from '../utils/telegramAlert';
 
 interface DashboardViewProps {
   onNavigate: (view: ViewType) => void;
@@ -26,7 +27,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     students, circles, tracks, attendanceRecords, dailyRecords,
     studentAtqiniSubmissions, studentChallengeSubmissions,
     allStudentScores, settings, auditLogs, selectedTrackId, setSelectedTrackId,
-    updateSettings, currentUser, isPrivacyMode, togglePrivacyMode
+    updateSettings, currentUser, isPrivacyMode, togglePrivacyMode, showToast
   } = useApp();
 
   const privacyBlurClass = isPrivacyMode
@@ -341,7 +342,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           )}
           <div className="flex items-center justify-between text-[11px] text-stone-500">
-            <span><span className={privacyBlurClass}>{earlyPrepToday}</span> بطاقة تحضير مبكر ⭐</span>
+            <span className="inline-flex items-center gap-1">
+              <span className={privacyBlurClass}>{earlyPrepToday}</span>
+              <span>بطاقة تحضير مبكر</span>
+              <Star className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+            </span>
             <ChevronLeft className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-[-2px] transition" />
           </div>
         </div>
@@ -443,7 +448,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <Award className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="font-bold text-stone-900 text-sm">نجمات المقرأة المتميزات 🌟</h3>
+                <h3 className="font-bold text-stone-900 text-sm flex items-center gap-1.5">
+                  <span>نجمات المقرأة المتميزات</span>
+                  <Star className="w-4 h-4 text-[#9A5643] shrink-0" />
+                </h3>
                 <p className="text-[11px] text-stone-400">أعلى نسب تراكمية وانضباط في الحفظ والتجويد</p>
               </div>
             </div>
@@ -500,7 +508,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-xl bg-[#FDF6F2] border border-[#E5C3B3] text-[#9A5643] flex items-center justify-center">
                 <AlertTriangle className="w-4 h-4" />
               </div>
               <div>
@@ -508,7 +516,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <p className="text-[11px] text-stone-400">طالبات بحاجة إلى رعاية وتواصل من المشرفة</p>
               </div>
             </div>
-            <span className={`text-xs font-bold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full ${privacyBlurClass}`}>
+            <span className={`text-xs font-bold text-[#9A5643] bg-[#FDF6F2] border border-[#E5C3B3] px-2.5 py-0.5 rounded-full ${privacyBlurClass}`}>
               {atRiskAbsence.length + (incompleteDailyLogs.length > 0 ? 1 : 0)} تنبيه
             </span>
           </div>
@@ -519,19 +527,36 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 const score = allStudentScores[st.id];
                 const circle = circles.find(c => c.id === st.circleId);
                 return (
-                  <div key={st.id} className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200/80 flex items-center justify-between text-xs">
+                  <div key={st.id} className="p-3 rounded-2xl bg-[#FDF6F2] border border-[#E5C3B3] flex items-center justify-between gap-2 text-xs">
                     <div>
-                      <div className="font-bold text-amber-900"><span className={privacyBlurClass}>{st.name}</span></div>
-                      <div className="text-amber-700 text-[11px]">
-                        {circle?.name} • غياب دون عذر: <strong className="text-rose-700"><span className={privacyBlurClass}>{score?.absentUnexcusedCount}</span> مرات</strong>
+                      <div className="font-bold text-[#7B3F30]"><span className={privacyBlurClass}>{st.name}</span></div>
+                      <div className="text-[#9A5643] text-[11px]">
+                        {circle?.name} • غياب دون عذر: <strong className="text-[#A14A2A]"><span className={privacyBlurClass}>{score?.absentUnexcusedCount}</span> مرات</strong>
                       </div>
                     </div>
-                    <button
-                      onClick={() => onSelectStudent(st.id)}
-                      className="px-2.5 py-1 bg-white text-amber-900 font-semibold rounded-lg shadow-2xs hover:bg-amber-100 transition text-[11px]"
-                    >
-                      متابعة الملف
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => triggerStudentTelegramAlert({
+                          studentName: st.name,
+                          circleName: circle?.name || 'الحلقة',
+                          absenceCount: score?.absentUnexcusedCount || 0,
+                          telegramUsername: st.telegramUsername,
+                          showToast
+                        })}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#FDF6F2] hover:bg-[#F6E8E0] text-[#9A5643] border border-[#E5C3B3] font-bold rounded-lg shadow-2xs transition text-[11px] cursor-pointer"
+                        title="نسخ رسالة التنبيه وفتح محادثة تيليجرام"
+                      >
+                        <Send className="w-3 h-3 shrink-0" />
+                        <span>تنبيه تيليجرام</span>
+                      </button>
+                      <button
+                        onClick={() => onSelectStudent(st.id)}
+                        className="px-2.5 py-1 bg-white text-[#7B3F30] border border-[#E5C3B3] font-semibold rounded-lg shadow-2xs hover:bg-[#FAF3EE] transition text-[11px] cursor-pointer"
+                      >
+                        متابعة الملف
+                      </button>
+                    </div>
                   </div>
                 );
               })}

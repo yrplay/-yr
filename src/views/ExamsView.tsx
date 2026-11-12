@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   FileText, Plus, Edit, CheckCircle2, Award, Calendar,
-  AlertCircle, ChevronLeft, UserCheck, Shield, Trash2
+  AlertCircle, ChevronLeft, UserCheck, Shield, Trash2,
+  FileCheck2, Star, Clock, XCircle, X
 } from 'lucide-react';
 import { MonthlyExam, StudentExamResult, ExamResultStatus } from '../types';
 import { formatHijriShort } from '../utils/hijriDate';
@@ -318,7 +319,7 @@ export const ExamsView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">📝</span>
+            <FileCheck2 className="w-5 h-5 text-[#9A5643] shrink-0" />
             <h2 className="text-xl font-bold text-stone-900 font-quran">الاختبارات الشهرية والختامية</h2>
           </div>
           <p className="text-xs text-stone-500">
@@ -364,7 +365,7 @@ export const ExamsView: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xl">🌟</span>
+                <Star className="w-5 h-5 text-[#9A5643] fill-[#9A5643] shrink-0" />
                 <h3 className="text-base sm:text-lg font-bold text-stone-900">{currentExam.title}</h3>
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#EBF3EE] text-[#2D5A43] font-bold">
                   {currentExam.maxScore} درجة كاملة
@@ -686,47 +687,51 @@ export const ExamsView: React.FC = () => {
                   </label>
                   <div className="grid grid-cols-2 gap-2">
                     {[
-                      { id: 'examined' as ExamResultStatus, label: 'مختبرة ✅', activeClass: 'bg-[#2D5A43] text-white border-[#2D5A43]' },
-                      { id: 'postponed' as ExamResultStatus, label: 'لم تختبر / مؤجل ⏳', activeClass: 'bg-stone-700 text-white border-stone-700' },
-                      { id: 'exempt' as ExamResultStatus, label: 'معفاة / غير مطالبة 🛡️', activeClass: 'bg-sky-700 text-white border-sky-700' },
-                      { id: 'absent_unexcused' as ExamResultStatus, label: 'غائبة بدون عذر ❌', activeClass: 'bg-rose-600 text-white border-rose-600' }
-                    ].map(opt => (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => {
-                          if (opt.id === 'postponed' || opt.id === 'exempt') {
-                            setResultForm(prev => ({
-                              ...prev,
-                              status: opt.id,
-                              score: null,
-                              memorizationMistakes: 0,
-                              tajweedErrors: 0,
-                              warningsCount: 0
-                            }));
-                          } else if (opt.id === 'absent_unexcused') {
-                            setResultForm(prev => ({
-                              ...prev,
-                              status: opt.id,
-                              score: 0
-                            }));
-                          } else {
-                            setResultForm(prev => ({
-                              ...prev,
-                              status: 'examined',
-                              score: typeof prev.score === 'number' && prev.score > 0 ? prev.score : currentExamMaxScore
-                            }));
-                          }
-                        }}
-                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
-                          resultForm.status === opt.id
-                            ? `${opt.activeClass} shadow-xs`
-                            : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
+                      { id: 'examined' as ExamResultStatus, label: 'مختبرة', icon: CheckCircle2, activeClass: 'bg-[#2D5A43] text-white border-[#2D5A43]' },
+                      { id: 'postponed' as ExamResultStatus, label: 'لم تختبر / مؤجل', icon: Clock, activeClass: 'bg-stone-700 text-white border-stone-700' },
+                      { id: 'exempt' as ExamResultStatus, label: 'معفاة / غير مطالبة', icon: Shield, activeClass: 'bg-sky-700 text-white border-sky-700' },
+                      { id: 'absent_unexcused' as ExamResultStatus, label: 'غائبة بدون عذر', icon: XCircle, activeClass: 'bg-[#9A5643] text-white border-[#9A5643]' }
+                    ].map(opt => {
+                      const OptIcon = opt.icon;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => {
+                            if (opt.id === 'postponed' || opt.id === 'exempt') {
+                              setResultForm(prev => ({
+                                ...prev,
+                                status: opt.id,
+                                score: null,
+                                memorizationMistakes: 0,
+                                tajweedErrors: 0,
+                                warningsCount: 0
+                              }));
+                            } else if (opt.id === 'absent_unexcused') {
+                              setResultForm(prev => ({
+                                ...prev,
+                                status: opt.id,
+                                score: 0
+                              }));
+                            } else {
+                              setResultForm(prev => ({
+                                ...prev,
+                                status: 'examined',
+                                score: typeof prev.score === 'number' && prev.score > 0 ? prev.score : currentExamMaxScore
+                              }));
+                            }
+                          }}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                            resultForm.status === opt.id
+                              ? `${opt.activeClass} shadow-xs`
+                              : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50'
+                          }`}
+                        >
+                          <OptIcon className="w-3.5 h-3.5 shrink-0" />
+                          <span>{opt.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -933,8 +938,8 @@ export const ExamsView: React.FC = () => {
       {deleteConfirmOpen && currentExam && (
         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-xl border border-stone-200 space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto text-xl">
-              🗑️
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
             </div>
             <div className="text-center space-y-1">
               <h3 className="font-bold text-stone-900 text-base">حذف الاختبار الشهري؟</h3>

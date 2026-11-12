@@ -3,10 +3,11 @@ import { useApp } from '../context/AppContext';
 import {
   Users, Search, Filter, Plus, Edit, Archive, HeartHandshake,
   UserCheck, Shield, Phone, Mail, Award, ArrowUpDown, ChevronLeft,
-  Calendar, CheckCircle2, AlertCircle, Trash2, RotateCcw
+  Calendar, CheckCircle2, AlertCircle, AlertTriangle, Trash2, RotateCcw, Send, Star
 } from 'lucide-react';
 import { hasFullAccess, StudentStatus } from '../types';
 import { formatHijriShort, HijriJoinDateSelector } from '../utils/hijriDate';
+import { cleanTelegramUsername, triggerStudentTelegramAlert } from '../utils/telegramAlert';
 
 interface StudentsViewProps {
   onSelectStudent: (studentId: string) => void;
@@ -21,7 +22,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
     students, circles, tracks, allStudentScores,
     createStudent, updateStudent, archiveStudent, restoreStudent, deleteStudent, assignPartner,
     currentUser, quickModalAction, clearQuickModal, settings,
-    selectedTrackId
+    selectedTrackId, showToast
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -42,6 +43,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
     name: '',
     code: '',
     phone: '',
+    telegramUsername: '',
     email: '',
     trackId: '',
     circleId: '',
@@ -99,6 +101,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
         name: student.name,
         code: student.code,
         phone: student.phone || '',
+        telegramUsername: cleanTelegramUsername(student.telegramUsername || ''),
         email: student.email || '',
         trackId: currentTrackId,
         circleId: student.circleId,
@@ -114,6 +117,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
         name: '',
         code: `GH-${Math.floor(100 + Math.random() * 900)}`,
         phone: '05',
+        telegramUsername: '',
         email: '',
         trackId: defaultTrackId,
         circleId: availableCirclesInTrack[0]?.id || circles[0]?.id || '',
@@ -133,6 +137,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 
     const payload = {
       ...studentForm,
+      telegramUsername: cleanTelegramUsername(studentForm.telegramUsername),
       trackId
     };
 
@@ -163,7 +168,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">👥</span>
+            <Users className="w-5 h-5 text-[#9A5643]" />
             <h2 className="text-xl font-bold text-stone-900 font-quran">شؤون وسجلات الطالبات</h2>
           </div>
           <p className="text-xs text-stone-500">
@@ -212,8 +217,9 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
             </button>
           </div>
           {selectedStatus === 'archived' && (
-            <span className="text-[11px] font-bold text-[#7B3F30] bg-[#F6EFEA] px-3 py-1 rounded-full border border-[#DFCEBF]">
-              📁 جميع سجلات التسميع والدرجات وملف الإنجاز محفوظة 100% ويمكن استعادة الطالبة بضغطة واحدة
+            <span className="text-[11px] font-bold text-[#7B3F30] bg-[#F6EFEA] px-3 py-1 rounded-full border border-[#DFCEBF] inline-flex items-center gap-1.5">
+              <Archive className="w-3.5 h-3.5 text-[#9A5643]" />
+              <span>جميع سجلات التسميع والدرجات وملف الإنجاز محفوظة 100% ويمكن استعادة الطالبة بضغطة واحدة</span>
             </span>
           )}
         </div>
@@ -286,8 +292,9 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
         {/* Counter Summary */}
         <div className="flex items-center justify-between text-xs text-stone-500 pt-1 border-t border-stone-100">
           <span>يتم عرض {filteredStudents.length} من أصل {students.length} طالبة</span>
-          <span className="font-semibold text-[#8E5364]">
-            {filteredStudents.filter(s => s.partnerStudentId).length} طالبة لديها رفيقة معينة 🤝
+          <span className="font-semibold text-[#8E5364] inline-flex items-center gap-1">
+            <HeartHandshake className="w-3.5 h-3.5 text-[#9A5643]" />
+            <span>{filteredStudents.filter(s => s.partnerStudentId).length} طالبة لديها رفيقة معينة</span>
           </span>
         </div>
       </div>
@@ -325,16 +332,23 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                       <div className="font-bold text-stone-900 text-sm group-hover:text-[#8E5364] transition flex flex-wrap items-center gap-1.5">
                         <span className="privacy-student-name">{student.name}</span>
                         {((score?.absentUnexcusedCount ?? 0) >= 3 || student.status === 'archived' || student.archived) && (
-                          <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-bold">
-                            ⚠️ تجاوزت حد الغياب (منقطعة)
+                          <span className="px-2.5 py-0.5 rounded-full bg-[#FDF6F2] text-[#9A5643] border border-[#E5C3B3] text-[10px] font-bold inline-flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-[#9A5643]" />
+                            <span>تجاوزت حد الغياب (منقطعة)</span>
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] text-stone-400">
-                        <span className="privacy-phone">{student.phone}</span> {student.joinDate ? `• انضمت: ${formatHijriShort(student.joinDate)}` : ''}
+                      <div className="text-[11px] text-stone-400 flex flex-wrap items-center gap-1.5">
+                        <span className="privacy-phone">{student.phone}</span>
+                        {student.telegramUsername && (
+                          <span className="font-mono text-[10px] text-[#7B3F30] bg-[#F6EFEA] px-1.5 py-0.2 rounded-md border border-[#E5C3B3]">
+                            @{cleanTelegramUsername(student.telegramUsername)}
+                          </span>
+                        )}
+                        {student.joinDate ? <span>• انضمت: {formatHijriShort(student.joinDate)}</span> : null}
                       </div>
                       {(student.status === 'archived' || student.archived) && student.archivedReason && (
-                        <div className="text-[10px] text-rose-700 font-semibold mt-0.5">
+                        <div className="text-[10px] text-[#A14A2A] font-semibold mt-0.5">
                           سبب الأرشفة: {student.archivedReason}
                         </div>
                       )}
@@ -349,7 +363,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                       {student.partnerStudentName ? (
                         <div className="flex items-center gap-1.5">
                           <span className="inline-flex items-center gap-1 bg-[#F5ECE8] text-[#7A4B37] px-2.5 py-1 rounded-full text-[11px] font-medium">
-                            <span>🤝</span>
+                            <HeartHandshake className="w-3 h-3 text-[#9A5643]" />
                             <span className="privacy-student-name">{student.partnerStudentName}</span>
                           </span>
                           <button
@@ -365,7 +379,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                           onClick={() => handleOpenPartnerModal(student)}
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-100 hover:bg-[#F5ECE8] text-stone-600 hover:text-[#7A4B37] text-[11px] font-medium transition cursor-pointer"
                         >
-                          <HeartHandshake className="w-3.5 h-3.5" />
+                          <HeartHandshake className="w-3.5 h-3.5 text-[#9A5643]" />
                           <span>تعيين رفيقة</span>
                         </button>
                       )}
@@ -384,8 +398,10 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                       <div className="font-bold text-[#2D5A43]">
                         <span className="privacy-score-digit">{score?.attendanceRate}%</span>
                       </div>
-                      <div className="text-[10px] text-stone-400">
-                        <span className="privacy-score-digit">{score?.earlyPrepCount}</span> مبكر ⭐
+                      <div className="text-[10px] text-stone-400 inline-flex items-center gap-1">
+                        <span className="privacy-score-digit">{score?.earlyPrepCount}</span>
+                        <span>مبكر</span>
+                        <Star className="w-3 h-3 text-[#9A5643]" />
                       </div>
                     </td>
 
@@ -428,6 +444,25 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 
                     <td className="p-3.5 text-center">
                       <div className="flex flex-wrap items-center justify-center gap-1.5">
+                        {((score?.absentUnexcusedCount ?? 0) >= 3 || student.status === 'archived' || student.archived) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              triggerStudentTelegramAlert({
+                                studentName: student.name,
+                                circleName: circle?.name || 'الحلقة القرآنية',
+                                absenceCount: Math.max(4, score?.absentUnexcusedCount ?? 4),
+                                telegramUsername: student.telegramUsername,
+                                showToast
+                              })
+                            }
+                            className="px-2.5 py-1.5 bg-[#FDF6F2] hover:bg-[#9A5643] text-[#9A5643] hover:text-white border border-[#E5C3B3] rounded-lg text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                            title="نسخ رسالة التنبيه وفتح محادثة تيليجرام الطالبة مباشرة"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            <span>تنبيه تيليجرام</span>
+                          </button>
+                        )}
                         {(student.status === 'archived' || student.archived) ? (
                           <button
                             type="button"
@@ -435,7 +470,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                             className="px-3 py-1.5 bg-[#EBF3EE] hover:bg-[#DCEADA] text-[#2D5A43] border border-[#B8D8C5] rounded-lg text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer shadow-2xs"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
-                            <span>🔄 إلغاء الأرشفة واستعادة للحلقة</span>
+                            <span>إلغاء الأرشفة واستعادة للحلقة</span>
                           </button>
                         ) : (
                           <button
@@ -554,7 +589,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-stone-700 mb-1">كود الطالبة</label>
                   <input
@@ -573,6 +608,17 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                     value={studentForm.phone}
                     onChange={e => setStudentForm({ ...studentForm, phone: e.target.value })}
                     className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">معرّف تيليجرام الطالبة (@username)</label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    placeholder="@username أو رابط t.me"
+                    value={studentForm.telegramUsername}
+                    onChange={e => setStudentForm({ ...studentForm, telegramUsername: cleanTelegramUsername(e.target.value) })}
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs font-mono text-left"
                   />
                 </div>
               </div>

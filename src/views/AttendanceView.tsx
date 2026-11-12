@@ -3,12 +3,14 @@ import { useApp } from '../context/AppContext';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import {
   CheckSquare, Calendar, Users, Clock, CheckCircle2, XCircle,
-  AlertCircle, Star, Sparkles, Filter, Save, ChevronLeft, ChevronRight, Trash2,
-  Download, Award, X, Camera, Palette, Image as ImageIcon, Type, Plus, Minus, RotateCcw, Archive
+  AlertCircle, AlertTriangle, Star, Sparkles, Filter, Save, ChevronLeft, ChevronRight, Trash2,
+  Download, Award, X, Camera, Palette, Image as ImageIcon, Type, Plus, Minus, RotateCcw, Archive,
+  ClipboardCheck, Zap, Send
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { AttendanceRecord } from '../types';
 import { HijriDateNavigationBar, formatHijriDate, formatHijriDateTime, getHijriParts, getTodayISO } from '../utils/hijriDate';
+import { triggerStudentTelegramAlert } from '../utils/telegramAlert';
 
 interface HonorsBoardStudentItem {
   id: string;
@@ -1113,14 +1115,17 @@ export const AttendanceView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div>
           <div className="flex flex-wrap items-center gap-2 mb-1">
-            <span className="text-xl">📋</span>
+            <ClipboardCheck className="w-5 h-5 text-[#9A5643]" />
             <h2 className="text-xl font-bold text-stone-900 font-quran">لوحة متابعة الحضور والتحضير المبكر التلقائي</h2>
-            <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold">
-              مزامنة فورية بالخلفية ⚡
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold inline-flex items-center gap-1">
+              <Zap className="w-3 h-3 text-[#9A5643]" />
+              <span>مزامنة فورية بالخلفية</span>
             </span>
           </div>
-          <p className="text-xs text-stone-500">
-            مرآة تلقائية تعرض الحضور والتحضير المبكر ونجمة الالتزام الأسبوعي 🌟 (متألقات الأسبوع = صفر غياب) مع استوديو تصميم لوحة الشرف للواتساب
+          <p className="text-xs text-stone-500 flex flex-wrap items-center gap-1">
+            <span>مرآة تلقائية تعرض الحضور والتحضير المبكر ونجمة الالتزام الأسبوعي</span>
+            <Star className="w-3.5 h-3.5 text-[#9A5643] inline" />
+            <span>(متألقات الأسبوع = صفر غياب) مع استوديو تصميم لوحة الشرف للواتساب</span>
           </p>
         </div>
 
@@ -1130,7 +1135,8 @@ export const AttendanceView: React.FC = () => {
             onClick={() => setShowHonorsBoardModal(true)}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer"
           >
-            <span>🌟 لوحة متألقات الأسبوع (صورة للواتساب)</span>
+            <Star className="w-3.5 h-3.5 fill-white text-white" />
+            <span>لوحة متألقات الأسبوع (صورة للواتساب)</span>
             <span className="px-1.5 py-0.2 rounded-full bg-white/25 text-[10px]">{weeklyStarQualifiedCount}</span>
           </button>
           <button
@@ -1139,15 +1145,15 @@ export const AttendanceView: React.FC = () => {
             className="flex items-center gap-1.5 px-3 py-2 bg-[#EBF3EE] hover:bg-[#DCEADA] text-[#2D5A43] rounded-xl text-xs font-bold transition cursor-pointer"
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>اعتماد حضور الجميع ✅</span>
+            <span>اعتماد حضور الجميع</span>
           </button>
           <button
             type="button"
             onClick={handleBulkEarlyPrep}
             className="flex items-center gap-1.5 px-3 py-2 bg-[#FAF6E8] hover:bg-[#F2ECD0] text-amber-900 rounded-xl text-xs font-bold transition cursor-pointer"
           >
-            <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-            <span>⚡ تحضير مبكر للجميع</span>
+            <Zap className="w-3.5 h-3.5 text-[#9A5643]" />
+            <span>تحضير مبكر للجميع</span>
           </button>
         </div>
       </div>
@@ -1183,8 +1189,9 @@ export const AttendanceView: React.FC = () => {
 
           {/* Automation Mode Indicator */}
           <div className="p-2.5 rounded-xl bg-[#FCFAF8] border border-[#EFE8E2] text-xs flex flex-col justify-center">
-            <span className="font-bold text-stone-700 block">
-              🌟 معيار متألقات الأسبوع ({hijriWeekHeader}):
+            <span className="font-bold text-stone-700 flex items-center gap-1.5">
+              <Star className="w-3.5 h-3.5 text-[#9A5643]" />
+              <span>معيار متألقات الأسبوع ({hijriWeekHeader}):</span>
             </span>
             <span className="text-[11px] text-stone-500 block mt-0.5">
               تُؤهَّل الطالبة للقب «متألقة الأسبوع» تلقائياً بشرط واحد فقط: <strong className="text-emerald-700">صفر غياب (بعذر أو بدون عذر)</strong> طوال الأسبوع
@@ -1210,32 +1217,34 @@ export const AttendanceView: React.FC = () => {
             <button
               type="button"
               onClick={() => setStatusFilter('present')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1 ${
                 statusFilter === 'present'
                   ? 'bg-emerald-600 text-white shadow-2xs'
                   : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200/60'
               }`}
             >
-              الحاضرات ✅ ({presentCount})
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>الحاضرات ({presentCount})</span>
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter('early_prep')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1 ${
                 statusFilter === 'early_prep'
                   ? 'bg-amber-600 text-white shadow-2xs'
                   : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200/60'
               }`}
             >
-              ⚡ التحضير المبكر ({earlyPrepCount})
+              <Zap className="w-3.5 h-3.5" />
+              <span>التحضير المبكر ({earlyPrepCount})</span>
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter('absent')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                 statusFilter === 'absent'
-                  ? 'bg-rose-700 text-white shadow-2xs'
-                  : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200/60'
+                  ? 'bg-[#9A5643] text-white shadow-2xs'
+                  : 'bg-[#FDF6F2] text-[#9A5643] hover:bg-[#F7E8DF] border border-[#E5C3B3]'
               }`}
             >
               الغياب والأعذار ({absentTotalCount})
@@ -1259,11 +1268,15 @@ export const AttendanceView: React.FC = () => {
             <span>•</span>
             <span>تحضير مبكر: <strong className="text-amber-700">{earlyPrepCount}</strong></span>
             <span>•</span>
-            <span>متألقات الأسبوع (0 غياب) 🌟: <strong className="text-amber-600">{weeklyStarQualifiedCount}</strong></span>
+            <span className="inline-flex items-center gap-1">
+              <span>متألقات الأسبوع (0 غياب):</span>
+              <Star className="w-3.5 h-3.5 text-[#9A5643]" />
+              <strong className="text-amber-600">{weeklyStarQualifiedCount}</strong>
+            </span>
             <span>•</span>
             <span>غياب بعذر: <strong className="text-amber-600">{excusedCount}</strong></span>
             <span>•</span>
-            <span>دون عذر: <strong className="text-rose-600">{unexcusedCount}</strong></span>
+            <span>دون عذر: <strong className="text-[#9A5643]">{unexcusedCount}</strong></span>
           </div>
         </div>
       </div>
@@ -1292,7 +1305,9 @@ export const AttendanceView: React.FC = () => {
 
           {archivedCircleStudents.length === 0 ? (
             <div className="p-8 text-center bg-[#FAF7F5] rounded-2xl border border-dashed border-[#DFCEBF] space-y-2">
-              <div className="text-2xl">📁</div>
+              <div className="flex justify-center">
+                <Archive className="w-8 h-8 text-[#9A5643]/60" />
+              </div>
               <p className="text-sm font-bold text-stone-700">لا توجد طالبات مؤرشفات في هذه الحلقة حالياً</p>
               <p className="text-xs text-stone-500">
                 عند تجاوز الطالبة 3 أيام غياب بدون عذر (&gt; 3 بدون عذر) يتم نقلها تلقائياً إلى هذا القسم مع حفظ كامل بياناتها.
@@ -1324,14 +1339,15 @@ export const AttendanceView: React.FC = () => {
                           </div>
                         </div>
 
-                        <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[11px] font-bold inline-flex items-center gap-1">
-                          <span>⚠️ تجاوزت حد الغياب (منقطعة)</span>
+                        <span className="px-2.5 py-1 rounded-full bg-[#FDF6F2] text-[#9A5643] border border-[#E5C3B3] text-[11px] font-bold inline-flex items-center gap-1">
+                          <AlertTriangle className="w-3.5 h-3.5 text-[#9A5643]" />
+                          <span>تجاوزت حد الغياب (منقطعة)</span>
                         </span>
                       </div>
 
                       <div className="text-[11px] text-stone-600 bg-white px-3 py-2 rounded-xl border border-stone-100 flex flex-wrap items-center justify-between gap-2">
                         <span>
-                          سبب الأرشفة: <strong className="text-rose-700">{st.archivedReason || `تجاوزت حد الغياب (${stUnexcused} بدون عذر)`}</strong>
+                          سبب الأرشفة: <strong className="text-[#9A5643]">{st.archivedReason || `تجاوزت حد الغياب (${stUnexcused} بدون عذر)`}</strong>
                         </span>
                         <span>
                           الحفظ المحفوظ: <strong className="text-[#2D5A43]">{stScore?.newMemorizationPagesDone ?? 0} ص</strong> • المعدل: <strong className="text-[#7B3F30]">{stScore?.finalPercentage ?? 100}%</strong>
@@ -1339,14 +1355,30 @@ export const AttendanceView: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-stone-200/60">
+                    <div className="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-stone-200/60">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          triggerStudentTelegramAlert({
+                            studentName: st.name,
+                            circleName: activeCircle?.name || 'الحلقة القرآنية',
+                            absenceCount: Math.max(4, stUnexcused || 4),
+                            telegramUsername: st.telegramUsername,
+                            showToast
+                          })
+                        }
+                        className="w-full sm:w-auto px-3.5 py-2 bg-[#FDF6F2] hover:bg-[#9A5643] text-[#9A5643] hover:text-white border border-[#E5C3B3] rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>تنبيه تيليجرام</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => restoreStudent(st.id)}
                         className="w-full sm:w-auto px-4 py-2 bg-[#EBF3EE] hover:bg-[#DCEADA] text-[#2D5A43] border border-[#B8D8C5] rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
-                        <span>🔄 إلغاء الأرشفة واستعادة للحلقة</span>
+                        <span>إلغاء الأرشفة واستعادة للحلقة</span>
                       </button>
                     </div>
                   </div>
@@ -1390,9 +1422,26 @@ export const AttendanceView: React.FC = () => {
                   </div>
                   {(score?.absentUnexcusedCount ?? 0) >= 3 && (
                     <div className="mt-1.5 mr-7 flex flex-wrap items-center gap-1.5">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-bold">
-                        ⚠️ تجاوزت حد الغياب (منقطعة) ({score?.absentUnexcusedCount} بدون عذر)
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#FDF6F2] text-[#9A5643] border border-[#E5C3B3] text-[10px] font-bold">
+                        <AlertTriangle className="w-3 h-3 text-[#9A5643]" />
+                        <span>تجاوزت حد الغياب (منقطعة) ({score?.absentUnexcusedCount} بدون عذر)</span>
                       </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          triggerStudentTelegramAlert({
+                            studentName: student.name,
+                            circleName: activeCircle?.name || 'الحلقة القرآنية',
+                            absenceCount: Math.max(4, score?.absentUnexcusedCount ?? 4),
+                            telegramUsername: student.telegramUsername,
+                            showToast
+                          })
+                        }
+                        className="px-2.5 py-0.5 rounded-lg bg-[#FDF6F2] hover:bg-[#9A5643] text-[#9A5643] hover:text-white border border-[#E5C3B3] text-[10px] font-bold inline-flex items-center gap-1 transition cursor-pointer"
+                      >
+                        <Send className="w-3 h-3" />
+                        <span>تنبيه تيليجرام</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => archiveStudent(student.id, `تجاوزت حد الغياب (${score?.absentUnexcusedCount ?? 4} بدون عذر) — منقطعة`)}
@@ -1422,8 +1471,9 @@ export const AttendanceView: React.FC = () => {
                         : 'bg-stone-100 text-stone-500 border border-stone-300 hover:bg-stone-200'
                     }`}
                   >
-                    <span>⚡ تحضير مبكر</span>
-                    {rec.earlyPrepCardSent && <span>✓</span>}
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>تحضير مبكر</span>
+                    {rec.earlyPrepCardSent && <CheckCircle2 className="w-3.5 h-3.5" />}
                   </button>
 
                   <button
@@ -1432,7 +1482,7 @@ export const AttendanceView: React.FC = () => {
                     disabled={!hasActiveLog}
                     className={`p-2 rounded-xl transition border ${
                       hasActiveLog
-                        ? 'text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border-rose-200 cursor-pointer'
+                        ? 'text-[#9A5643] hover:text-white bg-[#FDF6F2] hover:bg-[#9A5643] border-[#E5C3B3] cursor-pointer'
                         : 'text-stone-300 bg-stone-50 border-stone-200 cursor-not-allowed'
                     }`}
                     title="مسح وإعادة ضبط حضور وتحضير الطالبة لهذا اليوم"
@@ -1444,15 +1494,19 @@ export const AttendanceView: React.FC = () => {
 
               {/* Mobile Weekly Star Badge Row */}
               <div className="flex items-center justify-between bg-[#FCFAF7] px-3 py-2 rounded-xl border border-amber-200/70">
-                <span className="text-[11px] font-bold text-stone-700">نجمة الالتزام الأسبوعي 🌟:</span>
+                <span className="text-[11px] font-bold text-stone-700 inline-flex items-center gap-1">
+                  <Star className="w-3.5 h-3.5 text-[#9A5643]" />
+                  <span>نجمة الالتزام الأسبوعي:</span>
+                </span>
                 {hasWeeklyStar ? (
                   <span className="px-3 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-yellow-500 text-white shadow-sm ring-2 ring-amber-300/50">
-                    <span>🌟 متألقة الأسبوع</span>
+                    <Star className="w-3 h-3 fill-white text-white" />
+                    <span>متألقة الأسبوع</span>
                     <span className="text-[10px] bg-white/20 px-1.5 py-0.2 rounded-full">0 غياب</span>
                   </span>
                 ) : (
                   <span className="px-3 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1.5 bg-stone-100 text-stone-500 border border-stone-300">
-                    <span>☆ مستبعدة ({weeklyAbsences} غياب هذا الأسبوع)</span>
+                    <span>مستبعدة ({weeklyAbsences} غياب هذا الأسبوع)</span>
                   </span>
                 )}
               </div>
@@ -1468,7 +1522,7 @@ export const AttendanceView: React.FC = () => {
                       : 'bg-[#FAF6F2] hover:bg-[#EFEAE5] text-stone-700 border-stone-200'
                   }`}
                 >
-                  <span>✅</span>
+                  <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>حاضرة</span>
                 </button>
 
@@ -1481,7 +1535,7 @@ export const AttendanceView: React.FC = () => {
                       : 'bg-[#FAF6F2] hover:bg-[#EFEAE5] text-stone-700 border-stone-200'
                   }`}
                 >
-                  <span>⭕️</span>
+                  <AlertCircle className="w-3.5 h-3.5" />
                   <span>بعذر</span>
                 </button>
 
@@ -1490,11 +1544,11 @@ export const AttendanceView: React.FC = () => {
                   onClick={() => handleUpdateStatus(student.id, 'absent_unexcused')}
                   className={`py-2.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 active:scale-95 cursor-pointer touch-manipulation border ${
                     rec.status === 'absent_unexcused'
-                      ? 'bg-rose-700 text-white border-rose-700 shadow-xs'
+                      ? 'bg-[#9A5643] text-white border-[#9A5643] shadow-xs'
                       : 'bg-[#FAF6F2] hover:bg-[#EFEAE5] text-stone-700 border-stone-200'
                   }`}
                 >
-                  <span>❌</span>
+                  <XCircle className="w-3.5 h-3.5" />
                   <span>بدون عذر</span>
                 </button>
               </div>
@@ -1525,8 +1579,18 @@ export const AttendanceView: React.FC = () => {
               <tr className="bg-[#FAF6F2] text-stone-600 font-bold border-b border-stone-200">
                 <th className="p-3.5">#</th>
                 <th className="p-3.5">اسم الطالبة</th>
-                <th className="p-3.5 text-center">التحضير المبكر ⚡</th>
-                <th className="p-3.5 text-center">نجمة الالتزام 🌟</th>
+                <th className="p-3.5 text-center">
+                  <span className="inline-flex items-center gap-1">
+                    <span>التحضير المبكر</span>
+                    <Zap className="w-3.5 h-3.5 text-[#9A5643]" />
+                  </span>
+                </th>
+                <th className="p-3.5 text-center">
+                  <span className="inline-flex items-center gap-1">
+                    <span>نجمة الالتزام</span>
+                    <Star className="w-3.5 h-3.5 text-[#9A5643]" />
+                  </span>
+                </th>
                 <th className="p-3.5 text-center">حالة الحضور</th>
                 <th className="p-3.5">مصدر المزامنة التلقائية</th>
                 <th className="p-3.5">سبب الغياب (إن وُجد)</th>
@@ -1550,8 +1614,9 @@ export const AttendanceView: React.FC = () => {
                       <div className="font-bold text-stone-900 text-sm flex flex-wrap items-center gap-1.5">
                         <span className="privacy-student-name">{student.name}</span>
                         {(score?.absentUnexcusedCount ?? 0) >= 3 && (
-                          <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-bold">
-                            ⚠️ تجاوزت حد الغياب (منقطعة)
+                          <span className="px-2.5 py-0.5 rounded-full bg-[#FDF6F2] text-[#9A5643] border border-[#E5C3B3] text-[10px] font-bold inline-flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-[#9A5643]" />
+                            <span>تجاوزت حد الغياب (منقطعة)</span>
                           </span>
                         )}
                       </div>
@@ -1559,14 +1624,32 @@ export const AttendanceView: React.FC = () => {
                         <span className="privacy-phone">{student.code}</span>
                       </div>
                       {(score?.absentUnexcusedCount ?? 0) >= 3 && (
-                        <button
-                          type="button"
-                          onClick={() => archiveStudent(student.id, `تجاوزت حد الغياب (${score?.absentUnexcusedCount ?? 4} بدون عذر) — منقطعة`)}
-                          className="mt-1 px-2.5 py-1 rounded-lg bg-[#7B3F30] hover:bg-[#613024] text-white text-[10px] font-bold inline-flex items-center gap-1 transition cursor-pointer shadow-2xs"
-                        >
-                          <Archive className="w-3 h-3" />
-                          <span>نقل إلى قسم المؤرشفات</span>
-                        </button>
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              triggerStudentTelegramAlert({
+                                studentName: student.name,
+                                circleName: activeCircle?.name || 'الحلقة القرآنية',
+                                absenceCount: Math.max(4, score?.absentUnexcusedCount ?? 4),
+                                telegramUsername: student.telegramUsername,
+                                showToast
+                              })
+                            }
+                            className="px-2.5 py-1 rounded-lg bg-[#FDF6F2] hover:bg-[#9A5643] text-[#9A5643] hover:text-white border border-[#E5C3B3] text-[10px] font-bold inline-flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                          >
+                            <Send className="w-3 h-3" />
+                            <span>تنبيه تيليجرام</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => archiveStudent(student.id, `تجاوزت حد الغياب (${score?.absentUnexcusedCount ?? 4} بدون عذر) — منقطعة`)}
+                            className="px-2.5 py-1 rounded-lg bg-[#7B3F30] hover:bg-[#613024] text-white text-[10px] font-bold inline-flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                          >
+                            <Archive className="w-3 h-3" />
+                            <span>نقل إلى قسم المؤرشفات</span>
+                          </button>
+                        </div>
                       )}
                     </td>
 
@@ -1582,12 +1665,13 @@ export const AttendanceView: React.FC = () => {
                         }`}
                         title={rec.earlyPrepCardSent ? 'انقري لإلغاء التحضير المبكر وخصمه من العداد الشهري' : 'انقري لتفعيل التحضير المبكر وإضافته للعداد الشهري'}
                       >
-                        <span>⚡ تحضير مبكر</span>
-                        {rec.earlyPrepCardSent && <span>✓</span>}
+                        <Zap className="w-3.5 h-3.5" />
+                        <span>تحضير مبكر</span>
+                        {rec.earlyPrepCardSent && <CheckCircle2 className="w-3.5 h-3.5" />}
                       </button>
                     </td>
 
-                    {/* Weekly Commitment Star Column (نجمة الالتزام 🌟) */}
+                    {/* Weekly Commitment Star Column */}
                     <td className="p-3.5 text-center">
                       <div className="flex flex-col items-center gap-1">
                         {hasWeeklyStar ? (
@@ -1598,12 +1682,13 @@ export const AttendanceView: React.FC = () => {
                                 : 'bg-amber-50 text-amber-900 border border-amber-300 shadow-2xs'
                             }`}
                           >
-                            <span>🌟 متألقة الأسبوع</span>
+                            <Star className="w-3.5 h-3.5 text-[#9A5643]" />
+                            <span>متألقة الأسبوع</span>
                             {isSelectedDateThursday && <span className="text-[10px] bg-white/25 px-1.5 py-0.2 rounded-full">تتويج</span>}
                           </span>
                         ) : (
                           <span className="px-3 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5 bg-stone-100 text-stone-400 border border-stone-200">
-                            <span>☆ غير مستحقة ({weeklyAbsences} غياب)</span>
+                            <span>غير مستحقة ({weeklyAbsences} غياب)</span>
                           </span>
                         )}
                         <span className="text-[10px] text-stone-400">
@@ -1626,18 +1711,20 @@ export const AttendanceView: React.FC = () => {
                               : 'text-stone-600 hover:text-stone-900'
                           }`}
                         >
-                          <span>✅ حاضرة</span>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>حاضرة</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => handleUpdateStatus(student.id, 'absent_unexcused')}
                           className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 active:scale-95 cursor-pointer touch-manipulation ${
                             rec.status === 'absent_unexcused'
-                              ? 'bg-rose-700 text-white shadow-2xs'
-                              : 'text-stone-600 hover:text-rose-700'
+                              ? 'bg-[#9A5643] text-white shadow-2xs'
+                              : 'text-stone-600 hover:text-[#9A5643]'
                           }`}
                         >
-                          <span>❌ بدون عذر</span>
+                          <XCircle className="w-3.5 h-3.5" />
+                          <span>بدون عذر</span>
                         </button>
                         <button
                           type="button"
@@ -1648,7 +1735,8 @@ export const AttendanceView: React.FC = () => {
                               : 'text-stone-600 hover:text-amber-700'
                           }`}
                         >
-                          <span>⭕️ بعذر</span>
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          <span>بعذر</span>
                         </button>
                       </div>
                     </td>
@@ -1695,10 +1783,12 @@ export const AttendanceView: React.FC = () => {
                         حضور: <span className="text-[#2D5A43] font-bold privacy-score-digit">{score?.attendanceRate ?? 100}%</span>
                       </div>
                       <div className="text-[10px] text-stone-500">
-                        غياب: <span className="privacy-score-digit font-bold text-rose-700">{(score?.absentUnexcusedCount ?? 0) + (score?.absentExcusedCount ?? 0)}</span> ({score?.absentUnexcusedCount ?? 0} دون عذر) | مبكر: <span className="privacy-score-digit font-bold text-emerald-700">{score?.earlyPrepCount ?? 0}</span>
+                        غياب: <span className="privacy-score-digit font-bold text-[#9A5643]">{(score?.absentUnexcusedCount ?? 0) + (score?.absentExcusedCount ?? 0)}</span> ({score?.absentUnexcusedCount ?? 0} دون عذر) | مبكر: <span className="privacy-score-digit font-bold text-emerald-700">{score?.earlyPrepCount ?? 0}</span>
                       </div>
-                      <div className="text-[10px] text-amber-700 font-bold mt-0.5">
-                        نجوم الشهر: 🌟 <span className="privacy-score-digit">{score?.weeklyStarsCount ?? 4}</span>/4
+                      <div className="text-[10px] text-[#7B3F30] font-bold mt-0.5 inline-flex items-center gap-1">
+                        <span>نجوم الشهر:</span>
+                        <Star className="w-3 h-3 text-[#9A5643]" />
+                        <span className="privacy-score-digit">{score?.weeklyStarsCount ?? 4}</span>/4
                       </div>
                     </td>
 
@@ -1711,7 +1801,7 @@ export const AttendanceView: React.FC = () => {
                           disabled={!hasActiveLog}
                           className={`p-2 rounded-xl transition inline-flex items-center justify-center border ${
                             hasActiveLog
-                              ? 'text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border-rose-200 shadow-2xs cursor-pointer'
+                              ? 'text-[#9A5643] hover:text-white bg-[#FDF6F2] hover:bg-[#9A5643] border-[#E5C3B3] shadow-2xs cursor-pointer'
                               : 'text-stone-300 bg-stone-50 border-stone-100 cursor-not-allowed'
                           }`}
                           title="حذف وإعادة ضبط حالة الحضور والتحضير المبكر لهذا اليوم"

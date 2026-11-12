@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { FileSpreadsheet, Printer, Calendar } from 'lucide-react';
+import { FileSpreadsheet, Printer, Calendar, BarChart3 } from 'lucide-react';
 import { formatHijriDate, formatHijriShort, getHijriParts } from '../utils/hijriDate';
 
 const REPORT_TITLES: Record<string, string> = {
@@ -343,7 +343,7 @@ export const ReportsView: React.FC = () => {
       <div className="no-print flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">📊</span>
+            <BarChart3 className="w-5 h-5 text-[#9A5643] shrink-0" />
             <h2 className="text-xl font-bold text-stone-900 font-quran">التقارير والإحصائيات والتحليلات (تقويم أم القرى)</h2>
           </div>
           <p className="text-xs text-stone-500">استخراج التقارير وفق الأشهر والأسابيع الهجرية المعتمدة في تقويم أم القرى.</p>
@@ -372,7 +372,7 @@ export const ReportsView: React.FC = () => {
               <option value="atqini">تقرير واجبات التجويد «أتقني»</option>
               <option value="challenges">تقرير نقاط تحدي الخميس والمراجعة الثنائية</option>
               <option value="exams">تقرير نتائج الاختبارات الشهرية</option>
-              <option value="outstanding">تقرير نجمات المقرأة المتميزات 🌟</option>
+              <option value="outstanding">تقرير نجمات المقرأة المتميزات</option>
               <option value="at_risk">تقرير الطالبات بحاجة لمتابعة ورعاية</option>
             </select>
           </div>

@@ -4,7 +4,8 @@ import {
   Layers, Plus, Edit, Archive, Users, Calendar, Clock,
   Sparkles, Trophy, BookOpen, ChevronLeft, CheckCircle2,
   Sliders, UserCheck, Shield, AlertCircle, Trash2, RotateCcw,
-  Eye, EyeOff, AlertTriangle, X, ExternalLink, CreditCard, FolderOpen, Sprout, Leaf
+  Eye, EyeOff, AlertTriangle, X, ExternalLink, CreditCard, FolderOpen, Sprout, Leaf,
+  HeartHandshake, Send
 } from 'lucide-react';
 import { Circle, hasFullAccess, Track, defaultMasteryGuideConfig } from '../types';
 import {
@@ -15,6 +16,7 @@ import {
   normalizeEntityIcon
 } from '../components/CircleIconLibrary';
 import { TrackDetailView } from './TrackDetailView';
+import { triggerStudentTelegramAlert } from '../utils/telegramAlert';
 
 const TRACK_EMOJIS = [
   '🪴', '🌱', '🌿', '🌴', '🌸', '📖', '🌟', '💎', '🕊️', '📜',
@@ -38,7 +40,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     createTrack, updateTrack, archiveTrack, restoreTrack, deleteTrack,
     createCircle, updateCircle, archiveCircle, restoreCircle, deleteCircle,
     archiveStudent, restoreStudent,
-    currentUser, quickModalAction, clearQuickModal, settings,
+    currentUser, quickModalAction, clearQuickModal, settings, showToast,
     selectedTrackId: globalSelectedTrackId, setSelectedTrackId: setGlobalSelectedTrackId
   } = useApp();
 
@@ -878,11 +880,12 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                               <span className="privacy-student-name">{st.name}</span>
                             </td>
                             <td className="p-3">
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[11px] font-bold">
-                                ⚠️ تجاوزت حد الغياب (منقطعة)
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#FDF6F2] text-[#9A5643] border border-[#E5C3B3] text-[11px] font-bold">
+                                <AlertTriangle className="w-3.5 h-3.5 text-[#9A5643]" />
+                                <span>تجاوزت حد الغياب (منقطعة)</span>
                               </span>
                               {st.archivedReason && (
-                                <div className="text-[10px] text-stone-500 mt-0.5">{st.archivedReason}</div>
+                                <div className="text-[10px] text-[#9A5643] mt-0.5">{st.archivedReason}</div>
                               )}
                             </td>
                             <td className="p-3 font-semibold text-stone-700">
@@ -895,11 +898,27 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                               <div className="inline-flex flex-wrap items-center justify-center gap-1.5">
                                 <button
                                   type="button"
+                                  onClick={() =>
+                                    triggerStudentTelegramAlert({
+                                      studentName: st.name,
+                                      circleName: activeCircle?.name || 'الحلقة القرآنية',
+                                      absenceCount: Math.max(4, score?.absentUnexcusedCount ?? 4),
+                                      telegramUsername: st.telegramUsername,
+                                      showToast
+                                    })
+                                  }
+                                  className="px-2.5 py-1.5 bg-[#FDF6F2] hover:bg-[#9A5643] text-[#9A5643] hover:text-white border border-[#E5C3B3] rounded-lg text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer"
+                                >
+                                  <Send className="w-3 h-3" />
+                                  <span>تنبيه تيليجرام</span>
+                                </button>
+                                <button
+                                  type="button"
                                   onClick={() => restoreStudent(st.id)}
                                   className="px-3 py-1.5 bg-[#EBF3EE] hover:bg-[#DCEADA] text-[#2D5A43] border border-[#B8D8C5] rounded-lg text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer"
                                 >
                                   <RotateCcw className="w-3.5 h-3.5" />
-                                  <span>🔄 إلغاء الأرشفة واستعادة للحلقة</span>
+                                  <span>إلغاء الأرشفة واستعادة للحلقة</span>
                                 </button>
                                 <button
                                   type="button"
@@ -950,8 +969,9 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span className="privacy-student-name">{st.name}</span>
                               {(score?.absentUnexcusedCount ?? 0) >= 3 && (
-                                <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-bold">
-                                  ⚠️ تجاوزت حد الغياب (منقطعة)
+                                <span className="px-2.5 py-0.5 rounded-full bg-[#FDF6F2] text-[#9A5643] border border-[#E5C3B3] text-[10px] font-bold inline-flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3 text-[#9A5643]" />
+                                  <span>تجاوزت حد الغياب (منقطعة)</span>
                                 </span>
                               )}
                             </div>
@@ -959,7 +979,8 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                           <td className="p-3 text-stone-600">
                             {st.partnerStudentName ? (
                               <span className="inline-flex items-center gap-1 bg-[#F5ECE8] text-[#7A4B37] px-2 py-0.5 rounded-full text-[11px]">
-                                <span>🤝</span> <span className="privacy-student-name">{st.partnerStudentName}</span>
+                                <HeartHandshake className="w-3 h-3 text-[#9A5643]" />
+                                <span className="privacy-student-name">{st.partnerStudentName}</span>
                               </span>
                             ) : (
                               <span className="text-stone-300 text-[11px]">غير معينة</span>
@@ -987,7 +1008,25 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                             </span>
                           </td>
                           <td className="p-3 text-center">
-                            <div className="inline-flex items-center gap-1.5">
+                            <div className="inline-flex flex-wrap items-center justify-center gap-1.5">
+                              {(score?.absentUnexcusedCount ?? 0) >= 3 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    triggerStudentTelegramAlert({
+                                      studentName: st.name,
+                                      circleName: activeCircle?.name || 'الحلقة القرآنية',
+                                      absenceCount: Math.max(4, score?.absentUnexcusedCount ?? 4),
+                                      telegramUsername: st.telegramUsername,
+                                      showToast
+                                    })
+                                  }
+                                  className="px-2.5 py-1 bg-[#FDF6F2] hover:bg-[#9A5643] text-[#9A5643] hover:text-white border border-[#E5C3B3] rounded-lg text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer"
+                                >
+                                  <Send className="w-3 h-3" />
+                                  <span>تنبيه تيليجرام</span>
+                                </button>
+                              )}
                               <button
                                 onClick={() => onSelectStudent(st.id)}
                                 className="px-3 py-1 bg-[#8E5364] text-white rounded-lg text-[11px] font-semibold hover:bg-[#744251] transition cursor-pointer"

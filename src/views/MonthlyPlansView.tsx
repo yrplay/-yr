@@ -3,7 +3,8 @@ import { useApp } from '../context/AppContext';
 import { QURAN_SURAHS, getSurahByNumber, getAyahCount } from '../data/quranData';
 import {
   Plus, Copy, CheckCircle2,
-  ChevronDown, ChevronUp, Edit, Lock
+  ChevronDown, ChevronUp, Edit, Lock, Unlock,
+  CalendarRange, Star, BarChart3, Zap, HeartHandshake, BookOpen
 } from 'lucide-react';
 import { MonthlyPlan, PlanBranchConfig } from '../types';
 import { summarizeDailyPageProgress } from '../services/recitationProgress';
@@ -720,12 +721,14 @@ export const MonthlyPlansView: React.FC = () => {
                 <span>معطّل لهذا الشهر</span>
               </span>
             ) : isFreeMemorizationBranch ? (
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
-                الحفظ الحر: رصد تراكمي مفتوح حسب استطاعة الطالبة 🌟
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#FDF6F2] text-[#9A5643] border border-[#E5C3B3] inline-flex items-center gap-1">
+                <Star className="w-3 h-3 text-[#9A5643]" />
+                <span>الحفظ الحر: رصد تراكمي مفتوح حسب استطاعة الطالبة</span>
               </span>
             ) : (
-              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${badgeBg}`}>
-                مفعّل ✅
+              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold inline-flex items-center gap-1 ${badgeBg}`}>
+                <CheckCircle2 className="w-3 h-3" />
+                <span>مفعّل</span>
               </span>
             )}
             <span className="text-[11px] text-stone-400 hidden md:inline">• {subtitle}</span>
@@ -744,7 +747,8 @@ export const MonthlyPlansView: React.FC = () => {
                 }`}
                 title="تفعيل أو إلغاء الحفظ الحر (حسب الاستطاعة) مع بقاء الطالبة في حلقتها الحالية دون سقف صفحات شهري أو قيد يومي"
               >
-                <span>{isFreeMemorizationBranch ? '🔓 الحفظ الحر (حسب الاستطاعة) — مفعّل ✓' : '🔓 الحفظ الحر (حسب الاستطاعة)'}</span>
+                <Unlock className="w-3.5 h-3.5" />
+                <span>{isFreeMemorizationBranch ? 'الحفظ الحر (حسب الاستطاعة) — مفعّل ✓' : 'الحفظ الحر (حسب الاستطاعة)'}</span>
               </button>
             )}
 
@@ -759,7 +763,8 @@ export const MonthlyPlansView: React.FC = () => {
                 }`}
                 title="التبديل بين خطة المراجعة الصغرى ومسار القاعدة النورانية لهذه الطالبة"
               >
-                <span>{isNooraniaBranch ? '🔤 مسار القاعدة النورانية (مفعّل)' : '🔤 تحويل إلى مسار القاعدة النورانية'}</span>
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>{isNooraniaBranch ? 'مسار القاعدة النورانية (مفعّل)' : 'تحويل إلى مسار القاعدة النورانية'}</span>
               </button>
             )}
 
@@ -980,8 +985,9 @@ export const MonthlyPlansView: React.FC = () => {
                   </div>
                   <div className="px-4 py-2.5 rounded-2xl bg-white border border-emerald-200 shadow-2xs text-center shrink-0">
                     <span className="text-[10px] font-bold text-stone-500 block">نوع الخطة: الحفظ الحر</span>
-                    <span className="text-xs sm:text-sm font-black text-emerald-800 block mt-0.5">
-                      إجمالي المنجز: <span className="privacy-score-digit">{donePages}</span> صفحة متقنة 🌟
+                    <span className="text-xs sm:text-sm font-black text-emerald-800 inline-flex items-center gap-1 mt-0.5">
+                      <span>إجمالي المنجز: <span className="privacy-score-digit">{donePages}</span> صفحة متقنة</span>
+                      <Star className="w-3.5 h-3.5 text-[#9A5643]" />
                     </span>
                   </div>
                 </div>
@@ -1125,7 +1131,7 @@ export const MonthlyPlansView: React.FC = () => {
                   </div>
 
                   <div className="p-3 bg-gradient-to-l from-[#FAF0F3] to-[#FAF6F2] rounded-xl border border-[#E2D5CC] flex items-center gap-2.5">
-                    <span className="text-lg shrink-0">🔓</span>
+                    <Unlock className="w-5 h-5 text-[#9A5643] shrink-0" />
                     <div>
                       <span className="text-[#8E5364] font-bold block text-[11px]">نوع الخطة: الحفظ الحر</span>
                       <span className="font-extrabold text-stone-900 block mt-0.5">
@@ -1137,12 +1143,14 @@ export const MonthlyPlansView: React.FC = () => {
                   <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200/80 flex items-center justify-between gap-2">
                     <div>
                       <span className="text-emerald-700 font-bold block text-[11px]">الحصيلة التراكمية للشهر (بدون سقف محدد):</span>
-                      <span className="font-black text-emerald-950 text-xs sm:text-sm block mt-0.5">
-                        إجمالي المنجز: <span className="privacy-score-digit">{donePages}</span> صفحة متقنة 🌟
+                      <span className="font-black text-emerald-950 text-xs sm:text-sm inline-flex items-center gap-1 mt-0.5">
+                        <span>إجمالي المنجز: <span className="privacy-score-digit">{donePages}</span> صفحة متقنة</span>
+                        <Star className="w-3.5 h-3.5 text-[#9A5643]" />
                       </span>
                     </div>
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold shrink-0">
-                      مفتوح 🔓
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold shrink-0 inline-flex items-center gap-1">
+                      <Unlock className="w-3 h-3" />
+                      <span>مفتوح</span>
                     </span>
                   </div>
                 </div>
@@ -1275,7 +1283,7 @@ export const MonthlyPlansView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">📅</span>
+            <CalendarRange className="w-5 h-5 text-[#9A5643]" />
             <h2 className="text-xl font-bold text-stone-900 font-quran">الخطط الشهرية للحفظ والمراجعة</h2>
           </div>
           <p className="text-xs text-stone-500">
@@ -1317,7 +1325,8 @@ export const MonthlyPlansView: React.FC = () => {
                 : 'bg-white text-stone-700 hover:bg-[#FAF6F2] border border-[#E8DFD8]'
             }`}
           >
-            <span>📅 {plan.title}</span>
+            <CalendarRange className={`w-4 h-4 ${selectedPlanId === plan.id ? 'text-white' : 'text-[#9A5643]'}`} />
+            <span>{plan.title}</span>
             <span className={`text-[10px] px-2 py-0.5 rounded-full ${
               selectedPlanId === plan.id ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-600'
             }`}>
@@ -1370,8 +1379,9 @@ export const MonthlyPlansView: React.FC = () => {
 
             <div className="p-3.5 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2]">
               <div className="text-[11px] text-stone-600 mb-0.5 font-medium">يوم الخميس:</div>
-              <div className="text-sm font-bold text-[#7A4B37]">
-                التحديات والمراجعة الثنائية 🤝
+              <div className="text-sm font-bold text-[#7A4B37] inline-flex items-center gap-1">
+                <span>التحديات والمراجعة الثنائية</span>
+                <HeartHandshake className="w-3.5 h-3.5 text-[#9A5643]" />
               </div>
               <div className="text-[10px] text-stone-500 mt-0.5">{currentPlan.thursdayFocus}</div>
             </div>
@@ -1505,15 +1515,19 @@ export const MonthlyPlansView: React.FC = () => {
             <div className="flex-1 min-w-0 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-stone-800">
                 <div className="flex items-center gap-2">
-                  <span>📊 مؤشر إنجاز الخطة الشهرية التلقائي للطالبة (<span className="privacy-student-name">{selectedStudent?.name}</span>)</span>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                    يُحتسب تلقائياً من سجل التسميع ⚡
+                  <BarChart3 className="w-4 h-4 text-[#9A5643]" />
+                  <span>مؤشر إنجاز الخطة الشهرية التلقائي للطالبة (<span className="privacy-student-name">{selectedStudent?.name}</span>)</span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold inline-flex items-center gap-1">
+                    <Zap className="w-3 h-3 text-[#9A5643]" />
+                    <span>يُحتسب تلقائياً من سجل التسميع</span>
                   </span>
                 </div>
                 <span className="font-extrabold text-[#7B3F30]" style={{ color: '#7B3F30' }}>
                   {isFreeMem ? (
-                    <span>
-                      إجمالي المنجز الكلي: <span className="privacy-score-digit">{totalEnabledDone}</span> صفحة متقنة 🌟 ({overallPercent}%)
+                    <span className="inline-flex items-center gap-1">
+                      <span>إجمالي المنجز الكلي: <span className="privacy-score-digit">{totalEnabledDone}</span> صفحة متقنة</span>
+                      <Star className="w-3.5 h-3.5 text-[#9A5643]" />
+                      <span>({overallPercent}%)</span>
                     </span>
                   ) : (
                     <span>
@@ -1542,11 +1556,16 @@ export const MonthlyPlansView: React.FC = () => {
               <span className="text-stone-600 font-bold">
                 {isFreeMem ? '١. الحفظ الحر:' : '١. الحفظ الجديد:'}
               </span>
-              <span className="font-extrabold text-[#7B3F30]" style={{ color: '#7B3F30' }}>
+              <span className="font-extrabold text-[#7B3F30] inline-flex items-center gap-1" style={{ color: '#7B3F30' }}>
                 {!isNewEnabled
                   ? 'معطّل لهذا الشهر'
                   : isFreeMem
-                    ? `إجمالي المنجز: ${newDone} صفحة متقنة 🌟`
+                    ? (
+                      <>
+                        <span>إجمالي المنجز: {newDone} صفحة متقنة</span>
+                        <Star className="w-3 h-3 text-[#9A5643]" />
+                      </>
+                    )
                     : `${newDone} من ${newTarget} وجه (${newPercent}%)`}
               </span>
             </div>

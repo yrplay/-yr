@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import {
   Trophy, Plus, Edit, Trash2, HeartHandshake, CheckCircle2,
   Calendar, Clock, Star, Users, Award, Shield, FileText, ChevronLeft,
-  Printer, X, AlertCircle
+  Printer, X, AlertCircle, UsersRound, ClipboardCheck, ScrollText, ArrowLeftRight
 } from 'lucide-react';
 import { Challenge, ChallengeType, hasFullAccess, StudentChallengeSubmission } from '../types';
 import { formatHijriShort, formatHijriDateTime, getTodayISO } from '../utils/hijriDate';
@@ -376,7 +376,7 @@ export const ChallengesView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">🏆</span>
+            <Trophy className="w-5 h-5 text-[#9A5643] shrink-0" />
             <h2 className="text-xl font-bold text-stone-900 font-quran">التحديات القرآنية والمراجعة الثنائية</h2>
           </div>
           <p className="text-xs text-stone-500">
@@ -415,8 +415,8 @@ export const ChallengesView: React.FC = () => {
               : 'text-stone-600 hover:bg-[#FAF6F2]'
           }`}
         >
-          <HeartHandshake className="w-4 h-4" />
-          <span>مصفوفة المراجعة الثنائية وتعاون الرفيقة 🤝</span>
+          <UsersRound className="w-4 h-4" />
+          <span>مصفوفة المراجعة الثنائية وتعاون الرفيقة</span>
         </button>
       </div>
 
@@ -462,7 +462,7 @@ export const ChallengesView: React.FC = () => {
                   <div>
                     <div className="flex items-start justify-between gap-2 mb-1.5">
                       <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                        <span className="text-base">{isSelected ? '🌟' : '🎯'}</span>
+                        <Star className={`w-4 h-4 shrink-0 ${isSelected ? 'text-[#9A5643] fill-[#9A5643]' : 'text-stone-400'}`} />
                         <span className={`font-bold text-xs truncate ${isSelected ? 'text-[#8E5364]' : 'text-stone-900'}`}>
                           {ch.title}
                         </span>
@@ -477,15 +477,22 @@ export const ChallengesView: React.FC = () => {
                         آلية ومقرر: <strong className="text-stone-700">{ch.requiredSurahs || 'غير محدد'}</strong>
                       </div>
                       <div className="text-[10px] text-stone-400 flex items-center gap-1">
-                        <span>📅</span>
+                        <Calendar className="w-3 h-3 text-[#9A5643]" />
                         <span>{ch.dueDateDescription || formatHijriShort(ch.startDate)}</span>
                       </div>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between pt-2 border-t border-stone-200/60 mt-auto">
-                    <span className={`text-[10px] font-bold ${isSelected ? 'text-[#8E5364]' : 'text-stone-400'}`}>
-                      {isSelected ? 'المحدد والمعروض حالياً ✅' : 'انقري لاختياره 👈'}
+                    <span className={`text-[10px] font-bold inline-flex items-center gap-1 ${isSelected ? 'text-[#8E5364]' : 'text-stone-400'}`}>
+                      {isSelected ? (
+                        <>
+                          <span>المحدد والمعروض حالياً</span>
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        </>
+                      ) : (
+                        <span>انقري لاختياره</span>
+                      )}
                     </span>
 
                     {hasFullAccess(currentUser) && (
@@ -522,13 +529,13 @@ export const ChallengesView: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xl">🌟</span>
+                <Star className="w-5 h-5 text-[#9A5643] fill-[#9A5643] shrink-0" />
                 <h3 className="text-base sm:text-lg font-bold text-stone-900">{currentChallenge.title}</h3>
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">
                   {currentChallenge.maxTotalPoints} نقاط
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
-                  التحدي المختار المعروض حالياً 📌
+                  التحدي المختار المعروض حالياً
                 </span>
               </div>
               <p className="text-xs text-stone-500 mt-1">
@@ -619,22 +626,26 @@ export const ChallengesView: React.FC = () => {
                 <h4 className="font-bold text-stone-900 text-sm sm:text-base font-quran">
                   سجل نتائج الطالبات في التحدي والمراجعة الثنائية
                 </h4>
-                <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold">
-                  الإنجاز المبكر +{currentChallenge?.earlyPrepPoints || 2} نقاط ⭐
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold inline-flex items-center gap-1">
+                  <span>الإنجاز المبكر +{currentChallenge?.earlyPrepPoints || 2} نقاط</span>
+                  <Star className="w-3 h-3 text-[#9A5643] fill-[#9A5643]" />
                 </span>
                 <span className="text-xs text-[#8E5364] font-semibold">
                   • المراجعة الثنائية جزء مدمج داخل التحدي
                 </span>
               </div>
               <p className="text-xs text-stone-500 mt-1">
-                عند رصد نتيجة التحدي أو منح (+{currentChallenge?.earlyPrepPoints || 2} نقاط) للإنجاز المبكر، يتم تسجيل الطالبة <strong>«حاضرة ✅»</strong> تلقائياً في كشف حضور الخميس دون الحاجة لتكرار الرصد في سجل التسميع اليومي.
+                عند رصد نتيجة التحدي أو منح (+{currentChallenge?.earlyPrepPoints || 2} نقاط) للإنجاز المبكر، يتم تسجيل الطالبة <strong>«حاضرة»</strong> تلقائياً في كشف حضور الخميس دون الحاجة لتكرار الرصد في سجل التسميع اليومي.
               </p>
             </div>
 
             {/* Live Early Achievement & Weekly Star Counter Pill */}
             <div className="flex flex-wrap items-center gap-2 bg-[#FAF6F2] px-3 py-2 rounded-2xl border border-[#EFE8E2] self-start lg:self-auto shrink-0">
               <div className="text-center px-2.5 border-l border-stone-200">
-                <div className="text-[10px] text-stone-500 font-medium">نجمة الانضباط الأسبوعي 🌟</div>
+                <div className="text-[10px] text-stone-500 font-medium inline-flex items-center gap-1">
+                  <span>نجمة الانضباط الأسبوعي</span>
+                  <Star className="w-2.5 h-2.5 text-[#9A5643] fill-[#9A5643]" />
+                </div>
                 <div className="text-xs sm:text-sm font-extrabold text-amber-700">
                   {circleWeeklyStarCount} <span className="text-[10px] text-stone-400 font-normal">/ {circleScopedStudents.length}</span>
                 </div>
@@ -770,10 +781,11 @@ export const ChallengesView: React.FC = () => {
                               <span className="privacy-student-name">{student.name}</span>
                               {isSyncedPresent && (
                                 <span
-                                  className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/70 text-[10px] font-bold"
+                                  className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/70 text-[10px] font-bold inline-flex items-center gap-1"
                                   title="تم تسجيل حضور الطالبة تلقائياً في سجل الحضور"
                                 >
-                                  حاضرة ✅
+                                  <span>حاضرة</span>
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                 </span>
                               )}
                               <button
@@ -791,9 +803,15 @@ export const ChallengesView: React.FC = () => {
                                 }`}
                               >
                                 {hasWeeklyStar ? (
-                                  <span>🌟 نجمة الانضباط الأسبوعي</span>
+                                  <>
+                                    <Star className="w-3 h-3 text-[#9A5643] fill-[#9A5643]" />
+                                    <span>نجمة الانضباط الأسبوعي</span>
+                                  </>
                                 ) : (
-                                  <span>☆ منح نجمة الانضباط ({weeklyAbsenceCount} غياب)</span>
+                                  <>
+                                    <Star className="w-3 h-3 text-stone-400" />
+                                    <span>منح نجمة الانضباط ({weeklyAbsenceCount} غياب)</span>
+                                  </>
                                 )}
                               </button>
                             </div>
@@ -808,7 +826,7 @@ export const ChallengesView: React.FC = () => {
                         <td className="p-3.5">
                           {student.partnerStudentName ? (
                             <span className="inline-flex items-center gap-1 bg-[#F5ECE8] text-[#7A4B37] px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
-                              <span>🤝</span> <span className="privacy-student-name">{student.partnerStudentName}</span>
+                              <UsersRound className="w-3 h-3 text-[#9A5643]" /> <span className="privacy-student-name">{student.partnerStudentName}</span>
                             </span>
                           ) : (
                             <span className="text-stone-300">غير معينة</span>
@@ -890,7 +908,10 @@ export const ChallengesView: React.FC = () => {
                             }`}
                           >
                             {sub?.peerReviewEvaluation?.jointRevisionCompleted ? (
-                              <span>تمت بنجاح ✅</span>
+                              <>
+                                <span>تمت بنجاح</span>
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              </>
                             ) : (
                               <span>اعتماد المراجعة +</span>
                             )}
@@ -972,8 +993,9 @@ export const ChallengesView: React.FC = () => {
         /* Peer Review Matrix Tab */
         <div className="bg-white rounded-3xl border border-[#E8DFD8] p-6 shadow-2xs space-y-6">
           <div className="border-b border-stone-100 pb-4">
-            <h3 className="font-bold text-stone-900 text-base font-quran mb-1">
-              مصفوفة المراجعة الثنائية وتعاون الرفيقات 🤝
+            <h3 className="font-bold text-stone-900 text-base font-quran mb-1 flex items-center gap-2">
+              <UsersRound className="w-5 h-5 text-[#9A5643]" />
+              <span>مصفوفة المراجعة الثنائية وتعاون الرفيقات</span>
             </h3>
             <p className="text-xs text-stone-500">
               المراجعة الثنائية جزء أصيل من تحديات الخميس؛ حيث تقيَّم كل طالبة وفق معايير مساعدة رفيقتها، اكتشاف الأخطاء، تصحيحها، والالتزام بآداب المدارسة.
@@ -1001,13 +1023,13 @@ export const ChallengesView: React.FC = () => {
                     type="button"
                     onClick={() => setSelectedPairRecord({ student, partner: partner || null, sub: sub || null })}
                     className="w-full text-right flex items-center justify-between p-2.5 rounded-xl bg-white hover:bg-[#FAF2F4] border border-[#EAE0D8] hover:border-[#8E5364] transition group cursor-pointer shadow-2xs hover:shadow-xs"
-                    title="انقري لفتح كشف سجل الثنائية والمراجعة المشتركة 📜"
+                    title="انقري لفتح كشف سجل الثنائية والمراجعة المشتركة"
                   >
                     <div className="text-xs">
                       <div className="font-bold text-stone-900 group-hover:text-[#8E5364] transition privacy-student-name">{student.name}</div>
                       <div className="text-[10px] text-stone-400">الطالبة</div>
                     </div>
-                    <span className="text-stone-400 group-hover:text-[#8E5364] group-hover:scale-110 transition text-sm">↔️</span>
+                    <ArrowLeftRight className="w-4 h-4 text-[#9A5643] group-hover:scale-110 transition" />
                     <div className="text-xs text-left">
                       <div className="font-bold text-[#7A4B37] group-hover:text-[#8E5364] transition privacy-student-name">{partner?.name || student.partnerStudentName}</div>
                       <div className="text-[10px] text-stone-400">الرفيقة</div>
@@ -1133,7 +1155,7 @@ export const ChallengesView: React.FC = () => {
               <div className="bg-[#FAF6F2] p-4 rounded-2xl border border-[#EFE8E2] space-y-2.5">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
-                    <span>📋</span>
+                    <ClipboardCheck className="w-4 h-4 text-[#9A5643]" />
                     <span>مهام التحدي المقررة والنقاط:</span>
                   </div>
                   <button
@@ -1440,7 +1462,7 @@ export const ChallengesView: React.FC = () => {
               <div className="bg-[#FAF6F2] p-4 rounded-2xl border border-[#EFE8E2] space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-bold text-stone-800 flex items-center gap-1.5">
-                    <span>📋</span>
+                    <ClipboardCheck className="w-4 h-4 text-[#9A5643]" />
                     <span>مهام التحدي المقررة وتوزيع النقاط:</span>
                   </label>
                   <button
@@ -1535,14 +1557,15 @@ export const ChallengesView: React.FC = () => {
             {/* Header */}
             <div className="flex items-start justify-between border-b border-stone-100 pb-3">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-[#FAF0F3] border border-[#8E5364]/20 text-[#8E5364] flex items-center justify-center text-xl shadow-2xs">
-                  📜
+                <div className="w-11 h-11 rounded-2xl bg-[#FAF0F3] border border-[#8E5364]/20 text-[#9A5643] flex items-center justify-center shadow-2xs">
+                  <ScrollText className="w-5 h-5 text-[#9A5643]" />
                 </div>
                 <div>
                   <h3 className="font-bold text-stone-900 text-base font-quran flex items-center gap-2">
                     <span>كشف سجل الثنائيات والمراجعة المشتركة</span>
-                    <span className="text-[10px] font-sans px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
-                      معتمد 🤝
+                    <span className="text-[10px] font-sans px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 inline-flex items-center gap-1">
+                      <span>معتمد</span>
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                     </span>
                   </h3>
                   <p className="text-xs text-stone-500 mt-0.5">

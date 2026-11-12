@@ -249,7 +249,7 @@ const AppContent: React.FC = () => {
           {settings?.logoUrl ? (
             <img src={settings.logoUrl} alt="شعار المقرأة" className="w-full h-full object-contain" />
           ) : (
-            <span>📖</span>
+            <span className="text-[#9A5643] font-quran font-bold text-2xl">غيث</span>
           )}
         </div>
         <h2 className="text-xl font-bold font-quran text-stone-900 dark:text-stone-100 mb-1">{settings?.name || 'مقرأة غيث الغيم'}</h2>

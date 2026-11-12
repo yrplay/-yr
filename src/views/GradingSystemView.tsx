@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Sliders, Plus, Edit, Save, Calculator, CheckCircle2,
-  AlertCircle, Shield, Award, Check, RotateCcw, Trash2
+  AlertCircle, Shield, Award, Check, RotateCcw, Trash2,
+  Scale, SlidersHorizontal, AlertTriangle
 } from 'lucide-react';
 import { GradingItemConfig, TrackGradingConfig } from '../types';
 
@@ -208,7 +209,7 @@ export const GradingSystemView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">⚖️</span>
+            <Scale className="w-5 h-5 text-[#9A5643] shrink-0" />
             <h2 className="text-xl font-bold text-stone-900 font-quran">نظام الدرجات والنسب المئوية والمعايير</h2>
           </div>
           <p className="text-xs text-stone-500">
@@ -249,7 +250,7 @@ export const GradingSystemView: React.FC = () => {
             }`}
           >
             <Save className="w-4 h-4" />
-            <span>{saving ? 'جارٍ الحفظ...' : isDirty ? 'حفظ التعديلات الآن 💾' : 'حفظ التعديلات في النظام'}</span>
+            <span>{saving ? 'جارٍ الحفظ...' : isDirty ? 'حفظ التعديلات الآن' : 'حفظ التعديلات في النظام'}</span>
           </button>
         </div>
       </div>
@@ -362,19 +363,30 @@ export const GradingSystemView: React.FC = () => {
           <div className={`p-3 rounded-2xl text-xs font-semibold flex items-center justify-between ${
             totalWeights === 100
               ? 'bg-[#EBF3EE] text-[#2D5A43] border border-[#CDE0D4]'
-              : 'bg-amber-50 text-amber-900 border border-amber-200'
+              : 'bg-[#FDF6F2] text-[#9A5643] border border-[#E5C3B3]'
           }`}>
             <div className="flex items-center gap-2">
               <span>مجموع أوزان البنود المفعلة: <strong className="privacy-score-digit">{totalWeights}%</strong></span>
-              <span>{totalWeights === 100 ? '✅ الأوزان متطابقة تماماً مع ١٠٠٪' : '⚠️ يرجى ضبط الأوزان لتساوي ١٠٠٪'}</span>
+              {totalWeights === 100 ? (
+                <span className="inline-flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>الأوزان متطابقة تماماً مع ١٠٠٪</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-[#9A5643]" />
+                  <span>يرجى ضبط الأوزان لتساوي ١٠٠٪</span>
+                </span>
+              )}
             </div>
             {totalWeights !== 100 && (
               <button
                 type="button"
                 onClick={handleAutoBalanceWeights}
-                className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition cursor-pointer"
+                className="px-2.5 py-1 bg-[#9A5643] hover:bg-[#7B3F30] text-white rounded-lg text-xs font-bold transition cursor-pointer inline-flex items-center gap-1"
               >
-                موازنة الأوزان تلقائياً إلى ١٠٠٪ ⚖️
+                <Scale className="w-3.5 h-3.5" />
+                <span>موازنة الأوزان تلقائياً إلى ١٠٠٪</span>
               </button>
             )}
           </div>
@@ -384,7 +396,7 @@ export const GradingSystemView: React.FC = () => {
       {/* Recitation Deduction Formula Settings */}
       <div className="bg-white p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4">
         <h3 className="font-bold text-stone-900 text-sm flex items-center gap-2">
-          <Sliders className="w-4 h-4 text-[#8E5364]" />
+          <SlidersHorizontal className="w-4 h-4 text-[#9A5643]" />
           <span>معادلة تقييم جلسة التسميع والخصومات التلقائية:</span>
         </h3>
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-  UserCog, Plus, Edit, Shield, CheckCircle2, UserCheck,
+  UserCog, Plus, Edit, Shield, ShieldCheck, CheckCircle2, UserCheck,
   Mail, Phone, Layers, Award, X, Upload, Trash2, Sparkles, FileSignature,
   Copy, KeyRound, Check, Table, LayoutGrid, Lock
 } from 'lucide-react';
@@ -439,12 +439,13 @@ export const StaffView: React.FC = () => {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">👩‍🏫</span>
+            <UserCheck className="w-5 h-5 text-[#9A5643] shrink-0" />
             <h2 className="text-xl font-bold text-stone-900 font-quran">
               سجل المعلمات والمشرفات
             </h2>
-            <span className="text-[11px] font-sans px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold border border-rose-300">
-              خاص بالإدارة العليا 🔒
+            <span className="inline-flex items-center gap-1 text-[11px] font-sans px-2.5 py-0.5 rounded-full bg-[#FDF6F2] text-[#9A5643] font-bold border border-[#E5C3B3]">
+              <ShieldCheck className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+              <span>خاص بالإدارة العليا</span>
             </span>
           </div>
           <p className="text-xs text-stone-500">
@@ -698,8 +699,9 @@ export const StaffView: React.FC = () => {
                               alt="توقيع"
                               className="h-6 max-w-[60px] object-contain"
                             />
-                            <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded font-bold">
-                              معتمد ✅
+                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">
+                              <CheckCircle2 className="w-3 h-3 shrink-0" />
+                              <span>معتمد</span>
                             </span>
                           </div>
                         ) : (
@@ -807,7 +809,7 @@ export const StaffView: React.FC = () => {
                       </div>
                       <p className="text-[11px] text-stone-500">{user.role === 'developer' ? 'المطور التقني' : user.title}</p>
                       <span className="text-[10px] text-stone-500 flex items-center gap-1 mt-0.5">
-                        <span>✨</span>
+                        <Sparkles className="w-3 h-3 text-[#9A5643] shrink-0" />
                         <span>{getAvatarLabel(user.avatarIcon)}</span>
                       </span>
                     </div>

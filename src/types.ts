@@ -136,6 +136,7 @@ export interface Student {
   code: string;
   name: string;
   phone?: string;
+  telegramUsername?: string;
   email?: string;
   joinDate: string;
   status: 'active' | 'archived' | 'suspended';

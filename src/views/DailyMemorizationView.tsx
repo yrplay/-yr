@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   BookOpen, Calendar, Clock, CheckCircle2, AlertCircle, 
   Search, Award, Edit3, X, Check, Sparkles, Plus, Minus,
-  RotateCcw, Bookmark, ChevronLeft, Layers, Trash2, FileText, User
+  RotateCcw, Bookmark, ChevronLeft, Layers, Trash2, FileText, User,
+  Zap, Trophy, ScrollText, XCircle, Unlock, Star, Settings
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { QURAN_SURAHS, SurahInfo } from '../data/quranData';
@@ -958,16 +959,17 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       <div className="bg-white dark:bg-stone-900 p-6 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-2xl">📖</span>
+            <BookOpen className="w-5 h-5 text-[#9A5643] shrink-0" />
             <h1 className="text-xl font-bold text-stone-800 dark:text-stone-100 font-quran">
               سجل التسميع والمراجعة اليومية (الأحد – الأربعاء)
             </h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold">
-              حضور وتحضير مبكر تلقائي ⚡
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold inline-flex items-center gap-1">
+              <span>حضور وتحضير مبكر تلقائي</span>
+              <Zap className="w-3 h-3 text-[#9A5643]" />
             </span>
           </div>
           <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
-            رصد الحفظ الجديد والمراجعة يسجّل الطالبة «حاضرة» تلقائياً، مع زر «⚡ تحضير مبكر» المباشر في كل صف
+            رصد الحفظ الجديد والمراجعة يسجّل الطالبة «حاضرة» تلقائياً، مع زر «تحضير مبكر» المباشر في كل صف
           </p>
         </div>
 
@@ -997,7 +999,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       {isSelectedDateThursday && (
         <div className="bg-emerald-50/90 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2 text-emerald-900 dark:text-emerald-200 font-bold">
-            <span className="text-base">🏆</span>
+            <Trophy className="w-4 h-4 text-[#9A5643] shrink-0" />
             <span>
               يوم الخميس مخصص حصرياً لـ «التحديات والمراجعة الثنائية» — لا يُطلب إدخال تسميع يومي منفصل هنا، ويتم تسجيل حضور الخميس تلقائياً عند تقييم التحدي أو منح (+2 نقاط) في قسم التحديات.
             </span>
@@ -1015,12 +1017,14 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
             <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-stone-500">
               <span>إجمالي طالبات الحلقة: <strong className="privacy-count-digit">{circleStudents.length}</strong> طالبة</span>
               <span>•</span>
-              <span className="text-emerald-700 dark:text-emerald-400 font-bold">
-                الحاضرات: <span className="privacy-count-digit">{dayPresentCount}</span> / <span className="privacy-count-digit">{circleStudents.length}</span> ✅
+              <span className="text-emerald-700 dark:text-emerald-400 font-bold inline-flex items-center gap-1">
+                <span>الحاضرات: <span className="privacy-count-digit">{dayPresentCount}</span> / <span className="privacy-count-digit">{circleStudents.length}</span></span>
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
               </span>
               <span>•</span>
-              <span className="text-emerald-700 dark:text-emerald-400 font-bold">
-                ⚡ تحضير مبكر: <span className="privacy-count-digit">{dayEarlyPrepCount}</span>
+              <span className="text-emerald-700 dark:text-emerald-400 font-bold inline-flex items-center gap-1">
+                <Zap className="w-3.5 h-3.5 text-[#9A5643]" />
+                <span>تحضير مبكر: <span className="privacy-count-digit">{dayEarlyPrepCount}</span></span>
               </span>
             </div>
           </div>
@@ -1074,21 +1078,29 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                           handleQuickTogglePresent(st);
                         }}
                         title={isPresent ? 'الطالبة مسجلة حاضرة — انقري لتغيير الحالة' : 'انقري لتسجيل الطالبة حاضرة مباشرة'}
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition cursor-pointer ${
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition cursor-pointer inline-flex items-center gap-1 ${
                           isPresent
                             ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200/70 dark:border-emerald-800/50'
                             : 'bg-stone-100 dark:bg-stone-800 text-stone-500 border-stone-200 dark:border-stone-700 hover:border-emerald-300 hover:text-emerald-700'
                         }`}
                       >
-                        {isPresent ? 'حاضرة ✅' : 'تسجيل حضور +'}
+                        {isPresent ? (
+                          <>
+                            <span>حاضرة</span>
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          </>
+                        ) : (
+                          <span>تسجيل حضور +</span>
+                        )}
                       </button>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-[11px] text-stone-400 font-mono">
                         <span className="privacy-phone">{st.code}</span>
                       </span>
-                      <span className="text-[10px] text-[#8E5364] dark:text-[#E8BDC8] font-bold underline">
-                        فتح كشف السجل 📜
+                      <span className="text-[10px] text-[#8E5364] dark:text-[#E8BDC8] font-bold underline inline-flex items-center gap-1">
+                        <span>فتح كشف السجل</span>
+                        <ScrollText className="w-3 h-3 text-[#9A5643]" />
                       </span>
                     </div>
                   </div>
@@ -1105,13 +1117,15 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                       return (
                         <div className="flex flex-wrap items-center gap-2">
                           {isStFreeMem && (
-                            <span className="px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 text-[11px] font-extrabold">
-                              🔓 الحفظ الحر • إجمالي المنجز: {stCumulativePages} صفحة متقنة 🌟
+                            <span className="px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 text-[11px] font-extrabold inline-flex items-center gap-1">
+                              <Unlock className="w-3.5 h-3.5 text-[#9A5643]" />
+                              <span>الحفظ الحر • إجمالي المنجز: {stCumulativePages} صفحة متقنة</span>
                             </span>
                           )}
                           {isSelectedDateThursday ? (
-                            <span className="px-3 py-1 rounded-xl bg-[#FAF6F2] dark:bg-stone-800 text-[#8E5364] dark:text-[#E8BDC8] border border-[#E8DFD8] dark:border-stone-700 text-xs font-bold">
-                              يوم التحديات والمراجعة الثنائية 🏆
+                            <span className="px-3 py-1 rounded-xl bg-[#FAF6F2] dark:bg-stone-800 text-[#8E5364] dark:text-[#E8BDC8] border border-[#E8DFD8] dark:border-stone-700 text-xs font-bold inline-flex items-center gap-1.5">
+                              <Trophy className="w-3.5 h-3.5 text-[#9A5643]" />
+                              <span>يوم التحديات والمراجعة الثنائية</span>
                             </span>
                           ) : (
                             <span className="text-xs text-stone-400">
@@ -1126,8 +1140,9 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                     return (
                       <div className="flex flex-wrap items-center gap-2 text-left">
                         {isStFreeMem && (
-                          <span className="px-2.5 py-0.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border border-amber-200 text-[10px] font-extrabold">
-                            🔓 الحفظ الحر (إجمالي الشهر: {stCumulativePages} ص 🌟)
+                          <span className="px-2.5 py-0.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border border-amber-200 text-[10px] font-extrabold inline-flex items-center gap-1">
+                            <Unlock className="w-3 h-3 text-[#9A5643]" />
+                            <span>الحفظ الحر (إجمالي الشهر: {stCumulativePages} ص)</span>
                           </span>
                         )}
                         <div className="text-xs text-stone-500 text-right">
@@ -1147,19 +1162,22 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                             </>
                           )}
                           <span className="mx-1.5">•</span>
-                          <span>أخطاء: <strong className="text-rose-600"><span className="privacy-score-digit">{record.memorizationMistakes ?? 0}</span></strong></span>
+                          <span>أخطاء: <strong className="text-[#9A5643]"><span className="privacy-score-digit">{record.memorizationMistakes ?? 0}</span></strong></span>
                         </div>
                         {!isStFreeMem && isStNewMemEnabled && (record.newOutcome === 'redo' || record.isRedoSession) ? (
                           <div className="px-3 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 font-bold text-xs flex items-center gap-1">
-                            <span>🔄 إعادة للتثبيت</span>
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>إعادة للتثبيت</span>
                           </div>
                         ) : !isStFreeMem && isStNewMemEnabled && record.newOutcome === 'excused' ? (
-                          <div className="px-3 py-1 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300 font-bold text-xs flex items-center gap-1">
-                            <span>❌ اعتذار / لم يُنجز</span>
+                          <div className="px-3 py-1 rounded-xl bg-[#FDF6F2] dark:bg-stone-800 border border-[#E5C3B3] text-[#9A5643] font-bold text-xs flex items-center gap-1">
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>اعتذار / لم يُنجز</span>
                           </div>
                         ) : (
-                          <div className="px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-400 font-bold text-xs">
-                            تم الرصد ✅
+                          <div className="px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-400 font-bold text-xs inline-flex items-center gap-1">
+                            <span>تم الرصد</span>
+                            <CheckCircle2 className="w-3.5 h-3.5" />
                           </div>
                         )}
                       </div>
@@ -1182,8 +1200,9 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                           : 'bg-white dark:bg-stone-800 hover:bg-emerald-50 text-stone-600 dark:text-stone-300 hover:text-emerald-700 border-stone-300 dark:border-stone-700 hover:border-emerald-400'
                       }`}
                     >
-                      <span>⚡ تحضير مبكر</span>
-                      {isEarlyPrep && <span>✓</span>}
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>تحضير مبكر</span>
+                      {isEarlyPrep && <Check className="w-3.5 h-3.5" />}
                     </button>
 
                     {(!isSelectedDateThursday || record) && (
@@ -1231,11 +1250,12 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
             <div className="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
               <div>
                 <h3 className="text-base font-bold text-stone-900 dark:text-stone-100 font-quran flex items-center gap-2">
-                  <span>📖</span>
+                  <BookOpen className="w-5 h-5 text-[#9A5643]" />
                   <span>رصد تسميع: {modalStudent.name}</span>
                 </h3>
-                <span className="text-[11px] text-stone-400 font-bold">
-                  {formatHijriDate(selectedDate)} • يُسجَّل الحضور تلقائياً عند الحفظ ✅
+                <span className="text-[11px] text-stone-400 font-bold inline-flex items-center gap-1">
+                  <span>{formatHijriDate(selectedDate)} • يُسجَّل الحضور تلقائياً عند الحفظ</span>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -1254,8 +1274,9 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                           : 'bg-white text-stone-600 border-stone-300 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-400'
                       }`}
                     >
-                      <span>⚡ تحضير مبكر</span>
-                      {modalEarly && <span>✓</span>}
+                      <Zap className="w-3 h-3" />
+                      <span>تحضير مبكر</span>
+                      {modalEarly && <Check className="w-3 h-3" />}
                     </button>
                   );
                 })()}
@@ -1507,7 +1528,8 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                               : 'bg-[#FAF7F5] dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-emerald-400'
                           }`}
                         >
-                          <span>✅ أُنجز بإتقان</span>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>أُنجز بإتقان</span>
                         </button>
 
                         <button
@@ -1525,7 +1547,8 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                               : 'bg-[#FAF7F5] dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-amber-400'
                           }`}
                         >
-                          <span>🔄 إعادة وتثبيت</span>
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>إعادة وتثبيت</span>
                         </button>
 
                         <button
@@ -1539,11 +1562,12 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                           }
                           className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
                             form.newOutcome === 'excused'
-                              ? 'bg-rose-600 text-white border-rose-600 shadow-xs ring-2 ring-rose-500/20'
-                              : 'bg-[#FAF7F5] dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-rose-400'
+                              ? 'bg-[#9A5643] text-white border-[#9A5643] shadow-xs ring-2 ring-[#9A5643]/20'
+                              : 'bg-[#FAF7F5] dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-[#9A5643]'
                           }`}
                         >
-                          <span>❌ لم يتم الإنجاز / اعتذار</span>
+                          <XCircle className="w-3.5 h-3.5" />
+                          <span>لم يتم الإنجاز / اعتذار</span>
                         </button>
                       </div>
 
@@ -2385,8 +2409,8 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
             {/* ترويسة الكشف */}
             <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800 border border-[#E2D5CC] dark:border-stone-700 text-[#8E5364] dark:text-[#E8BDC8] flex items-center justify-center text-xl font-bold shadow-2xs shrink-0">
-                  📜
+                <div className="w-11 h-11 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800 border border-[#E2D5CC] dark:border-stone-700 text-[#9A5643] flex items-center justify-center shadow-2xs shrink-0">
+                  <ScrollText className="w-5 h-5 text-[#9A5643]" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
@@ -2593,7 +2617,8 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                     className="px-4 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
                     title="الانتقال لملف الإنجاز والشهادة الرسمية لهذه الطالبة"
                   >
-                    <span>📜 فتح ملف الإنجاز والشهادة المعتمدة</span>
+                    <ScrollText className="w-3.5 h-3.5" />
+                    <span>فتح ملف الإنجاز والشهادة المعتمدة</span>
                     <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
                 )}
