@@ -5,13 +5,24 @@ import {
   Users, Layers, Award, CheckCircle2, AlertTriangle,
   TrendingUp, Calendar, Sparkles, BookOpen, Clock,
   UserCheck, UserCog, Plus, ChevronLeft, History, Eye, EyeOff, Star, Send,
-  PenLine, X
+  PenLine, X, ListTodo, CheckSquare, Square, AlertCircle, FileText, ClipboardList
 } from 'lucide-react';
 import { AuditLogModal } from '../components/AuditLogModal';
-import { hasFullAccess, User, StaffWelcomeConfig } from '../types';
+import { hasFullAccess, User, StaffWelcomeConfig, StaffTaskItem } from '../types';
 import { formatHijriDate, formatHijriShort, getTodayISO } from '../utils/hijriDate';
 import { RenderEntityIcon } from '../components/CircleIconLibrary';
 import { triggerStudentTelegramAlert } from '../utils/telegramAlert';
+import {
+  resolveStaffProfile,
+  readAllStaffAttendanceRecords,
+  writeLocalStaffAttendanceRecords,
+  buildStaffAttendanceRecord,
+  formatCurrentArabicTime,
+  getStaffShortRoleLabel,
+  readLocalStaffProfiles,
+  writeLocalStaffProfiles,
+  isSupervisorOrTeacherOnly
+} from '../utils/staffHelpers';
 
 interface DashboardViewProps {
   onNavigate: (view: ViewType) => void;
@@ -39,12 +50,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const isLeaderOrAdmin = hasFullAccess(currentUser);
 
   const getRoleBadgeLabel = (user: User | null | undefined) => {
-    if (!user) return 'مالك المنصة العام';
-    if (user.role === 'developer') return 'المطور التقني';
-    if (user.role === 'owner') return 'مالك المنصة العام';
-    if (user.role === 'leader') return 'قائدة المقرأة';
-    if (user.role === 'supervisor') return 'مشرفة المقرأة';
-    return 'معلمة الحلقة';
+    if (!user) return 'مالك المنصة (قائدة)';
+    if (user.role === 'developer') return 'مؤسس المنصة';
+    if (user.role === 'owner' || user.role === 'leader') return 'مالك المنصة (قائدة)';
+    if (user.role === 'supervisor') return 'مشرفة';
+    return 'معلمة';
   };
 
   // Resolve personalized login welcome toast config for any user (Leader or Staff)
@@ -186,6 +196,101 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const presentToday = todayAttendance.filter(a => a.status === 'present').length;
   const earlyPrepToday = todayAttendance.filter(a => a.earlyPrepCardSent).length;
 
+  // Daily Staff Self Check-In & Assigned Tasks for currentUser (Today's Hijri Date strictly)
+  const effectiveCurrentUser = currentUser || users[0];
+  const currentStaffProfile = effectiveCurrentUser
+    ? resolveStaffProfile(effectiveCurrentUser, settings)
+    : { workingHours: 'من 4:00 عصراً إلى 6:00 مساءً', monthlySalary: 1500, tasks: [], leaderPrivateNotes: '' };
+
+  const allStaffAttendanceMap = readAllStaffAttendanceRecords(settings);
+  const myTodayAttendanceKey = effectiveCurrentUser ? `${effectiveCurrentUser.id}_${today}` : '';
+  const myTodayAttendance = myTodayAttendanceKey ? allStaffAttendanceMap[myTodayAttendanceKey] : undefined;
+
+  const [showExcuseBox, setShowExcuseBox] = useState(false);
+  const [excuseInputText, setExcuseInputText] = useState(myTodayAttendance?.excuseText || '');
+
+  const handleSelfCheckInPresent = async () => {
+    if (!effectiveCurrentUser) return;
+    const nowTime = formatCurrentArabicTime();
+    const record = buildStaffAttendanceRecord({
+      user: effectiveCurrentUser,
+      dateIso: today,
+      status: 'present',
+      checkInTime: nowTime,
+      excuseText: '',
+      recordedBy: effectiveCurrentUser.name
+    });
+    const nextRecords = {
+      ...readAllStaffAttendanceRecords(settings),
+      [record.id]: record
+    };
+    writeLocalStaffAttendanceRecords(nextRecords);
+    setShowExcuseBox(false);
+    await updateSettings({ staffAttendanceRecords: nextRecords }, true);
+    showToast(`تم تسجيل حضوركِ لليوم (${nowTime}) بنجاح`, 'success');
+  };
+
+  const handleSelfCheckInExcuseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!effectiveCurrentUser) return;
+    const cleanExcuse = excuseInputText.trim();
+    if (!cleanExcuse) {
+      showToast('يرجى كتابة عذر الغياب وتفاصيله قبل الحفظ', 'error');
+      return;
+    }
+    const record = buildStaffAttendanceRecord({
+      user: effectiveCurrentUser,
+      dateIso: today,
+      status: 'absent_excused',
+      checkInTime: formatCurrentArabicTime(),
+      excuseText: cleanExcuse,
+      recordedBy: effectiveCurrentUser.name
+    });
+    const nextRecords = {
+      ...readAllStaffAttendanceRecords(settings),
+      [record.id]: record
+    };
+    writeLocalStaffAttendanceRecords(nextRecords);
+    setShowExcuseBox(false);
+    await updateSettings({ staffAttendanceRecords: nextRecords }, true);
+    showToast('تم تسجيل الغياب بعذر لليوم بنجاح', 'success');
+  };
+
+  const handleToggleMyTask = async (taskId: string) => {
+    if (!effectiveCurrentUser) return;
+    const updatedTasks: StaffTaskItem[] = currentStaffProfile.tasks.map(t =>
+      t.id === taskId
+        ? {
+            ...t,
+            completed: !t.completed,
+            completedAt: !t.completed ? new Date().toISOString() : undefined
+          }
+        : t
+    );
+
+    const localProfiles = readLocalStaffProfiles();
+    const updatedProfile = {
+      ...currentStaffProfile,
+      tasks: updatedTasks,
+      updatedAt: new Date().toISOString()
+    };
+    writeLocalStaffProfiles({
+      ...localProfiles,
+      [effectiveCurrentUser.id]: updatedProfile
+    });
+
+    await updateUser(effectiveCurrentUser.id, { tasks: updatedTasks }, true);
+    await updateSettings(
+      {
+        staffProfiles: {
+          ...(settings.staffProfiles || {}),
+          [effectiveCurrentUser.id]: updatedProfile
+        }
+      },
+      true
+    );
+  };
+
   // Average percentage of displayed active students
   const displayedScoresList = activeStudents
     .map(s => allStudentScores[s.id])
@@ -326,16 +431,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5">
-              {hasFullAccess(currentUser) && (
+              {(isLeaderOrAdmin || !!currentUser?.permissions?.canAccessStaff) && (
                 <button
                   onClick={() => onNavigate('staff')}
                   className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/15 backdrop-blur text-white text-xs font-medium hover:bg-white/25 border border-white/20 transition cursor-pointer"
-                  title="الوصول إلى قسم المعلمات والمشرفات"
+                  title="الوصول إلى قسم المعلمات والمشرفات وإدارة الحسابات"
                 >
                   <UserCog className="w-3.5 h-3.5" />
                   <span>المعلمات والمشرفات</span>
                 </button>
               )}
+              <button
+                onClick={() => onNavigate('staff-attendance')}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/15 backdrop-blur text-white text-xs font-medium hover:bg-white/25 border border-white/20 transition cursor-pointer"
+                title="الوصول إلى تحضير ومهام الكادر"
+              >
+                <ClipboardList className="w-3.5 h-3.5" />
+                <span>تحضير ومهام الكادر</span>
+              </button>
               <button
                 type="button"
                 onClick={togglePrivacyMode}
@@ -355,11 +468,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </button>
             </div>
           </div>
-        </div>
-
-        {/* Decorative cloud pattern */}
-        <div className="absolute left-[-20px] bottom-[-40px] opacity-10 pointer-events-none text-9xl">
-          ☁️
         </div>
       </div>
 
@@ -462,6 +570,201 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
       </div>
+
+      {/* Daily Staff Self Check-In & Assigned Tasks Widget (للمشرفات والمعلمات فقط) */}
+      {effectiveCurrentUser && isSupervisorOrTeacherOnly(effectiveCurrentUser) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* 1. Daily Staff Self Check-In Card */}
+          <div className="bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs flex flex-col justify-between space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-[#F6EFEA] text-[#9A5643] border border-[#E5C3B3] flex items-center justify-center shrink-0">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-stone-900 text-sm">
+                      التحضير اليومي الذاتي للمعلمات والمشرفات
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#F6EFEA] text-[#7B3F30] border border-[#E5C3B3]">
+                      {getStaffShortRoleLabel(effectiveCurrentUser.role, effectiveCurrentUser)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] text-stone-500 mt-0.5 flex-wrap">
+                    <span className="inline-flex items-center gap-1 text-[#7B3F30] font-bold">
+                      <Calendar className="w-3.5 h-3.5 text-[#9A5643]" />
+                      <span>تاريخ اليوم (تقويم أم القرى): {formatHijriDate(today, { includeWeekday: true })}</span>
+                    </span>
+                    <span>•</span>
+                    <span className="inline-flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-[#9A5643]" />
+                      <span>ساعات الدوام: {currentStaffProfile.workingHours}</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigate('staff-attendance')}
+                className="text-xs font-bold text-[#9A5643] hover:text-[#7B3F30] hover:underline shrink-0 cursor-pointer"
+              >
+                تحضير ومهام الكادر
+              </button>
+            </div>
+
+            {/* Current Today Status Indicator */}
+            {myTodayAttendance ? (
+              <div className={`p-3 rounded-2xl border flex items-center justify-between gap-2 text-xs ${
+                myTodayAttendance.status === 'present'
+                  ? 'bg-[#EBF3EE] border-[#C5DEC9] text-[#2D5A43]'
+                  : 'bg-[#F6EFEA] border-[#E5C3B3] text-[#7B3F30]'
+              }`}>
+                <div className="flex items-center gap-2">
+                  {myTodayAttendance.status === 'present' ? (
+                    <CheckCircle2 className="w-4 h-4 text-[#2D5A43] shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-[#9A5643] shrink-0" />
+                  )}
+                  <div>
+                    <span className="font-bold">
+                      حالتكِ المسجلة لليوم: {myTodayAttendance.status === 'present' ? 'حاضرة' : myTodayAttendance.status === 'absent_excused' ? 'غياب بعذر' : 'غياب بدون عذر'}
+                    </span>
+                    {myTodayAttendance.status === 'present' && myTodayAttendance.checkInTime && (
+                      <span className="mr-2 font-mono font-bold text-[11px]">
+                        (وقت التسجيل: {myTodayAttendance.checkInTime})
+                      </span>
+                    )}
+                    {myTodayAttendance.excuseText && (
+                      <p className="text-[11px] mt-0.5 text-[#7B3F30]">
+                        العذر المسجل: {myTodayAttendance.excuseText}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2] text-xs text-stone-600 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-[#9A5643] shrink-0" />
+                <span>لم يتم تسجيل تحضيركِ لليوم الهجري الحالي بعد. بادري بتسجيل الحضور أو الاعتذار:</span>
+              </div>
+            )}
+
+            {/* Action Buttons: [ تسجيل حضور اليوم ] & [ تسجيل غياب / اعتذار ] */}
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleSelfCheckInPresent}
+                  className="flex-1 min-w-[140px] py-2.5 px-4 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+                >
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>تسجيل حضور اليوم</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExcuseInputText(myTodayAttendance?.excuseText || '');
+                    setShowExcuseBox(prev => !prev);
+                  }}
+                  className="flex-1 min-w-[140px] py-2.5 px-4 rounded-xl bg-[#F6EFEA] hover:bg-[#EFE3DA] text-[#7B3F30] border border-[#E5C3B3] text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  <AlertCircle className="w-4 h-4 text-[#9A5643] shrink-0" />
+                  <span>تسجيل غياب / اعتذار</span>
+                </button>
+              </div>
+
+              {showExcuseBox && (
+                <form onSubmit={handleSelfCheckInExcuseSubmit} className="p-3.5 rounded-2xl bg-[#F6EFEA] border border-[#E5C3B3] space-y-2.5">
+                  <label className="block text-xs font-bold text-[#7B3F30] flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+                    <span>عذر الغياب لليوم ({formatHijriShort(today)}):</span>
+                  </label>
+                  <textarea
+                    required
+                    rows={2}
+                    value={excuseInputText}
+                    onChange={e => setExcuseInputText(e.target.value)}
+                    placeholder="اكتبي عذر الغياب وتفاصيله..."
+                    className="w-full px-3 py-2 bg-white border border-[#E5C3B3] rounded-xl text-xs text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#9A5643]"
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowExcuseBox(false)}
+                      className="px-3 py-1.5 rounded-lg text-xs text-stone-600 hover:bg-white/70 cursor-pointer"
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-1.5 rounded-lg bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold transition cursor-pointer flex items-center gap-1"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>حفظ الغياب بعذر</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+
+          {/* 2. Assigned Tasks Card on Dashboard (المهام والمسؤوليات المسندة) */}
+          <div className="bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs flex flex-col justify-between space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-[#F6EFEA] text-[#9A5643] border border-[#E5C3B3] flex items-center justify-center shrink-0">
+                  <ListTodo className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-stone-900 text-sm">
+                    المهام والمسؤوليات المسندة
+                  </h3>
+                  <p className="text-[11px] text-stone-500">
+                    انقري على المهمة لتعليمها كمنجزة • {currentStaffProfile.tasks.filter(t => t.completed).length} من {currentStaffProfile.tasks.length} مكتملة
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigate('staff-attendance')}
+                className="text-xs font-bold text-[#9A5643] hover:text-[#7B3F30] hover:underline cursor-pointer"
+              >
+                {isLeaderOrAdmin ? 'إدارة مهام الكادر' : 'تحضير ومهام الكادر'}
+              </button>
+            </div>
+
+            {currentStaffProfile.tasks.length > 0 ? (
+              <div className="space-y-2 max-h-44 overflow-y-auto pr-0.5">
+                {currentStaffProfile.tasks.map(task => (
+                  <button
+                    key={task.id}
+                    type="button"
+                    onClick={() => handleToggleMyTask(task.id)}
+                    className={`w-full text-right p-2.5 rounded-2xl border transition flex items-center gap-2.5 cursor-pointer ${
+                      task.completed
+                        ? 'bg-[#F6EFEA]/70 border-[#E5C3B3] text-[#7B3F30]'
+                        : 'bg-[#FCFAF8] hover:bg-[#F6EFEA]/40 border-[#EFE8E2] text-stone-800'
+                    }`}
+                  >
+                    {task.completed ? (
+                      <CheckSquare className="w-4 h-4 text-[#9A5643] shrink-0" />
+                    ) : (
+                      <Square className="w-4 h-4 text-[#9A5643] shrink-0" />
+                    )}
+                    <span className={`text-xs font-medium flex-1 ${task.completed ? 'line-through opacity-75' : ''}`}>
+                      {task.title}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2] text-xs text-stone-500 text-center">
+                لا توجد مهام مسندة حالياً.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Circle breakdown overview */}
       <div className="space-y-3">

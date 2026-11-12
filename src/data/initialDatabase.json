@@ -23,13 +23,28 @@
     },
     {
       "id": "u-owner",
-      "name": "مالك المنصة",
+      "name": "ريفة المنصوري",
       "role": "owner",
       "title": "مالك المنصة العام",
-      "email": "owner@ghaym.org",
+      "email": "reef@ghaym.org",
       "phone": "",
       "circleIds": [],
-      "passcode": "7788",
+      "passcode": "2005",
+      "avatarIcon": "mushaf",
+      "avatarColor": "#ad4e00",
+      "isActive": true
+    },
+    {
+      "id": "u-founder-omar",
+      "name": "أ. عمر عبدالرحمن",
+      "role": "leader",
+      "title": "مؤسس غيث الغيم",
+      "email": "omar@ghaym.org",
+      "phone": "",
+      "circleIds": [],
+      "passcode": "1446",
+      "avatarIcon": "kaaba",
+      "avatarColor": "#047857",
       "isActive": true
     }
   ],

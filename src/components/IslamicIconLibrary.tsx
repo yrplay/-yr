@@ -176,11 +176,11 @@ export const ISLAMIC_ICONS: IslamicIconOption[] = [
 ];
 
 export const ISLAMIC_COLOR_PALETTES = [
-  { name: 'العنابي الملكي', hex: '#8E5364' },
+  { name: 'البني الملكي', hex: '#ad4e00' },
   { name: 'الأخضر الزمردي', hex: '#2D5A43' },
   { name: 'الكحلي الوقور', hex: '#1E3A8A' },
-  { name: 'الذهبي الدافئ', hex: '#B45309' },
   { name: 'الوردي الهادئ', hex: '#9F5F73' },
+  { name: 'الذهبي الدافئ', hex: '#B45309' },
   { name: 'الزيتي التراثي', hex: '#4D6B53' },
   { name: 'البني الخشبي', hex: '#634832' },
   { name: 'التركواز القرآني', hex: '#0D7490' }
@@ -290,7 +290,7 @@ export const IslamicIconPicker: React.FC<IslamicIconPickerProps> = ({
         <div>
           <h4 className="font-bold text-xs text-stone-800 flex items-center gap-1.5">
             <span>✨</span>
-            <span>شعار المعلمة: الأيقونات المرسومة والإيموجيات القرآنية والألوان</span>
+            <span>رمزية الحساب: الأيقونات المرسومة والإيموجيات القرآنية والألوان</span>
           </h4>
           <p className="text-[11px] text-stone-500 mt-0.5">
             اختاري شعاركِ المفضل (أيقونة مرسومة أو إيموجي) ولونكِ الخاص لتمييز هويتكِ في المنصة والشهادات

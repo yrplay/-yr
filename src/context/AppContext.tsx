@@ -557,13 +557,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const defaultOwner: User = {
     id: 'u-owner',
-    name: 'مالك المنصة',
+    name: 'ريفة المنصوري',
     role: 'owner',
     title: 'مالك المنصة العام',
     phone: '',
-    email: 'owner@ghaym.org',
+    email: 'reef@ghaym.org',
     circleIds: [],
-    passcode: '7788',
+    passcode: '2005',
+    isActive: true,
+    createdAt: new Date().toISOString()
+  };
+
+  const defaultFounderLeader: User = {
+    id: 'u-omar',
+    name: 'أ. عمر عبدالرحمن',
+    role: 'leader',
+    title: 'مؤسس غيث الغيم',
+    phone: '',
+    email: 'omar@ghaym.org',
+    circleIds: [],
+    passcode: '1446',
     isActive: true,
     createdAt: new Date().toISOString()
   };
@@ -572,30 +585,68 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const sanitizeUsersList = (userList: any[]): User[] => {
     let list: User[] = (userList || []).filter((u: any) => !isFakeDemoUser(u));
     
-    // Ensure yr.play.com@gmail.com is strictly role 'developer' with full permissions
+    // 1. Ensure yr.play.com@gmail.com is strictly role 'developer' (المطور التقني)
     let devFound = false;
     list = list.map((u: any) => {
       const email = (u.email || '').trim().toLowerCase();
-      if (email === 'yr.play.com@gmail.com' || u.id === 'u-dev' || (u.id === 'u-owner' && email === 'yr.play.com@gmail.com') || (u.id === 'u-admin' && (u.role === 'developer' || !u.role))) {
+      const name = (u.name || '').trim();
+
+      if (
+        email === 'yr.play.com@gmail.com' ||
+        u.id === 'u-dev' ||
+        (u.id === 'u-admin' && (u.role === 'developer' || !u.role))
+      ) {
         devFound = true;
-        const savedPass = typeof window !== 'undefined' ? (localStorage.getItem('ghaith_dev_passcode') || localStorage.getItem('ghaith_owner_passcode')) : '';
+        const savedPass = typeof window !== 'undefined' ? localStorage.getItem('ghaith_dev_passcode') : '';
         const effectivePasscode = (u.passcode && String(u.passcode).trim()) || savedPass || '8899';
         return {
           ...u,
           id: 'u-dev',
           email: 'yr.play.com@gmail.com',
           role: 'developer' as const,
-          name: u.name === 'إدارة المقرأة' || u.name === 'مالك المنصة' ? 'مطور المنصة' : (u.name || 'مطور المنصة'),
+          name: (!name || name === 'إدارة المقرأة' || name === 'مالك المنصة' || name === 'أ. عمر عبدالرحمن') ? 'مطور المنصة' : name,
           title: 'المطور التقني',
           passcode: effectivePasscode,
           isActive: true
         };
       }
+
+      // 2. Ensure ريفة المنصوري (reef@ghaym.org, PIN 2005) is role 'owner' (مالك المنصة) & title 'مالك المنصة العام'
+      if (
+        email === 'reef@ghaym.org' ||
+        email === 'owner@ghaym.org' ||
+        name.includes('ريفة المنصوري') ||
+        u.id === 'u-owner'
+      ) {
+        const currentPin = u.passcode ? String(u.passcode).trim() : '';
+        return {
+          ...u,
+          name: (!name || name === 'مالك المنصة' || name === 'إدارة المقرأة') ? 'ريفة المنصوري' : name,
+          email: (email === 'owner@ghaym.org' || !email) ? 'reef@ghaym.org' : u.email,
+          role: 'owner' as const,
+          title: 'مالك المنصة العام',
+          passcode: (!currentPin || currentPin === '7788') ? '2005' : currentPin,
+          isActive: true
+        };
+      }
+
+      // 3. Ensure أ. عمر عبدالرحمن (omar@ghaym.org) is role 'leader' (قائدة المقرأة) & title 'مؤسس غيث الغيم'
+      if (email === 'omar@ghaym.org' || name.includes('عمر عبدالرحمن')) {
+        return {
+          ...u,
+          name: name || 'أ. عمر عبدالرحمن',
+          email: u.email || 'omar@ghaym.org',
+          role: 'leader' as const,
+          title: 'مؤسس غيث الغيم',
+          isActive: true
+        };
+      }
+
       return u;
     });
 
     if (!devFound) {
-      const savedPass = typeof window !== 'undefined' ? (localStorage.getItem('ghaith_dev_passcode') || localStorage.getItem('ghaith_owner_passcode')) : '';
+      const savedPass = typeof window !== 'undefined' ? localStorage.getItem('ghaith_dev_passcode') : '';
       list.unshift({
         ...defaultDeveloper,
         passcode: savedPass || defaultDeveloper.passcode || '8899'
@@ -608,13 +659,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       list = list.filter((u, idx) => u.role !== 'developer' || idx === list.findIndex(d => d.role === 'developer'));
     }
 
-    // Keep at most 1 owner in the system
-    const hasOwner = list.some(u => u.role === 'owner');
-    if (!hasOwner && list.length <= 1) {
+    // Deduplicate owner accounts, preferring reef@ghaym.org (ريفة المنصوري)
+    const owners = list.filter(u => u.role === 'owner');
+    if (owners.length === 0) {
       list.push(defaultOwner);
-    } else if (hasOwner) {
-      const firstOwnerIndex = list.findIndex(u => u.role === 'owner');
-      list = list.filter((u, idx) => u.role !== 'owner' || idx === firstOwnerIndex);
+    } else if (owners.length > 1) {
+      const preferredOwner =
+        owners.find(u => (u.email || '').trim().toLowerCase() === 'reef@ghaym.org' && u.id !== 'u-owner') ||
+        owners.find(u => (u.name || '').includes('ريفة')) ||
+        owners[0];
+      list = list.filter(u => u.role !== 'owner' || u.id === preferredOwner.id);
+    }
+
+    // Ensure أ. عمر عبدالرحمن (omar@ghaym.org) is present
+    const hasOmar = list.some(
+      u => (u.email || '').trim().toLowerCase() === 'omar@ghaym.org' || (u.name || '').includes('عمر عبدالرحمن')
+    );
+    if (!hasOmar) {
+      list.push(defaultFounderLeader);
     }
 
     return list;
@@ -3648,24 +3710,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       throw new Error('حساب المطور ثابت');
     }
 
-    // 2. Owner can only be created by Developer
-    if (user.role === 'owner') {
-      if (currentUser?.role !== 'developer') {
-        showToast('تعيين مالك المنصة متاح حصرياً لمطور المنصة ⛔', 'error');
-        throw new Error('غير مصرح بتعيين مالك المنصة');
-      }
-      const existingOwner = users.find(u => u.role === 'owner');
-      if (existingOwner) {
-        showToast('يوجد مالك حالي للمنصة بالفعل؛ قم بتعديل حسابه أو إسناد الملكية له ⛔', 'error');
-        throw new Error('يوجد مالك مسجل للمنصة');
-      }
-    }
-
-    // 3. Leaders can be created by Developer or Owner
-    if (user.role === 'leader') {
-      if (currentUser?.role !== 'developer' && currentUser?.role !== 'owner') {
-        showToast('إنشاء حسابات القادة متاح حصرياً للمطور أو مالك المنصة ⛔', 'error');
-        throw new Error('غير مصرح بإنشاء حساب قائد');
+    // 2. Owner or Leader can be created by Developer or Owner
+    if (user.role === 'owner' || user.role === 'leader') {
+      if (
+        currentUser?.role !== 'developer' &&
+        currentUser?.role !== 'owner' &&
+        currentUser?.role !== 'leader' &&
+        !isTechnicalDeveloper(currentUser)
+      ) {
+        showToast('تعيين مالك المنصة أو قائدة المقرأة متاح حصرياً للمطور أو مالك المنصة ⛔', 'error');
+        throw new Error('غير مصرح بإنشاء هذا الحساب');
       }
     }
 
@@ -3673,12 +3727,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       id: user.id || 'u-' + Date.now(),
       name: user.name || 'عضوة جديدة',
       role: user.role || 'teacher',
-      title: user.title || (user.role === 'leader' ? 'قائدة مقرأة غيث الغيم' : user.role === 'supervisor' ? 'مشرفة مسار' : 'معلمة حلقة'),
+      title: user.title || (user.role === 'owner' ? 'مالك المنصة العام' : user.role === 'leader' ? 'قائدة مقرأة غيث الغيم' : user.role === 'supervisor' ? 'مشرفة مسار' : 'معلمة حلقة'),
       email: user.email || '',
       phone: user.phone || '',
       circleIds: user.circleIds || [],
       avatarIcon: user.avatarIcon || 'mushaf',
-      avatarColor: user.avatarColor || '#8E5364',
+      avatarColor: user.avatarColor || '#ad4e00',
       passcode: user.passcode?.trim() || '',
       isActive: true,
       createdAt: new Date().toISOString(),
@@ -3689,6 +3743,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = [...users.filter(existing => existing.id !== newUser.id), newUser];
     masterStateRef.current.users = next;
     setUsers(next);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('ghaith_staff_users', JSON.stringify(next));
+      } catch {}
+    }
 
     // Sync to authorized_staff in Firestore including passcode
     if (newUser.email) {
@@ -3723,40 +3782,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const target = users.find(u => u.id === id);
     if (!target) return;
 
-    // 1. Developer is fixed and cannot be edited by anyone else
-    if (target.role === 'developer' && currentUser?.role !== 'developer' && !isTechnicalDeveloper(currentUser)) {
-      showToast('حساب المطور التقني ثابت ومحمي من أي تعديل ⛔', 'error');
+    const isCurrentFullAdmin =
+      currentUser?.role === 'developer' ||
+      currentUser?.role === 'owner' ||
+      currentUser?.role === 'leader' ||
+      isTechnicalDeveloper(currentUser);
+    if (!isCurrentFullAdmin && currentUser?.id !== id) {
+      showToast('تعديل بيانات الحسابات متاح لإدارة المنصة فقط', 'error');
       return;
-    }
-
-    // 2. Owner role modifications restricted to Developer
-    if (target.role === 'owner' && user.role && user.role !== 'owner') {
-      if (currentUser?.role !== 'developer' && !isTechnicalDeveloper(currentUser)) {
-        showToast('تعديل منصب مالك المنصة متاح حصرياً للمطور التقني ⛔', 'error');
-        user.role = 'owner';
-      }
-    }
-
-    // 3. Elevation to Owner is only allowed by Developer
-    if (user.role === 'owner' && target.role !== 'owner') {
-      if (currentUser?.role !== 'developer' && !isTechnicalDeveloper(currentUser)) {
-        showToast('ترقية حساب إلى مالك المنصة متاح حصرياً للمطور التقني ⛔', 'error');
-        delete user.role;
-      }
-    }
-
-    // 4. Elevation to Developer is strictly disallowed
-    if (user.role === 'developer' && target.role !== 'developer') {
-      showToast('لا يمكن ترقية أي حساب إلى مطور تقني ⛔', 'error');
-      delete user.role;
-    }
-
-    // 5. Leaders can only be modified by Developer or Owner
-    if (target.role === 'leader' && user.role && user.role !== 'leader') {
-      if (currentUser?.role !== 'developer' && !isTechnicalDeveloper(currentUser) && currentUser?.role !== 'owner') {
-        showToast('تعديل منصب قائدة المقرأة متاح حصرياً لمالك المنصة أو المطور ⛔', 'error');
-        user.role = 'leader';
-      }
     }
 
     const nextUsers = users.map(u => u.id === id ? {
@@ -3766,6 +3799,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } : u);
     masterStateRef.current.users = nextUsers;
     setUsers(nextUsers);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('ghaith_staff_users', JSON.stringify(nextUsers));
+      } catch {}
+    }
     if (currentUser?.id === id) {
       setCurrentUser({ ...currentUser, ...user, updatedAt: new Date().toISOString() });
     }
@@ -3774,7 +3812,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (user.passcode && typeof window !== 'undefined') {
         localStorage.setItem('ghaith_dev_passcode', user.passcode.trim());
       }
-    } else if (id === 'u-owner' || target.role === 'owner') {
+    } else if (id === 'u-owner' || target.role === 'owner' || user.role === 'owner') {
       if (user.passcode && typeof window !== 'undefined') {
         localStorage.setItem('ghaith_owner_passcode', user.passcode.trim());
       }

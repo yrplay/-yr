@@ -1,0 +1,1272 @@
+import React, { useState } from 'react';
+import { useApp } from '../context/AppContext';
+import {
+  UserCheck, Clock, Wallet, ListTodo, FileText, CheckCircle2,
+  AlertCircle, Trash2, PenLine, CheckSquare, Square, Calendar,
+  Eye, EyeOff, Lock, Plus, X, Check, ClipboardList, ShieldCheck
+} from 'lucide-react';
+import {
+  User,
+  UserRole,
+  StaffTaskItem,
+  StaffAttendanceStatus
+} from '../types';
+import { renderUserAvatarBadge } from '../components/IslamicIconLibrary';
+import {
+  HijriDateNavigationBar,
+  formatHijriDate,
+  formatHijriShort,
+  getTodayISO,
+  getHijriParts
+} from '../utils/hijriDate';
+import {
+  resolveStaffProfile,
+  readAllStaffAttendanceRecords,
+  writeLocalStaffAttendanceRecords,
+  buildStaffAttendanceRecord,
+  formatCurrentArabicTime,
+  getStaffShortRoleLabel,
+  getDefaultWorkingHoursForRole,
+  readLocalStaffProfiles,
+  writeLocalStaffProfiles,
+  isFounderOrOwnerOrLeader,
+  isSupervisorOrTeacherOnly
+} from '../utils/staffHelpers';
+
+export const StaffAttendanceTasksView: React.FC = () => {
+  const {
+    users,
+    circles,
+    currentUser,
+    updateUser,
+    settings,
+    updateSettings,
+    showToast,
+    isPrivacyMode,
+    togglePrivacyMode
+  } = useApp();
+
+  // Both Founder ("مؤسس المنصة") and Platform Owner/Leader ("مالك المنصة" / "قائدة")
+  // share identical 100% full administrative visibility and edit permissions.
+  const isAdminOversight = isFounderOrOwnerOrLeader(currentUser);
+  const isCurrentOperationalStaff = isSupervisorOrTeacherOnly(currentUser);
+
+  const todayIso = getTodayISO();
+  const [selectedAttendanceDate, setSelectedAttendanceDate] = useState<string>(todayIso);
+
+  // Strictly include ONLY Supervisors (مشرفة) and Teachers (معلمة)
+  // Completely EXCLUDE Founders (مؤسس المنصة) and Platform Owners/Leaders (مالك المنصة / قائدة)
+  const operationalStaffMembers = users.filter(u => isSupervisorOrTeacherOnly(u));
+
+  const allAttendanceRecords = readAllStaffAttendanceRecords(settings);
+  const selfTodayRecord =
+    isCurrentOperationalStaff && currentUser
+      ? allAttendanceRecords[`${currentUser.id}_${todayIso}`]
+      : undefined;
+
+  const [showSelfExcuseForm, setShowSelfExcuseForm] = useState(false);
+  const [selfExcuseText, setSelfExcuseText] = useState('');
+
+  // Founder/Owner Attendance Override Modal State
+  const [editingAttendanceTarget, setEditingAttendanceTarget] = useState<{
+    user: User;
+    dateIso: string;
+    status: StaffAttendanceStatus;
+    checkInTime: string;
+    excuseText: string;
+  } | null>(null);
+
+  // Inline Editing States on Staff Operation Cards (Working Hours, Manual Salary, Tasks, Private Notes)
+  const [editingHoursUserId, setEditingHoursUserId] = useState<string | null>(null);
+  const [hoursDraft, setHoursDraft] = useState<string>('');
+
+  const [editingSalaryUserId, setEditingSalaryUserId] = useState<string | null>(null);
+  const [salaryDraft, setSalaryDraft] = useState<string>('');
+
+  const [newTaskInputs, setNewTaskInputs] = useState<Record<string, string>>({});
+  const [editingTaskKey, setEditingTaskKey] = useState<{ userId: string; taskId: string } | null>(null);
+  const [editingTaskText, setEditingTaskText] = useState<string>('');
+
+  const [editingNotesUserId, setEditingNotesUserId] = useState<string | null>(null);
+  const [notesDraft, setNotesDraft] = useState<string>('');
+
+  const roleBadgeStyles: Record<UserRole, string> = {
+    developer: 'bg-[#F6EFEA] text-[#7B3F30] border-[#E5C3B3]',
+    owner: 'bg-[#F6EFEA] text-[#7B3F30] border-[#E5C3B3]',
+    leader: 'bg-[#F6EFEA] text-[#7B3F30] border-[#E5C3B3]',
+    supervisor: 'bg-[#FDF6F2] text-[#9A5643] border-[#E5C3B3]',
+    teacher: 'bg-[#EBF3EE] text-[#2D5A43] border-[#C5DEC9]'
+  };
+
+  // Persist Staff Profile Operations (Working Hours, Manual Salary, Tasks, Private Notes)
+  const saveStaffProfileFields = async (
+    targetUser: User,
+    updates: Partial<{
+      workingHours: string;
+      monthlySalary: number;
+      tasks: StaffTaskItem[];
+      leaderPrivateNotes: string;
+    }>,
+    toastMessage?: string
+  ) => {
+    const currentResolved = resolveStaffProfile(targetUser, settings);
+    const mergedProfile = {
+      workingHours: updates.workingHours !== undefined ? updates.workingHours : currentResolved.workingHours,
+      monthlySalary: updates.monthlySalary !== undefined ? updates.monthlySalary : currentResolved.monthlySalary,
+      tasks: updates.tasks !== undefined ? updates.tasks : currentResolved.tasks,
+      leaderPrivateNotes:
+        updates.leaderPrivateNotes !== undefined ? updates.leaderPrivateNotes : currentResolved.leaderPrivateNotes,
+      updatedAt: new Date().toISOString()
+    };
+
+    const localProfiles = readLocalStaffProfiles();
+    writeLocalStaffProfiles({
+      ...localProfiles,
+      [targetUser.id]: mergedProfile
+    });
+
+    await updateUser(
+      targetUser.id,
+      {
+        workingHours: mergedProfile.workingHours,
+        monthlySalary: mergedProfile.monthlySalary,
+        tasks: mergedProfile.tasks,
+        leaderPrivateNotes: mergedProfile.leaderPrivateNotes
+      },
+      true
+    );
+
+    await updateSettings(
+      {
+        staffProfiles: {
+          ...(settings.staffProfiles || {}),
+          [targetUser.id]: mergedProfile
+        }
+      },
+      true
+    );
+
+    if (toastMessage) {
+      showToast(toastMessage, 'success');
+    }
+  };
+
+  // Daily Self Check-In Handlers for Supervisors & Teachers ONLY (Restricted strictly to Today's Hijri Date)
+  const handleSelfCheckInPresent = async () => {
+    if (!currentUser || !isCurrentOperationalStaff) return;
+    const nowTime = formatCurrentArabicTime();
+    const record = buildStaffAttendanceRecord({
+      user: currentUser,
+      dateIso: todayIso,
+      status: 'present',
+      checkInTime: nowTime,
+      excuseText: '',
+      recordedBy: currentUser.name
+    });
+    const nextRecords = {
+      ...readAllStaffAttendanceRecords(settings),
+      [record.id]: record
+    };
+    writeLocalStaffAttendanceRecords(nextRecords);
+    setShowSelfExcuseForm(false);
+    await updateSettings({ staffAttendanceRecords: nextRecords }, true);
+    showToast(`تم تسجيل حضوركِ لليوم (${nowTime}) بنجاح`, 'success');
+  };
+
+  const handleSelfCheckInExcused = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser || !isCurrentOperationalStaff) return;
+    const cleanExcuse = selfExcuseText.trim();
+    if (!cleanExcuse) {
+      showToast('يرجى كتابة عذر الغياب وتفاصيله قبل الحفظ', 'error');
+      return;
+    }
+    const record = buildStaffAttendanceRecord({
+      user: currentUser,
+      dateIso: todayIso,
+      status: 'absent_excused',
+      checkInTime: formatCurrentArabicTime(),
+      excuseText: cleanExcuse,
+      recordedBy: currentUser.name
+    });
+    const nextRecords = {
+      ...readAllStaffAttendanceRecords(settings),
+      [record.id]: record
+    };
+    writeLocalStaffAttendanceRecords(nextRecords);
+    setShowSelfExcuseForm(false);
+    setSelfExcuseText('');
+    await updateSettings({ staffAttendanceRecords: nextRecords }, true);
+    showToast('تم تسجيل الغياب بعذر لليوم بنجاح', 'success');
+  };
+
+  // Founder/Owner Attendance Override Handlers (Any Hijri Date)
+  const handleAdminQuickStatusChange = async (
+    targetUser: User,
+    dateIso: string,
+    status: StaffAttendanceStatus
+  ) => {
+    if (!isAdminOversight) return;
+    const existing = allAttendanceRecords[`${targetUser.id}_${dateIso}`];
+    if (status === 'absent_excused' && !existing?.excuseText) {
+      setEditingAttendanceTarget({
+        user: targetUser,
+        dateIso,
+        status: 'absent_excused',
+        checkInTime: existing?.checkInTime || formatCurrentArabicTime(),
+        excuseText: existing?.excuseText || ''
+      });
+      return;
+    }
+    const record = buildStaffAttendanceRecord({
+      user: targetUser,
+      dateIso,
+      status,
+      checkInTime: status === 'present' ? (existing?.checkInTime || formatCurrentArabicTime()) : '',
+      excuseText: status === 'absent_excused' ? (existing?.excuseText || '') : '',
+      recordedBy: currentUser?.name || 'إدارة المنصة'
+    });
+    const nextRecords = {
+      ...readAllStaffAttendanceRecords(settings),
+      [record.id]: record
+    };
+    writeLocalStaffAttendanceRecords(nextRecords);
+    await updateSettings({ staffAttendanceRecords: nextRecords }, true);
+    const statusAr =
+      status === 'present' ? 'حاضرة' : status === 'absent_excused' ? 'غياب بعذر' : 'غياب بدون عذر';
+    showToast(`تم تحديث حالة ${targetUser.name} إلى (${statusAr})`, 'success');
+  };
+
+  const handleSaveAdminAttendanceOverride = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAttendanceTarget || !isAdminOversight) return;
+    const { user, dateIso, status, checkInTime, excuseText } = editingAttendanceTarget;
+    if (status === 'absent_excused' && !excuseText.trim()) {
+      showToast('يرجى كتابة عذر الغياب وتفاصيله', 'error');
+      return;
+    }
+    const record = buildStaffAttendanceRecord({
+      user,
+      dateIso,
+      status,
+      checkInTime: status === 'present' ? (checkInTime.trim() || formatCurrentArabicTime()) : checkInTime.trim(),
+      excuseText: excuseText.trim(),
+      recordedBy: currentUser?.name || 'إدارة المنصة'
+    });
+    const nextRecords = {
+      ...readAllStaffAttendanceRecords(settings),
+      [record.id]: record
+    };
+    writeLocalStaffAttendanceRecords(nextRecords);
+    setEditingAttendanceTarget(null);
+    await updateSettings({ staffAttendanceRecords: nextRecords }, true);
+    showToast(`تم اعتماد سجل التحضير لـ ${user.name} بنجاح`, 'success');
+  };
+
+  // Tasks Manipulation Handlers
+  const handleToggleTaskCheckbox = async (targetUser: User, taskId: string) => {
+    const profile = resolveStaffProfile(targetUser, settings);
+    const nextTasks = profile.tasks.map(t =>
+      t.id === taskId
+        ? {
+            ...t,
+            completed: !t.completed,
+            completedAt: !t.completed ? new Date().toISOString() : undefined
+          }
+        : t
+    );
+    await saveStaffProfileFields(targetUser, { tasks: nextTasks });
+  };
+
+  const handleAddTaskToUser = async (targetUser: User) => {
+    if (!isAdminOversight) return;
+    const draft = (newTaskInputs[targetUser.id] || '').trim();
+    if (!draft) {
+      showToast('يرجى كتابة نص المهمة أولاً', 'error');
+      return;
+    }
+    const profile = resolveStaffProfile(targetUser, settings);
+    const newTask: StaffTaskItem = {
+      id: `task-${targetUser.id}-${Date.now()}`,
+      title: draft,
+      completed: false,
+      createdAt: new Date().toISOString()
+    };
+    const nextTasks = [...profile.tasks, newTask];
+    setNewTaskInputs(prev => ({ ...prev, [targetUser.id]: '' }));
+    await saveStaffProfileFields(targetUser, { tasks: nextTasks }, `تمت إضافة المهمة لـ ${targetUser.name}`);
+  };
+
+  const handleSaveEditedTaskText = async (targetUser: User, taskId: string) => {
+    if (!isAdminOversight) return;
+    const clean = editingTaskText.trim();
+    if (!clean) {
+      showToast('لا يمكن ترك نص المهمة فارغاً', 'error');
+      return;
+    }
+    const profile = resolveStaffProfile(targetUser, settings);
+    const nextTasks = profile.tasks.map(t => (t.id === taskId ? { ...t, title: clean } : t));
+    setEditingTaskKey(null);
+    setEditingTaskText('');
+    await saveStaffProfileFields(targetUser, { tasks: nextTasks }, 'تم تحديث نص المهمة بنجاح');
+  };
+
+  const handleDeleteTaskFromUser = async (targetUser: User, taskId: string) => {
+    if (!isAdminOversight) return;
+    const profile = resolveStaffProfile(targetUser, settings);
+    const nextTasks = profile.tasks.filter(t => t.id !== taskId);
+    await saveStaffProfileFields(targetUser, { tasks: nextTasks }, 'تم حذف المهمة');
+  };
+
+  const effectiveAttendanceDate = isAdminOversight ? selectedAttendanceDate : todayIso;
+  const selectedHijriParts = getHijriParts(effectiveAttendanceDate);
+
+  const getStaffMonthlySummary = (userId: string) => {
+    let presentDays = 0;
+    let excusedDays = 0;
+    let unexcusedDays = 0;
+
+    for (const rec of Object.values(allAttendanceRecords)) {
+      if (!rec || rec.userId !== userId || !rec.date) continue;
+      const parts = getHijriParts(rec.date);
+      if (parts.monthKey === selectedHijriParts.monthKey) {
+        if (rec.status === 'present') presentDays++;
+        else if (rec.status === 'absent_excused') excusedDays++;
+        else if (rec.status === 'absent_unexcused') unexcusedDays++;
+      }
+    }
+    return { presentDays, excusedDays, unexcusedDays };
+  };
+
+  // Displayed rows & cards:
+  // - Founder / Platform Owner / Leader sees ALL Supervisors (مشرفة) and Teachers (معلمة) ONLY.
+  // - A logged-in Supervisor or Teacher sees her own record/card ONLY.
+  const displayedStaffList = isAdminOversight
+    ? operationalStaffMembers
+    : isCurrentOperationalStaff && currentUser
+    ? [currentUser]
+    : operationalStaffMembers;
+
+  return (
+    <div className="space-y-6" dir="rtl">
+      {/* Page Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-5 sm:p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs">
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-[#F6EFEA] border border-[#E5C3B3] text-[#9A5643] flex items-center justify-center shrink-0">
+            <ClipboardList className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xl font-bold text-stone-900 font-quran">
+                تحضير ومهام الكادر
+              </h2>
+              <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full bg-[#F6EFEA] text-[#7B3F30] font-bold border border-[#E5C3B3]">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+                <span>
+                  {isAdminOversight
+                    ? 'إشراف كامل على تحضير ومهام ودوام ورواتب المشرفات والمعلمات'
+                    : 'واجهة التحضير اليومي الذاتي والمهام المسندة'}
+                </span>
+              </span>
+            </div>
+            <p className="text-xs text-stone-500 mt-1">
+              مخصص للمشرفات والمعلمات فقط — سجل التحضير اليومي والشهري بتقويم أم القرى، ساعات الدوام، المهام والمسؤوليات، والراتب الشهري الثابت
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 self-start lg:self-auto">
+          <button
+            type="button"
+            onClick={togglePrivacyMode}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+              isPrivacyMode
+                ? 'bg-[#9A5643] text-white border-[#7B3F30]'
+                : 'bg-[#F6EFEA] text-[#7B3F30] border-[#E5C3B3] hover:bg-[#EFE3DA]'
+            }`}
+            title="تفعيل أو إيقاف تمويه الرواتب الشهرية والبيانات الحساسة"
+          >
+            {isPrivacyMode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            <span>{isPrivacyMode ? 'إظهار الرواتب' : 'تمويه الرواتب'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* =====================================================================
+          PART 1: DAILY & MONTHLY HIJRI ATTENDANCE FOR SUPERVISORS & TEACHERS
+          (جدول التحضير اليومي والشهري للمعلمات والمشرفات - تقويم أم القرى)
+         ===================================================================== */}
+      <div className="bg-white rounded-3xl border border-[#E8DFD8] shadow-2xs overflow-hidden">
+        {/* Personal Self Check-In Bar:
+            Strictly shown ONLY when logged in as a Supervisor (مشرفة) or Teacher (معلمة).
+            Completely HIDDEN when a Founder (مؤسس المنصة) or Platform Owner/Leader (مالك المنصة / قائدة) opens this view. */}
+        {!isAdminOversight && isCurrentOperationalStaff && currentUser && (
+          <div className="p-5 sm:p-6 bg-[#FAF7F5] border-b border-[#E8DFD8] space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#F6EFEA] border border-[#E5C3B3] text-[#9A5643] flex items-center justify-center shrink-0">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-sm sm:text-base font-bold text-stone-900">
+                      التحضير اليومي الذاتي ({currentUser.name})
+                    </h3>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#F6EFEA] text-[#7B3F30] border border-[#E5C3B3]">
+                      <Calendar className="w-3.5 h-3.5 text-[#9A5643]" />
+                      <span>تاريخ اليوم (تقويم أم القرى): {formatHijriDate(todayIso, { includeWeekday: true })}</span>
+                    </span>
+                  </div>
+                  <p className="text-xs text-stone-500 mt-1 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-[#9A5643]" />
+                    <span>مقيد حصرياً بتاريخ اليوم الهجري الحالي — يسجل وقت الحضور تلقائياً أو يطلب كتابة عذر الغياب</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleSelfCheckInPresent}
+                  className="px-4 py-2.5 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+                >
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>تسجيل حضور اليوم</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelfExcuseText(selfTodayRecord?.excuseText || '');
+                    setShowSelfExcuseForm(prev => !prev);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-[#F6EFEA] hover:bg-[#EFE3DA] text-[#7B3F30] border border-[#E5C3B3] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  <AlertCircle className="w-4 h-4 text-[#9A5643] shrink-0" />
+                  <span>تسجيل غياب / اعتذار</span>
+                </button>
+              </div>
+            </div>
+
+            {selfTodayRecord && (
+              <div
+                className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs ${
+                  selfTodayRecord.status === 'present'
+                    ? 'bg-[#EBF3EE] border-[#C5DEC9] text-[#2D5A43]'
+                    : 'bg-[#F6EFEA] border-[#E5C3B3] text-[#7B3F30]'
+                }`}
+              >
+                <div className="flex items-center gap-2 flex-wrap">
+                  {selfTodayRecord.status === 'present' ? (
+                    <CheckCircle2 className="w-4 h-4 text-[#2D5A43] shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-[#9A5643] shrink-0" />
+                  )}
+                  <span className="font-bold">
+                    حالتكِ المسجلة لليوم:{' '}
+                    {selfTodayRecord.status === 'present'
+                      ? 'حاضرة'
+                      : selfTodayRecord.status === 'absent_excused'
+                      ? 'غياب بعذر'
+                      : 'غياب بدون عذر'}
+                  </span>
+                  {selfTodayRecord.checkInTime && (
+                    <span className="font-mono font-bold px-2 py-0.5 rounded-md bg-white/80">
+                      وقت التسجيل: {selfTodayRecord.checkInTime}
+                    </span>
+                  )}
+                  {selfTodayRecord.excuseText && (
+                    <span className="text-[#7B3F30] font-medium">
+                      • العذر: {selfTodayRecord.excuseText}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {showSelfExcuseForm && (
+              <form
+                onSubmit={handleSelfCheckInExcused}
+                className="p-4 rounded-2xl bg-[#F6EFEA] border border-[#E5C3B3] space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#7B3F30] flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-[#9A5643]" />
+                    <span>
+                      سبب وعذر الغياب ليوم {formatHijriShort(todayIso)}:
+                    </span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowSelfExcuseForm(false)}
+                    className="text-stone-400 hover:text-stone-700 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <textarea
+                  required
+                  rows={2}
+                  value={selfExcuseText}
+                  onChange={e => setSelfExcuseText(e.target.value)}
+                  placeholder="اكتبي عذر الغياب وتفاصيله..."
+                  className="w-full px-3.5 py-2.5 bg-white border border-[#E5C3B3] rounded-xl text-xs text-stone-800 focus:outline-none focus:ring-2 focus:ring-[#9A5643]"
+                />
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowSelfExcuseForm(false)}
+                    className="px-3.5 py-1.5 rounded-xl text-xs text-stone-600 hover:bg-white/70 cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>حفظ كـ غياب بعذر</span>
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
+
+        {/* Daily & Monthly Attendance Table (Strictly Supervisors & Teachers ONLY) */}
+        <div className="p-5 border-b border-stone-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h4 className="text-sm font-bold text-stone-900 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-[#9A5643]" />
+              <span>جدول التحضير اليومي والشهري للمعلمات والمشرفات</span>
+            </h4>
+            <p className="text-xs text-stone-500 mt-0.5">
+              إحصائيات الشهر الهجري المعروض: <strong className="text-[#7B3F30]">{selectedHijriParts.monthLabel}</strong>
+              {isAdminOversight
+                ? ' • صلاحية كاملة لمؤسس ومالك المنصة لتعديل الحالة أو العذر في أي تاريخ هجري'
+                : ' • يعرض سجل حضوركِ اليومي وإحصائياتكِ الشهرية'}
+            </p>
+          </div>
+
+          {isAdminOversight ? (
+            <div className="w-full lg:w-auto">
+              <HijriDateNavigationBar
+                selectedDate={selectedAttendanceDate}
+                onChangeDate={setSelectedAttendanceDate}
+                compact
+              />
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F6EFEA] border border-[#E5C3B3] text-xs font-bold text-[#7B3F30]">
+              <Calendar className="w-3.5 h-3.5 text-[#9A5643]" />
+              <span>{formatHijriDate(todayIso, { includeWeekday: true })}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-right text-xs">
+            <thead className="bg-[#FAF7F5] border-b border-stone-200 text-stone-600">
+              <tr>
+                <th className="py-3.5 px-4 font-bold">المعلمة / المشرفة</th>
+                <th className="py-3.5 px-4 font-bold">ساعات الدوام</th>
+                <th className="py-3.5 px-4 font-bold">وقت التسجيل</th>
+                <th className="py-3.5 px-4 font-bold">الحالة ({formatHijriShort(effectiveAttendanceDate)})</th>
+                <th className="py-3.5 px-4 font-bold">عذر الغياب وتفاصيله</th>
+                <th className="py-3.5 px-4 font-bold text-center">إحصائية الشهر ({selectedHijriParts.monthName})</th>
+                {isAdminOversight && (
+                  <th className="py-3.5 px-4 font-bold text-center">تحكم الإدارة</th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100">
+              {displayedStaffList.length > 0 ? (
+                displayedStaffList.map(staff => {
+                  const profile = resolveStaffProfile(staff, settings);
+                  const rec = allAttendanceRecords[`${staff.id}_${effectiveAttendanceDate}`];
+                  const monthly = getStaffMonthlySummary(staff.id);
+                  const shortRole = getStaffShortRoleLabel(staff.role, staff);
+
+                  return (
+                    <tr key={staff.id} className="hover:bg-stone-50/70 transition">
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-xl bg-[#F6EFEA] border border-[#E5C3B3] text-[#9A5643] flex items-center justify-center shrink-0">
+                            {renderUserAvatarBadge(staff.avatarIcon, '#9A5643', 'w-4 h-4')}
+                          </div>
+                          <div>
+                            <div className="font-bold text-stone-900 privacy-teacher-name">{staff.name}</div>
+                            <span
+                              className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                roleBadgeStyles[staff.role] || roleBadgeStyles.teacher
+                              }`}
+                            >
+                              {shortRole}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="py-3.5 px-4 text-stone-700 font-medium">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+                          <span>{profile.workingHours}</span>
+                        </span>
+                      </td>
+
+                      <td className="py-3.5 px-4 font-mono font-bold text-stone-800">
+                        {rec?.checkInTime ? (
+                          <span className="px-2.5 py-1 rounded-lg bg-[#F6EFEA] text-[#7B3F30] border border-[#E5C3B3]">
+                            {rec.checkInTime}
+                          </span>
+                        ) : (
+                          <span className="text-stone-400 font-sans font-normal">—</span>
+                        )}
+                      </td>
+
+                      <td className="py-3.5 px-4">
+                        {rec?.status === 'present' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EBF3EE] text-[#2D5A43] border border-[#C5DEC9] text-[11px] font-bold">
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                            <span>حاضرة</span>
+                          </span>
+                        ) : rec?.status === 'absent_excused' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F6EFEA] text-[#7B3F30] border border-[#E5C3B3] text-[11px] font-bold">
+                            <AlertCircle className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+                            <span>غياب بعذر</span>
+                          </span>
+                        ) : rec?.status === 'absent_unexcused' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[11px] font-bold">
+                            <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                            <span>غياب بدون عذر</span>
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-stone-400">لم يُسجل</span>
+                        )}
+                      </td>
+
+                      <td className="py-3.5 px-4 max-w-[260px]">
+                        {rec?.excuseText ? (
+                          <p className="text-xs text-[#7B3F30] bg-[#F6EFEA]/70 px-3 py-1.5 rounded-xl border border-[#E5C3B3] leading-relaxed">
+                            {rec.excuseText}
+                          </p>
+                        ) : (
+                          <span className="text-stone-400 text-[11px]">—</span>
+                        )}
+                      </td>
+
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="inline-flex items-center gap-1.5 text-[11px] font-mono">
+                          <span className="px-2 py-0.5 rounded-lg bg-[#EBF3EE] text-[#2D5A43] font-bold">
+                            حضور: {monthly.presentDays}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-lg bg-[#F6EFEA] text-[#7B3F30] font-bold">
+                            بعذر: {monthly.excusedDays}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-lg bg-rose-50 text-rose-700 font-bold">
+                            بدون عذر: {monthly.unexcusedDays}
+                          </span>
+                        </div>
+                      </td>
+
+                      {isAdminOversight && (
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleAdminQuickStatusChange(staff, effectiveAttendanceDate, 'present')}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                                rec?.status === 'present'
+                                  ? 'bg-[#2D5A43] text-white'
+                                  : 'bg-stone-100 hover:bg-[#EBF3EE] text-stone-700 hover:text-[#2D5A43]'
+                              }`}
+                            >
+                              حاضرة
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleAdminQuickStatusChange(staff, effectiveAttendanceDate, 'absent_excused')
+                              }
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                                rec?.status === 'absent_excused'
+                                  ? 'bg-[#9A5643] text-white'
+                                  : 'bg-stone-100 hover:bg-[#F6EFEA] text-stone-700 hover:text-[#7B3F30]'
+                              }`}
+                            >
+                              غياب بعذر
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleAdminQuickStatusChange(staff, effectiveAttendanceDate, 'absent_unexcused')
+                              }
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                                rec?.status === 'absent_unexcused'
+                                  ? 'bg-rose-700 text-white'
+                                  : 'bg-stone-100 hover:bg-rose-50 text-stone-700 hover:text-rose-700'
+                              }`}
+                            >
+                              بدون عذر
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditingAttendanceTarget({
+                                  user: staff,
+                                  dateIso: effectiveAttendanceDate,
+                                  status: rec?.status || 'present',
+                                  checkInTime: rec?.checkInTime || formatCurrentArabicTime(),
+                                  excuseText: rec?.excuseText || ''
+                                })
+                              }
+                              className="p-1.5 rounded-lg bg-[#F6EFEA] hover:bg-[#EFE3DA] text-[#7B3F30] border border-[#E5C3B3] transition cursor-pointer"
+                              title="تعديل الحالة أو وقت التسجيل أو العذر"
+                            >
+                              <PenLine className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={isAdminOversight ? 7 : 6} className="py-8 text-center text-stone-400 text-xs">
+                    لا توجد حسابات مشرفات أو معلمات مسجلة حالياً. يمكن إضافتهن من قسم «المعلمات والمشرفات».
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* =====================================================================
+          PART 2: DUTIES, WORKING HOURS, MANUAL SALARY & PRIVATE NOTES
+          (بطاقة المهام والدوام والراتب للمشرفات والمعلمات فقط)
+         ===================================================================== */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-[#F6EFEA] border border-[#E5C3B3] text-[#9A5643] flex items-center justify-center">
+              <ListTodo className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-stone-900 font-quran">
+                بطاقة المهام والدوام والراتب (للمشرفات والمعلمات فقط)
+              </h3>
+              <p className="text-[11px] text-stone-500">
+                ساعات الدوام، المهام والمسؤوليات، الراتب الشهري الثابت (بدون خصم تلقائي)، وملاحظات الإدارة الخاصة
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {displayedStaffList.map(user => {
+            const shortRoleBadge = getStaffShortRoleLabel(user.role, user);
+            const profile = resolveStaffProfile(user, settings);
+            const monthlyStats = getStaffMonthlySummary(user.id);
+
+            const assignedCircles =
+              user.role === 'supervisor'
+                ? circles.filter(c => c.supervisorId === user.id || user.circleIds?.includes(c.id))
+                : circles.filter(c => c.teacherId === user.id || user.circleIds?.includes(c.id));
+
+            return (
+              <div
+                key={user.id}
+                className="bg-white p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-5 flex flex-col justify-between"
+              >
+                {/* Card Header */}
+                <div className="flex items-start justify-between gap-3 border-b border-stone-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-[#F6EFEA] border border-[#E5C3B3] text-[#9A5643] flex items-center justify-center shrink-0">
+                      {renderUserAvatarBadge(user.avatarIcon, '#9A5643', 'w-6 h-6')}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-bold text-stone-900 text-base privacy-teacher-name">
+                          {user.name}
+                        </h4>
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                            roleBadgeStyles[user.role] || roleBadgeStyles.teacher
+                          }`}
+                        >
+                          {shortRoleBadge}
+                        </span>
+                      </div>
+                      <p className="text-xs text-stone-500 mt-0.5">
+                        {user.title}
+                        {assignedCircles.length > 0 &&
+                          ` • ${assignedCircles.map(c => (c.name || '').replace(/[🪴🤎]/g, '').trim()).join('، ')}`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-[11px] font-mono shrink-0">
+                    <span className="px-2.5 py-1 rounded-xl bg-[#EBF3EE] text-[#2D5A43] font-bold">
+                      حضور: {monthlyStats.presentDays}
+                    </span>
+                    <span className="px-2.5 py-1 rounded-xl bg-[#F6EFEA] text-[#7B3F30] font-bold">
+                      بعذر: {monthlyStats.excusedDays}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 1) ساعات الدوام & 3) الراتب الشهري الثابت */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Working Hours (ساعات الدوام) */}
+                  <div className="p-4 rounded-2xl bg-[#F6EFEA] border border-[#E5C3B3] space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#7B3F30] flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-[#9A5643]" />
+                        <span>ساعات الدوام</span>
+                      </span>
+                      {isAdminOversight && editingHoursUserId !== user.id && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingHoursUserId(user.id);
+                            setHoursDraft(profile.workingHours);
+                          }}
+                          className="p-1 rounded-lg hover:bg-white/80 text-[#9A5643] transition cursor-pointer"
+                          title="تعديل ساعات الدوام"
+                        >
+                          <PenLine className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {editingHoursUserId === user.id ? (
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <input
+                          type="text"
+                          value={hoursDraft}
+                          onChange={e => setHoursDraft(e.target.value)}
+                          placeholder="من 4:00 عصراً إلى 6:00 مساءً"
+                          className="w-full px-2.5 py-1.5 bg-white border border-[#9A5643] rounded-xl text-xs font-bold text-stone-900 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await saveStaffProfileFields(
+                              user,
+                              { workingHours: hoursDraft.trim() || getDefaultWorkingHoursForRole(user.role) },
+                              `تم حفظ ساعات الدوام لـ ${user.name}`
+                            );
+                            setEditingHoursUserId(null);
+                          }}
+                          className="p-1.5 rounded-xl bg-[#9A5643] text-white cursor-pointer"
+                          title="حفظ"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingHoursUserId(null)}
+                          className="p-1.5 rounded-xl bg-white text-stone-500 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-xs sm:text-sm font-bold text-stone-900 pt-0.5">
+                        {profile.workingHours}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Monthly Salary (الراتب الشهري الثابت يدوياً - بدون خصم تلقائي + تمويه الخصوصية) */}
+                  <div className="p-4 rounded-2xl bg-[#F6EFEA] border border-[#E5C3B3] space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#7B3F30] flex items-center gap-1.5">
+                        <Wallet className="w-4 h-4 text-[#9A5643]" />
+                        <span>الراتب الشهري</span>
+                      </span>
+                      {isAdminOversight && editingSalaryUserId !== user.id && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingSalaryUserId(user.id);
+                            setSalaryDraft(String(profile.monthlySalary));
+                          }}
+                          className="p-1 rounded-lg hover:bg-white/80 text-[#9A5643] transition cursor-pointer"
+                          title="تعديل الراتب الشهري يدوياً"
+                        >
+                          <PenLine className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {editingSalaryUserId === user.id ? (
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <input
+                          type="number"
+                          min={0}
+                          step={50}
+                          value={salaryDraft}
+                          onChange={e => setSalaryDraft(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-white border border-[#9A5643] rounded-xl text-xs font-mono font-bold text-stone-900 focus:outline-none"
+                        />
+                        <span className="text-xs font-bold text-[#7B3F30]">ر.س</span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const num = Number(salaryDraft) || 0;
+                            await saveStaffProfileFields(
+                              user,
+                              { monthlySalary: num },
+                              `تم تحديث الراتب الشهري الثابت لـ ${user.name}`
+                            );
+                            setEditingSalaryUserId(null);
+                          }}
+                          className="p-1.5 rounded-xl bg-[#9A5643] text-white cursor-pointer"
+                          title="حفظ"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingSalaryUserId(null)}
+                          className="p-1.5 rounded-xl bg-white text-stone-500 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between pt-0.5">
+                        <span
+                          className={`text-sm font-bold font-mono text-[#7B3F30] bg-white px-3 py-1 rounded-xl border border-[#E5C3B3] privacy-salary ${
+                            isPrivacyMode ? 'blur-[5px] select-none' : ''
+                          }`}
+                          style={isPrivacyMode ? { filter: 'blur(5px)', userSelect: 'none' } : undefined}
+                        >
+                          {profile.monthlySalary.toLocaleString('en-US')} ر.س
+                        </span>
+                        <span className="text-[10px] text-[#9A5643] font-semibold">
+                          مبلغ ثابت يدوياً
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2) المهام والمسؤوليات (Editable & Deletable Tasks List) */}
+                <div className="p-4 rounded-2xl bg-[#FCFAF8] border border-[#EFE8E2] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs sm:text-sm font-bold text-stone-900 flex items-center gap-1.5">
+                      <ListTodo className="w-4 h-4 text-[#9A5643]" />
+                      <span>المهام والمسؤوليات</span>
+                    </span>
+                    <span className="text-[11px] font-bold text-[#7B3F30] bg-[#F6EFEA] px-2.5 py-0.5 rounded-full border border-[#E5C3B3]">
+                      {profile.tasks.filter(t => t.completed).length} من {profile.tasks.length} مكتملة
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-0.5">
+                    {profile.tasks.length > 0 ? (
+                      profile.tasks.map(task => {
+                        const isEditingThisTask =
+                          editingTaskKey?.userId === user.id && editingTaskKey?.taskId === task.id;
+                        return (
+                          <div
+                            key={task.id}
+                            className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 transition ${
+                              task.completed
+                                ? 'bg-[#F6EFEA]/70 border-[#E5C3B3] text-[#7B3F30]'
+                                : 'bg-white border-stone-200/80 text-stone-800'
+                            }`}
+                          >
+                            {isEditingThisTask ? (
+                              <div className="flex items-center gap-1.5 flex-1">
+                                <input
+                                  type="text"
+                                  value={editingTaskText}
+                                  onChange={e => setEditingTaskText(e.target.value)}
+                                  className="w-full px-2.5 py-1.5 bg-white border border-[#9A5643] rounded-lg text-xs text-stone-900 focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveEditedTaskText(user, task.id)}
+                                  className="p-1.5 rounded-lg bg-[#9A5643] text-white cursor-pointer"
+                                  title="حفظ تعديل المهمة"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingTaskKey(null)}
+                                  className="p-1.5 rounded-lg bg-stone-100 text-stone-500 cursor-pointer"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleTaskCheckbox(user, task.id)}
+                                  className="flex items-center gap-2.5 text-right flex-1 cursor-pointer"
+                                >
+                                  {task.completed ? (
+                                    <CheckSquare className="w-4 h-4 text-[#9A5643] shrink-0" />
+                                  ) : (
+                                    <Square className="w-4 h-4 text-[#9A5643] shrink-0" />
+                                  )}
+                                  <span
+                                    className={`text-xs leading-snug ${
+                                      task.completed ? 'line-through opacity-75' : 'font-medium'
+                                    }`}
+                                  >
+                                    {task.title}
+                                  </span>
+                                </button>
+
+                                {isAdminOversight && (
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingTaskKey({ userId: user.id, taskId: task.id });
+                                        setEditingTaskText(task.title);
+                                      }}
+                                      className="p-1.5 rounded-lg hover:bg-[#F6EFEA] text-[#9A5643] transition cursor-pointer"
+                                      title="تعديل نص المهمة"
+                                    >
+                                      <PenLine className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteTaskFromUser(user, task.id)}
+                                      className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-600 transition cursor-pointer"
+                                      title="حذف المهمة"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-xs text-stone-400 text-center py-2">لا توجد مهام مسندة حالياً</p>
+                    )}
+                  </div>
+
+                  {/* Founder/Owner Add New Task Input */}
+                  {isAdminOversight && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="text"
+                        value={newTaskInputs[user.id] || ''}
+                        onChange={e => setNewTaskInputs(prev => ({ ...prev, [user.id]: e.target.value }))}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddTaskToUser(user);
+                          }
+                        }}
+                        placeholder="أضيفي مهمة جديدة لهذه المعلمة / المشرفة..."
+                        className="flex-1 px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs text-stone-800 focus:outline-none focus:border-[#9A5643]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAddTaskToUser(user)}
+                        className="px-3.5 py-2 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold transition flex items-center gap-1 shrink-0 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>إضافة مهمة</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4) ملاحظات الإدارة (Visible & Editable ONLY by Founders & Platform Owners/Leaders) */}
+                {isAdminOversight && (
+                  <div className="p-4 rounded-2xl bg-[#F6EFEA]/65 border border-[#E5C3B3] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#7B3F30] flex items-center gap-1.5">
+                        <FileText className="w-4 h-4 text-[#9A5643]" />
+                        <span>ملاحظات الإدارة (خاصة بمؤسس ومالك المنصة):</span>
+                      </span>
+                      {editingNotesUserId !== user.id && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingNotesUserId(user.id);
+                            setNotesDraft(profile.leaderPrivateNotes);
+                          }}
+                          className="inline-flex items-center gap-1 text-xs font-bold text-[#9A5643] hover:text-[#7B3F30] cursor-pointer"
+                        >
+                          <PenLine className="w-3.5 h-3.5" />
+                          <span>{profile.leaderPrivateNotes ? 'تعديل الملاحظة' : 'إضافة ملاحظة'}</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {editingNotesUserId === user.id ? (
+                      <div className="space-y-2">
+                        <textarea
+                          rows={2}
+                          value={notesDraft}
+                          onChange={e => setNotesDraft(e.target.value)}
+                          placeholder="اكتبي ملاحظات التقييم والمتابعة الخاصة بالإدارة..."
+                          className="w-full px-3 py-2 bg-white border border-[#9A5643] rounded-xl text-xs text-stone-800 focus:outline-none"
+                        />
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingNotesUserId(null)}
+                            className="px-3 py-1.5 rounded-lg text-xs text-stone-600 hover:bg-white cursor-pointer"
+                          >
+                            إلغاء
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await saveStaffProfileFields(
+                                user,
+                                { leaderPrivateNotes: notesDraft.trim() },
+                                `تم حفظ ملاحظات الإدارة الخاصة بـ ${user.name}`
+                              );
+                              setEditingNotesUserId(null);
+                            }}
+                            className="px-4 py-1.5 rounded-lg bg-[#9A5643] text-white text-xs font-bold cursor-pointer flex items-center gap-1"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>حفظ الملاحظة</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : profile.leaderPrivateNotes ? (
+                      <p className="text-xs text-[#7B3F30] leading-relaxed bg-white/85 p-3 rounded-xl border border-[#E5C3B3]">
+                        {profile.leaderPrivateNotes}
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-stone-400">
+                        لا توجد ملاحظات إدارية مسجلة بعد (تظهر لمؤسس ومالك المنصة فقط).
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Founder/Owner Attendance Override Modal */}
+      {editingAttendanceTarget && isAdminOversight && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150"
+          dir="rtl"
+        >
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-[#E8DFD8] space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2">
+                <UserCheck className="w-5 h-5 text-[#9A5643]" />
+                <h3 className="font-bold text-stone-900 text-sm">
+                  تعديل سجل التحضير: {editingAttendanceTarget.user.name}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingAttendanceTarget(null)}
+                className="text-stone-400 hover:text-stone-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAdminAttendanceOverride} className="space-y-4">
+              <div className="p-3 rounded-2xl bg-[#F6EFEA] border border-[#E5C3B3] text-xs font-bold text-[#7B3F30] flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#9A5643]" />
+                <span>التاريخ الهجري: {formatHijriDate(editingAttendanceTarget.dateIso, { includeWeekday: true })}</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1.5">الحالة اليومية:</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      { value: 'present', label: 'حاضرة' },
+                      { value: 'absent_excused', label: 'غياب بعذر' },
+                      { value: 'absent_unexcused', label: 'بدون عذر' }
+                    ] as const
+                  ).map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() =>
+                        setEditingAttendanceTarget(prev => (prev ? { ...prev, status: opt.value } : null))
+                      }
+                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                        editingAttendanceTarget.status === opt.value
+                          ? 'bg-[#9A5643] text-white border-[#7B3F30]'
+                          : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-[#F6EFEA]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">وقت التسجيل:</label>
+                <input
+                  type="text"
+                  value={editingAttendanceTarget.checkInTime}
+                  onChange={e =>
+                    setEditingAttendanceTarget(prev => (prev ? { ...prev, checkInTime: e.target.value } : null))
+                  }
+                  placeholder="مثال: 04:02 م"
+                  className="w-full px-3.5 py-2 border border-stone-200 rounded-xl text-xs font-mono font-bold text-stone-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">
+                  عذر الغياب وتفاصيله {editingAttendanceTarget.status === 'absent_excused' ? '*' : '(اختياري)'}:
+                </label>
+                <textarea
+                  rows={3}
+                  required={editingAttendanceTarget.status === 'absent_excused'}
+                  value={editingAttendanceTarget.excuseText}
+                  onChange={e =>
+                    setEditingAttendanceTarget(prev => (prev ? { ...prev, excuseText: e.target.value } : null))
+                  }
+                  placeholder="اكتبي عذر الغياب وتفاصيله..."
+                  className="w-full px-3.5 py-2 border border-stone-200 rounded-xl text-xs text-stone-800"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingAttendanceTarget(null)}
+                  className="px-4 py-2 text-xs text-stone-600 rounded-xl hover:bg-stone-100 cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>حفظ واعتماد</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

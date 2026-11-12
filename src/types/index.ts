@@ -70,6 +70,38 @@ export const defaultPermissionsByRole: Record<UserRole, UserPermissions> = {
   },
 };
 
+export interface StaffTaskItem {
+  id: string;
+  title: string;
+  completed: boolean;
+  createdAt?: string;
+  completedAt?: string;
+}
+
+export type StaffAttendanceStatus = 'present' | 'absent_excused' | 'absent_unexcused';
+
+export interface StaffAttendanceRecord {
+  id: string;
+  userId: string;
+  userName?: string;
+  userRole?: UserRole;
+  date: string;
+  hijriDateFormatted?: string;
+  status: StaffAttendanceStatus;
+  checkInTime?: string;
+  excuseText?: string;
+  recordedBy?: string;
+  updatedAt: string;
+}
+
+export interface StaffProfileConfig {
+  workingHours?: string;
+  monthlySalary?: number;
+  tasks?: StaffTaskItem[];
+  leaderPrivateNotes?: string;
+  updatedAt?: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -83,6 +115,10 @@ export interface User {
   signatureUrl?: string; // توقيع المعلمة أو المشرفة المعتمد
   circleIds: string[]; // circles supervised or taught
   permissions?: Partial<UserPermissions>; // الصلاحيات المخصصة يدوياً
+  workingHours?: string;
+  monthlySalary?: number;
+  tasks?: StaffTaskItem[];
+  leaderPrivateNotes?: string;
 }
 
 // 1. معايير دليل الإتقان (مشكاة الغيم) القابلة للتعديل

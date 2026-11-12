@@ -18,12 +18,13 @@ import { GradingSystemView } from './views/GradingSystemView';
 import { StudentPortfolioView } from './views/StudentPortfolioView';
 import { ReportsView } from './views/ReportsView';
 import { StaffView } from './views/StaffView';
+import { StaffAttendanceTasksView } from './views/StaffAttendanceTasksView';
 import { SettingsView } from './views/SettingsView';
 import { TrackDetailPage } from './views/TrackDetailPage';
 import { SubscriptionsFinancialsView } from './views/SubscriptionsFinancialsView';
 import { StaffLoginGate } from './components/StaffLoginGate';
 import { Footer } from './components/Footer';
-import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, Lock } from 'lucide-react';
 import { UpdateNotification } from './components/UpdateNotification';
 import { isLocalDemoMode } from './demoMode';
 import { hasFullAccess } from './types';
@@ -33,7 +34,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 const VIEW_TYPES: ViewType[] = [
   'dashboard', 'tracks_circles', 'track_detail', 'students', 'subscriptions',
   'monthly_plans', 'attendance', 'recitation', 'atqini', 'challenges',
-  'exams', 'grading', 'portfolio', 'reports', 'staff', 'settings'
+  'exams', 'grading', 'portfolio', 'reports', 'staff', 'staff-attendance', 'settings'
 ];
 
 const readNavigationFromUrl = () => {
@@ -397,24 +398,37 @@ const AppContent: React.FC = () => {
               <StaffView />
             ) : (
               <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center" dir="rtl">
-                <div className="w-16 h-16 rounded-3xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-center text-3xl shadow-xs mb-4">
-                  🔒
+                <div className="w-16 h-16 rounded-3xl bg-[#F6EFEA] border border-[#E5C3B3] text-[#9A5643] flex items-center justify-center shadow-xs mb-4">
+                  <Lock className="w-7 h-7" />
                 </div>
                 <h2 className="text-xl font-bold font-quran text-stone-900 mb-2">
                   قسم المعلمات والمشرفات خاص بإدارة المقرأة فقط
                 </h2>
                 <p className="text-xs sm:text-sm text-stone-500 max-w-md mb-6 leading-relaxed">
-                  عذراً، هذا القسم يشتمل على سجلات الكادر التعليمي، والتواقيع المعتمدة، والصلاحيات، والرموز السرية، وصلاحية الوصول إليه محصورة على قائدة المقرأة.
+                  عذراً، هذا القسم يشتمل على حسابات الكادر التعليمي، والتواقيع المعتمدة، والصلاحيات، والرموز السرية، وصلاحية الوصول إليه محصورة على قائدة المقرأة. يمكنكِ تسجيل حضوركِ ومتابعة مهامكِ من قسم «تحضير ومهام الكادر».
                 </p>
-                <button
-                  type="button"
-                  onClick={() => setCurrentView('dashboard')}
-                  className="px-5 py-2.5 bg-[#8E5364] text-white rounded-xl text-xs font-bold shadow-xs hover:bg-[#744251] transition cursor-pointer"
-                >
-                  العودة للوحة التحكم الرئيسية
-                </button>
+                <div className="flex flex-wrap items-center justify-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentView('staff-attendance')}
+                    className="px-5 py-2.5 bg-[#9A5643] text-white rounded-xl text-xs font-bold shadow-xs hover:bg-[#7B3F30] transition cursor-pointer"
+                  >
+                    الانتقال إلى تحضير ومهام الكادر
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentView('dashboard')}
+                    className="px-5 py-2.5 bg-[#F6EFEA] text-[#7B3F30] border border-[#E5C3B3] rounded-xl text-xs font-bold shadow-xs hover:bg-[#EFE3DA] transition cursor-pointer"
+                  >
+                    العودة للوحة التحكم
+                  </button>
+                </div>
               </div>
             )
+          )}
+
+          {currentView === 'staff-attendance' && (
+            <StaffAttendanceTasksView />
           )}
 
           {currentView === 'settings' && (
@@ -422,8 +436,8 @@ const AppContent: React.FC = () => {
               <SettingsView />
             ) : (
               <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center" dir="rtl">
-                <div className="w-16 h-16 rounded-3xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-center text-3xl shadow-xs mb-4">
-                  🔒
+                <div className="w-16 h-16 rounded-3xl bg-[#F6EFEA] border border-[#E5C3B3] text-[#9A5643] flex items-center justify-center shadow-xs mb-4">
+                  <Lock className="w-7 h-7" />
                 </div>
                 <h2 className="text-xl font-bold font-quran text-stone-900 mb-2">
                   قسم الإعدادات والنسخ الاحتياطي خاص بإدارة المقرأة فقط
@@ -434,7 +448,7 @@ const AppContent: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setCurrentView('dashboard')}
-                  className="px-5 py-2.5 bg-[#8E5364] text-white rounded-xl text-xs font-bold shadow-xs hover:bg-[#744251] transition cursor-pointer"
+                  className="px-5 py-2.5 bg-[#9A5643] text-white rounded-xl text-xs font-bold shadow-xs hover:bg-[#7B3F30] transition cursor-pointer"
                 >
                   العودة للوحة التحكم الرئيسية
                 </button>

@@ -205,15 +205,17 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
         } catch {}
       }
 
-      const roleBadge = targetUser.role === 'developer'
-        ? 'المطور التقني'
-        : targetUser.role === 'owner'
-        ? 'مالك المنصة العام'
-        : targetUser.role === 'leader'
-        ? 'قائدة المقرأة'
-        : targetUser.role === 'supervisor'
-        ? 'مشرفة المقرأة'
-        : 'معلمة الحلقة';
+      const roleBadge = targetUser.title?.trim() || (
+        targetUser.role === 'developer'
+          ? 'المطور التقني'
+          : targetUser.role === 'owner'
+          ? 'مالك المنصة العام'
+          : targetUser.role === 'leader'
+          ? 'قائدة المقرأة'
+          : targetUser.role === 'supervisor'
+          ? 'مشرفة حلقات'
+          : 'معلمة حلقة'
+      );
 
       const customWelcome =
         settings?.staffWelcomeConfigs?.[targetUser.id]?.welcomeTitle?.trim() ||

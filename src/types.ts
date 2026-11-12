@@ -32,6 +32,38 @@ export interface StaffWelcomeConfig {
   updatedAt?: string;
 }
 
+export interface StaffTaskItem {
+  id: string;
+  title: string;
+  completed: boolean;
+  createdAt?: string;
+  completedAt?: string;
+}
+
+export type StaffAttendanceStatus = 'present' | 'absent_excused' | 'absent_unexcused';
+
+export interface StaffAttendanceRecord {
+  id: string;
+  userId: string;
+  userName?: string;
+  userRole?: UserRole;
+  date: string; // YYYY-MM-DD synchronized with Umm al-Qura Hijri calendar
+  hijriDateFormatted?: string;
+  status: StaffAttendanceStatus;
+  checkInTime?: string; // e.g. "04:02 م"
+  excuseText?: string;
+  recordedBy?: string;
+  updatedAt: string;
+}
+
+export interface StaffProfileConfig {
+  workingHours?: string;
+  monthlySalary?: number;
+  tasks?: StaffTaskItem[];
+  leaderPrivateNotes?: string;
+  updatedAt?: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -50,6 +82,10 @@ export interface User {
   personalGoal?: string;
   animatedEmojis?: string[];
   canEditOwnWelcome?: boolean;
+  workingHours?: string;
+  monthlySalary?: number;
+  tasks?: StaffTaskItem[];
+  leaderPrivateNotes?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -529,6 +565,8 @@ export interface InstitutionSettings {
   personalGoal?: string;
   animatedEmojis?: string[];
   staffWelcomeConfigs?: Record<string, StaffWelcomeConfig>;
+  staffProfiles?: Record<string, StaffProfileConfig>;
+  staffAttendanceRecords?: Record<string, StaffAttendanceRecord>;
   activeTrackName?: string;
   sealText?: string;
   sealSubtitle?: string;

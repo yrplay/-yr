@@ -575,8 +575,9 @@ body.privacy-mode-active .privacy-email,
 body.privacy-mode-active .privacy-score-digit,
 body.privacy-mode-active .privacy-exam-score,
 body.privacy-mode-active .privacy-grade,
-body.privacy-mode-active .privacy-count-digit {
-  filter: blur(7px) !important;
+body.privacy-mode-active .privacy-count-digit,
+body.privacy-mode-active .privacy-salary {
+  filter: blur(5px) !important;
   user-select: none !important;
   -webkit-user-select: none !important;
   transition: filter 0.2s ease !important;
@@ -593,7 +594,8 @@ body.privacy-mode-active .privacy-count-digit {
 .privacy-score-digit,
 .privacy-exam-score,
 .privacy-grade,
-.privacy-count-digit {
+.privacy-count-digit,
+.privacy-salary {
   transition: filter 0.2s ease;
   display: inline-block;
 }

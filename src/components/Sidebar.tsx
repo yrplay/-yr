@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Layers, Users, Calendar, CheckSquare,
   BookOpenCheck, Sparkles, Trophy, FileText, Sliders,
   UserCheck, BarChart3, UserCog, Settings, X, History,
-  CreditCard
+  CreditCard, ClipboardList
 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 import { hasFullAccess } from '../types';
@@ -25,6 +25,7 @@ export type ViewType =
   | 'portfolio'
   | 'reports'
   | 'staff'
+  | 'staff-attendance'
   | 'settings';
 
 interface SidebarProps {
@@ -56,15 +57,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onSelectView, isO
     { id: 'portfolio', label: 'ملف الإنجاز الشهري', icon: UserCheck },
     { id: 'reports', label: 'التقارير والإحصائيات', icon: BarChart3 },
     { id: 'staff', label: 'المعلمات والمشرفات', icon: UserCog, adminOnly: true },
+    { id: 'staff-attendance', label: 'تحضير ومهام الكادر', icon: ClipboardList },
     { id: 'settings', label: 'الإعدادات والنسخ الاحتياطي', icon: Settings, adminOnly: true },
   ];
 
   // تخصيص الأقسام الإدارية والمالية والكادر بحسب الصلاحيات المخصصة
   const canAccessFinances = hasAdminAccess || !!currentUser?.permissions?.canManageFinances;
-  const canAccessStaffSection = hasAdminAccess || !!currentUser?.permissions?.canAccessStaff || !!currentUser?.permissions?.canManageUsers;
+  const canAccessStaffProfiles = hasAdminAccess || !!currentUser?.permissions?.canAccessStaff || !!currentUser?.permissions?.canManageUsers;
   const menuItems = rawMenuItems.filter(item => {
     if (item.id === 'subscriptions') return canAccessFinances;
-    if (item.id === 'staff') return canAccessStaffSection;
+    if (item.id === 'staff') return canAccessStaffProfiles;
     if (item.adminOnly) return hasAdminAccess;
     return true;
   });
