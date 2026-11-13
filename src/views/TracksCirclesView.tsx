@@ -5,7 +5,7 @@ import {
   Sparkles, Trophy, BookOpen, ChevronLeft, CheckCircle2,
   Sliders, UserCheck, Shield, AlertCircle, Trash2, RotateCcw,
   Eye, EyeOff, AlertTriangle, X, ExternalLink, CreditCard, FolderOpen, Sprout, Leaf,
-  HeartHandshake, Send
+  HeartHandshake, Send, Copy
 } from 'lucide-react';
 import { Circle, hasFullAccess, Track, defaultMasteryGuideConfig } from '../types';
 import {
@@ -16,7 +16,7 @@ import {
   normalizeEntityIcon
 } from '../components/CircleIconLibrary';
 import { TrackDetailView } from './TrackDetailView';
-import { triggerStudentTelegramAlert } from '../utils/telegramAlert';
+import { cleanTelegramUsername, triggerStudentTelegramAlert } from '../utils/telegramAlert';
 
 const TRACK_EMOJIS = [
   '🪴', '🌱', '🌿', '🌴', '🌸', '📖', '🌟', '💎', '🕊️', '📜',
@@ -39,7 +39,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     tracks, circles, students, users, allStudentScores,
     createTrack, updateTrack, archiveTrack, restoreTrack, deleteTrack,
     createCircle, updateCircle, archiveCircle, restoreCircle, deleteCircle,
-    archiveStudent, restoreStudent,
+    createStudent, archiveStudent, restoreStudent,
     currentUser, quickModalAction, clearQuickModal, settings, showToast,
     selectedTrackId: globalSelectedTrackId, setSelectedTrackId: setGlobalSelectedTrackId
   } = useApp();
@@ -50,6 +50,58 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
   const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [circleStudentTab, setCircleStudentTab] = useState<'active' | 'archived'>('active');
+  const [studentToCopy, setStudentToCopy] = useState<any>(null);
+  const [copyTargetTrackId, setCopyTargetTrackId] = useState<string>('');
+  const [copyTargetCircleId, setCopyTargetCircleId] = useState<string>('');
+
+  const handleOpenCopyModal = (student: any) => {
+    const activeTracks = tracks.filter(t => !t.isArchived);
+    const currentCircle = circles.find(c => c.id === student.circleId);
+    const sourceTrackId = student.trackId || currentCircle?.trackId || '';
+    const otherTracks = activeTracks.filter(t => t.id !== sourceTrackId);
+    const defaultTrack = otherTracks[0] || activeTracks[0];
+    const defaultTrackId = defaultTrack?.id || '';
+    const trackCircles = circles.filter(c => !c.isArchived && (!defaultTrackId || c.trackId === defaultTrackId));
+    const defaultCircleId = trackCircles[0]?.id || circles.find(c => !c.isArchived)?.id || '';
+
+    setStudentToCopy(student);
+    setCopyTargetTrackId(defaultTrackId);
+    setCopyTargetCircleId(defaultCircleId);
+  };
+
+  const handleConfirmCopyStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!studentToCopy || !copyTargetTrackId || !copyTargetCircleId) {
+      showToast('يرجى اختيار المسار والحلقة أولاً', 'error');
+      return;
+    }
+    const targetTrack = tracks.find(t => t.id === copyTargetTrackId);
+    const targetCircle = circles.find(c => c.id === copyTargetCircleId);
+
+    await createStudent({
+      id: `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      code: `GH-${Math.floor(100 + Math.random() * 900)}`,
+      name: studentToCopy.name,
+      phone: studentToCopy.phone || '',
+      telegramUsername: cleanTelegramUsername(studentToCopy.telegramUsername || ''),
+      email: studentToCopy.email || '',
+      notes: studentToCopy.notes || '',
+      joinDate: studentToCopy.joinDate || '1448-01-01',
+      trackId: copyTargetTrackId,
+      circleId: copyTargetCircleId,
+      status: 'active',
+      archived: false,
+      partnerStudentId: undefined,
+      partnerStudentName: undefined
+    });
+
+    const cleanTrackName = (targetTrack?.name || 'المسار المختار').replace(/[🪴🤎]/g, '').trim();
+    setStudentToCopy(null);
+    showToast(
+      `تم نسخ الطالبة «${studentToCopy.name}» إلى ${cleanTrackName} (${targetCircle?.name || 'الحلقة'}) بتصفير الدرجات والحضور وحفظها سحابياً`,
+      'success'
+    );
+  };
 
   useEffect(() => {
     if (globalSelectedTrackId && globalSelectedTrackId !== 'all') {
@@ -927,6 +979,14 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                                 >
                                   ملف الإنجاز
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenCopyModal(st)}
+                                  className="p-1.5 text-stone-500 hover:text-[#9A5643] rounded-lg hover:bg-[#FAF6F2] transition cursor-pointer"
+                                  title="نسخ الطالبة إلى مسار وحلقة أخرى"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -1032,6 +1092,14 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                                 className="px-3 py-1 bg-[#8E5364] text-white rounded-lg text-[11px] font-semibold hover:bg-[#744251] transition cursor-pointer"
                               >
                                 ملف الإنجاز
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenCopyModal(st)}
+                                className="p-1.5 text-stone-500 hover:text-[#9A5643] rounded-lg hover:bg-[#FAF6F2] transition cursor-pointer"
+                                title="نسخ الطالبة إلى مسار وحلقة أخرى"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 type="button"
@@ -1606,6 +1674,103 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                     حفظ
                   </button>
                 </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Mini Modal: Copy Student to Another Track & Circle */}
+      {studentToCopy && (
+        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 shadow-xl border border-[#E8DFD8] space-y-4 text-right" dir="rtl">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-[#FAF6F2] border border-[#E5C3B3] text-[#9A5643] flex items-center justify-center">
+                  <Copy className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-stone-900 text-sm font-quran">
+                    نسخ الطالبة إلى مسار آخر
+                  </h3>
+                  <p className="text-[11px] text-stone-500">
+                    {studentToCopy.name} {studentToCopy.phone ? `• ${studentToCopy.phone}` : ''}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmCopyStudent} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">
+                  المسار الآخر المستهدف *
+                </label>
+                <select
+                  value={copyTargetTrackId}
+                  onChange={e => {
+                    const nextTrackId = e.target.value;
+                    const circlesInTrack = circles.filter(c => !c.isArchived && c.trackId === nextTrackId);
+                    setCopyTargetTrackId(nextTrackId);
+                    setCopyTargetCircleId(circlesInTrack[0]?.id || '');
+                  }}
+                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
+                >
+                  {tracks.filter(t => !t.isArchived).map(t => {
+                    const currentCircle = circles.find(c => c.id === studentToCopy.circleId);
+                    const isCurrentTrack = t.id === (studentToCopy.trackId || currentCircle?.trackId);
+                    return (
+                      <option key={t.id} value={t.id}>
+                        {(t.name || '').replace(/[🪴🤎]/g, '').trim()}
+                        {isCurrentTrack ? ' (المسار الحالي)' : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">
+                  الحلقة في المسار المستهدف *
+                </label>
+                <select
+                  value={copyTargetCircleId}
+                  onChange={e => setCopyTargetCircleId(e.target.value)}
+                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
+                >
+                  {circles
+                    .filter(c => !c.isArchived && (!copyTargetTrackId || c.trackId === copyTargetTrackId))
+                    .map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.teacherName})
+                      </option>
+                    ))}
+                  {circles.filter(c => !c.isArchived && (!copyTargetTrackId || c.trackId === copyTargetTrackId)).length === 0 && (
+                    <option value="">لا توجد حلقات نشطة في هذا المسار</option>
+                  )}
+                </select>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-[#FAF6F2] border border-[#E8DFD8] text-[11px] text-stone-600 leading-relaxed">
+                سيتم نسخ <strong>الاسم ورقم الجوال والملاحظات</strong> إلى المسار والحلقة المختارة مع <strong>تصفير الدرجات والحضور (0%)</strong> في المسار الجديد، وحفظها في السحابة مباشرة دون التأثير على سجلها الحالي.
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setStudentToCopy(null)}
+                  className="px-4 py-2 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 transition cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={!copyTargetTrackId || !copyTargetCircleId}
+                  style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
+                  className="px-5 py-2 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 cursor-pointer flex items-center gap-1.5"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>نسخ وحفظ</span>
+                </button>
               </div>
             </form>
           </div>
