@@ -344,6 +344,65 @@ export const writeLocalStaffProfiles = (profiles: Record<string, StaffProfileCon
   }
 };
 
+/**
+ * Merges multiple staff profile/operation maps by comparing `updatedAt` timestamps
+ * per user so stale cloud or local state never overwrites newer workingHours, tasks, salary, or notes.
+ */
+export const mergeStaffProfilesMap = (
+  ...maps: Array<Record<string, StaffProfileConfig> | undefined | null>
+): Record<string, StaffProfileConfig> => {
+  const merged: Record<string, StaffProfileConfig> = {};
+  for (const map of maps) {
+    if (!map || typeof map !== 'object') continue;
+    for (const [userId, cfg] of Object.entries(map)) {
+      if (!cfg || typeof cfg !== 'object') continue;
+      const existing = merged[userId];
+      if (!existing) {
+        merged[userId] = { ...cfg };
+        continue;
+      }
+      const incTime = Date.parse(cfg.updatedAt || '') || 0;
+      const exTime = Date.parse(existing.updatedAt || '') || 0;
+      if (incTime >= exTime) {
+        merged[userId] = {
+          ...existing,
+          ...cfg,
+          updatedAt: cfg.updatedAt || existing.updatedAt
+        };
+      } else {
+        merged[userId] = {
+          ...cfg,
+          ...existing,
+          updatedAt: existing.updatedAt || cfg.updatedAt
+        };
+      }
+    }
+  }
+  return merged;
+};
+
+/**
+ * Merges multiple staff attendance record maps by comparing `updatedAt` timestamps.
+ */
+export const mergeStaffAttendanceMap = (
+  ...maps: Array<Record<string, StaffAttendanceRecord> | undefined | null>
+): Record<string, StaffAttendanceRecord> => {
+  const merged: Record<string, StaffAttendanceRecord> = {};
+  for (const map of maps) {
+    if (!map || typeof map !== 'object') continue;
+    for (const [key, rec] of Object.entries(map)) {
+      if (!rec || typeof rec !== 'object') continue;
+      const ex = merged[key];
+      const recTime = Date.parse(rec.updatedAt || '') || 0;
+      const exTime = ex ? Date.parse(ex.updatedAt || '') || 0 : -1;
+      if (!ex || recTime >= exTime) {
+        merged[key] = rec;
+      }
+    }
+  }
+  return merged;
+};
+
 export const resolveStaffProfile = (
   user: User,
   settings?: InstitutionSettings
@@ -355,38 +414,69 @@ export const resolveStaffProfile = (
 } => {
   const localMap = readLocalStaffProfiles();
   const localCfg = localMap[user.id];
-  const settingsCfg = settings?.staffProfiles?.[user.id];
+  const settingsProfileCfg = settings?.staffProfiles?.[user.id];
+  const settingsOpsCfg = settings?.staffOperations?.[user.id];
+  const userCfg: StaffProfileConfig = {
+    workingHours: user.workingHours,
+    monthlySalary: user.monthlySalary,
+    tasks: user.tasks,
+    leaderPrivateNotes: user.leaderPrivateNotes,
+    updatedAt: user.updatedAt
+  };
+
+  // Merge in order from oldest fallback to newest timestamped source
+  const resolvedMap = mergeStaffProfilesMap(
+    { [user.id]: userCfg },
+    localCfg ? { [user.id]: localCfg } : undefined,
+    settingsProfileCfg ? { [user.id]: settingsProfileCfg } : undefined,
+    settingsOpsCfg ? { [user.id]: settingsOpsCfg } : undefined
+  );
+  const winner = resolvedMap[user.id] || {};
 
   const workingHours =
-    user.workingHours?.trim() ||
-    settingsCfg?.workingHours?.trim() ||
+    winner.workingHours?.trim() ||
+    settingsOpsCfg?.workingHours?.trim() ||
+    settingsProfileCfg?.workingHours?.trim() ||
     localCfg?.workingHours?.trim() ||
+    user.workingHours?.trim() ||
     getDefaultWorkingHoursForRole(user.role);
 
   const monthlySalary =
-    typeof user.monthlySalary === 'number' && !isNaN(user.monthlySalary)
-      ? user.monthlySalary
-      : typeof settingsCfg?.monthlySalary === 'number' && !isNaN(settingsCfg.monthlySalary)
-      ? settingsCfg.monthlySalary
+    typeof winner.monthlySalary === 'number' && !isNaN(winner.monthlySalary)
+      ? winner.monthlySalary
+      : typeof settingsOpsCfg?.monthlySalary === 'number' && !isNaN(settingsOpsCfg.monthlySalary)
+      ? settingsOpsCfg.monthlySalary
+      : typeof settingsProfileCfg?.monthlySalary === 'number' && !isNaN(settingsProfileCfg.monthlySalary)
+      ? settingsProfileCfg.monthlySalary
       : typeof localCfg?.monthlySalary === 'number' && !isNaN(localCfg.monthlySalary)
       ? localCfg.monthlySalary
+      : typeof user.monthlySalary === 'number' && !isNaN(user.monthlySalary)
+      ? user.monthlySalary
       : getDefaultMonthlySalaryForRole(user.role);
 
-  const tasks = Array.isArray(user.tasks)
-    ? user.tasks
-    : Array.isArray(settingsCfg?.tasks)
-    ? settingsCfg.tasks
+  const tasks = Array.isArray(winner.tasks)
+    ? winner.tasks
+    : Array.isArray(settingsOpsCfg?.tasks)
+    ? settingsOpsCfg.tasks
+    : Array.isArray(settingsProfileCfg?.tasks)
+    ? settingsProfileCfg.tasks
     : Array.isArray(localCfg?.tasks)
     ? localCfg.tasks
+    : Array.isArray(user.tasks)
+    ? user.tasks
     : getDefaultTasksForUser(user);
 
   const leaderPrivateNotes =
-    typeof user.leaderPrivateNotes === 'string'
-      ? user.leaderPrivateNotes
-      : typeof settingsCfg?.leaderPrivateNotes === 'string'
-      ? settingsCfg.leaderPrivateNotes
+    typeof winner.leaderPrivateNotes === 'string'
+      ? winner.leaderPrivateNotes
+      : typeof settingsOpsCfg?.leaderPrivateNotes === 'string'
+      ? settingsOpsCfg.leaderPrivateNotes
+      : typeof settingsProfileCfg?.leaderPrivateNotes === 'string'
+      ? settingsProfileCfg.leaderPrivateNotes
       : typeof localCfg?.leaderPrivateNotes === 'string'
       ? localCfg.leaderPrivateNotes
+      : typeof user.leaderPrivateNotes === 'string'
+      ? user.leaderPrivateNotes
       : '';
 
   return {
@@ -414,18 +504,7 @@ export const readAllStaffAttendanceRecords = (
       // ignore storage errors
     }
   }
-  const fromSettings = settings?.staffAttendanceRecords || {};
-  const merged: Record<string, StaffAttendanceRecord> = { ...localRecords };
-  for (const [key, rec] of Object.entries(fromSettings)) {
-    if (!rec || typeof rec !== 'object') continue;
-    const ex = merged[key];
-    const recTime = Date.parse(rec.updatedAt || '') || 0;
-    const exTime = ex ? (Date.parse(ex.updatedAt || '') || 0) : -1;
-    if (!ex || recTime >= exTime) {
-      merged[key] = rec;
-    }
-  }
-  return merged;
+  return mergeStaffAttendanceMap(localRecords, settings?.staffAttendanceRecords);
 };
 
 export const writeLocalStaffAttendanceRecords = (

@@ -1,4 +1,4 @@
-import { doc, getDoc, onSnapshot, runTransaction } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer, onSnapshot, runTransaction } from 'firebase/firestore';
 import { db, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID } from '../firebase';
 import {
   mergeArrayByKey,
@@ -7,18 +7,36 @@ import {
   deduplicateAtqiniSubmissions,
   deduplicateChallengeSubmissions,
   deduplicateAttendanceRecords,
-  deduplicateDailyRecords,
-  type DeletedEntities
+  deduplicateDailyRecords
 } from './cloudSyncHelpers';
-import { filterAndSortActiveStaffChatMessages } from '../utils/staffHelpers';
+import {
+  filterAndSortActiveStaffChatMessages,
+  mergeStaffAttendanceMap,
+  mergeStaffProfilesMap
+} from '../utils/staffHelpers';
 
 export type CloudSyncStatus = 'connected' | 'syncing' | 'offline' | 'error';
 
 const CLOUD_DOC_PATH = { collection: FIRESTORE_COLLECTION, id: FIRESTORE_DOC_ID };
 
-export const fetchCloudDatabaseOnce = async (): Promise<any | null> => {
+/**
+ * Fetches the latest cloud database state directly from the server (bypassing local cache),
+ * falling back to standard getDoc only if the device is temporarily offline.
+ */
+export const fetchCloudDatabaseOnce = async (forceServer = true): Promise<any | null> => {
+  const docRef = doc(db, CLOUD_DOC_PATH.collection, CLOUD_DOC_PATH.id);
+  if (forceServer) {
+    try {
+      const serverSnap = await getDocFromServer(docRef);
+      if (serverSnap.exists()) {
+        return sanitizeCloudState(serverSnap.data());
+      }
+      return null;
+    } catch {
+      // Fallback to standard getDoc below if offline
+    }
+  }
   try {
-    const docRef = doc(db, CLOUD_DOC_PATH.collection, CLOUD_DOC_PATH.id);
     const snap = await getDoc(docRef);
     if (snap.exists()) {
       return sanitizeCloudState(snap.data());
@@ -37,6 +55,7 @@ export const subscribeToCloudDatabase = (
     const docRef = doc(db, CLOUD_DOC_PATH.collection, CLOUD_DOC_PATH.id);
     return onSnapshot(
       docRef,
+      { includeMetadataChanges: true },
       snapshot => {
         if (snapshot.exists()) onData(sanitizeCloudState(snapshot.data()));
         else onData(null);
@@ -133,10 +152,26 @@ export const pushStateToCloud = async (statePayload: any): Promise<void> => {
           : remotePin
         : incomingPin || remotePin;
 
+    // Timestamp-aware merge for staff workingHours, tasks, monthlySalary, and leaderPrivateNotes
+    const mergedStaffProfiles = mergeStaffProfilesMap(
+      remoteData.staffOperations,
+      remoteSettings.staffProfiles,
+      remoteSettings.staffOperations,
+      incomingState.staffOperations,
+      incomingSettings.staffProfiles,
+      incomingSettings.staffOperations
+    );
+
+    const mergedStaffAttendanceRecords = mergeStaffAttendanceMap(
+      remoteSettings.staffAttendanceRecords,
+      incomingSettings.staffAttendanceRecords
+    );
+
     const finalPayload: Record<string, any> = {
       ...remoteData,
       ...incomingState,
       _deletedEntities: deletedEntities,
+      staffOperations: mergedStaffProfiles,
       settings: {
         ...remoteSettings,
         ...incomingSettings,
@@ -145,14 +180,9 @@ export const pushStateToCloud = async (statePayload: any): Promise<void> => {
         staffChatMessages: mergedStaffChatMessages,
         deletedStaffChatIds: mergedDeletedChatIds,
         ...(mergedPinnedAnnouncement ? { pinnedStaffAnnouncement: mergedPinnedAnnouncement } : {}),
-        staffProfiles: {
-          ...(remoteSettings.staffProfiles || {}),
-          ...(incomingSettings.staffProfiles || {})
-        },
-        staffAttendanceRecords: {
-          ...(remoteSettings.staffAttendanceRecords || {}),
-          ...(incomingSettings.staffAttendanceRecords || {})
-        }
+        staffProfiles: mergedStaffProfiles,
+        staffOperations: mergedStaffProfiles,
+        staffAttendanceRecords: mergedStaffAttendanceRecords
       },
       lastSyncedAt: new Date().toISOString()
     };
@@ -164,7 +194,28 @@ export const pushStateToCloud = async (statePayload: any): Promise<void> => {
         key,
         deletedEntities[collection] || []
       );
-      if (collection === 'studentAtqiniSubmissions') {
+      if (collection === 'users') {
+        mergedItems = mergedItems.map((u: any) => {
+          if (!u || !u.id) return u;
+          const profileCfg = mergedStaffProfiles[u.id];
+          if (!profileCfg) return u;
+          const profileTime = Date.parse(profileCfg.updatedAt || '') || 0;
+          const userTime = Date.parse(u.updatedAt || '') || 0;
+          if (profileTime >= userTime) {
+            return {
+              ...u,
+              ...(profileCfg.workingHours !== undefined ? { workingHours: profileCfg.workingHours } : {}),
+              ...(profileCfg.monthlySalary !== undefined ? { monthlySalary: profileCfg.monthlySalary } : {}),
+              ...(profileCfg.tasks !== undefined ? { tasks: profileCfg.tasks } : {}),
+              ...(profileCfg.leaderPrivateNotes !== undefined
+                ? { leaderPrivateNotes: profileCfg.leaderPrivateNotes }
+                : {}),
+              updatedAt: profileCfg.updatedAt || u.updatedAt
+            };
+          }
+          return u;
+        });
+      } else if (collection === 'studentAtqiniSubmissions') {
         mergedItems = deduplicateAtqiniSubmissions(mergedItems);
       } else if (collection === 'studentChallengeSubmissions') {
         mergedItems = deduplicateChallengeSubmissions(mergedItems);

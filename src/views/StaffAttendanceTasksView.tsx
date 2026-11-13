@@ -4,7 +4,7 @@ import {
   UserCheck, Clock, Wallet, ListTodo, FileText, CheckCircle2,
   AlertCircle, Trash2, PenLine, CheckSquare, Square, Calendar,
   Eye, EyeOff, Lock, Plus, X, Check, ClipboardList, ShieldCheck,
-  MessageSquare, Pin, Send, BellRing, Bell
+  MessageSquare, Pin, Send, BellRing, Bell, Save, RefreshCw
 } from 'lucide-react';
 import {
   User,
@@ -66,7 +66,9 @@ export const StaffAttendanceTasksView: React.FC = () => {
     updateSettings,
     showToast,
     isPrivacyMode,
-    togglePrivacyMode
+    togglePrivacyMode,
+    syncNow,
+    cloudStatus
   } = useApp();
 
   // Both Founder ("مؤسس المنصة") and Platform Owner/Leader ("مالك المنصة" / "قائدة")
@@ -154,8 +156,11 @@ export const StaffAttendanceTasksView: React.FC = () => {
   } | null>(null);
 
   // Inline Editing States on Staff Operation Cards (Working Hours, Manual Salary, Tasks, Private Notes)
-  const [editingHoursUserId, setEditingHoursUserId] = useState<string | null>(null);
-  const [hoursDraft, setHoursDraft] = useState<string>('');
+  const [hoursDrafts, setHoursDrafts] = useState<Record<string, string>>({});
+  const [focusedHoursUserId, setFocusedHoursUserId] = useState<string | null>(null);
+  const [savingHoursUserId, setSavingHoursUserId] = useState<string | null>(null);
+  const hoursInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [isManualSyncing, setIsManualSyncing] = useState<boolean>(false);
 
   const [editingSalaryUserId, setEditingSalaryUserId] = useState<string | null>(null);
   const [salaryDraft, setSalaryDraft] = useState<string>('');
@@ -367,20 +372,24 @@ export const StaffAttendanceTasksView: React.FC = () => {
     toastMessage?: string
   ) => {
     const currentResolved = resolveStaffProfile(targetUser, settings);
+    const nowIso = new Date().toISOString();
     const mergedProfile = {
       workingHours: updates.workingHours !== undefined ? updates.workingHours : currentResolved.workingHours,
       monthlySalary: updates.monthlySalary !== undefined ? updates.monthlySalary : currentResolved.monthlySalary,
       tasks: updates.tasks !== undefined ? updates.tasks : currentResolved.tasks,
       leaderPrivateNotes:
         updates.leaderPrivateNotes !== undefined ? updates.leaderPrivateNotes : currentResolved.leaderPrivateNotes,
-      updatedAt: new Date().toISOString()
+      updatedAt: nowIso
     };
 
     const localProfiles = readLocalStaffProfiles();
-    writeLocalStaffProfiles({
+    const updatedProfilesMap = {
+      ...(settings.staffProfiles || {}),
+      ...(settings.staffOperations || {}),
       ...localProfiles,
       [targetUser.id]: mergedProfile
-    });
+    };
+    writeLocalStaffProfiles(updatedProfilesMap);
 
     await updateUser(
       targetUser.id,
@@ -395,16 +404,65 @@ export const StaffAttendanceTasksView: React.FC = () => {
 
     await updateSettings(
       {
-        staffProfiles: {
-          ...(settings.staffProfiles || {}),
-          [targetUser.id]: mergedProfile
-        }
+        staffProfiles: updatedProfilesMap,
+        staffOperations: updatedProfilesMap
       },
       true
     );
 
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ghaith-staff-sync'));
+    }
+
     if (toastMessage) {
       showToast(toastMessage, 'success');
+    }
+  };
+
+  // Dedicated Working Hours Save Handler (persists immediately to cloud + broadcasts + shows toast)
+  const handleSaveStaffWorkingHours = async (
+    targetUser: User,
+    rawValue?: string,
+    onlyIfChanged: boolean = false
+  ) => {
+    const currentResolved = resolveStaffProfile(targetUser, settings);
+    const candidate =
+      (rawValue !== undefined ? rawValue : hoursDrafts[targetUser.id] ?? currentResolved.workingHours).trim() ||
+      getDefaultWorkingHoursForRole(targetUser.role);
+
+    if (onlyIfChanged && candidate === currentResolved.workingHours.trim()) {
+      return;
+    }
+
+    setSavingHoursUserId(targetUser.id);
+    setHoursDrafts(prev => ({
+      ...prev,
+      [targetUser.id]: candidate
+    }));
+
+    try {
+      await saveStaffProfileFields(
+        targetUser,
+        { workingHours: candidate },
+        'تم حفظ وتحديث ساعات الدوام سحابياً'
+      );
+    } finally {
+      setSavingHoursUserId(null);
+    }
+  };
+
+  const handleManualCloudRefresh = async () => {
+    if (isManualSyncing) return;
+    setIsManualSyncing(true);
+    try {
+      await syncNow();
+      setNowTick(Date.now());
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ghaith-staff-sync'));
+      }
+      showToast('تم تحديث الرسائل وساعات الدوام من السحابة الفورية', 'info');
+    } finally {
+      setTimeout(() => setIsManualSyncing(false), 600);
     }
   };
 
@@ -643,6 +701,28 @@ export const StaffAttendanceTasksView: React.FC = () => {
     );
   };
 
+  const renderCloudSyncControlBar = () => {
+    const isSyncingNow = isManualSyncing || cloudStatus === 'syncing';
+    return (
+      <div className="inline-flex items-center gap-1.5 flex-wrap">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF6F3] text-[#7B3F30] border border-[#E5C3B3] text-xs font-bold">
+          <CheckCircle2 className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
+          <span>محدّث سحابياً</span>
+        </span>
+        <button
+          type="button"
+          onClick={handleManualCloudRefresh}
+          disabled={isSyncingNow}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-[#F6EFEA] text-[#9A5643] border border-[#E8E2DC] text-xs font-bold transition cursor-pointer active:scale-95 disabled:opacity-70"
+          title="تحديث فوري للرسائل وساعات الدوام والتحضير من السحابة"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isSyncingNow ? 'animate-spin' : ''}`} />
+          <span>تحديث</span>
+        </button>
+      </div>
+    );
+  };
+
   const parsedSelfShiftStartMins = selfResolvedProfile
     ? parseShiftStartMinutes(selfResolvedProfile.workingHours)
     : null;
@@ -678,6 +758,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-start lg:items-center gap-2.5 self-start lg:self-auto">
+          {renderCloudSyncControlBar()}
           {renderNotificationControlBar()}
 
           <button
@@ -781,6 +862,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+            {renderCloudSyncControlBar()}
             {renderNotificationControlBar()}
 
             {/* Add / Edit Pinned Announcement quick trigger for Reefa & Omar if announcement was deleted */}
@@ -1478,18 +1560,22 @@ export const StaffAttendanceTasksView: React.FC = () => {
                 {/* 1) ساعات الدوام & 3) الراتب الشهري الثابت */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* Working Hours (ساعات الدوام) */}
-                  <div className="p-4 rounded-2xl bg-[#F6EFEA] border border-[#E5C3B3] space-y-1.5">
+                  <div className="p-4 rounded-2xl bg-[#F6EFEA] border border-[#E5C3B3] space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-[#7B3F30] flex items-center gap-1.5">
                         <Clock className="w-4 h-4 text-[#9A5643]" />
                         <span>ساعات الدوام</span>
                       </span>
-                      {isAdminOversight && editingHoursUserId !== user.id && (
+                      {isAdminOversight && (
                         <button
                           type="button"
                           onClick={() => {
-                            setEditingHoursUserId(user.id);
-                            setHoursDraft(profile.workingHours);
+                            setHoursDrafts(prev => ({
+                              ...prev,
+                              [user.id]: prev[user.id] ?? profile.workingHours
+                            }));
+                            setFocusedHoursUserId(user.id);
+                            hoursInputRefs.current[user.id]?.focus();
                           }}
                           className="p-1 rounded-lg hover:bg-white/80 text-[#9A5643] transition cursor-pointer"
                           title="تعديل ساعات الدوام"
@@ -1499,41 +1585,103 @@ export const StaffAttendanceTasksView: React.FC = () => {
                       )}
                     </div>
 
-                    {editingHoursUserId === user.id ? (
-                      <div className="flex items-center gap-1.5 pt-1">
-                        <input
-                          type="text"
-                          value={hoursDraft}
-                          onChange={e => setHoursDraft(e.target.value)}
-                          placeholder="من 4:00 عصراً إلى 6:00 مساءً"
-                          className="w-full px-2.5 py-1.5 bg-white border border-[#9A5643] rounded-xl text-xs font-bold text-stone-900 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await saveStaffProfileFields(
-                              user,
-                              { workingHours: hoursDraft.trim() || getDefaultWorkingHoursForRole(user.role) },
-                              `تم حفظ ساعات الدوام لـ ${user.name}`
-                            );
-                            setEditingHoursUserId(null);
-                          }}
-                          className="p-1.5 rounded-xl bg-[#9A5643] text-white cursor-pointer"
-                          title="حفظ"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingHoursUserId(null)}
-                          className="p-1.5 rounded-xl bg-white text-stone-500 cursor-pointer"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                    {isAdminOversight ? (
+                      <div className="space-y-1.5 pt-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            ref={el => {
+                              hoursInputRefs.current[user.id] = el;
+                            }}
+                            type="text"
+                            value={
+                              focusedHoursUserId === user.id
+                                ? hoursDrafts[user.id] ?? profile.workingHours
+                                : profile.workingHours
+                            }
+                            onFocus={() => {
+                              setHoursDrafts(prev => ({
+                                ...prev,
+                                [user.id]: prev[user.id] ?? profile.workingHours
+                              }));
+                              setFocusedHoursUserId(user.id);
+                            }}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setHoursDrafts(prev => ({
+                                ...prev,
+                                [user.id]: val
+                              }));
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const currentVal = e.currentTarget.value;
+                                setFocusedHoursUserId(null);
+                                void handleSaveStaffWorkingHours(user, currentVal, false);
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            onBlur={e => {
+                              const currentVal = e.currentTarget.value;
+                              setFocusedHoursUserId(null);
+                              void handleSaveStaffWorkingHours(user, currentVal, true);
+                            }}
+                            placeholder="من 4:00 عصراً إلى 6:00 مساءً"
+                            className="w-full px-2.5 py-1.5 bg-white border border-[#E5C3B3] focus:border-[#9A5643] rounded-xl text-xs font-bold text-stone-900 focus:outline-none transition"
+                          />
+                          <button
+                            type="button"
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={async () => {
+                              const valToSave =
+                                focusedHoursUserId === user.id
+                                  ? hoursDrafts[user.id] ?? profile.workingHours
+                                  : profile.workingHours;
+                              setFocusedHoursUserId(null);
+                              await handleSaveStaffWorkingHours(user, valToSave, false);
+                            }}
+                            disabled={savingHoursUserId === user.id}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold transition cursor-pointer shrink-0 active:scale-95 disabled:opacity-60"
+                            title="حفظ ساعات الدوام سحابياً"
+                          >
+                            <Save className="w-3.5 h-3.5 shrink-0" />
+                            <span>حفظ الدوام</span>
+                          </button>
+                        </div>
+                        {parseShiftStartMinutes(
+                          focusedHoursUserId === user.id
+                            ? hoursDrafts[user.id] ?? profile.workingHours
+                            : profile.workingHours
+                        ) !== null && (
+                          <div className="text-[11px] font-semibold text-[#7B3F30] flex items-center gap-1">
+                            <BellRing className="w-3 h-3 text-[#9A5643] shrink-0" />
+                            <span>
+                              بداية الدوام للتنبيه الذكي:{' '}
+                              {formatMinutesToArabicTime(
+                                parseShiftStartMinutes(
+                                  focusedHoursUserId === user.id
+                                    ? hoursDrafts[user.id] ?? profile.workingHours
+                                    : profile.workingHours
+                                )!
+                              )}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     ) : (
-                      <div className="text-xs sm:text-sm font-bold text-stone-900 pt-0.5">
-                        {profile.workingHours}
+                      <div className="space-y-1 pt-0.5">
+                        <div className="text-xs sm:text-sm font-bold text-stone-900">
+                          {profile.workingHours}
+                        </div>
+                        {parseShiftStartMinutes(profile.workingHours) !== null && (
+                          <div className="text-[11px] font-semibold text-[#7B3F30] flex items-center gap-1">
+                            <BellRing className="w-3 h-3 text-[#9A5643] shrink-0" />
+                            <span>
+                              بداية الدوام للتنبيه الذكي:{' '}
+                              {formatMinutesToArabicTime(parseShiftStartMinutes(profile.workingHours)!)}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

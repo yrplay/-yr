@@ -392,13 +392,19 @@ const AppContent: React.FC = () => {
 
     runGlobalShiftCheck();
     const interval = setInterval(runGlobalShiftCheck, 30000);
-    return () => clearInterval(interval);
+    window.addEventListener('ghaith-staff-sync', runGlobalShiftCheck);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('ghaith-staff-sync', runGlobalShiftCheck);
+    };
   }, [
     isAuthenticated,
     currentUser?.id,
+    currentUser?.workingHours,
     cloudDataReady,
     settings?.staffAttendanceRecords,
-    settings?.staffProfiles
+    settings?.staffProfiles,
+    settings?.staffOperations
   ]);
 
   // Quick Direct Self Check-In Handler from the Global Pre-Shift / Shift-Start Reminder Banner

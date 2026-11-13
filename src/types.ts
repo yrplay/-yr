@@ -587,6 +587,7 @@ export interface InstitutionSettings {
   welcomeMessages?: Record<string, string>;
   staffWelcomeConfigs?: Record<string, StaffWelcomeConfig>;
   staffProfiles?: Record<string, StaffProfileConfig>;
+  staffOperations?: Record<string, StaffProfileConfig>;
   staffAttendanceRecords?: Record<string, StaffAttendanceRecord>;
   staffChatMessages?: StaffChatMessage[];
   deletedStaffChatIds?: string[];
