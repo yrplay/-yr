@@ -911,7 +911,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
           Always visible and usable for ALL roles (Reefa, Omar, Supervisors, Teachers).
           Exclusive Edit & Delete (<PenLine /> & <Trash2 />) for Reefa & Omar ONLY.
          ===================================================================== */}
-      <div className="bg-white rounded-3xl border border-[#E8E2DC] shadow-2xs overflow-hidden">
+      <div id="staff-chat-section" className="bg-white rounded-3xl border border-[#E8E2DC] shadow-2xs overflow-hidden scroll-mt-20">
         {/* Chat Card Header */}
         <div className="p-4 sm:p-5 bg-white border-b border-[#E8E2DC] flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex items-start sm:items-center gap-3">
@@ -1188,6 +1188,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
           className="p-3.5 sm:p-4 bg-white border-t border-[#E8E2DC] flex items-center gap-2.5"
         >
           <input
+            id="staff-chat-input"
             type="text"
             value={chatInputText}
             onChange={e => setChatInputText(e.target.value)}

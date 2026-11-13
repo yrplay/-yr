@@ -737,7 +737,7 @@ const AppContent: React.FC = () => {
         />
 
         {/* مساحة عرض المحتوى */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto max-w-full">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 pb-20 overflow-y-auto max-w-full">
           {currentView === 'dashboard' && (
             <DashboardView
               onNavigate={setCurrentView}
@@ -888,9 +888,39 @@ const AppContent: React.FC = () => {
         </main>
       </div>
 
+      {/* أيقونة عائمة باللون البني في الركن السفلي الأيسر لفتح مساحة «تواصل الكادر» مباشرة من أي صفحة */}
+      <button
+        type="button"
+        onClick={() => {
+          setCurrentView('staff-attendance');
+          setTimeout(() => {
+            const el = document.getElementById('staff-chat-section');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+            const inputEl = document.getElementById('staff-chat-input') as HTMLInputElement | null;
+            if (inputEl) {
+              inputEl.focus({ preventScroll: true });
+            }
+          }, 80);
+        }}
+        title="مساحة تواصل الكادر"
+        aria-label="مساحة تواصل الكادر"
+        className="fixed bottom-5 left-5 z-40 print:hidden w-12 h-12 rounded-2xl bg-[#9A5643] hover:bg-[#7B3F30] text-white border border-[#E5C3B3] shadow-lg hover:shadow-xl flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-95"
+      >
+        <MessageSquare className="w-5 h-5" />
+        {unreadStaffChatCount > 0 && (
+          <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1.5 rounded-full bg-[#7B3F30] text-white border-2 border-white text-[10px] font-bold flex items-center justify-center shadow-xs">
+            {unreadStaffChatCount > 99 ? '99+' : unreadStaffChatCount}
+          </span>
+        )}
+      </button>
+
       {/* التنبيهات المنبثقة (Toast) — مع زر إغلاق يدوي وتوقيت دقيقتين لترحيب الدخول */}
       {toast && (
-        <div className="fixed bottom-5 left-5 z-50 animate-in fade-in slide-in-from-bottom duration-200">
+        <div className="fixed bottom-20 left-5 z-50 animate-in fade-in slide-in-from-bottom duration-200">
           <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold ${
             toast.type === 'error'
               ? 'bg-rose-50 text-rose-900 border-rose-200'
