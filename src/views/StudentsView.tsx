@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import {
   Users, Search, Filter, Plus, Edit, Archive, HeartHandshake,
   UserCheck, Shield, Phone, Mail, Award, ArrowUpDown, ChevronLeft,
-  Calendar, CheckCircle2, AlertCircle, AlertTriangle, Trash2, RotateCcw, Send, Star
+  Calendar, CheckCircle2, AlertCircle, AlertTriangle, Trash2, RotateCcw, Send, Star, Copy, X
 } from 'lucide-react';
 import { hasFullAccess, StudentStatus } from '../types';
 import { formatHijriShort, HijriJoinDateSelector } from '../utils/hijriDate';
@@ -37,6 +37,9 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
   const [partnerModalOpen, setPartnerModalOpen] = useState(false);
   const [selectedStudentForPartner, setSelectedStudentForPartner] = useState<any>(null);
   const [targetPartnerId, setTargetPartnerId] = useState<string>('');
+  const [copyModalStudent, setCopyModalStudent] = useState<any>(null);
+  const [copyTargetTrackId, setCopyTargetTrackId] = useState<string>('');
+  const [copyTargetCircleId, setCopyTargetCircleId] = useState<string>('');
 
   // Form state
   const [studentForm, setStudentForm] = useState({
@@ -159,6 +162,51 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
     if (!selectedStudentForPartner || !targetPartnerId) return;
     await assignPartner(selectedStudentForPartner.id, targetPartnerId);
     setPartnerModalOpen(false);
+  };
+
+  const handleOpenCopyStudentModal = (student: any) => {
+    const currentCircle = circles.find(c => c.id === student.circleId);
+    const currentTrackId = student.trackId || currentCircle?.trackId || '';
+    const activeTracks = tracks.filter(t => !t.isArchived);
+    const otherTrack = activeTracks.find(t => t.id !== currentTrackId) || activeTracks[0];
+    const defaultTargetTrackId = otherTrack?.id || '';
+    const targetCircles = circles.filter(c => !c.isArchived && c.trackId === defaultTargetTrackId);
+    const fallbackCircles = circles.filter(c => !c.isArchived);
+
+    setCopyModalStudent(student);
+    setCopyTargetTrackId(defaultTargetTrackId);
+    setCopyTargetCircleId(targetCircles[0]?.id || fallbackCircles[0]?.id || '');
+  };
+
+  const handleConfirmCopyStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!copyModalStudent || !copyTargetTrackId) return;
+
+    const targetCircle = circles.find(c => c.id === copyTargetCircleId);
+    const targetTrack = tracks.find(t => t.id === copyTargetTrackId);
+    const resolvedTrackId = copyTargetTrackId || targetCircle?.trackId || tracks[0]?.id || 't-1';
+
+    await createStudent({
+      id: `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: copyModalStudent.name,
+      code: copyModalStudent.code,
+      phone: copyModalStudent.phone || '',
+      telegramUsername: cleanTelegramUsername(copyModalStudent.telegramUsername || ''),
+      email: copyModalStudent.email || '',
+      joinDate: copyModalStudent.joinDate || '1448-01-01',
+      status: 'active',
+      archived: false,
+      trackId: resolvedTrackId,
+      circleId: copyTargetCircleId || targetCircle?.id || '',
+      notes: copyModalStudent.notes || ''
+    });
+
+    const cleanTrackName = (targetTrack?.name || 'المسار المختار').replace(/[🪴🤎]/g, '').trim();
+    showToast(
+      `تم نسخ الطالبة «${copyModalStudent.name}» إلى ${cleanTrackName}${targetCircle ? ` (${targetCircle.name})` : ''} بنجاح`,
+      'success'
+    );
+    setCopyModalStudent(null);
   };
 
   return (
@@ -493,6 +541,14 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                         </button>
                         <button
                           type="button"
+                          onClick={() => handleOpenCopyStudentModal(student)}
+                          className="p-1.5 text-[#7B3F30] bg-[#F6EFEA] hover:bg-[#9A5643] hover:text-white border border-[#DFCEBF] rounded-lg transition cursor-pointer active:scale-95"
+                          title="نسخ الطالبة إلى مسار آخر"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleOpenStudentModal(student)}
                           className="p-1.5 text-stone-500 hover:text-[#8E5364] rounded-lg hover:bg-[#FAF0F3] transition cursor-pointer"
                           title="تعديل بيانات الطالبة"
@@ -795,6 +851,119 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copy Student to Another Track Modal */}
+      {copyModalStudent && (
+        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4" dir="rtl">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-xl border border-[#E8DFD8] space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-[#F6EFEA] border border-[#DFCEBF] text-[#7B3F30] flex items-center justify-center">
+                  <Copy className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-stone-900 text-sm font-quran">
+                    نسخ الطالبة إلى مسار آخر
+                  </h3>
+                  <p className="text-[11px] text-stone-500">
+                    إنشاء نسخة من ملف الطالبة في مسار وحلقة إضافية مع بقائها في مسارها الحالي
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCopyModalStudent(null)}
+                className="text-stone-400 hover:text-stone-600 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmCopyStudent} className="space-y-4">
+              <div className="p-3 rounded-2xl bg-[#FAF6F2] border border-[#E8DFD8] text-xs space-y-1">
+                <div className="font-bold text-stone-900">
+                  الطالبة: <span className="text-[#8E5364]">{copyModalStudent.name}</span> ({copyModalStudent.code})
+                </div>
+                <div className="text-[11px] text-stone-500">
+                  الحلقة الحالية: {circles.find(c => c.id === copyModalStudent.circleId)?.name || 'غير محدد'}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1.5">
+                  المسار القرآني المستهدف *
+                </label>
+                <select
+                  value={copyTargetTrackId}
+                  onChange={e => {
+                    const newTrackId = e.target.value;
+                    const trackCircles = circles.filter(c => !c.isArchived && c.trackId === newTrackId);
+                    setCopyTargetTrackId(newTrackId);
+                    setCopyTargetCircleId(trackCircles[0]?.id || '');
+                  }}
+                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
+                >
+                  {tracks.filter(t => !t.isArchived).map(t => {
+                    const currentCircle = circles.find(c => c.id === copyModalStudent.circleId);
+                    const isCurrentTrack = (copyModalStudent.trackId || currentCircle?.trackId) === t.id;
+                    const cleanName = (t.name || '').replace(/[🪴🤎]/g, '').trim();
+                    return (
+                      <option key={t.id} value={t.id}>
+                        {cleanName} {isCurrentTrack ? '(المسار الحالي)' : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1.5">
+                  الحلقة داخل المسار المستهدف *
+                </label>
+                <select
+                  value={copyTargetCircleId}
+                  onChange={e => setCopyTargetCircleId(e.target.value)}
+                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
+                >
+                  {circles
+                    .filter(c => !c.isArchived && (!copyTargetTrackId || c.trackId === copyTargetTrackId))
+                    .map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.teacherName})
+                      </option>
+                    ))}
+                  {circles.filter(c => !c.isArchived && (!copyTargetTrackId || c.trackId === copyTargetTrackId)).length === 0 &&
+                    circles
+                      .filter(c => !c.isArchived)
+                      .map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.teacherName})
+                        </option>
+                      ))}
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setCopyModalStudent(null)}
+                  className="px-4 py-2 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 transition cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
+                  className="px-5 py-2 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 cursor-pointer inline-flex items-center gap-1.5 active:scale-95"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>نسخ الطالبة للمسار</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

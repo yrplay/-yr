@@ -24,6 +24,7 @@ import { TrackDetailPage } from './views/TrackDetailPage';
 import { SubscriptionsFinancialsView } from './views/SubscriptionsFinancialsView';
 import { StaffLoginGate } from './components/StaffLoginGate';
 import { Footer } from './components/Footer';
+import { FloatingStaffChatWidget } from './components/FloatingStaffChatWidget';
 import { CheckCircle2, AlertCircle, Info, Lock, X, BellRing, MessageSquare, Clock, Pin } from 'lucide-react';
 import { UpdateNotification } from './components/UpdateNotification';
 import { isLocalDemoMode } from './demoMode';
@@ -95,6 +96,7 @@ const AppContent: React.FC = () => {
   // Sleek 15-second auto-dismissing top floating alert banner for incoming chat messages / announcements
   const [floatingChatAlert, setFloatingChatAlert] = useState<FloatingChatAlert | null>(null);
   const floatingChatTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [openChatWidgetTrigger, setOpenChatWidgetTrigger] = useState<number>(0);
 
   // Global pre-shift / shift-start reminder banner state for Supervisors & Teachers ONLY
   const [activeShiftReminder, setActiveShiftReminder] = useState<ShiftReminderEvaluation | null>(null);
@@ -212,7 +214,7 @@ const AppContent: React.FC = () => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
     const handleSwMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'GHAITH_NOTIFICATION_CLICK') {
-        setCurrentView('staff-attendance');
+        setOpenChatWidgetTrigger(Date.now());
       }
     };
     navigator.serviceWorker.addEventListener('message', handleSwMessage);
@@ -697,18 +699,16 @@ const AppContent: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              {currentView !== 'staff-attendance' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCurrentView('staff-attendance');
-                    setFloatingChatAlert(null);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-[11px] font-bold transition cursor-pointer"
-                >
-                  عرض الرسالة
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenChatWidgetTrigger(Date.now());
+                  setFloatingChatAlert(null);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-[#9A5643] hover:bg-[#7B3F30] text-white text-[11px] font-bold transition cursor-pointer"
+              >
+                عرض الرسالة
+              </button>
               <button
                 type="button"
                 onClick={() => setFloatingChatAlert(null)}
@@ -888,9 +888,15 @@ const AppContent: React.FC = () => {
         </main>
       </div>
 
+      {/* الزر العائم لمساحة تواصل الكادر (أسفل اليسار) */}
+      <FloatingStaffChatWidget
+        unreadCount={unreadStaffChatCount}
+        externalOpenRequest={openChatWidgetTrigger}
+      />
+
       {/* التنبيهات المنبثقة (Toast) — مع زر إغلاق يدوي وتوقيت دقيقتين لترحيب الدخول */}
       {toast && (
-        <div className="fixed bottom-5 left-5 z-50 animate-in fade-in slide-in-from-bottom duration-200">
+        <div className="fixed bottom-24 left-5 z-50 animate-in fade-in slide-in-from-bottom duration-200">
           <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold ${
             toast.type === 'error'
               ? 'bg-rose-50 text-rose-900 border-rose-200'

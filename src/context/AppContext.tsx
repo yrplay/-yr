@@ -2507,7 +2507,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       `تسجيل طالبة جديدة: ${newStudent.name}${circle ? ` في ${circle.name}` : ''}`,
       newStudent.id
     );
-    persistState({ students: next, auditLogs: nextLogs });
+    persistState({ students: next, auditLogs: nextLogs, _immediateSync: true });
     showToast(`تم تسجيل الطالبة "${newStudent.name}" بنجاح`);
     return newStudent;
   };
