@@ -345,8 +345,59 @@ export const writeLocalStaffProfiles = (profiles: Record<string, StaffProfileCon
 };
 
 /**
+ * Strips undefined keys from a StaffProfileConfig so spreading never clobbers defined fields.
+ */
+const stripUndefinedProfileFields = (cfg: StaffProfileConfig): StaffProfileConfig => {
+  const clean: StaffProfileConfig = {};
+  if (typeof cfg.workingHours === 'string' && cfg.workingHours.trim()) {
+    clean.workingHours = cfg.workingHours.trim();
+  }
+  if (typeof cfg.monthlySalary === 'number' && !isNaN(cfg.monthlySalary)) {
+    clean.monthlySalary = cfg.monthlySalary;
+  }
+  if (Array.isArray(cfg.tasks)) {
+    clean.tasks = cfg.tasks;
+  }
+  if (typeof cfg.leaderPrivateNotes === 'string') {
+    clean.leaderPrivateNotes = cfg.leaderPrivateNotes;
+  }
+  if (typeof cfg.updatedAt === 'string' && cfg.updatedAt.trim()) {
+    clean.updatedAt = cfg.updatedAt.trim();
+  }
+  return clean;
+};
+
+/**
+ * Extracts a StaffProfileConfig map directly from the central `users` array.
+ */
+export const extractStaffProfilesFromUsers = (
+  users?: User[] | null
+): Record<string, StaffProfileConfig> => {
+  const map: Record<string, StaffProfileConfig> = {};
+  if (!Array.isArray(users)) return map;
+  for (const u of users) {
+    if (!u || !u.id) continue;
+    const hasAnyField =
+      (typeof u.workingHours === 'string' && u.workingHours.trim() !== '') ||
+      (typeof u.monthlySalary === 'number' && !isNaN(u.monthlySalary)) ||
+      Array.isArray(u.tasks) ||
+      typeof u.leaderPrivateNotes === 'string';
+    if (!hasAnyField) continue;
+    map[u.id] = stripUndefinedProfileFields({
+      workingHours: u.workingHours,
+      monthlySalary: u.monthlySalary,
+      tasks: u.tasks,
+      leaderPrivateNotes: u.leaderPrivateNotes,
+      updatedAt: u.updatedAt || u.createdAt
+    });
+  }
+  return map;
+};
+
+/**
  * Merges multiple staff profile/operation maps by comparing `updatedAt` timestamps
  * per user so stale cloud or local state never overwrites newer workingHours, tasks, salary, or notes.
+ * Also ensures `undefined` fields never overwrite defined fields.
  */
 export const mergeStaffProfilesMap = (
   ...maps: Array<Record<string, StaffProfileConfig> | undefined | null>
@@ -354,8 +405,9 @@ export const mergeStaffProfilesMap = (
   const merged: Record<string, StaffProfileConfig> = {};
   for (const map of maps) {
     if (!map || typeof map !== 'object') continue;
-    for (const [userId, cfg] of Object.entries(map)) {
-      if (!cfg || typeof cfg !== 'object') continue;
+    for (const [userId, rawCfg] of Object.entries(map)) {
+      if (!rawCfg || typeof rawCfg !== 'object') continue;
+      const cfg = stripUndefinedProfileFields(rawCfg);
       const existing = merged[userId];
       if (!existing) {
         merged[userId] = { ...cfg };
@@ -382,7 +434,8 @@ export const mergeStaffProfilesMap = (
 };
 
 /**
- * Merges multiple staff attendance record maps by comparing `updatedAt` timestamps.
+ * Merges multiple staff attendance record maps by comparing `updatedAt` timestamps,
+ * preserving `_deleted: true` tombstones so deleted records are never resurrected by stale copies.
  */
 export const mergeStaffAttendanceMap = (
   ...maps: Array<Record<string, StaffAttendanceRecord> | undefined | null>
@@ -403,6 +456,12 @@ export const mergeStaffAttendanceMap = (
   return merged;
 };
 
+/**
+ * Resolves the staff member's operational profile (`workingHours`, `monthlySalary`, `tasks`, `leaderPrivateNotes`)
+ * from the central cloud-synced staff record (`user`) and `settings.staffOperations` / `settings.staffProfiles`.
+ * CRITICAL: NEVER overwrites a staff member's `tasks` with default template tasks on page load.
+ * Default template tasks are ONLY applied once when a brand-new staff member is first created.
+ */
 export const resolveStaffProfile = (
   user: User,
   settings?: InstitutionSettings
@@ -416,67 +475,68 @@ export const resolveStaffProfile = (
   const localCfg = localMap[user.id];
   const settingsProfileCfg = settings?.staffProfiles?.[user.id];
   const settingsOpsCfg = settings?.staffOperations?.[user.id];
-  const userCfg: StaffProfileConfig = {
+  const userCfg: StaffProfileConfig = stripUndefinedProfileFields({
     workingHours: user.workingHours,
     monthlySalary: user.monthlySalary,
     tasks: user.tasks,
     leaderPrivateNotes: user.leaderPrivateNotes,
     updatedAt: user.updatedAt
-  };
+  });
 
   // Merge in order from oldest fallback to newest timestamped source
   const resolvedMap = mergeStaffProfilesMap(
-    { [user.id]: userCfg },
     localCfg ? { [user.id]: localCfg } : undefined,
     settingsProfileCfg ? { [user.id]: settingsProfileCfg } : undefined,
-    settingsOpsCfg ? { [user.id]: settingsOpsCfg } : undefined
+    settingsOpsCfg ? { [user.id]: settingsOpsCfg } : undefined,
+    { [user.id]: userCfg }
   );
   const winner = resolvedMap[user.id] || {};
 
   const workingHours =
     winner.workingHours?.trim() ||
+    user.workingHours?.trim() ||
     settingsOpsCfg?.workingHours?.trim() ||
     settingsProfileCfg?.workingHours?.trim() ||
     localCfg?.workingHours?.trim() ||
-    user.workingHours?.trim() ||
     getDefaultWorkingHoursForRole(user.role);
 
   const monthlySalary =
     typeof winner.monthlySalary === 'number' && !isNaN(winner.monthlySalary)
       ? winner.monthlySalary
+      : typeof user.monthlySalary === 'number' && !isNaN(user.monthlySalary)
+      ? user.monthlySalary
       : typeof settingsOpsCfg?.monthlySalary === 'number' && !isNaN(settingsOpsCfg.monthlySalary)
       ? settingsOpsCfg.monthlySalary
       : typeof settingsProfileCfg?.monthlySalary === 'number' && !isNaN(settingsProfileCfg.monthlySalary)
       ? settingsProfileCfg.monthlySalary
       : typeof localCfg?.monthlySalary === 'number' && !isNaN(localCfg.monthlySalary)
       ? localCfg.monthlySalary
-      : typeof user.monthlySalary === 'number' && !isNaN(user.monthlySalary)
-      ? user.monthlySalary
       : getDefaultMonthlySalaryForRole(user.role);
 
-  const tasks = Array.isArray(winner.tasks)
+  // Strictly use the cloud-synced tasks array without falling back to default template tasks on page load
+  const tasks: StaffTaskItem[] = Array.isArray(winner.tasks)
     ? winner.tasks
+    : Array.isArray(user.tasks)
+    ? user.tasks
     : Array.isArray(settingsOpsCfg?.tasks)
     ? settingsOpsCfg.tasks
     : Array.isArray(settingsProfileCfg?.tasks)
     ? settingsProfileCfg.tasks
     : Array.isArray(localCfg?.tasks)
     ? localCfg.tasks
-    : Array.isArray(user.tasks)
-    ? user.tasks
-    : getDefaultTasksForUser(user);
+    : [];
 
   const leaderPrivateNotes =
     typeof winner.leaderPrivateNotes === 'string'
       ? winner.leaderPrivateNotes
+      : typeof user.leaderPrivateNotes === 'string'
+      ? user.leaderPrivateNotes
       : typeof settingsOpsCfg?.leaderPrivateNotes === 'string'
       ? settingsOpsCfg.leaderPrivateNotes
       : typeof settingsProfileCfg?.leaderPrivateNotes === 'string'
       ? settingsProfileCfg.leaderPrivateNotes
       : typeof localCfg?.leaderPrivateNotes === 'string'
       ? localCfg.leaderPrivateNotes
-      : typeof user.leaderPrivateNotes === 'string'
-      ? user.leaderPrivateNotes
       : '';
 
   return {
@@ -487,7 +547,11 @@ export const resolveStaffProfile = (
   };
 };
 
-export const readAllStaffAttendanceRecords = (
+/**
+ * Reads the raw staff attendance map INCLUDING `_deleted: true` tombstones
+ * so deletions propagate cleanly across cloud sync and local storage merges.
+ */
+export const readRawStaffAttendanceMap = (
   settings?: InstitutionSettings
 ): Record<string, StaffAttendanceRecord> => {
   let localRecords: Record<string, StaffAttendanceRecord> = {};
@@ -505,6 +569,21 @@ export const readAllStaffAttendanceRecords = (
     }
   }
   return mergeStaffAttendanceMap(localRecords, settings?.staffAttendanceRecords);
+};
+
+/**
+ * Returns only active (non-deleted) staff attendance records for UI tables and monthly counters.
+ */
+export const readAllStaffAttendanceRecords = (
+  settings?: InstitutionSettings
+): Record<string, StaffAttendanceRecord> => {
+  const rawMerged = readRawStaffAttendanceMap(settings);
+  const activeOnly: Record<string, StaffAttendanceRecord> = {};
+  for (const [key, rec] of Object.entries(rawMerged)) {
+    if (!rec || rec._deleted === true) continue;
+    activeOnly[key] = rec;
+  }
+  return activeOnly;
 };
 
 export const writeLocalStaffAttendanceRecords = (
@@ -541,6 +620,29 @@ export const buildStaffAttendanceRecord = (params: {
         : params.checkInTime || '',
     excuseText: params.excuseText?.trim() || '',
     recordedBy: params.recordedBy || params.user.name,
+    _deleted: false,
+    updatedAt: new Date().toISOString()
+  };
+};
+
+export const buildDeletedStaffAttendanceTombstone = (params: {
+  user: User;
+  dateIso: string;
+  recordedBy?: string;
+}): StaffAttendanceRecord => {
+  const key = `${params.user.id}_${params.dateIso}`;
+  return {
+    id: key,
+    userId: params.user.id,
+    userName: params.user.name,
+    userRole: params.user.role,
+    date: params.dateIso,
+    hijriDateFormatted: formatHijriDate(params.dateIso, { includeWeekday: true }),
+    status: 'present',
+    checkInTime: '',
+    excuseText: '',
+    recordedBy: params.recordedBy || 'إدارة المنصة',
+    _deleted: true,
     updatedAt: new Date().toISOString()
   };
 };
@@ -683,16 +785,29 @@ export const writeLocalStaffChatMessages = (messages: StaffChatMessage[]): void 
 
 export const readResolvedStaffChatMessages = (
   settings?: InstitutionSettings | null,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  users?: User[] | null
 ): StaffChatMessage[] => {
   const localDeleted = readLocalDeletedStaffChatIds();
   const settingsDeleted = Array.isArray(settings?.deletedStaffChatIds) ? settings!.deletedStaffChatIds! : [];
-  const allDeleted = [...new Set([...localDeleted, ...settingsDeleted])];
+  const usersDeleted: string[] = [];
+  const usersMsgs: StaffChatMessage[] = [];
+  if (Array.isArray(users)) {
+    for (const u of users) {
+      if (Array.isArray(u?.deletedStaffChatIds)) {
+        usersDeleted.push(...u.deletedStaffChatIds);
+      }
+      if (Array.isArray(u?.staffChatMessages)) {
+        usersMsgs.push(...u.staffChatMessages);
+      }
+    }
+  }
+  const allDeleted = [...new Set([...localDeleted, ...settingsDeleted, ...usersDeleted])];
 
   const localMsgs = readLocalStaffChatMessages();
   const settingsMsgs = Array.isArray(settings?.staffChatMessages) ? settings!.staffChatMessages! : [];
 
-  return filterAndSortActiveStaffChatMessages([...localMsgs, ...settingsMsgs], allDeleted, nowMs);
+  return filterAndSortActiveStaffChatMessages([...localMsgs, ...settingsMsgs, ...usersMsgs], allDeleted, nowMs);
 };
 
 export const DEFAULT_PINNED_STAFF_ANNOUNCEMENT: PinnedStaffAnnouncement = {
@@ -723,15 +838,36 @@ export const writeLocalPinnedAnnouncement = (announcement: PinnedStaffAnnounceme
 };
 
 export const resolvePinnedStaffAnnouncement = (
-  settings?: InstitutionSettings | null
+  settings?: InstitutionSettings | null,
+  users?: User[] | null
 ): PinnedStaffAnnouncement => {
+  const candidates: PinnedStaffAnnouncement[] = [];
   const localAnn = readLocalPinnedAnnouncement();
-  const settingsAnn = settings?.pinnedStaffAnnouncement;
-
-  if (localAnn && settingsAnn) {
-    return (settingsAnn.updatedAt || 0) >= (localAnn.updatedAt || 0) ? settingsAnn : localAnn;
+  if (localAnn && typeof localAnn.text === 'string') {
+    candidates.push(localAnn);
   }
-  if (settingsAnn && typeof settingsAnn.text === 'string') return settingsAnn;
-  if (localAnn && typeof localAnn.text === 'string') return localAnn;
-  return DEFAULT_PINNED_STAFF_ANNOUNCEMENT;
+  const settingsAnn = settings?.pinnedStaffAnnouncement;
+  if (settingsAnn && typeof settingsAnn.text === 'string') {
+    candidates.push(settingsAnn);
+  }
+  if (Array.isArray(users)) {
+    for (const u of users) {
+      if (u?.pinnedStaffAnnouncement && typeof u.pinnedStaffAnnouncement.text === 'string') {
+        candidates.push(u.pinnedStaffAnnouncement);
+      }
+    }
+  }
+
+  if (candidates.length === 0) {
+    return DEFAULT_PINNED_STAFF_ANNOUNCEMENT;
+  }
+
+  let newest = candidates[0];
+  for (const c of candidates) {
+    if ((c.updatedAt || 0) >= (newest.updatedAt || 0)) {
+      newest = c;
+    }
+  }
+  return newest;
 };
+

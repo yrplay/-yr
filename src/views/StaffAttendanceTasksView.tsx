@@ -25,8 +25,10 @@ import {
 import {
   resolveStaffProfile,
   readAllStaffAttendanceRecords,
+  readRawStaffAttendanceMap,
   writeLocalStaffAttendanceRecords,
   buildStaffAttendanceRecord,
+  buildDeletedStaffAttendanceTombstone,
   formatCurrentArabicTime,
   getStaffShortRoleLabel,
   getStaffDropdownRoleBadge,
@@ -95,7 +97,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
   // Mark staff chat as seen when opening this view
   useEffect(() => {
     if (currentUser?.id) {
-      markStaffChatSeenNow(currentUser.id, settings);
+      markStaffChatSeenNow(currentUser.id, settings, users);
     }
   }, [currentUser?.id]);
 
@@ -185,8 +187,32 @@ export const StaffAttendanceTasksView: React.FC = () => {
   const [pinnedAnnouncementDraft, setPinnedAnnouncementDraft] = useState<string>('');
   const chatListEndRef = useRef<HTMLDivElement | null>(null);
 
-  const activeChatMessages: StaffChatMessage[] = readResolvedStaffChatMessages(settings, nowTick);
-  const pinnedAnnouncement: PinnedStaffAnnouncement = resolvePinnedStaffAnnouncement(settings);
+  const activeChatMessages: StaffChatMessage[] = readResolvedStaffChatMessages(settings, nowTick, users);
+  const pinnedAnnouncement: PinnedStaffAnnouncement = resolvePinnedStaffAnnouncement(settings, users);
+
+  const syncChatPayloadToCentralUser = async (payload: {
+    staffChatMessages?: StaffChatMessage[];
+    deletedStaffChatIds?: string[];
+    pinnedStaffAnnouncement?: PinnedStaffAnnouncement;
+  }) => {
+    const carrierUser =
+      users.find(u => u.id === 'user-owner' || u.role === 'owner') ||
+      users.find(u => u.id === 'user-leader' || u.role === 'leader') ||
+      currentUser;
+    if (carrierUser) {
+      await updateUser(
+        carrierUser.id,
+        {
+          ...(payload.staffChatMessages !== undefined ? { staffChatMessages: payload.staffChatMessages } : {}),
+          ...(payload.deletedStaffChatIds !== undefined ? { deletedStaffChatIds: payload.deletedStaffChatIds } : {}),
+          ...(payload.pinnedStaffAnnouncement !== undefined
+            ? { pinnedStaffAnnouncement: payload.pinnedStaffAnnouncement }
+            : {})
+        },
+        true
+      );
+    }
+  };
 
   // Auto-prune expired messages (> 24 hours) periodically and sync with cloud
   useEffect(() => {
@@ -195,7 +221,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
       setNowTick(currentNow);
       const rawSettingsMsgs = Array.isArray(settings?.staffChatMessages) ? settings.staffChatMessages : [];
       if (rawSettingsMsgs.length > 0) {
-        const validMsgs = readResolvedStaffChatMessages(settings, currentNow);
+        const validMsgs = readResolvedStaffChatMessages(settings, currentNow, users);
         if (validMsgs.length < rawSettingsMsgs.length) {
           writeLocalStaffChatMessages(validMsgs);
           void updateSettings({ staffChatMessages: validMsgs }, true);
@@ -231,15 +257,19 @@ export const StaffAttendanceTasksView: React.FC = () => {
       markMessageIdAsSeenByUser(sender.id, getChatMessageSeenKey(newMsg));
     }
 
-    const currentValid = readResolvedStaffChatMessages(settings, nowMs);
+    const currentValid = readResolvedStaffChatMessages(settings, nowMs, users);
     const nextMessages = [...currentValid, newMsg];
     writeLocalStaffChatMessages(nextMessages);
     setChatInputText('');
     setNowTick(nowMs);
     if (sender?.id) {
-      markStaffChatSeenNow(sender.id, { ...settings, staffChatMessages: nextMessages });
+      markStaffChatSeenNow(sender.id, { ...settings, staffChatMessages: nextMessages }, users);
     }
+    await syncChatPayloadToCentralUser({ staffChatMessages: nextMessages });
     await updateSettings({ staffChatMessages: nextMessages }, true);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ghaith-staff-sync'));
+    }
     setTimeout(() => {
       chatListEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 80);
@@ -253,7 +283,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
       return;
     }
     const nowMs = Date.now();
-    const currentValid = readResolvedStaffChatMessages(settings, nowMs);
+    const currentValid = readResolvedStaffChatMessages(settings, nowMs, users);
     const nextMessages = currentValid.map(m =>
       m.id === msgId
         ? {
@@ -273,9 +303,13 @@ export const StaffAttendanceTasksView: React.FC = () => {
     setEditingChatMsgText('');
     setNowTick(nowMs);
     if (currentUser?.id) {
-      markStaffChatSeenNow(currentUser.id, { ...settings, staffChatMessages: nextMessages });
+      markStaffChatSeenNow(currentUser.id, { ...settings, staffChatMessages: nextMessages }, users);
     }
+    await syncChatPayloadToCentralUser({ staffChatMessages: nextMessages });
     await updateSettings({ staffChatMessages: nextMessages }, true);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ghaith-staff-sync'));
+    }
     showToast('تم تعديل الرسالة ومزامنتها فوراً', 'success');
   };
 
@@ -291,9 +325,13 @@ export const StaffAttendanceTasksView: React.FC = () => {
     ];
     writeLocalDeletedStaffChatIds(currentDeleted);
 
-    const nextMessages = readResolvedStaffChatMessages(settings, nowMs).filter(m => m.id !== msgId);
+    const nextMessages = readResolvedStaffChatMessages(settings, nowMs, users).filter(m => m.id !== msgId);
     writeLocalStaffChatMessages(nextMessages);
     setNowTick(nowMs);
+    await syncChatPayloadToCentralUser({
+      staffChatMessages: nextMessages,
+      deletedStaffChatIds: currentDeleted
+    });
     await updateSettings(
       {
         staffChatMessages: nextMessages,
@@ -301,6 +339,9 @@ export const StaffAttendanceTasksView: React.FC = () => {
       },
       true
     );
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ghaith-staff-sync'));
+    }
     showToast('تم حذف الرسالة من مساحة تواصل الكادر', 'info');
   };
 
@@ -320,9 +361,13 @@ export const StaffAttendanceTasksView: React.FC = () => {
     writeLocalPinnedAnnouncement(nextPinned);
     setIsEditingPinnedAnnouncement(false);
     if (currentUser?.id) {
-      markStaffChatSeenNow(currentUser.id, { ...settings, pinnedStaffAnnouncement: nextPinned });
+      markStaffChatSeenNow(currentUser.id, { ...settings, pinnedStaffAnnouncement: nextPinned }, users);
     }
+    await syncChatPayloadToCentralUser({ pinnedStaffAnnouncement: nextPinned });
     await updateSettings({ pinnedStaffAnnouncement: nextPinned }, true);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ghaith-staff-sync'));
+    }
     showToast(cleanText ? 'تم تحديث التعميم الإداري المثبت بنجاح' : 'تم مسح التعميم الإداري المثبت', 'success');
   };
 
@@ -336,7 +381,11 @@ export const StaffAttendanceTasksView: React.FC = () => {
     writeLocalPinnedAnnouncement(clearedPinned);
     setIsEditingPinnedAnnouncement(false);
     setPinnedAnnouncementDraft('');
+    await syncChatPayloadToCentralUser({ pinnedStaffAnnouncement: clearedPinned });
     await updateSettings({ pinnedStaffAnnouncement: clearedPinned }, true);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ghaith-staff-sync'));
+    }
     showToast('تم حذف التعميم الإداري المثبت', 'info');
   };
 
@@ -479,7 +528,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
       recordedBy: currentUser.name
     });
     const nextRecords = {
-      ...readAllStaffAttendanceRecords(settings),
+      ...readRawStaffAttendanceMap(settings),
       [record.id]: record
     };
     writeLocalStaffAttendanceRecords(nextRecords);
@@ -505,7 +554,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
       recordedBy: currentUser.name
     });
     const nextRecords = {
-      ...readAllStaffAttendanceRecords(settings),
+      ...readRawStaffAttendanceMap(settings),
       [record.id]: record
     };
     writeLocalStaffAttendanceRecords(nextRecords);
@@ -542,7 +591,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
       recordedBy: currentUser?.name || 'إدارة المنصة'
     });
     const nextRecords = {
-      ...readAllStaffAttendanceRecords(settings),
+      ...readRawStaffAttendanceMap(settings),
       [record.id]: record
     };
     writeLocalStaffAttendanceRecords(nextRecords);
@@ -550,6 +599,30 @@ export const StaffAttendanceTasksView: React.FC = () => {
     const statusAr =
       status === 'present' ? 'حاضرة' : status === 'absent_excused' ? 'غياب بعذر' : 'غياب بدون عذر';
     showToast(`تم تحديث حالة ${targetUser.name} إلى (${statusAr})`, 'success');
+  };
+
+  // Delete / Clear Attendance Record for a specific Hijri date (Reefa & Omar ONLY)
+  const handleAdminDeleteAttendanceRecord = async (targetUser: User, dateIso: string) => {
+    if (!isAdminOversight) return;
+    const tombstone = buildDeletedStaffAttendanceTombstone({
+      user: targetUser,
+      dateIso,
+      recordedBy: currentUser?.name || 'إدارة المنصة'
+    });
+    const nextRecords = {
+      ...readRawStaffAttendanceMap(settings),
+      [tombstone.id]: tombstone
+    };
+    writeLocalStaffAttendanceRecords(nextRecords);
+    if (
+      editingAttendanceTarget &&
+      editingAttendanceTarget.user.id === targetUser.id &&
+      editingAttendanceTarget.dateIso === dateIso
+    ) {
+      setEditingAttendanceTarget(null);
+    }
+    await updateSettings({ staffAttendanceRecords: nextRecords }, true);
+    showToast(`تم حذف سجل الحضور والغياب لـ ${targetUser.name} وإعادته إلى (لم يُسجّل)`, 'info');
   };
 
   const handleSaveAdminAttendanceOverride = async (e: React.FormEvent) => {
@@ -569,7 +642,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
       recordedBy: currentUser?.name || 'إدارة المنصة'
     });
     const nextRecords = {
-      ...readAllStaffAttendanceRecords(settings),
+      ...readRawStaffAttendanceMap(settings),
       [record.id]: record
     };
     writeLocalStaffAttendanceRecords(nextRecords);
@@ -1465,6 +1538,20 @@ export const StaffAttendanceTasksView: React.FC = () => {
                             >
                               <PenLine className="w-3.5 h-3.5" />
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAdminDeleteAttendanceRecord(staff, effectiveAttendanceDate)}
+                              disabled={!rec}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition ${
+                                rec
+                                  ? 'bg-white hover:bg-rose-50 text-rose-700 border-rose-200 cursor-pointer active:scale-95'
+                                  : 'bg-stone-50 text-stone-300 border-stone-200 cursor-not-allowed'
+                              }`}
+                              title="حذف سجل الحضور أو الغياب لهذا اليوم وإعادته إلى غير مسجّل"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                              <span>حذف</span>
+                            </button>
                           </div>
                         </td>
                       )}
@@ -2053,21 +2140,33 @@ export const StaffAttendanceTasksView: React.FC = () => {
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-stone-100">
                 <button
                   type="button"
-                  onClick={() => setEditingAttendanceTarget(null)}
-                  className="px-4 py-2 text-xs text-stone-600 rounded-xl hover:bg-stone-100 cursor-pointer"
+                  onClick={() =>
+                    handleAdminDeleteAttendanceRecord(editingAttendanceTarget.user, editingAttendanceTarget.dateIso)
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition cursor-pointer"
                 >
-                  إلغاء
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>حذف السجل</span>
                 </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>حفظ واعتماد</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingAttendanceTarget(null)}
+                    className="px-4 py-2 text-xs text-stone-600 rounded-xl hover:bg-stone-100 cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-[#9A5643] hover:bg-[#7B3F30] text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>حفظ واعتماد</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>

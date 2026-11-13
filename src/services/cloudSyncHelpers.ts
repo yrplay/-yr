@@ -28,15 +28,24 @@ export const mergeArrayByKey = (
   key = 'id',
   deletedIds: string[] = []
 ) => {
+  const stripUndefined = (obj: Record<string, any>) => {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(obj || {})) {
+      if (v !== undefined) out[k] = v;
+    }
+    return out;
+  };
+
   const deleted = new Set(deletedIds.map(String));
   const map = new Map<string, any>();
   for (const item of existingList) {
     if (item && item[key] !== undefined && !deleted.has(String(item[key]))) {
-      map.set(String(item[key]), item);
+      map.set(String(item[key]), stripUndefined(item));
     }
   }
-  for (const item of incomingList) {
-    if (!item || item[key] === undefined || deleted.has(String(item[key]))) continue;
+  for (const rawItem of incomingList) {
+    if (!rawItem || rawItem[key] === undefined || deleted.has(String(rawItem[key]))) continue;
+    const item = stripUndefined(rawItem);
     const id = String(item[key]);
     const existing = map.get(id);
     if (!existing) {
@@ -51,7 +60,18 @@ export const mergeArrayByKey = (
     const existingTime = parseTime(existing.updatedAt || existing.submittedAt || existing.recordedAt || existing.evaluatedAt || existing.createdAt || existing.timestamp);
     const incomingTime = parseTime(item.updatedAt || item.submittedAt || item.recordedAt || item.evaluatedAt || item.createdAt || item.timestamp);
     const base = incomingTime >= existingTime ? { ...existing, ...item } : { ...item, ...existing };
-    
+
+    // Explicitly preserve tasks array from whichever side is newer (even if empty array [])
+    if (incomingTime >= existingTime && Array.isArray(item.tasks)) {
+      base.tasks = item.tasks;
+    } else if (existingTime > incomingTime && Array.isArray(existing.tasks)) {
+      base.tasks = existing.tasks;
+    } else if (Array.isArray(item.tasks)) {
+      base.tasks = item.tasks;
+    } else if (Array.isArray(existing.tasks)) {
+      base.tasks = existing.tasks;
+    }
+
     // For user items or items with passcode, never overwrite a set passcode with an empty or missing one
     const existingPass = (existing.passcode && String(existing.passcode).trim()) || '';
     const incomingPass = (item.passcode && String(item.passcode).trim()) || '';

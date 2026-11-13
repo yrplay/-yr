@@ -31,9 +31,14 @@ import {
   readLocalStaffProfiles,
   writeLocalStaffProfiles,
   mergeStaffProfilesMap,
+  extractStaffProfilesFromUsers,
   mergeStaffAttendanceMap,
   readAllStaffAttendanceRecords,
-  writeLocalStaffAttendanceRecords
+  readRawStaffAttendanceMap,
+  writeLocalStaffAttendanceRecords,
+  getDefaultTasksForUser,
+  getDefaultWorkingHoursForRole,
+  getDefaultMonthlySalaryForRole
 } from '../utils/staffHelpers';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
@@ -1200,7 +1205,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         };
         const locTime = parseTime(loc);
         const incTime = parseTime(inc);
-        const base = locTime >= incTime ? { ...inc, ...loc } : { ...loc, ...inc };
+        const stripUndef = (obj: any) => {
+          const res: any = {};
+          if (!obj || typeof obj !== 'object') return res;
+          for (const [k, v] of Object.entries(obj)) {
+            if (v !== undefined) res[k] = v;
+          }
+          return res;
+        };
+        const cleanLoc = stripUndef(loc);
+        const cleanInc = stripUndef(inc);
+        const base = locTime >= incTime ? { ...cleanInc, ...cleanLoc } : { ...cleanLoc, ...cleanInc };
+        if (locTime >= incTime && Array.isArray((loc as any).tasks)) {
+          (base as any).tasks = (loc as any).tasks;
+        } else if (incTime > locTime && Array.isArray((inc as any).tasks)) {
+          (base as any).tasks = (inc as any).tasks;
+        } else if (Array.isArray((inc as any).tasks)) {
+          (base as any).tasks = (inc as any).tasks;
+        } else if (Array.isArray((loc as any).tasks)) {
+          (base as any).tasks = (loc as any).tasks;
+        }
         
         // Preserve passcode on entities (users) so cloud updates never clear a set passcode
         const locPass = ((loc as any).passcode && String((loc as any).passcode).trim()) || '';
@@ -1286,14 +1310,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Always merge additive real-time staff chat messages, pinned announcements,
     // staff workingHours/tasks/salary (staffProfiles / staffOperations), and staffAttendanceRecords
     // by timestamp even if there was a recent local mutation so cross-device updates are never dropped.
-    if (isFromCloud && (incomingData.settings || incomingData.staffOperations)) {
+    if (isFromCloud && (incomingData.settings || incomingData.staffOperations || Array.isArray(incomingData.users))) {
       const localSettings = masterStateRef.current.settings || {};
       const incomingSettings = incomingData.settings || {};
+      const incomingUsersList: User[] = Array.isArray(incomingData.users) ? incomingData.users : [];
+      const localUsersList: User[] = Array.isArray(masterStateRef.current.users) ? masterStateRef.current.users : [];
+
+      const userEmbeddedDeletedChatIds: string[] = [];
+      const userEmbeddedChatMessages: any[] = [];
+      let userEmbeddedPinnedAnnouncement: any = null;
+
+      for (const u of [...localUsersList, ...incomingUsersList]) {
+        if (!u || typeof u !== 'object') continue;
+        if (Array.isArray(u.deletedStaffChatIds)) {
+          userEmbeddedDeletedChatIds.push(...u.deletedStaffChatIds.map(String));
+        }
+        if (Array.isArray(u.staffChatMessages)) {
+          userEmbeddedChatMessages.push(...u.staffChatMessages);
+        }
+        if (u.pinnedStaffAnnouncement && typeof u.pinnedStaffAnnouncement === 'object') {
+          if (
+            !userEmbeddedPinnedAnnouncement ||
+            (u.pinnedStaffAnnouncement.updatedAt || 0) >= (userEmbeddedPinnedAnnouncement.updatedAt || 0)
+          ) {
+            userEmbeddedPinnedAnnouncement = u.pinnedStaffAnnouncement;
+          }
+        }
+      }
+
       const mergedDeletedChatIds = [
         ...new Set([
           ...readLocalDeletedStaffChatIds(),
           ...(Array.isArray(localSettings.deletedStaffChatIds) ? localSettings.deletedStaffChatIds : []),
-          ...(Array.isArray(incomingSettings.deletedStaffChatIds) ? incomingSettings.deletedStaffChatIds : [])
+          ...(Array.isArray(incomingData.deletedStaffChatIds) ? incomingData.deletedStaffChatIds : []),
+          ...(Array.isArray(incomingSettings.deletedStaffChatIds) ? incomingSettings.deletedStaffChatIds : []),
+          ...userEmbeddedDeletedChatIds
         ].map(String))
       ];
       writeLocalDeletedStaffChatIds(mergedDeletedChatIds);
@@ -1302,14 +1353,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         [
           ...readLocalStaffChatMessages(),
           ...(Array.isArray(localSettings.staffChatMessages) ? localSettings.staffChatMessages : []),
-          ...(Array.isArray(incomingSettings.staffChatMessages) ? incomingSettings.staffChatMessages : [])
+          ...(Array.isArray(incomingData.staffChatMessages) ? incomingData.staffChatMessages : []),
+          ...(Array.isArray(incomingSettings.staffChatMessages) ? incomingSettings.staffChatMessages : []),
+          ...userEmbeddedChatMessages
         ],
         mergedDeletedChatIds
       );
       writeLocalStaffChatMessages(mergedStaffChatMessages);
 
       const localPin = localSettings.pinnedStaffAnnouncement || readLocalPinnedAnnouncement();
-      const incomingPin = incomingSettings.pinnedStaffAnnouncement;
+      const incomingPin =
+        incomingSettings.pinnedStaffAnnouncement ||
+        incomingData.pinnedStaffAnnouncement ||
+        userEmbeddedPinnedAnnouncement;
       const mergedPinnedAnnouncement =
         localPin && incomingPin
           ? (incomingPin.updatedAt || 0) >= (localPin.updatedAt || 0)
@@ -1322,8 +1378,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       const mergedStaffProfiles = mergeStaffProfilesMap(
         readLocalStaffProfiles(),
+        extractStaffProfilesFromUsers(localUsersList),
         localSettings.staffProfiles,
         localSettings.staffOperations,
+        extractStaffProfilesFromUsers(incomingUsersList),
         incomingData.staffOperations,
         incomingSettings.staffProfiles,
         incomingSettings.staffOperations
@@ -1331,8 +1389,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       writeLocalStaffProfiles(mergedStaffProfiles);
 
       const mergedStaffAttendance = mergeStaffAttendanceMap(
-        readAllStaffAttendanceRecords(localSettings),
+        readRawStaffAttendanceMap(localSettings),
         localSettings.staffAttendanceRecords,
+        incomingData.staffAttendanceRecords,
         incomingSettings.staffAttendanceRecords
       );
       writeLocalStaffAttendanceRecords(mergedStaffAttendance);
@@ -1362,7 +1421,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 ...u,
                 ...(p.workingHours !== undefined ? { workingHours: p.workingHours } : {}),
                 ...(p.monthlySalary !== undefined ? { monthlySalary: p.monthlySalary } : {}),
-                ...(p.tasks !== undefined ? { tasks: p.tasks } : {}),
+                ...(Array.isArray(p.tasks) ? { tasks: p.tasks } : {}),
                 ...(p.leaderPrivateNotes !== undefined ? { leaderPrivateNotes: p.leaderPrivateNotes } : {}),
                 updatedAt: p.updatedAt || u.updatedAt
               };
@@ -1375,6 +1434,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             if (!prev) return prev;
             return syncedUsers.find((u: User) => u.id === prev.id) || prev;
           });
+        }
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ghaith-cloud-state-applied'));
         }
         return;
       }
@@ -1457,8 +1519,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const mergedStaffProfilesForUsers = mergeStaffProfilesMap(
       readLocalStaffProfiles(),
+      extractStaffProfilesFromUsers(masterStateRef.current.users),
       masterStateRef.current.settings?.staffProfiles,
       masterStateRef.current.settings?.staffOperations,
+      extractStaffProfilesFromUsers(data.users),
       data.staffOperations,
       data.settings?.staffProfiles,
       data.settings?.staffOperations
@@ -1477,7 +1541,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           ...u,
           ...(profileCfg.workingHours !== undefined ? { workingHours: profileCfg.workingHours } : {}),
           ...(profileCfg.monthlySalary !== undefined ? { monthlySalary: profileCfg.monthlySalary } : {}),
-          ...(profileCfg.tasks !== undefined ? { tasks: profileCfg.tasks } : {}),
+          ...(Array.isArray(profileCfg.tasks) ? { tasks: profileCfg.tasks } : {}),
           ...(profileCfg.leaderPrivateNotes !== undefined ? { leaderPrivateNotes: profileCfg.leaderPrivateNotes } : {}),
           updatedAt: profileCfg.updatedAt || u.updatedAt
         };
@@ -1639,11 +1703,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       writeLocalWelcomeMessages(mergedWelcomeMessages);
 
+      const userEmbeddedDeletedChatIds: string[] = [];
+      const userEmbeddedChatMessages: any[] = [];
+      let userEmbeddedPinnedAnnouncement: any = null;
+      for (const u of userList) {
+        if (!u || typeof u !== 'object') continue;
+        if (Array.isArray(u.deletedStaffChatIds)) {
+          userEmbeddedDeletedChatIds.push(...u.deletedStaffChatIds.map(String));
+        }
+        if (Array.isArray(u.staffChatMessages)) {
+          userEmbeddedChatMessages.push(...u.staffChatMessages);
+        }
+        if (u.pinnedStaffAnnouncement && typeof u.pinnedStaffAnnouncement === 'object') {
+          if (
+            !userEmbeddedPinnedAnnouncement ||
+            (u.pinnedStaffAnnouncement.updatedAt || 0) >= (userEmbeddedPinnedAnnouncement.updatedAt || 0)
+          ) {
+            userEmbeddedPinnedAnnouncement = u.pinnedStaffAnnouncement;
+          }
+        }
+      }
+
       const mergedDeletedChatIds = [
         ...new Set([
           ...readLocalDeletedStaffChatIds(),
           ...(Array.isArray(localSettings.deletedStaffChatIds) ? localSettings.deletedStaffChatIds : []),
-          ...(Array.isArray(incomingSettings.deletedStaffChatIds) ? incomingSettings.deletedStaffChatIds : [])
+          ...(Array.isArray(data.deletedStaffChatIds) ? data.deletedStaffChatIds : []),
+          ...(Array.isArray(incomingSettings.deletedStaffChatIds) ? incomingSettings.deletedStaffChatIds : []),
+          ...userEmbeddedDeletedChatIds
         ].map(String))
       ];
       writeLocalDeletedStaffChatIds(mergedDeletedChatIds);
@@ -1652,14 +1739,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         [
           ...readLocalStaffChatMessages(),
           ...(Array.isArray(localSettings.staffChatMessages) ? localSettings.staffChatMessages : []),
-          ...(Array.isArray(incomingSettings.staffChatMessages) ? incomingSettings.staffChatMessages : [])
+          ...(Array.isArray(data.staffChatMessages) ? data.staffChatMessages : []),
+          ...(Array.isArray(incomingSettings.staffChatMessages) ? incomingSettings.staffChatMessages : []),
+          ...userEmbeddedChatMessages
         ],
         mergedDeletedChatIds
       );
       writeLocalStaffChatMessages(mergedStaffChatMessages);
 
       const localPin = localSettings.pinnedStaffAnnouncement || readLocalPinnedAnnouncement();
-      const incomingPin = incomingSettings.pinnedStaffAnnouncement;
+      const incomingPin =
+        incomingSettings.pinnedStaffAnnouncement ||
+        data.pinnedStaffAnnouncement ||
+        userEmbeddedPinnedAnnouncement;
       const mergedPinnedAnnouncement =
         localPin && incomingPin
           ? (incomingPin.updatedAt || 0) >= (localPin.updatedAt || 0)
@@ -1672,8 +1764,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       const mergedStaffProfiles = mergeStaffProfilesMap(
         readLocalStaffProfiles(),
+        extractStaffProfilesFromUsers(userList),
         localSettings.staffProfiles,
         localSettings.staffOperations,
+        extractStaffProfilesFromUsers(data.users),
         data.staffOperations,
         incomingSettings.staffProfiles,
         incomingSettings.staffOperations
@@ -1681,8 +1775,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       writeLocalStaffProfiles(mergedStaffProfiles);
 
       const mergedStaffAttendance = mergeStaffAttendanceMap(
-        readAllStaffAttendanceRecords(localSettings),
+        readRawStaffAttendanceMap(localSettings),
         localSettings.staffAttendanceRecords,
+        data.staffAttendanceRecords,
         incomingSettings.staffAttendanceRecords
       );
       writeLocalStaffAttendanceRecords(mergedStaffAttendance);
@@ -1721,6 +1816,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch {}
 
     setLastSynced(new Date());
+    if (isFromCloud && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ghaith-cloud-state-applied'));
+    }
   };
 
   const persistState = (overrides?: any) => {
@@ -1735,18 +1833,70 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ...(masterStateRef.current.settings || settings),
         ...(overrides?.settings || {})
       };
+      const baseUsers: User[] = overrides?.users || masterStateRef.current.users || users;
       const mergedProfiles = mergeStaffProfilesMap(
         readLocalStaffProfiles(),
+        extractStaffProfilesFromUsers(baseUsers),
         mergedSettingsObj.staffProfiles,
         mergedSettingsObj.staffOperations,
         overrides?.staffOperations
       );
+      const mergedDeletedChatIds = [
+        ...new Set([
+          ...readLocalDeletedStaffChatIds(),
+          ...(Array.isArray(mergedSettingsObj.deletedStaffChatIds) ? mergedSettingsObj.deletedStaffChatIds : [])
+        ].map(String))
+      ];
+      const mergedChatMessages = filterAndSortActiveStaffChatMessages(
+        [
+          ...readLocalStaffChatMessages(),
+          ...(Array.isArray(mergedSettingsObj.staffChatMessages) ? mergedSettingsObj.staffChatMessages : [])
+        ],
+        mergedDeletedChatIds
+      );
+      const mergedPin = mergedSettingsObj.pinnedStaffAnnouncement || readLocalPinnedAnnouncement() || undefined;
+      const mergedAttendanceMap = mergeStaffAttendanceMap(
+        readRawStaffAttendanceMap(mergedSettingsObj),
+        mergedSettingsObj.staffAttendanceRecords
+      );
+
       mergedSettingsObj.staffProfiles = mergedProfiles;
       mergedSettingsObj.staffOperations = mergedProfiles;
+      mergedSettingsObj.staffChatMessages = mergedChatMessages;
+      mergedSettingsObj.deletedStaffChatIds = mergedDeletedChatIds;
+      if (mergedPin) {
+        mergedSettingsObj.pinnedStaffAnnouncement = mergedPin;
+      }
+      mergedSettingsObj.staffAttendanceRecords = mergedAttendanceMap;
+
+      const syncedUsersList: User[] = Array.isArray(baseUsers)
+        ? baseUsers.map((u: User) => {
+            const p = mergedProfiles[u.id];
+            const isOwnerOrLeader =
+              u.id === 'user-owner' ||
+              u.id === 'user-leader' ||
+              u.role === 'owner' ||
+              u.role === 'leader' ||
+              u.role === 'developer';
+            return {
+              ...u,
+              ...(p?.workingHours !== undefined ? { workingHours: p.workingHours } : {}),
+              ...(p?.monthlySalary !== undefined ? { monthlySalary: p.monthlySalary } : {}),
+              ...(Array.isArray(p?.tasks) ? { tasks: p.tasks } : {}),
+              ...(p?.leaderPrivateNotes !== undefined ? { leaderPrivateNotes: p.leaderPrivateNotes } : {}),
+              ...(isOwnerOrLeader
+                ? {
+                    staffChatMessages: mergedChatMessages,
+                    deletedStaffChatIds: mergedDeletedChatIds,
+                    ...(mergedPin ? { pinnedStaffAnnouncement: mergedPin } : {})
+                  }
+                : {})
+            };
+          })
+        : baseUsers;
 
       const rawPayload = {
         currentUser: masterStateRef.current.currentUser || currentUser,
-        users: masterStateRef.current.users || users,
         tracks: masterStateRef.current.tracks || tracks,
         circles: masterStateRef.current.circles || circles,
         students: masterStateRef.current.students || students,
@@ -1765,8 +1915,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         _deletedEntities: masterStateRef.current._deletedEntities || {},
         auditLogs: masterStateRef.current.auditLogs || auditLogs,
         ...overrides,
+        users: syncedUsersList,
         settings: mergedSettingsObj,
-        staffOperations: mergedProfiles
+        staffOperations: mergedProfiles,
+        staffChatMessages: mergedChatMessages,
+        deletedStaffChatIds: mergedDeletedChatIds,
+        ...(mergedPin ? { pinnedStaffAnnouncement: mergedPin } : {}),
+        staffAttendanceRecords: mergedAttendanceMap
       };
       delete rawPayload._replaceState;
       delete rawPayload._immediateSync;
@@ -1947,11 +2102,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       void pullFreshCloudStateNow();
     };
 
-    // 3. Fast Periodic Polling (Every 5 Seconds) while the app is active/visible
+    // 3. Fast Periodic Polling (Every 4 Seconds) while the app is active/visible
     const fastPollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       void pullFreshCloudStateNow();
-    }, 5000);
+    }, 4000);
 
     const handleStorageSync = (e: StorageEvent) => {
       if (
@@ -4127,11 +4282,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
+    const newId = user.id || 'u-' + Date.now();
+    const newRole = user.role || 'teacher';
+    const isStaffRole = newRole === 'supervisor' || newRole === 'teacher';
+    const nowIso = new Date().toISOString();
+
     const newUser: User = {
-      id: user.id || 'u-' + Date.now(),
+      id: newId,
       name: user.name || 'عضوة جديدة',
-      role: user.role || 'teacher',
-      title: user.title || (user.role === 'owner' ? 'مالك المنصة العام' : user.role === 'leader' ? 'قائدة مقرأة غيث الغيم' : user.role === 'supervisor' ? 'مشرفة مسار' : 'معلمة حلقة'),
+      role: newRole,
+      title: user.title || (newRole === 'owner' ? 'مالك المنصة العام' : newRole === 'leader' ? 'قائدة مقرأة غيث الغيم' : newRole === 'supervisor' ? 'مشرفة مسار' : 'معلمة حلقة'),
       email: user.email || '',
       phone: user.phone || '',
       circleIds: user.circleIds || [],
@@ -4139,10 +4299,33 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       avatarColor: user.avatarColor || '#ad4e00',
       passcode: user.passcode?.trim() || '',
       isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      ...(isStaffRole
+        ? {
+            workingHours: user.workingHours ?? getDefaultWorkingHoursForRole(newRole),
+            monthlySalary: user.monthlySalary ?? getDefaultMonthlySalaryForRole(newRole),
+            tasks: Array.isArray(user.tasks) ? user.tasks : getDefaultTasksForUser({ id: newId, role: newRole })
+          }
+        : {}),
+      createdAt: nowIso,
+      updatedAt: nowIso,
       ...user
     } as User;
+
+    if (isStaffRole) {
+      const mergedProfiles = mergeStaffProfilesMap(
+        readLocalStaffProfiles(),
+        masterStateRef.current.settings?.staffProfiles,
+        {
+          [newUser.id]: {
+            workingHours: newUser.workingHours,
+            monthlySalary: newUser.monthlySalary,
+            tasks: newUser.tasks,
+            updatedAt: nowIso
+          }
+        }
+      );
+      writeLocalStaffProfiles(mergedProfiles);
+    }
 
     const next = [...users.filter(existing => existing.id !== newUser.id), newUser];
     masterStateRef.current.users = next;

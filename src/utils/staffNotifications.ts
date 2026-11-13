@@ -32,7 +32,25 @@ export function isStaffNotificationsEnabled(): boolean {
 }
 
 /**
- * Requests browser/PWA notification permission and activates staff alerts.
+ * Ensures the `/sw.js` Service Worker is registered and ready for Android & Mobile PWA system notifications.
+ */
+export async function ensureServiceWorkerRegistered(): Promise<ServiceWorkerRegistration | null> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+    return null;
+  }
+  try {
+    const existing = await navigator.serviceWorker.getRegistration('/');
+    if (existing) {
+      return existing;
+    }
+    return await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Requests browser/PWA notification permission, ensures `/sw.js` is registered, and activates staff alerts.
  */
 export async function enableStaffNotifications(): Promise<{
   enabled: boolean;
@@ -41,6 +59,8 @@ export async function enableStaffNotifications(): Promise<{
   if (typeof window === 'undefined') {
     return { enabled: false, nativeGranted: false };
   }
+
+  void ensureServiceWorkerRegistered();
 
   let nativeGranted = false;
   try {
@@ -108,9 +128,9 @@ export function playGentleNotificationChime(): void {
 }
 
 /**
- * Delivers a native device notification via both PWA Service Worker
- * (`navigator.serviceWorker.ready.then(reg => reg.showNotification(...))`)
- * and standard `new Notification(...)` fallback.
+ * Delivers a true Android, Mobile PWA, and Desktop system notification via
+ * `const reg = await navigator.serviceWorker.ready; reg.showNotification(...)`
+ * with `{ body, icon, dir: 'rtl', lang: 'ar', vibrate: [200, 100, 200] }`.
  */
 export async function deliverNativeOrPwaNotification(options: {
   title: string;
@@ -125,38 +145,44 @@ export async function deliverNativeOrPwaNotification(options: {
   }
 
   const iconUrl = '/pwa-192x192.png';
-  const notificationOptions: NotificationOptions = {
+  const swNotificationOptions: NotificationOptions & { vibrate?: number[] } = {
     body: options.body,
     icon: iconUrl,
     badge: iconUrl,
     tag: options.tag || `ghaith-alert-${Date.now()}`,
     dir: 'rtl',
-    lang: 'ar'
+    lang: 'ar',
+    vibrate: [200, 100, 200],
+    data: {
+      url: '/?view=staff-attendance'
+    }
   };
 
   let deliveredNatively = false;
 
-  // 1. Try PWA Service Worker showNotification first for reliable mobile/PWA background alerts
+  // 1. Use ServiceWorkerRegistration.showNotification for Android Chrome, Mobile PWA, and Desktop
   try {
     if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
+      await ensureServiceWorkerRegistered();
       const reg = await Promise.race([
         navigator.serviceWorker.ready,
-        new Promise<null>(resolve => setTimeout(() => resolve(null), 1200))
+        new Promise<ServiceWorkerRegistration | null>(resolve => setTimeout(() => resolve(null), 2500))
       ]);
-      if (reg && typeof reg.showNotification === 'function') {
-        await reg.showNotification(options.title, notificationOptions);
+      const activeReg = reg || (await navigator.serviceWorker.getRegistration('/')) || null;
+      if (activeReg && typeof activeReg.showNotification === 'function') {
+        await activeReg.showNotification(options.title, swNotificationOptions);
         deliveredNatively = true;
       }
     }
   } catch {
-    // Fallback to standard Notification constructor below
+    // Fallback below if ServiceWorker is restricted in iframe preview
   }
 
-  // 2. Fallback to standard Notification API if Service Worker did not show it
+  // 2. Fallback only if ServiceWorker registration could not deliver
   if (!deliveredNatively) {
     try {
       if ('Notification' in window && Notification.permission === 'granted') {
-        const n = new Notification(options.title, notificationOptions);
+        const n = new Notification(options.title, swNotificationOptions);
         n.onclick = () => {
           try {
             window.focus();
@@ -166,7 +192,7 @@ export async function deliverNativeOrPwaNotification(options: {
         deliveredNatively = true;
       }
     } catch {
-      // Ignore if browser environment requires SW or blocks constructor
+      // Ignore on Android where Notification constructor is disallowed outside SW
     }
   }
 
@@ -454,17 +480,18 @@ export function getLastSeenStaffChatTimestamp(userId: string | undefined): numbe
 
 export function markStaffChatSeenNow(
   userId: string | undefined,
-  settings?: InstitutionSettings | null
+  settings?: InstitutionSettings | null,
+  users?: User[] | null
 ): void {
   if (!userId || typeof window === 'undefined') return;
   try {
     let latestTs = Date.now();
-    const msgs = readResolvedStaffChatMessages(settings);
+    const msgs = readResolvedStaffChatMessages(settings, Date.now(), users);
     for (const m of msgs) {
       if (m.createdAt > latestTs) latestTs = m.createdAt;
       if (m.editedAt && m.editedAt > latestTs) latestTs = m.editedAt;
     }
-    const pinned = resolvePinnedStaffAnnouncement(settings);
+    const pinned = resolvePinnedStaffAnnouncement(settings, users);
     if (pinned.updatedAt && pinned.updatedAt > latestTs) {
       latestTs = pinned.updatedAt;
     }
@@ -481,11 +508,12 @@ export function markStaffChatSeenNow(
  */
 export function computeUnreadStaffChatCount(
   currentUser: User | null | undefined,
-  settings?: InstitutionSettings | null
+  settings?: InstitutionSettings | null,
+  users?: User[] | null
 ): number {
   if (!currentUser) return 0;
   const lastSeen = getLastSeenStaffChatTimestamp(currentUser.id);
-  const activeMessages: StaffChatMessage[] = readResolvedStaffChatMessages(settings);
+  const activeMessages: StaffChatMessage[] = readResolvedStaffChatMessages(settings, Date.now(), users);
   let count = 0;
 
   for (const msg of activeMessages) {
@@ -496,7 +524,7 @@ export function computeUnreadStaffChatCount(
     }
   }
 
-  const pinned: PinnedStaffAnnouncement = resolvePinnedStaffAnnouncement(settings);
+  const pinned: PinnedStaffAnnouncement = resolvePinnedStaffAnnouncement(settings, users);
   if (
     pinned.text &&
     pinned.updatedAt > lastSeen &&

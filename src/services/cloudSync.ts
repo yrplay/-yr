@@ -10,6 +10,7 @@ import {
   deduplicateDailyRecords
 } from './cloudSyncHelpers';
 import {
+  extractStaffProfilesFromUsers,
   filterAndSortActiveStaffChatMessages,
   mergeStaffAttendanceMap,
   mergeStaffProfilesMap
@@ -128,42 +129,78 @@ export const pushStateToCloud = async (statePayload: any): Promise<void> => {
       }
     }
 
+    // Collect chat & pinned announcement from top-level, settings, and users array
+    const remoteUsersList = Array.isArray(remoteData.users) ? remoteData.users : [];
+    const incomingUsersList = Array.isArray(incomingState.users) ? incomingState.users : [];
+
+    const userDeletedChatIds: string[] = [];
+    const userChatMessages: any[] = [];
+    const userPinnedCandidates: any[] = [];
+    for (const u of [...remoteUsersList, ...incomingUsersList]) {
+      if (Array.isArray(u?.deletedStaffChatIds)) {
+        userDeletedChatIds.push(...u.deletedStaffChatIds);
+      }
+      if (Array.isArray(u?.staffChatMessages)) {
+        userChatMessages.push(...u.staffChatMessages);
+      }
+      if (u?.pinnedStaffAnnouncement && typeof u.pinnedStaffAnnouncement.text === 'string') {
+        userPinnedCandidates.push(u.pinnedStaffAnnouncement);
+      }
+    }
+
     const mergedDeletedChatIds = [
       ...new Set([
+        ...(Array.isArray(remoteData.deletedStaffChatIds) ? remoteData.deletedStaffChatIds : []),
+        ...(Array.isArray(incomingState.deletedStaffChatIds) ? incomingState.deletedStaffChatIds : []),
         ...(Array.isArray(remoteSettings.deletedStaffChatIds) ? remoteSettings.deletedStaffChatIds : []),
-        ...(Array.isArray(incomingSettings.deletedStaffChatIds) ? incomingSettings.deletedStaffChatIds : [])
+        ...(Array.isArray(incomingSettings.deletedStaffChatIds) ? incomingSettings.deletedStaffChatIds : []),
+        ...userDeletedChatIds
       ].map(String))
     ];
 
     const mergedStaffChatMessages = filterAndSortActiveStaffChatMessages(
       [
+        ...(Array.isArray(remoteData.staffChatMessages) ? remoteData.staffChatMessages : []),
+        ...(Array.isArray(incomingState.staffChatMessages) ? incomingState.staffChatMessages : []),
         ...(Array.isArray(remoteSettings.staffChatMessages) ? remoteSettings.staffChatMessages : []),
-        ...(Array.isArray(incomingSettings.staffChatMessages) ? incomingSettings.staffChatMessages : [])
+        ...(Array.isArray(incomingSettings.staffChatMessages) ? incomingSettings.staffChatMessages : []),
+        ...userChatMessages
       ],
       mergedDeletedChatIds
     );
 
-    const remotePin = remoteSettings.pinnedStaffAnnouncement;
-    const incomingPin = incomingSettings.pinnedStaffAnnouncement;
-    const mergedPinnedAnnouncement =
-      remotePin && incomingPin
-        ? (incomingPin.updatedAt || 0) >= (remotePin.updatedAt || 0)
-          ? incomingPin
-          : remotePin
-        : incomingPin || remotePin;
+    const pinCandidates = [
+      remoteData.pinnedStaffAnnouncement,
+      incomingState.pinnedStaffAnnouncement,
+      remoteSettings.pinnedStaffAnnouncement,
+      incomingSettings.pinnedStaffAnnouncement,
+      ...userPinnedCandidates
+    ].filter(p => p && typeof p === 'object' && typeof p.text === 'string');
+
+    let mergedPinnedAnnouncement = pinCandidates[0];
+    for (const p of pinCandidates) {
+      if ((p.updatedAt || 0) >= (mergedPinnedAnnouncement?.updatedAt || 0)) {
+        mergedPinnedAnnouncement = p;
+      }
+    }
 
     // Timestamp-aware merge for staff workingHours, tasks, monthlySalary, and leaderPrivateNotes
+    // including the central staff records in `users`
     const mergedStaffProfiles = mergeStaffProfilesMap(
+      extractStaffProfilesFromUsers(remoteUsersList),
       remoteData.staffOperations,
       remoteSettings.staffProfiles,
       remoteSettings.staffOperations,
+      extractStaffProfilesFromUsers(incomingUsersList),
       incomingState.staffOperations,
       incomingSettings.staffProfiles,
       incomingSettings.staffOperations
     );
 
     const mergedStaffAttendanceRecords = mergeStaffAttendanceMap(
+      remoteData.staffAttendanceRecords,
       remoteSettings.staffAttendanceRecords,
+      incomingState.staffAttendanceRecords,
       incomingSettings.staffAttendanceRecords
     );
 
@@ -172,6 +209,10 @@ export const pushStateToCloud = async (statePayload: any): Promise<void> => {
       ...incomingState,
       _deletedEntities: deletedEntities,
       staffOperations: mergedStaffProfiles,
+      staffChatMessages: mergedStaffChatMessages,
+      deletedStaffChatIds: mergedDeletedChatIds,
+      ...(mergedPinnedAnnouncement ? { pinnedStaffAnnouncement: mergedPinnedAnnouncement } : {}),
+      staffAttendanceRecords: mergedStaffAttendanceRecords,
       settings: {
         ...remoteSettings,
         ...incomingSettings,
@@ -198,22 +239,29 @@ export const pushStateToCloud = async (statePayload: any): Promise<void> => {
         mergedItems = mergedItems.map((u: any) => {
           if (!u || !u.id) return u;
           const profileCfg = mergedStaffProfiles[u.id];
-          if (!profileCfg) return u;
-          const profileTime = Date.parse(profileCfg.updatedAt || '') || 0;
-          const userTime = Date.parse(u.updatedAt || '') || 0;
-          if (profileTime >= userTime) {
-            return {
-              ...u,
-              ...(profileCfg.workingHours !== undefined ? { workingHours: profileCfg.workingHours } : {}),
-              ...(profileCfg.monthlySalary !== undefined ? { monthlySalary: profileCfg.monthlySalary } : {}),
-              ...(profileCfg.tasks !== undefined ? { tasks: profileCfg.tasks } : {}),
-              ...(profileCfg.leaderPrivateNotes !== undefined
-                ? { leaderPrivateNotes: profileCfg.leaderPrivateNotes }
-                : {}),
-              updatedAt: profileCfg.updatedAt || u.updatedAt
-            };
-          }
-          return u;
+          const isAdminRecord =
+            u.role === 'owner' || u.role === 'leader' || u.role === 'developer';
+          const withSharedChat = isAdminRecord
+            ? {
+                ...u,
+                staffChatMessages: mergedStaffChatMessages,
+                deletedStaffChatIds: mergedDeletedChatIds,
+                ...(mergedPinnedAnnouncement
+                  ? { pinnedStaffAnnouncement: mergedPinnedAnnouncement }
+                  : {})
+              }
+            : u;
+          if (!profileCfg) return withSharedChat;
+          return {
+            ...withSharedChat,
+            ...(profileCfg.workingHours !== undefined ? { workingHours: profileCfg.workingHours } : {}),
+            ...(profileCfg.monthlySalary !== undefined ? { monthlySalary: profileCfg.monthlySalary } : {}),
+            ...(Array.isArray(profileCfg.tasks) ? { tasks: profileCfg.tasks } : {}),
+            ...(profileCfg.leaderPrivateNotes !== undefined
+              ? { leaderPrivateNotes: profileCfg.leaderPrivateNotes }
+              : {}),
+            updatedAt: profileCfg.updatedAt || u.updatedAt
+          };
         });
       } else if (collection === 'studentAtqiniSubmissions') {
         mergedItems = deduplicateAtqiniSubmissions(mergedItems);

@@ -37,6 +37,7 @@ import {
   resolvePinnedStaffAnnouncement,
   isSupervisorOrTeacherOnly,
   readAllStaffAttendanceRecords,
+  readRawStaffAttendanceMap,
   writeLocalStaffAttendanceRecords,
   buildStaffAttendanceRecord,
   formatCurrentArabicTime
@@ -44,6 +45,7 @@ import {
 import {
   computeUnreadStaffChatCount,
   deliverNativeOrPwaNotification,
+  ensureServiceWorkerRegistered,
   evaluateShiftReminderForStaff,
   getChatMessageSeenKey,
   getPinnedAnnouncementSeenKey,
@@ -203,125 +205,150 @@ const AppContent: React.FC = () => {
     }, 15000);
   };
 
+  // Ensure Service Worker is registered for Android / Mobile PWA system notifications
+  // and navigate to 'staff-attendance' when a system notification is tapped
+  useEffect(() => {
+    void ensureServiceWorkerRegistered();
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'GHAITH_NOTIFICATION_CLICK') {
+        setCurrentView('staff-attendance');
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+    };
+  }, []);
+
   // =========================================================================
   // 1. GLOBAL ROOT-LEVEL CLOUD SYNC WATCHER FOR STAFF CHAT & ANNOUNCEMENTS
-  // Monitors `settings.staffChatMessages` & `settings.pinnedStaffAnnouncement`
+  // Monitors `settings.staffChatMessages`, `settings.pinnedStaffAnnouncement`, & `users`
   // Tracks `seenMessageIds` in localStorage / ref. Whenever cloud sync delivers
   // a new message or updated pinned announcement whose `id` has not been seen yet
   // AND `senderId !== currentUser.id`:
-  //   1) Triggers native browser/PWA notification (`Notification` / `ServiceWorkerRegistration.showNotification`)
+  //   1) Triggers ServiceWorkerRegistration.showNotification (`deliverNativeOrPwaNotification`)
   //   2) Plays soft notification chime AND shows sleek 15s in-app floating alert banner at top of screen
   // =========================================================================
   useEffect(() => {
     if (!isAuthenticated || !currentUser || !cloudDataReady) return;
 
-    const activeMsgs = readResolvedStaffChatMessages(settings);
-    const pinned = resolvePinnedStaffAnnouncement(settings);
-    const nowMs = Date.now();
+    const inspectIncomingCloudChatAndAnnouncements = () => {
+      const activeMsgs = readResolvedStaffChatMessages(settings, Date.now(), users);
+      const pinned = resolvePinnedStaffAnnouncement(settings, users);
+      const nowMs = Date.now();
 
-    // Initialize `seenMessageIdsRef` for the active user on first mount
-    if (initializedSeenForUserRef.current !== currentUser.id) {
-      // Seed only historical messages older than 45 seconds or authored by currentUser on first-ever init
-      const seedIds: string[] = [];
-      for (const m of activeMsgs) {
-        const msgAge = nowMs - (m.editedAt || m.createdAt);
-        if (msgAge > 45000 || isAuthoredByCurrentUser(currentUser, m.senderId, m.senderName)) {
-          seedIds.push(getChatMessageSeenKey(m));
+      // Initialize `seenMessageIdsRef` for the active user on first mount
+      if (initializedSeenForUserRef.current !== currentUser.id) {
+        // Seed only historical messages older than 45 seconds or authored by currentUser on first-ever init
+        const seedIds: string[] = [];
+        for (const m of activeMsgs) {
+          const msgAge = nowMs - (m.editedAt || m.createdAt);
+          if (msgAge > 45000 || isAuthoredByCurrentUser(currentUser, m.senderId, m.senderName)) {
+            seedIds.push(getChatMessageSeenKey(m));
+          }
         }
-      }
-      if (
-        pinned.text &&
-        (nowMs - (pinned.updatedAt || 0) > 45000 ||
-          isAuthoredByCurrentUser(currentUser, undefined, pinned.updatedBy))
-      ) {
-        seedIds.push(getPinnedAnnouncementSeenKey(pinned));
-      }
-      seenMessageIdsRef.current = readSeenMessageIdsForUser(currentUser.id, seedIds);
-      initializedSeenForUserRef.current = currentUser.id;
-    }
-
-    const seenSet = seenMessageIdsRef.current;
-    let seenMutated = false;
-    let latestIncomingAlert: FloatingChatAlert | null = null;
-
-    // Inspect all active messages from cloud sync
-    for (const msg of activeMsgs) {
-      const seenKey = getChatMessageSeenKey(msg);
-      if (seenSet.has(seenKey)) continue;
-
-      seenSet.add(seenKey);
-      seenMutated = true;
-
-      // Strictly exclude the user who sent/updated the message themselves
-      if (isAuthoredByCurrentUser(currentUser, msg.senderId, msg.senderName)) {
-        continue;
+        if (
+          pinned.text &&
+          (nowMs - (pinned.updatedAt || 0) > 45000 ||
+            isAuthoredByCurrentUser(currentUser, undefined, pinned.updatedBy))
+        ) {
+          seedIds.push(getPinnedAnnouncementSeenKey(pinned));
+        }
+        seenMessageIdsRef.current = readSeenMessageIdsForUser(currentUser.id, seedIds);
+        initializedSeenForUserRef.current = currentUser.id;
       }
 
-      // 1) Trigger native browser / PWA notification with sender name and message preview
-      void deliverNativeOrPwaNotification({
-        title: `رسالة جديدة من ${msg.senderName}`,
-        body: msg.text,
-        tag: `staff-chat-${msg.id}`,
-        playChime: false
-      });
+      const seenSet = seenMessageIdsRef.current;
+      let seenMutated = false;
+      let latestIncomingAlert: FloatingChatAlert | null = null;
 
-      // 2) Queue soft chime + sleek 15s floating alert banner at the top of the screen
-      latestIncomingAlert = {
-        id: seenKey,
-        senderName: msg.senderName,
-        senderTitle: msg.senderTitle || 'عضو الكادر',
-        messagePreview: msg.text,
-        isPinnedAnnouncement: false
-      };
-    }
+      // Inspect all active messages from cloud sync
+      for (const msg of activeMsgs) {
+        const seenKey = getChatMessageSeenKey(msg);
+        if (seenSet.has(seenKey)) continue;
 
-    // Inspect pinned administrative announcement updates
-    if (pinned.text) {
-      const pinnedKey = getPinnedAnnouncementSeenKey(pinned);
-      if (!seenSet.has(pinnedKey)) {
-        seenSet.add(pinnedKey);
+        seenSet.add(seenKey);
         seenMutated = true;
 
-        if (!isAuthoredByCurrentUser(currentUser, undefined, pinned.updatedBy)) {
-          void deliverNativeOrPwaNotification({
-            title: `تعميم إداري مثبت — ${pinned.updatedBy || 'إدارة المنصة'}`,
-            body: pinned.text,
-            tag: `staff-pinned-${pinned.updatedAt}`,
-            playChime: false
-          });
+        // Strictly exclude the user who sent/updated the message themselves
+        if (isAuthoredByCurrentUser(currentUser, msg.senderId, msg.senderName)) {
+          continue;
+        }
 
-          latestIncomingAlert = {
-            id: pinnedKey,
-            senderName: pinned.updatedBy || 'إدارة المنصة',
-            senderTitle: 'تعميم إداري مثبت',
-            messagePreview: pinned.text,
-            isPinnedAnnouncement: true
-          };
+        // 1) Trigger Service Worker system notification with sender name and message preview
+        void deliverNativeOrPwaNotification({
+          title: `رسالة جديدة من ${msg.senderName}`,
+          body: msg.text,
+          tag: `staff-chat-${msg.id}`,
+          playChime: false
+        });
+
+        // 2) Queue soft chime + sleek 15s floating alert banner at the top of the screen
+        latestIncomingAlert = {
+          id: seenKey,
+          senderName: msg.senderName,
+          senderTitle: msg.senderTitle || 'عضو الكادر',
+          messagePreview: msg.text,
+          isPinnedAnnouncement: false
+        };
+      }
+
+      // Inspect pinned administrative announcement updates
+      if (pinned.text) {
+        const pinnedKey = getPinnedAnnouncementSeenKey(pinned);
+        if (!seenSet.has(pinnedKey)) {
+          seenSet.add(pinnedKey);
+          seenMutated = true;
+
+          if (!isAuthoredByCurrentUser(currentUser, undefined, pinned.updatedBy)) {
+            void deliverNativeOrPwaNotification({
+              title: `تعميم إداري مثبت — ${pinned.updatedBy || 'إدارة المنصة'}`,
+              body: pinned.text,
+              tag: `staff-pinned-${pinned.updatedAt}`,
+              playChime: false
+            });
+
+            latestIncomingAlert = {
+              id: pinnedKey,
+              senderName: pinned.updatedBy || 'إدارة المنصة',
+              senderTitle: 'تعميم إداري مثبت',
+              messagePreview: pinned.text,
+              isPinnedAnnouncement: true
+            };
+          }
         }
       }
-    }
 
-    if (seenMutated) {
-      writeSeenMessageIdsForUser(currentUser.id, seenSet);
-    }
+      if (seenMutated) {
+        writeSeenMessageIdsForUser(currentUser.id, seenSet);
+      }
 
-    if (latestIncomingAlert) {
-      playGentleNotificationChime();
-      triggerTopFloatingChatAlert(latestIncomingAlert);
-    }
+      if (latestIncomingAlert) {
+        playGentleNotificationChime();
+        triggerTopFloatingChatAlert(latestIncomingAlert);
+      }
 
-    // Update unread sidebar badge (or clear if currently viewing staff-attendance)
-    if (currentView === 'staff-attendance') {
-      markStaffChatSeenNow(currentUser.id, settings);
-      setUnreadStaffChatCount(0);
-    } else {
-      setUnreadStaffChatCount(computeUnreadStaffChatCount(currentUser, settings));
-    }
+      // Update unread sidebar badge (or clear if currently viewing staff-attendance)
+      if (currentView === 'staff-attendance') {
+        markStaffChatSeenNow(currentUser.id, settings, users);
+        setUnreadStaffChatCount(0);
+      } else {
+        setUnreadStaffChatCount(computeUnreadStaffChatCount(currentUser, settings, users));
+      }
+    };
+
+    inspectIncomingCloudChatAndAnnouncements();
+    window.addEventListener('ghaith-cloud-state-applied', inspectIncomingCloudChatAndAnnouncements);
+    return () => {
+      window.removeEventListener('ghaith-cloud-state-applied', inspectIncomingCloudChatAndAnnouncements);
+    };
   }, [
     isAuthenticated,
     currentUser?.id,
     cloudDataReady,
     currentView,
+    users,
     settings?.staffChatMessages,
     settings?.pinnedStaffAnnouncement
   ]);
@@ -333,12 +360,12 @@ const AppContent: React.FC = () => {
       if (currentView === 'staff-attendance') {
         setUnreadStaffChatCount(0);
       } else {
-        setUnreadStaffChatCount(computeUnreadStaffChatCount(currentUser, settings));
+        setUnreadStaffChatCount(computeUnreadStaffChatCount(currentUser, settings, users));
       }
     };
     window.addEventListener('ghaith-staff-chat-seen-updated', syncUnread);
     return () => window.removeEventListener('ghaith-staff-chat-seen-updated', syncUnread);
-  }, [currentUser, currentView, settings]);
+  }, [currentUser, currentView, settings, users]);
 
   // =========================================================================
   // 2. GLOBAL ROOT-LEVEL PRE-SHIFT & SHIFT-START REMINDERS (Every 30 Seconds)
@@ -421,7 +448,7 @@ const AppContent: React.FC = () => {
       recordedBy: currentUser.name
     });
     const nextRecords = {
-      ...readAllStaffAttendanceRecords(settings),
+      ...readRawStaffAttendanceMap(settings),
       [record.id]: record
     };
     writeLocalStaffAttendanceRecords(nextRecords);

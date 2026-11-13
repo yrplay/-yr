@@ -53,6 +53,7 @@ export interface StaffAttendanceRecord {
   checkInTime?: string; // e.g. "04:02 م"
   excuseText?: string;
   recordedBy?: string;
+  _deleted?: boolean;
   updatedAt: string;
 }
 
@@ -106,6 +107,9 @@ export interface User {
   monthlySalary?: number;
   tasks?: StaffTaskItem[];
   leaderPrivateNotes?: string;
+  staffChatMessages?: StaffChatMessage[];
+  deletedStaffChatIds?: string[];
+  pinnedStaffAnnouncement?: PinnedStaffAnnouncement;
   createdAt?: string;
   updatedAt?: string;
 }
