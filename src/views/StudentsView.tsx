@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import {
   Users, Search, Filter, Plus, Edit, Archive, HeartHandshake,
   UserCheck, Shield, Phone, Mail, Award, ArrowUpDown, ChevronLeft,
-  Calendar, CheckCircle2, AlertCircle, AlertTriangle, Trash2, RotateCcw, Send, Star, Copy
+  Calendar, CheckCircle2, AlertCircle, AlertTriangle, Trash2, RotateCcw, Send, Star
 } from 'lucide-react';
 import { hasFullAccess, StudentStatus } from '../types';
 import { formatHijriShort, HijriJoinDateSelector } from '../utils/hijriDate';
@@ -37,10 +37,6 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
   const [partnerModalOpen, setPartnerModalOpen] = useState(false);
   const [selectedStudentForPartner, setSelectedStudentForPartner] = useState<any>(null);
   const [targetPartnerId, setTargetPartnerId] = useState<string>('');
-  const [copyModalOpen, setCopyModalOpen] = useState(false);
-  const [studentToCopy, setStudentToCopy] = useState<any>(null);
-  const [copyTargetTrackId, setCopyTargetTrackId] = useState<string>('');
-  const [copyTargetCircleId, setCopyTargetCircleId] = useState<string>('');
 
   // Form state
   const [studentForm, setStudentForm] = useState({
@@ -163,44 +159,6 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
     if (!selectedStudentForPartner || !targetPartnerId) return;
     await assignPartner(selectedStudentForPartner.id, targetPartnerId);
     setPartnerModalOpen(false);
-  };
-
-  const handleOpenCopyModal = (student: any) => {
-    const currentCircle = circles.find(c => c.id === student.circleId);
-    const currentTrackId = student.trackId || currentCircle?.trackId || '';
-    const activeTracks = tracks.filter(t => !t.isArchived);
-    const otherTracks = activeTracks.filter(t => t.id !== currentTrackId);
-    const defaultTargetTrackId = otherTracks[0]?.id || activeTracks[0]?.id || '';
-    const circlesInTargetTrack = circles.filter(c => !c.isArchived && c.trackId === defaultTargetTrackId);
-    const defaultTargetCircleId = circlesInTargetTrack[0]?.id || circles.find(c => !c.isArchived)?.id || '';
-
-    setStudentToCopy(student);
-    setCopyTargetTrackId(defaultTargetTrackId);
-    setCopyTargetCircleId(defaultTargetCircleId);
-    setCopyModalOpen(true);
-  };
-
-  const handleConfirmCopyStudent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!studentToCopy || !copyTargetTrackId) return;
-    const targetCircle = circles.find(c => c.id === copyTargetCircleId);
-    const targetTrack = tracks.find(t => t.id === copyTargetTrackId);
-    await createStudent({
-      name: studentToCopy.name,
-      code: studentToCopy.code,
-      phone: studentToCopy.phone || '',
-      telegramUsername: cleanTelegramUsername(studentToCopy.telegramUsername || ''),
-      email: studentToCopy.email || '',
-      trackId: copyTargetTrackId,
-      circleId: copyTargetCircleId || targetCircle?.id || '',
-      status: 'active',
-      notes: studentToCopy.notes || '',
-      joinDate: studentToCopy.joinDate || '1448-01-01'
-    });
-    const cleanTrackName = (targetTrack?.name || 'المسار المحدد').replace(/[🪴🤎]/g, '').trim();
-    showToast(`تم نسخ الطالبة "${studentToCopy.name}" إلى ${cleanTrackName} بنجاح`);
-    setCopyModalOpen(false);
-    setStudentToCopy(null);
   };
 
   return (
@@ -535,14 +493,6 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleOpenCopyModal(student)}
-                          className="p-1.5 text-stone-500 hover:text-[#8E5364] rounded-lg hover:bg-[#FAF0F3] transition cursor-pointer"
-                          title="نسخ الطالبة إلى مسار آخر"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
                           onClick={() => handleOpenStudentModal(student)}
                           className="p-1.5 text-stone-500 hover:text-[#8E5364] rounded-lg hover:bg-[#FAF0F3] transition cursor-pointer"
                           title="تعديل بيانات الطالبة"
@@ -721,99 +671,6 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                   className="px-6 py-2.5 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 active:scale-95 cursor-pointer touch-manipulation"
                 >
                   حفظ
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Copy Student to Another Track Modal */}
-      {copyModalOpen && studentToCopy && (
-        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-xl border border-stone-200 max-h-[90vh] overflow-y-auto" dir="rtl">
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="w-9 h-9 rounded-xl bg-[#FAF0F3] text-[#8E5364] flex items-center justify-center shrink-0">
-                <Copy className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="font-bold text-stone-900 text-base font-quran">
-                  نسخ الطالبة إلى مسار آخر
-                </h3>
-                <p className="text-xs text-stone-500">
-                  الطالبة: <strong>{studentToCopy.name}</strong> ({studentToCopy.code})
-                </p>
-              </div>
-            </div>
-
-            <p className="text-xs text-stone-600 mb-4 leading-relaxed bg-[#FAF6F2] p-3 rounded-2xl border border-[#EFE8E2]">
-              سيتم إنشاء نسخة من ملف الطالبة في المسار والحلقة المختارة مع الاحتفاظ بملفها الأصلي في مسارها الحالي دون تغيير.
-            </p>
-
-            <form onSubmit={handleConfirmCopyStudent} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">
-                  المسار القرآني المستهدف *
-                </label>
-                <select
-                  value={copyTargetTrackId}
-                  onChange={e => {
-                    const newTrackId = e.target.value;
-                    const circlesInTrack = circles.filter(c => c.trackId === newTrackId && !c.isArchived);
-                    setCopyTargetTrackId(newTrackId);
-                    setCopyTargetCircleId(circlesInTrack[0]?.id || '');
-                  }}
-                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
-                >
-                  {tracks.filter(t => !t.isArchived).map(t => (
-                    <option key={t.id} value={t.id}>
-                      {(t.name || '').replace(/[🪴🤎]/g, '').trim()}
-                      {t.id === (studentToCopy.trackId || circles.find(c => c.id === studentToCopy.circleId)?.trackId) ? ' (المسار الحالي)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">
-                  الحلقة في المسار الجديد *
-                </label>
-                <select
-                  value={copyTargetCircleId}
-                  onChange={e => setCopyTargetCircleId(e.target.value)}
-                  className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
-                >
-                  {circles
-                    .filter(c => !c.isArchived && (!copyTargetTrackId || c.trackId === copyTargetTrackId))
-                    .map(c => (
-                      <option key={c.id} value={c.id}>{c.name} ({c.teacherName})</option>
-                    ))}
-                  {circles.filter(c => !c.isArchived && (!copyTargetTrackId || c.trackId === copyTargetTrackId)).length === 0 && (
-                    circles.filter(c => !c.isArchived).map(c => (
-                      <option key={c.id} value={c.id}>{c.name} ({c.teacherName})</option>
-                    ))
-                  )}
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCopyModalOpen(false);
-                    setStudentToCopy(null);
-                  }}
-                  className="px-4 py-2.5 text-stone-600 text-xs font-bold rounded-xl hover:bg-stone-100 transition active:scale-95 cursor-pointer"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
-                  className="px-5 py-2.5 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>نسخ الطالبة</span>
                 </button>
               </div>
             </form>
