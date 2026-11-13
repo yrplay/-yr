@@ -342,19 +342,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         data-privacy="banner"
         className="relative overflow-hidden rounded-3xl p-5 sm:p-7 text-white shadow-md transition-all duration-300 privacy-exempt"
       >
-        {/* Subtle Edit Pencil Icon neatly in the top-left corner of the banner */}
-        {canCurrentUserEditWelcome && (
-          <button
-            type="button"
-            onClick={handleOpenWelcomeModal}
-            className="absolute top-4 left-4 z-20 p-2 rounded-xl bg-white/15 hover:bg-white/25 text-white border border-white/20 transition cursor-pointer flex items-center justify-center hover:scale-105 active:scale-95 shadow-2xs"
-            title={isLeaderOrAdmin ? 'تعديل نص ترحيب الدخول لكِ أو للمشرفات والمعلمات' : 'تعديل نص ترحيب الدخول'}
-            aria-label="تعديل نص ترحيب الدخول"
-          >
-            <PenLine className="w-3.5 h-3.5" />
-          </button>
-        )}
-
         <div className="relative z-10 max-w-2xl">
           {/* Track Dropdown Selector in Badge Position */}
           <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -404,10 +391,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex items-center justify-between gap-2 mb-1.5">
             <h2 className="text-lg sm:text-xl font-bold tracking-normal text-white">
               مرحباً بكِ في منصة غيث الغيم الإدارية
             </h2>
+            {canCurrentUserEditWelcome && (
+              <button
+                type="button"
+                onClick={handleOpenWelcomeModal}
+                className="p-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white border border-white/20 transition cursor-pointer flex items-center justify-center hover:scale-105 active:scale-95 shadow-2xs"
+                title={isLeaderOrAdmin ? 'تعديل نص ترحيب الدخول لكِ أو للمشرفات والمعلمات' : 'تعديل نص ترحيب الدخول'}
+                aria-label="تعديل نص ترحيب الدخول"
+              >
+                <PenLine className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <p className="text-white/85 text-xs sm:text-sm leading-relaxed mb-5">

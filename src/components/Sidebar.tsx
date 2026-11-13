@@ -1,23 +1,13 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import {
-  LayoutDashboard,
-  BookOpenCheck,
-  Sparkles,
-  Trophy,
-  FileText,
-  Sliders,
-  UserCheck,
-  BarChart3,
-  UserCog,
-  Settings,
-  X,
-  History,
-  ClipboardList
+  LayoutDashboard, Layers, Users, Calendar, CheckSquare,
+  BookOpenCheck, Sparkles, Trophy, FileText, Sliders,
+  UserCheck, BarChart3, UserCog, Settings, X, History,
+  CreditCard, ClipboardList
 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
-import { hasFullAccess, isTechnicalDeveloper } from '../types';
-import { isFounderOrOwnerOrLeader } from '../utils/staffHelpers';
+import { hasFullAccess } from '../types';
 import { computeUnreadStaffChatCount, markStaffChatSeenNow } from '../utils/staffNotifications';
 
 export type ViewType =
@@ -54,37 +44,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectView,
   isOpen,
   onClose,
+  onLockSession,
   onOpenAuditLog,
   unreadStaffChatCount: externalUnreadCount
 }) => {
-  const { settings, isDarkMode, currentUser, users } = useApp();
-  const primaryColor = settings?.primaryColor || '#9A5643';
-  const hasAdminAccess =
-    isFounderOrOwnerOrLeader(currentUser) ||
-    hasFullAccess(currentUser) ||
-    isTechnicalDeveloper(currentUser);
+  const { circles, students, settings, isDarkMode, currentUser } = useApp();
+  const primaryColor = settings?.primaryColor || '#8E5364';
+  const hasAdminAccess = hasFullAccess(currentUser);
 
   const computedUnreadCount =
     currentView === 'staff-attendance'
       ? 0
       : externalUnreadCount !== undefined
       ? externalUnreadCount
-      : computeUnreadStaffChatCount(currentUser, settings, users);
+      : computeUnreadStaffChatCount(currentUser, settings);
 
-  const rawMenuItems: {
-    id: ViewType;
-    label: string;
-    icon: any;
-    badge?: string | number;
-    adminOnly?: boolean;
-  }[] = [
-    { id: 'dashboard', label: 'لوحة القيم', icon: LayoutDashboard },
+  const rawMenuItems: { id: ViewType; label: string; icon: any; badge?: string | number; accent?: string; adminOnly?: boolean }[] = [
+    { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
+    { id: 'tracks_circles', label: 'المسارات والحلقات', icon: Layers, badge: circles.length },
+    { id: 'subscriptions', label: 'الاشتراكات والمالية', icon: CreditCard, adminOnly: true },
+    { id: 'students', label: 'شؤون الطالبات', icon: Users, badge: students.length },
+    { id: 'monthly_plans', label: 'الخطط الشهرية والمقرر', icon: Calendar },
+    { id: 'attendance', label: 'الحضور والتحضير المبكر', icon: CheckSquare },
     { id: 'recitation', label: 'سجل الحفظ والتسميع', icon: BookOpenCheck },
-    { id: 'atqini', label: 'واجبات «أتقني» للتجويد', icon: Sparkles },
+    { id: 'atqini', label: 'واجبات «أتقني» للتجويد', icon: Sparkles, accent: 'text-[#9E5B6D]' },
     { id: 'challenges', label: 'التحديات والمراجعة الثنائية', icon: Trophy },
     { id: 'exams', label: 'الاختبارات الشهرية', icon: FileText },
     { id: 'grading', label: 'نظام الدرجات والمعايير', icon: Sliders },
-    { id: 'portfolio', label: 'تقرير الإنجاز الشهري', icon: UserCheck },
+    { id: 'portfolio', label: 'ملف الإنجاز الشهري', icon: UserCheck },
     { id: 'reports', label: 'التقارير والإحصائيات', icon: BarChart3 },
     { id: 'staff', label: 'المعلمات والمشرفات', icon: UserCog, adminOnly: true },
     {
@@ -93,15 +80,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: ClipboardList,
       badge: computedUnreadCount > 0 ? computedUnreadCount : undefined
     },
-    { id: 'settings', label: 'السحابة والنسخ الاحتياطي', icon: Settings, adminOnly: true }
+    { id: 'settings', label: 'الإعدادات والنسخ الاحتياطي', icon: Settings, adminOnly: true },
   ];
 
-  const canAccessStaffProfiles =
-    hasAdminAccess ||
-    !!currentUser?.permissions?.canAccessStaff ||
-    !!currentUser?.permissions?.canManageUsers;
-
+  // تخصيص الأقسام الإدارية والمالية والكادر بحسب الصلاحيات المخصصة
+  const canAccessFinances = hasAdminAccess || !!currentUser?.permissions?.canManageFinances;
+  const canAccessStaffProfiles = hasAdminAccess || !!currentUser?.permissions?.canAccessStaff || !!currentUser?.permissions?.canManageUsers;
   const menuItems = rawMenuItems.filter(item => {
+    if (item.id === 'subscriptions') return canAccessFinances;
     if (item.id === 'staff') return canAccessStaffProfiles;
     if (item.adminOnly) return hasAdminAccess;
     return true;
@@ -109,7 +95,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {/* Mobile Backdrop */}
+      {/* Mobile Backdrop - يظهر فقط عند الفتح ويختفي تماماً برمجياً ولَمْسياً عند الإغلاق */}
       {isOpen && (
         <div
           onClick={onClose}
@@ -132,9 +118,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <img
                 src={settings?.logoUrl || '/pwa-192x192.png'}
                 alt={settings?.name || 'مقرأة غيث الغيم'}
-                referrerPolicy="no-referrer"
                 className="w-full h-full object-contain"
-                onError={e => {
+                onError={(e) => {
                   (e.currentTarget as HTMLImageElement).src = '/pwa-192x192.png';
                 }}
               />
@@ -160,7 +145,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Navigation Items */}
         <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1 overscroll-contain">
-          {menuItems.map(item => {
+          <div className="text-[11px] font-bold text-stone-600 px-3 py-1 uppercase tracking-wider mb-1">
+            القائمة الإدارية
+          </div>
+          {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentView === item.id;
             return (
@@ -169,12 +157,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 type="button"
                 onClick={() => {
                   if (item.id === 'staff-attendance') {
-                    markStaffChatSeenNow(currentUser?.id, settings, users);
+                    markStaffChatSeenNow(currentUser?.id, settings);
                   }
                   onSelectView(item.id);
                   onClose();
                 }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all active:scale-[0.98] cursor-pointer ${
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all active:scale-[0.98] ${
                   isActive
                     ? 'font-bold border shadow-xs'
                     : 'text-stone-700 hover:bg-[#F2ECE6] hover:text-stone-900'
@@ -198,7 +186,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
                 {item.badge !== undefined && (
                   <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full font-semibold tabular-nums ${
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
                       isActive
                         ? 'text-white'
                         : item.id === 'staff-attendance'
