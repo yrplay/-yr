@@ -9,6 +9,8 @@ import {
 import initialData from '../data/initialData';
 import { subscribeToCloudDatabase, pushStateToCloud, fetchCloudDatabaseOnce, CloudSyncStatus } from '../services/cloudSync';
 import {
+  deepCleanForFirestore,
+  sanitizeStaffUserForFirestore,
   deduplicateAtqiniSubmissions,
   deduplicateChallengeSubmissions,
   deduplicateAttendanceRecords,
@@ -716,9 +718,56 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
 
-  const sanitizeUsersList = (userList: any[]): User[] => {
-    let list: User[] = (userList || []).filter((u: any) => !isFakeDemoUser(u));
-    
+  const sanitizeUsersList = (userList: any[], explicitDeletedIds?: string[]): User[] => {
+    const deletedIds = new Set<string>(
+      Array.isArray(explicitDeletedIds) ? explicitDeletedIds.map(String) : []
+    );
+    if (typeof window !== 'undefined') {
+      try {
+        const storedDbRaw = localStorage.getItem(STORAGE_KEY);
+        if (storedDbRaw) {
+          const parsedDb = JSON.parse(storedDbRaw);
+          if (Array.isArray(parsedDb?._deletedEntities?.users)) {
+            for (const delId of parsedDb._deletedEntities.users) {
+              deletedIds.add(String(delId));
+            }
+          }
+        }
+      } catch {}
+    }
+
+    const combinedById = new Map<string, any>();
+    for (const raw of userList || []) {
+      if (!raw || !raw.id || isFakeDemoUser(raw) || deletedIds.has(String(raw.id))) continue;
+      combinedById.set(String(raw.id), raw);
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        const localSavedRaw = localStorage.getItem('ghaith_staff_users');
+        if (localSavedRaw) {
+          const localSaved = JSON.parse(localSavedRaw);
+          if (Array.isArray(localSaved)) {
+            for (const loc of localSaved) {
+              if (!loc || !loc.id || isFakeDemoUser(loc) || deletedIds.has(String(loc.id))) continue;
+              const existing = combinedById.get(String(loc.id));
+              if (!existing) {
+                combinedById.set(String(loc.id), loc);
+              } else {
+                const locTime = Date.parse(loc.updatedAt || loc.createdAt || '') || 0;
+                const exTime = Date.parse(existing.updatedAt || existing.createdAt || '') || 0;
+                if (locTime >= exTime) {
+                  combinedById.set(String(loc.id), { ...existing, ...loc });
+                }
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
+    let list: User[] = Array.from(combinedById.values());
+
     // 1. Ensure yr.play.com@gmail.com is strictly role 'developer' (المطور التقني)
     let devFound = false;
     list = list.map((u: any) => {
@@ -741,6 +790,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           name: (!name || name === 'إدارة المقرأة' || name === 'مالك المنصة' || name === 'أ. عمر عبدالرحمن') ? 'مطور المنصة' : name,
           title: 'المطور التقني',
           passcode: effectivePasscode,
+          pin: effectivePasscode,
+          status: 'active' as const,
           isActive: true
         };
       }
@@ -753,13 +804,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         u.id === 'u-owner'
       ) {
         const currentPin = u.passcode ? String(u.passcode).trim() : '';
+        const resolvedPin = (!currentPin || currentPin === '7788') ? '2005' : currentPin;
         return {
           ...u,
           name: (!name || name === 'مالك المنصة' || name === 'إدارة المقرأة') ? 'ريفة المنصوري' : name,
           email: (email === 'owner@ghaym.org' || !email) ? 'reef@ghaym.org' : u.email,
           role: 'owner' as const,
           title: 'مالك المنصة العام',
-          passcode: (!currentPin || currentPin === '7788') ? '2005' : currentPin,
+          passcode: resolvedPin,
+          pin: resolvedPin,
+          status: 'active' as const,
           isActive: true
         };
       }
@@ -772,6 +826,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           email: u.email || 'omar@ghaym.org',
           role: 'leader' as const,
           title: 'مؤسس غيث الغيم',
+          status: 'active' as const,
           isActive: true
         };
       }
@@ -793,22 +848,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       list = list.filter((u, idx) => u.role !== 'developer' || idx === list.findIndex(d => d.role === 'developer'));
     }
 
-    // Deduplicate owner accounts, preferring reef@ghaym.org (ريفة المنصوري) and merging any welcomeTitle/passcode
-    const owners = list.filter(u => u.role === 'owner');
-    if (owners.length === 0) {
+    // Deduplicate Reefa owner accounts without removing any other newly added staff accounts
+    const reefaAccounts = list.filter(
+      u =>
+        u.id === 'u-owner' ||
+        (u.email || '').trim().toLowerCase() === 'reef@ghaym.org' ||
+        (u.name || '').includes('ريفة المنصوري')
+    );
+    if (reefaAccounts.length === 0) {
       list.push(defaultOwner);
-    } else if (owners.length > 1) {
+    } else if (reefaAccounts.length > 1) {
       const preferredOwner =
-        owners.find(u => (u.email || '').trim().toLowerCase() === 'reef@ghaym.org' && u.id !== 'u-owner') ||
-        owners.find(u => (u.name || '').includes('ريفة')) ||
-        owners[0];
-      const mergedWelcomeTitle = owners.map(o => o.welcomeTitle?.trim()).find(Boolean) || preferredOwner.welcomeTitle;
+        reefaAccounts.find(u => (u.email || '').trim().toLowerCase() === 'reef@ghaym.org' && u.id !== 'u-owner') ||
+        reefaAccounts[0];
+      const mergedWelcomeTitle = reefaAccounts.map(o => o.welcomeTitle?.trim()).find(Boolean) || preferredOwner.welcomeTitle;
       const mergedOwner: User = {
         ...preferredOwner,
         ...(mergedWelcomeTitle ? { welcomeTitle: mergedWelcomeTitle } : {})
       };
+      const removeReefaIds = new Set(reefaAccounts.filter(o => o.id !== preferredOwner.id).map(o => o.id));
       list = list
-        .filter(u => u.role !== 'owner' || u.id === preferredOwner.id)
+        .filter(u => !removeReefaIds.has(u.id))
         .map(u => (u.id === preferredOwner.id ? mergedOwner : u));
     }
 
@@ -825,6 +885,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const mergedOmar: User = {
         ...primaryOmar,
         passcode: mergedOmarPass,
+        pin: mergedOmarPass,
         ...(mergedOmarWelcome ? { welcomeTitle: mergedOmarWelcome } : {})
       };
       const removeIds = new Set(omarAccounts.slice(1).map(o => o.id));
@@ -833,7 +894,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         .map(u => (u.id === primaryOmar.id ? mergedOmar : u));
     }
 
-    return list;
+    return list.map(u => sanitizeStaffUserForFirestore(u) as User);
   };
 
   const getCachedDb = () => {
@@ -1519,26 +1580,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         masterStateRef.current.staffOperations = mergedStaffProfiles;
         setSettings(nextSettings);
 
-        if (Array.isArray(masterStateRef.current.users)) {
-          const syncedUsers = masterStateRef.current.users.map((u: User) => {
+        const deletedUserIds = new Set(
+          [
+            ...(Array.isArray(masterStateRef.current._deletedEntities?.users)
+              ? masterStateRef.current._deletedEntities.users
+              : []),
+            ...(Array.isArray(incomingData._deletedEntities?.users)
+              ? incomingData._deletedEntities.users
+              : [])
+          ].map(String)
+        );
+        const combinedUsersPool = mergeEntities(
+          (masterStateRef.current.users || []).filter((u: any) => u && !deletedUserIds.has(String(u.id))),
+          incomingUsersList.filter((u: any) => u && !deletedUserIds.has(String(u.id)))
+        );
+
+        if (Array.isArray(combinedUsersPool) && combinedUsersPool.length > 0) {
+          const syncedUsers = sanitizeUsersList(combinedUsersPool, Array.from(deletedUserIds)).map((u: User) => {
             const p = mergedStaffProfiles[u.id];
             if (!p) return u;
             const pTime = Date.parse(p.updatedAt || '') || 0;
             const uTime = Date.parse(u.updatedAt || '') || 0;
             if (pTime >= uTime) {
-              return {
+              return sanitizeStaffUserForFirestore({
                 ...u,
                 ...(p.workingHours !== undefined ? { workingHours: p.workingHours } : {}),
                 ...(p.monthlySalary !== undefined ? { monthlySalary: p.monthlySalary } : {}),
                 ...(Array.isArray(p.tasks) ? { tasks: p.tasks } : {}),
                 ...(p.leaderPrivateNotes !== undefined ? { leaderPrivateNotes: p.leaderPrivateNotes } : {}),
                 updatedAt: p.updatedAt || u.updatedAt
-              };
+              }) as User;
             }
             return u;
           });
           masterStateRef.current.users = syncedUsers;
           setUsers(syncedUsers);
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('ghaith_staff_users', JSON.stringify(syncedUsers));
+            } catch {}
+          }
           setCurrentUser(prev => {
             if (!prev) return prev;
             return syncedUsers.find((u: User) => u.id === prev.id) || prev;
@@ -1598,6 +1679,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     
     const {
+      users: incomingUsers,
+      auditLogs: incomingAuditLogs,
       dailyRecords: incomingDaily,
       studentPlans: incomingPlans,
       attendanceRecords: incomingAtt,
@@ -1631,29 +1714,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       extractStaffProfilesFromUsers(masterStateRef.current.users),
       masterStateRef.current.settings?.staffProfiles,
       masterStateRef.current.settings?.staffOperations,
-      extractStaffProfilesFromUsers(data.users),
+      extractStaffProfilesFromUsers(incomingUsers),
       data.staffOperations,
       data.settings?.staffProfiles,
       data.settings?.staffOperations
     );
 
-    const rawUserList: User[] = Array.isArray(data.users) && data.users.length > 0
-      ? mergeEntities(masterStateRef.current.users, data.users)
+    const rawUserList: User[] = Array.isArray(incomingUsers) && incomingUsers.length > 0
+      ? mergeEntities(masterStateRef.current.users, incomingUsers)
       : masterStateRef.current.users;
-    const userList: User[] = sanitizeUsersList(rawUserList).map((u: User) => {
+    const userList: User[] = sanitizeUsersList(rawUserList, deletedEntities.users).map((u: User) => {
       const profileCfg = mergedStaffProfilesForUsers[u.id];
       if (!profileCfg) return u;
       const pTime = Date.parse(profileCfg.updatedAt || '') || 0;
       const uTime = Date.parse(u.updatedAt || '') || 0;
       if (pTime >= uTime) {
-        return {
+        return sanitizeStaffUserForFirestore({
           ...u,
           ...(profileCfg.workingHours !== undefined ? { workingHours: profileCfg.workingHours } : {}),
           ...(profileCfg.monthlySalary !== undefined ? { monthlySalary: profileCfg.monthlySalary } : {}),
           ...(Array.isArray(profileCfg.tasks) ? { tasks: profileCfg.tasks } : {}),
           ...(profileCfg.leaderPrivateNotes !== undefined ? { leaderPrivateNotes: profileCfg.leaderPrivateNotes } : {}),
           updatedAt: profileCfg.updatedAt || u.updatedAt
-        };
+        }) as User;
       }
       return u;
     });
@@ -1670,11 +1753,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setCurrentUser(prev => prev || userList.find(u => u.role === 'developer') || defaultDeveloper);
     }
 
-    if (Array.isArray(data.users) && data.users.length > 0) {
+    if (Array.isArray(userList) && userList.length > 0) {
       masterStateRef.current.users = userList;
       setUsers(userList);
       if (typeof window !== 'undefined') {
-        localStorage.setItem('ghaith_staff_users', JSON.stringify(userList));
+        try {
+          localStorage.setItem('ghaith_staff_users', JSON.stringify(userList));
+        } catch {}
       }
     }
 
@@ -1937,6 +2022,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       const replaceCloudState = Boolean(overrides?._replaceState);
       const immediateSync = Boolean(overrides?._immediateSync);
+      const skipCloudPush = Boolean(overrides?._skipCloudPush);
 
       const mergedSettingsObj = {
         ...(masterStateRef.current.settings || settings),
@@ -1987,7 +2073,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               u.role === 'owner' ||
               u.role === 'leader' ||
               u.role === 'developer';
-            return {
+            return sanitizeStaffUserForFirestore({
               ...u,
               ...(p?.workingHours !== undefined ? { workingHours: p.workingHours } : {}),
               ...(p?.monthlySalary !== undefined ? { monthlySalary: p.monthlySalary } : {}),
@@ -2000,7 +2086,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                     ...(mergedPin ? { pinnedStaffAnnouncement: mergedPin } : {})
                   }
                 : {})
-            };
+            }) as User;
           })
         : baseUsers;
 
@@ -2034,29 +2120,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
       delete rawPayload._replaceState;
       delete rawPayload._immediateSync;
+      delete rawPayload._skipCloudPush;
 
       rawPayload.attendanceRecords = deduplicateAttendanceRecords(rawPayload.attendanceRecords);
       rawPayload.dailyRecords = deduplicateDailyRecords(rawPayload.dailyRecords);
       rawPayload.studentChallengeSubmissions = deduplicateChallengeSubmissions(rawPayload.studentChallengeSubmissions);
       rawPayload.studentAtqiniSubmissions = deduplicateAtqiniSubmissions(rawPayload.studentAtqiniSubmissions);
 
-      masterStateRef.current = rawPayload;
+      masterStateRef.current = deepCleanForFirestore(rawPayload);
 
-      try {
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(rawPayload));
-          localStorage.setItem('ghaith_staff_users', JSON.stringify(rawPayload.users));
-          localStorage.setItem('ghaith_circles_local_v1', JSON.stringify(rawPayload.circles));
-          localStorage.setItem('ghaith_tracks_local_v1', JSON.stringify(rawPayload.tracks));
-          localStorage.setItem('ghaith_challenges_local_v1', JSON.stringify(rawPayload.challenges));
-          localStorage.setItem(STUDENTS_LOCAL_KEY, JSON.stringify(rawPayload.students));
-          localStorage.setItem('ghaith_attendance_local_v1', JSON.stringify(rawPayload.attendanceRecords));
-          localStorage.setItem('ghaith_daily_records_local_v1', JSON.stringify(rawPayload.dailyRecords));
-          localStorage.setItem('ghaith_challenge_subs_local_v1', JSON.stringify(rawPayload.studentChallengeSubmissions));
-          localStorage.setItem(STUDENT_PLANS_LOCAL_KEY, JSON.stringify(rawPayload.studentPlans));
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('ghaith_staff_users', JSON.stringify(masterStateRef.current.users));
+          localStorage.setItem('ghaith_circles_local_v1', JSON.stringify(masterStateRef.current.circles));
+          localStorage.setItem('ghaith_tracks_local_v1', JSON.stringify(masterStateRef.current.tracks));
+          localStorage.setItem('ghaith_challenges_local_v1', JSON.stringify(masterStateRef.current.challenges));
+          localStorage.setItem(STUDENTS_LOCAL_KEY, JSON.stringify(masterStateRef.current.students));
+        } catch (staffStorageError) {
+          console.warn('Primary entity localStorage save notice:', staffStorageError);
         }
-      } catch (storageError) {
-        console.warn('LocalStorage save failed; continuing with cloud sync:', storageError);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(masterStateRef.current));
+          localStorage.setItem('ghaith_attendance_local_v1', JSON.stringify(masterStateRef.current.attendanceRecords));
+          localStorage.setItem('ghaith_daily_records_local_v1', JSON.stringify(masterStateRef.current.dailyRecords));
+          localStorage.setItem('ghaith_challenge_subs_local_v1', JSON.stringify(masterStateRef.current.studentChallengeSubmissions));
+          localStorage.setItem(STUDENT_PLANS_LOCAL_KEY, JSON.stringify(masterStateRef.current.studentPlans));
+        } catch (storageError) {
+          console.warn('LocalStorage save failed; continuing with cloud sync:', storageError);
+        }
       }
 
       if (syncTimeoutRef.current) {
@@ -2068,9 +2159,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setCloudStatus('offline');
         return;
       }
+      if (skipCloudPush) {
+        return;
+      }
       
       const executePush = () => {
-        pushStateToCloud(replaceCloudState ? { ...rawPayload, _replaceState: true } : rawPayload)
+        pushStateToCloud(replaceCloudState ? { ...masterStateRef.current, _replaceState: true } : masterStateRef.current)
           .then(() => {
             hasPendingLocalChangesRef.current = false;
             setCloudStatus('connected');
@@ -4524,34 +4618,71 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    const newId = user.id || 'u-' + Date.now();
+    // Lock pending local changes BEFORE any async work so background cloud polling never overwrites the new teacher
+    lastLocalMutationTimeRef.current = Date.now();
+    hasPendingLocalChangesRef.current = true;
+
+    const newId = String(user.id || 'u-' + Date.now()).trim();
     const newRole = user.role || 'teacher';
     const isStaffRole = newRole === 'supervisor' || newRole === 'teacher';
     const nowIso = new Date().toISOString();
+    const cleanCircleIds = Array.isArray(user.circleIds)
+      ? user.circleIds.filter(Boolean).map(String)
+      : Array.isArray(user.assignedCircles)
+      ? user.assignedCircles.filter(Boolean).map(String)
+      : [];
+    const cleanPasscode = String(user.passcode ?? user.pin ?? '').trim();
+    const defaultTitle =
+      newRole === 'owner'
+        ? 'مالك المنصة العام'
+        : newRole === 'leader'
+        ? 'قائدة مقرأة غيث الغيم'
+        : newRole === 'supervisor'
+        ? 'مشرفة حلقات'
+        : 'معلمة حلقة';
 
-    const newUser: User = {
+    const rawNewUser: User = {
+      ...deepCleanForFirestore(user),
       id: newId,
-      name: user.name || 'عضوة جديدة',
+      name: String(user.name || 'عضوة جديدة').trim(),
       role: newRole,
-      title: user.title || (newRole === 'owner' ? 'مالك المنصة العام' : newRole === 'leader' ? 'قائدة مقرأة غيث الغيم' : newRole === 'supervisor' ? 'مشرفة مسار' : 'معلمة حلقة'),
-      email: user.email || '',
-      phone: user.phone || '',
-      circleIds: user.circleIds || [],
-      avatarIcon: user.avatarIcon || 'mushaf',
-      avatarColor: user.avatarColor || '#ad4e00',
-      passcode: user.passcode?.trim() || '',
+      title: String(user.title || defaultTitle).trim(),
+      email: typeof user.email === 'string' ? user.email.trim() : '',
+      phone: typeof user.phone === 'string' ? user.phone.trim() : '',
+      circleIds: cleanCircleIds,
+      assignedCircles: cleanCircleIds,
+      avatarIcon: String(user.avatarIcon || 'mushaf'),
+      avatarColor: String(user.avatarColor || '#ad4e00'),
+      signatureUrl: typeof user.signatureUrl === 'string' ? user.signatureUrl : '',
+      passcode: cleanPasscode,
+      pin: cleanPasscode,
+      status: 'active',
       isActive: true,
       ...(isStaffRole
         ? {
-            workingHours: user.workingHours ?? getDefaultWorkingHoursForRole(newRole),
-            monthlySalary: user.monthlySalary ?? getDefaultMonthlySalaryForRole(newRole),
-            tasks: Array.isArray(user.tasks) ? user.tasks : getDefaultTasksForUser({ id: newId, role: newRole })
+            workingHours: String(user.workingHours || getDefaultWorkingHoursForRole(newRole)),
+            monthlySalary:
+              typeof user.monthlySalary === 'number' && Number.isFinite(user.monthlySalary)
+                ? user.monthlySalary
+                : getDefaultMonthlySalaryForRole(newRole),
+            tasks:
+              Array.isArray(user.tasks) && user.tasks.length > 0
+                ? user.tasks.map(t => ({
+                    id: String(t.id || `${newId}-t-${Date.now()}`),
+                    title: String(t.title || ''),
+                    completed: Boolean(t.completed),
+                    createdAt: String(t.createdAt || nowIso),
+                    ...(t.completedAt ? { completedAt: String(t.completedAt) } : {})
+                  }))
+                : getDefaultTasksForUser({ id: newId, role: newRole }),
+            leaderPrivateNotes: typeof user.leaderPrivateNotes === 'string' ? user.leaderPrivateNotes : ''
           }
         : {}),
       createdAt: nowIso,
-      updatedAt: nowIso,
-      ...user
-    } as User;
+      updatedAt: nowIso
+    };
+
+    const newUser: User = sanitizeStaffUserForFirestore(rawNewUser) as User;
 
     if (isStaffRole) {
       const mergedProfiles = mergeStaffProfilesMap(
@@ -4559,9 +4690,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         masterStateRef.current.settings?.staffProfiles,
         {
           [newUser.id]: {
-            workingHours: newUser.workingHours,
-            monthlySalary: newUser.monthlySalary,
-            tasks: newUser.tasks,
+            workingHours: newUser.workingHours || '',
+            monthlySalary: newUser.monthlySalary ?? 0,
+            tasks: Array.isArray(newUser.tasks) ? newUser.tasks : [],
+            leaderPrivateNotes: newUser.leaderPrivateNotes || '',
             updatedAt: nowIso
           }
         }
@@ -4570,9 +4702,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     const baseUsersList: User[] = masterStateRef.current.users?.length ? masterStateRef.current.users : users;
-    const next = [...baseUsersList.filter(existing => existing.id !== newUser.id), newUser];
+    const next = sanitizeUsersList([
+      ...baseUsersList.filter(existing => existing.id !== newUser.id),
+      newUser
+    ]);
     masterStateRef.current.users = next;
     setUsers(next);
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('ghaith_staff_users', JSON.stringify(next));
+      } catch {}
+    }
 
     // Sync assigned circleIds onto circles (teacherId/teacherName or supervisorId/supervisorName)
     let nextCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
@@ -4592,46 +4733,63 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setCircles(nextCircles);
     }
 
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('ghaith_staff_users', JSON.stringify(next));
-        localStorage.setItem('ghaith_circles_local_v1', JSON.stringify(nextCircles));
-      } catch {}
-    }
-
-    // Sync to authorized_staff in Firestore including passcode
-    if (newUser.email) {
-      const cleanEmail = newUser.email.trim().toLowerCase();
-      try {
-        await setDoc(doc(db, 'authorized_staff', cleanEmail), {
-          email: cleanEmail,
-          staffId: newUser.id,
-          role: newUser.role,
-          name: newUser.name,
-          passcode: newUser.passcode,
-          active: true,
-          updatedAt: new Date().toISOString()
-        });
-      } catch (e) {
-        console.warn('authorized_staff write notice:', e);
-      }
-    }
-
     const nextLogs = appendAuditEntry(
       'create',
       'auth',
       `إضافة حساب جديد في الكادر: ${newUser.name} (${newUser.title || newUser.role})`,
       newUser.id
     );
-    persistState({ users: next, circles: nextCircles, auditLogs: nextLogs, _immediateSync: true });
+
+    // Prepare unified state in masterStateRef and localStorage first
+    persistState({
+      users: next,
+      circles: nextCircles,
+      auditLogs: nextLogs,
+      _skipCloudPush: true
+    });
+
+    // Write directly to the exact same Firestore document (institution_database/master_state) monitored by onSnapshot
     if (!isLocalDemoMode) {
+      setCloudStatus('syncing');
       try {
         await pushStateToCloud(masterStateRef.current);
-      } catch (cloudErr) {
-        console.warn('Immediate cloud sync for new user notice:', cloudErr);
+        hasPendingLocalChangesRef.current = false;
+        setCloudStatus('connected');
+        setLastSynced(new Date());
+        showToast(`تمت إضافة وحفظ ${newUser.name} بالمنصب (${newUser.title || newUser.role}) في السحابة بنجاح ✅`);
+      } catch (cloudErr: any) {
+        hasPendingLocalChangesRef.current = false;
+        setCloudStatus('error');
+        const errMsg =
+          cloudErr?.message ||
+          cloudErr?.code ||
+          String(cloudErr || 'خطأ في الصلاحيات أو الاتصال بقاعدة البيانات');
+        console.error('Firestore save error in createUser:', cloudErr);
+        showToast(`تمت إضافة ${newUser.name} للجدول (تنبيه سحابة Firebase: ${errMsg})`, 'error', 8000);
       }
+
+      // Non-blocking sync to authorized_staff collection for direct email login lookup
+      if (newUser.email) {
+        const cleanEmail = newUser.email.trim().toLowerCase();
+        setDoc(doc(db, 'authorized_staff', cleanEmail), {
+          email: cleanEmail,
+          staffId: newUser.id,
+          role: newUser.role,
+          name: newUser.name,
+          passcode: newUser.passcode || '',
+          pin: newUser.passcode || '',
+          status: 'active',
+          active: true,
+          updatedAt: nowIso
+        }).catch(e => {
+          console.warn('authorized_staff write notice:', e);
+        });
+      }
+    } else {
+      hasPendingLocalChangesRef.current = false;
+      showToast(`تمت إضافة وحفظ ${newUser.name} بالمنصب (${newUser.title || newUser.role}) بنجاح ✅`);
     }
-    showToast(`تمت إضافة وحفظ ${newUser.name} بالمنصب (${newUser.title || newUser.role}) في السحابة بنجاح`);
+
     return newUser;
   };
 
@@ -4650,12 +4808,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
 
+    lastLocalMutationTimeRef.current = Date.now();
+    hasPendingLocalChangesRef.current = true;
+
     const nowIso = new Date().toISOString();
-    const nextUsers = baseUsers.map(u => u.id === id ? {
-      ...u,
-      ...user,
-      updatedAt: nowIso
-    } : u);
+    const cleanedUpdates = deepCleanForFirestore(user) || {};
+    const nextUsers = sanitizeUsersList(
+      baseUsers.map(u => {
+        if (u.id !== id) return u;
+        const merged = {
+          ...u,
+          ...cleanedUpdates,
+          id: u.id,
+          updatedAt: nowIso
+        };
+        return sanitizeStaffUserForFirestore(merged) as User;
+      })
+    );
     masterStateRef.current.users = nextUsers;
     setUsers(nextUsers);
     if (typeof window !== 'undefined') {
@@ -4663,8 +4832,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         localStorage.setItem('ghaith_staff_users', JSON.stringify(nextUsers));
       } catch {}
     }
-    if (currentUser?.id === id) {
-      setCurrentUser({ ...currentUser, ...user, updatedAt: nowIso });
+    const updated = nextUsers.find(u => u.id === id);
+    if (currentUser?.id === id && updated) {
+      setCurrentUser(updated);
     }
 
     if (id === 'u-dev' || target.role === 'developer' || target.email?.trim().toLowerCase() === 'yr.play.com@gmail.com') {
@@ -4678,7 +4848,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     let nextCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
-    const updated = nextUsers.find(u => u.id === id);
     if (user.name || Array.isArray(user.circleIds)) {
       const assignedSet = Array.isArray(user.circleIds) ? new Set(user.circleIds) : null;
       const effectiveRole = updated?.role || target.role;
@@ -4731,26 +4900,52 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ? `تحديث الرمز السري للدخول لحساب: ${updated?.name || target.name}`
         : `تعديل بيانات/منصب حساب الكادر: ${updated?.name || target.name} (${updated?.title || updated?.role || target.role})`;
       const nextLogs = appendAuditEntry('update', 'auth', logDetail, id);
-      persistState({ users: nextUsers, circles: nextCircles, auditLogs: nextLogs, _immediateSync: true });
-      showToast('تم حفظ التعديلات وتحديث المنصب والبيانات بنجاح ✨');
+      persistState({ users: nextUsers, circles: nextCircles, auditLogs: nextLogs, _skipCloudPush: true });
     } else {
-      persistState({ users: nextUsers, circles: nextCircles, _immediateSync: true });
+      persistState({ users: nextUsers, circles: nextCircles, _skipCloudPush: true });
     }
 
-    if (updated?.email) {
-      const cleanEmail = updated.email.trim().toLowerCase();
+    if (!isLocalDemoMode) {
+      setCloudStatus('syncing');
       try {
-        await setDoc(doc(db, 'authorized_staff', cleanEmail), {
+        await pushStateToCloud(masterStateRef.current);
+        hasPendingLocalChangesRef.current = false;
+        setCloudStatus('connected');
+        setLastSynced(new Date());
+        if (!silent) {
+          showToast('تم حفظ التعديلات وتحديث المنصب والبيانات في السحابة بنجاح ✨');
+        }
+      } catch (cloudErr: any) {
+        hasPendingLocalChangesRef.current = false;
+        setCloudStatus('error');
+        const errMsg =
+          cloudErr?.message ||
+          cloudErr?.code ||
+          String(cloudErr || 'خطأ في الصلاحيات أو الاتصال بقاعدة البيانات');
+        console.error('Firestore save error in updateUser:', cloudErr);
+        showToast(`تم تحديث البيانات في الجدول (تنبيه سحابة Firebase: ${errMsg})`, 'error', 8000);
+      }
+
+      if (updated?.email) {
+        const cleanEmail = updated.email.trim().toLowerCase();
+        setDoc(doc(db, 'authorized_staff', cleanEmail), {
           email: cleanEmail,
           staffId: updated.id,
           role: updated.role,
           name: updated.name,
           passcode: updated.passcode || '',
+          pin: updated.passcode || '',
+          status: 'active',
           active: true,
           updatedAt: nowIso
-        }, { merge: true });
-      } catch (e) {
-        console.warn('authorized_staff update notice:', e);
+        }, { merge: true }).catch(e => {
+          console.warn('authorized_staff update notice:', e);
+        });
+      }
+    } else {
+      hasPendingLocalChangesRef.current = false;
+      if (!silent) {
+        showToast('تم حفظ التعديلات وتحديث المنصب والبيانات بنجاح ✨');
       }
     }
   };
@@ -4784,6 +4979,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const nextUsers = users.filter(u => u.id !== id);
     masterStateRef.current.users = nextUsers;
     setUsers(nextUsers);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('ghaith_staff_users', JSON.stringify(nextUsers));
+      } catch {}
+    }
 
     // Unassign circles assigned to this teacher or supervisor
     const nextCircles = circles.map(c => {

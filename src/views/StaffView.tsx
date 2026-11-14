@@ -143,6 +143,11 @@ export const StaffView: React.FC = () => {
   const [staffModalOpen, setStaffModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<User | null>(null);
   const [teacherToDelete, setTeacherToDelete] = useState<User | null>(null);
+  const [isSavingStaff, setIsSavingStaff] = useState(false);
+  const [saveFeedbackBanner, setSaveFeedbackBanner] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
   // Manual permissions modal state
   const [permissionsModalUser, setPermissionsModalUser] = useState<User | null>(null);
@@ -198,7 +203,7 @@ export const StaffView: React.FC = () => {
     }
   };
 
-  const copyTeacherCredentials = (teacher: User) => {
+  const copyTeacherCredentials = (teacher: User, silentToast = false) => {
     const isDev =
       teacher.role === 'developer' ||
       teacher.id === 'u-dev' ||
@@ -206,7 +211,9 @@ export const StaffView: React.FC = () => {
     const isCurrentDev = currentUser?.role === 'developer' || isTechnicalDeveloper(currentUser);
 
     if (isDev && !isCurrentDev) {
-      showToast('بيانات حساب المطور التقني محمية وخاصة ولا يمكن نسخها', 'error');
+      if (!silentToast) {
+        showToast('بيانات حساب المطور التقني محمية وخاصة ولا يمكن نسخها', 'error');
+      }
       return;
     }
 
@@ -215,11 +222,19 @@ export const StaffView: React.FC = () => {
 الاسم: ${teacher.name}
 الصفة: ${teacher.title || roleLabel}
 البريد الإلكتروني: ${teacher.email || '—'}
-الرمز السري للدخول: ${teacher.passcode || 'غير محدد (يرجى مراجعة الإدارة)'}
+الرمز السري للدخول: ${teacher.passcode || teacher.pin || 'غير محدد (يرجى مراجعة الإدارة)'}
 
 (تستطيعين تغيير الرمز بنفسكِ في أي وقت من ملفكِ الشخصي في المقرأة)`;
-    navigator.clipboard.writeText(text);
-    showToast(`تم نسخ بيانات دخول ${teacher.name} لإرسالها لها`, 'success');
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).catch(() => {});
+      }
+    } catch {
+      // Ignore clipboard permission restrictions in iframe preview
+    }
+    if (!silentToast) {
+      showToast(`تم نسخ بيانات دخول ${teacher.name} لإرسالها لها`, 'success');
+    }
   };
 
   const getUserEffectivePermissions = (user: User): UserPermissions => {
@@ -435,49 +450,118 @@ export const StaffView: React.FC = () => {
 
   const handleSaveStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!staffForm.name.trim()) {
-      showToast('يرجى إدخال الاسم الكامل للمعلمة أو المشرفة', 'error');
-      return;
-    }
-    const cleanEmail = staffForm.email.trim() || `staff.${Date.now()}@ghaym.org`;
-    const cleanPasscode = staffForm.passcode?.trim() || String(Math.floor(1000 + Math.random() * 9000));
-    if (cleanPasscode.length < 4) {
-      showToast('الرمز السري للدخول يجب ألا يقل عن 4 خانات', 'error');
+    if (isSavingStaff) return;
+
+    const cleanName = (staffForm.name || '').trim();
+    if (!cleanName) {
+      const msg = 'يرجى إدخال الاسم الكامل للمعلمة أو المشرفة';
+      setSaveFeedbackBanner({ type: 'error', text: msg });
+      showToast(msg, 'error');
       return;
     }
 
-    if (editingStaff) {
-      const existingProfile = resolveStaffProfile(editingStaff, settings);
-      await updateUser(editingStaff.id, {
-        ...staffForm,
-        name: staffForm.name.trim(),
-        email: cleanEmail,
-        passcode: cleanPasscode,
-        workingHours: existingProfile.workingHours,
-        monthlySalary: existingProfile.monthlySalary,
-        tasks: existingProfile.tasks,
-        leaderPrivateNotes: existingProfile.leaderPrivateNotes
-      });
-      showToast(`تم حفظ وتحديث بيانات ${staffForm.name} في السحابة بنجاح`);
-      setStaffModalOpen(false);
-    } else {
-      try {
-        const created = await createUser({
-          ...staffForm,
-          name: staffForm.name.trim(),
+    const cleanRole: UserRole = staffForm.role || 'teacher';
+    const defaultTitle =
+      cleanRole === 'owner'
+        ? 'مالك المنصة العام'
+        : cleanRole === 'leader'
+        ? 'قائدة مقرأة غيث الغيم'
+        : cleanRole === 'supervisor'
+        ? 'مشرفة حلقات'
+        : 'معلمة حلقة';
+    const cleanTitle = (staffForm.title || '').trim() || defaultTitle;
+    const cleanEmail = (staffForm.email || '').trim() || `staff.${Date.now()}@ghaym.org`;
+    const cleanPhone = (staffForm.phone || '').trim();
+    const cleanPasscode = (staffForm.passcode || '').trim() || String(Math.floor(1000 + Math.random() * 9000));
+    const cleanCircleIds = Array.isArray(staffForm.circleIds)
+      ? staffForm.circleIds.filter(Boolean).map(String)
+      : [];
+    const cleanAvatarIcon = (staffForm.avatarIcon || '').trim() || 'mushaf';
+    const cleanAvatarColor = (staffForm.avatarColor || '').trim() || '#ad4e00';
+    const cleanSignatureUrl = typeof staffForm.signatureUrl === 'string' ? staffForm.signatureUrl : '';
+
+    if (cleanPasscode.length < 4) {
+      const msg = 'الرمز السري للدخول (PIN) يجب ألا يقل عن 4 خانات';
+      setSaveFeedbackBanner({ type: 'error', text: msg });
+      showToast(msg, 'error');
+      return;
+    }
+
+    setIsSavingStaff(true);
+    setSaveFeedbackBanner(null);
+
+    try {
+      if (editingStaff) {
+        const existingProfile = resolveStaffProfile(editingStaff, settings);
+        await updateUser(editingStaff.id, {
+          id: editingStaff.id,
+          name: cleanName,
+          role: cleanRole,
+          title: cleanTitle,
           email: cleanEmail,
+          phone: cleanPhone,
           passcode: cleanPasscode,
-          workingHours: getDefaultWorkingHoursForRole(staffForm.role),
-          monthlySalary: getDefaultMonthlySalaryForRole(staffForm.role),
-          tasks: getDefaultTasksForUser({ id: 'new', role: staffForm.role }),
+          pin: cleanPasscode,
+          circleIds: cleanCircleIds,
+          assignedCircles: cleanCircleIds,
+          avatarIcon: cleanAvatarIcon,
+          avatarColor: cleanAvatarColor,
+          signatureUrl: cleanSignatureUrl,
+          status: 'active',
+          isActive: true,
+          workingHours: existingProfile.workingHours || '',
+          monthlySalary:
+            typeof existingProfile.monthlySalary === 'number' && Number.isFinite(existingProfile.monthlySalary)
+              ? existingProfile.monthlySalary
+              : getDefaultMonthlySalaryForRole(cleanRole),
+          tasks: Array.isArray(existingProfile.tasks) ? existingProfile.tasks : [],
+          leaderPrivateNotes: existingProfile.leaderPrivateNotes || ''
+        });
+        setStaffModalOpen(false);
+        const successMsg = `تم حفظ وتحديث بيانات «${cleanName}» في قائمة الكادر السحابية بنجاح ✅`;
+        setSaveFeedbackBanner({ type: 'success', text: successMsg });
+        showToast(successMsg, 'success', 6000);
+      } else {
+        const newStaffId = `u-${Date.now()}`;
+        const created = await createUser({
+          id: newStaffId,
+          name: cleanName,
+          role: cleanRole,
+          title: cleanTitle,
+          email: cleanEmail,
+          phone: cleanPhone,
+          passcode: cleanPasscode,
+          pin: cleanPasscode,
+          circleIds: cleanCircleIds,
+          assignedCircles: cleanCircleIds,
+          avatarIcon: cleanAvatarIcon,
+          avatarColor: cleanAvatarColor,
+          signatureUrl: cleanSignatureUrl,
+          status: 'active',
+          isActive: true,
+          workingHours: getDefaultWorkingHoursForRole(cleanRole) || '',
+          monthlySalary: getDefaultMonthlySalaryForRole(cleanRole) ?? 0,
+          tasks: getDefaultTasksForUser({ id: newStaffId, role: cleanRole }) || [],
           leaderPrivateNotes: ''
         });
         setStaffModalOpen(false);
-        showToast(`تمت إضافة ${created.name} وحفظها في السحابة بنجاح`);
-        copyTeacherCredentials(created);
-      } catch (error: any) {
-        showToast(error?.message || 'تعذر إضافة المعلمة', 'error');
+        copyTeacherCredentials(created, true);
+        const successMsg = `تمت إضافة «${created.name}» وحفظها في السحابة وظهورها في الجدول ونسخ بيانات دخولها بنجاح ✅`;
+        setSaveFeedbackBanner({ type: 'success', text: successMsg });
+        showToast(successMsg, 'success', 6000);
       }
+    } catch (error: any) {
+      const actualErrorText =
+        error?.message ||
+        error?.code ||
+        String(error || 'خطأ غير معروف أثناء الحفظ في قاعدة البيانات السحابية');
+      const fullErrMsg = actualErrorText.includes('Firebase')
+        ? actualErrorText
+        : `تعذر حفظ بيانات المعلمة: ${actualErrorText}`;
+      setSaveFeedbackBanner({ type: 'error', text: fullErrMsg });
+      showToast(fullErrMsg, 'error', 8000);
+    } finally {
+      setIsSavingStaff(false);
     }
   };
 
@@ -584,6 +668,33 @@ export const StaffView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Prominent Save Status Notification Banner */}
+      {saveFeedbackBanner && (
+        <div
+          className={`p-4 rounded-2xl border flex items-center justify-between gap-3 text-xs font-bold shadow-xs ${
+            saveFeedbackBanner.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-rose-50 border-rose-200 text-rose-900'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <CheckCircle2
+              className={`w-4 h-4 shrink-0 ${
+                saveFeedbackBanner.type === 'success' ? 'text-emerald-600' : 'text-rose-600'
+              }`}
+            />
+            <span>{saveFeedbackBanner.text}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSaveFeedbackBanner(null)}
+            className="p-1 rounded-lg hover:bg-black/5 text-current cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* 2. Original 4 Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1043,7 +1154,20 @@ export const StaffView: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSaveStaff} className="space-y-4">
+            <form onSubmit={handleSaveStaff} noValidate className="space-y-4">
+              {saveFeedbackBanner && saveFeedbackBanner.type === 'error' && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center justify-between gap-2">
+                  <span>{saveFeedbackBanner.text}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSaveFeedbackBanner(null)}
+                    className="p-1 rounded-lg hover:bg-rose-100 text-rose-700 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
               {/* Row 1: الاسم الكامل * & الصفة والمنصب * */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -1113,7 +1237,7 @@ export const StaffView: React.FC = () => {
                     البريد الإلكتروني (اختياري)
                   </label>
                   <input
-                    type="email"
+                    type="text"
                     value={staffForm.email}
                     onChange={e => setStaffForm({ ...staffForm, email: e.target.value })}
                     placeholder="reef@ghaym.org"
@@ -1249,10 +1373,17 @@ export const StaffView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-[#8E5364] hover:bg-[#744251] text-white text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                  disabled={isSavingStaff}
+                  className="px-6 py-2.5 rounded-xl bg-[#8E5364] hover:bg-[#744251] disabled:opacity-60 text-white text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>{editingStaff ? 'حفظ التعديلات' : 'إضافة المعلمة ونسخ البيانات'}</span>
+                  <span>
+                    {isSavingStaff
+                      ? 'جاري الحفظ في السحابة...'
+                      : editingStaff
+                      ? 'حفظ التعديلات'
+                      : 'إضافة المعلمة ونسخ البيانات'}
+                  </span>
                 </button>
               </div>
             </form>

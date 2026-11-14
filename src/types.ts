@@ -93,12 +93,15 @@ export interface User {
   email?: string;
   phone?: string;
   circleIds: string[];
+  assignedCircles?: string[];
   avatarIcon?: string;
   avatarColor?: string;
+  status?: 'active' | 'inactive' | 'archived';
   isActive?: boolean;
   permissions?: UserPermissions;
   signatureUrl?: string;
   passcode?: string;
+  pin?: string;
   welcomeTitle?: string;
   personalGoal?: string;
   animatedEmojis?: string[];

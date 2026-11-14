@@ -12,6 +12,80 @@ export const mergeDeletedEntities = (...sources: Array<DeletedEntities | undefin
   return merged;
 };
 
+export const deepCleanForFirestore = (value: any): any => {
+  if (value === undefined) {
+    return null;
+  }
+  if (value === null || typeof value !== 'object') {
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      return 0;
+    }
+    return value;
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (Array.isArray(value)) {
+    return value
+      .filter(item => item !== undefined)
+      .map(item => deepCleanForFirestore(item));
+  }
+  const cleanedObj: Record<string, any> = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (v === undefined) {
+      cleanedObj[k] = null;
+    } else {
+      cleanedObj[k] = deepCleanForFirestore(v);
+    }
+  }
+  return cleanedObj;
+};
+
+export const sanitizeStaffUserForFirestore = (raw: any): any => {
+  if (!raw || typeof raw !== 'object') return raw;
+  const cleaned = deepCleanForFirestore(raw) || {};
+  const role = cleaned.role || 'teacher';
+  const defaultTitle =
+    role === 'owner'
+      ? 'مالك المنصة العام'
+      : role === 'developer'
+      ? 'المطور التقني'
+      : role === 'leader'
+      ? 'قائدة مقرأة غيث الغيم'
+      : role === 'supervisor'
+      ? 'مشرفة حلقات'
+      : 'معلمة حلقة';
+  const resolvedPin = String(cleaned.passcode || cleaned.pin || '').trim();
+  const resolvedCircles = Array.isArray(cleaned.circleIds)
+    ? cleaned.circleIds.filter(Boolean).map(String)
+    : Array.isArray(cleaned.assignedCircles)
+    ? cleaned.assignedCircles.filter(Boolean).map(String)
+    : [];
+  const nowIso = new Date().toISOString();
+
+  return {
+    ...cleaned,
+    id: String(cleaned.id || `u-${Date.now()}`).trim(),
+    name: String(cleaned.name || 'عضوة جديدة').trim(),
+    role,
+    title: String(cleaned.title || defaultTitle).trim(),
+    email: typeof cleaned.email === 'string' ? cleaned.email.trim() : '',
+    phone: typeof cleaned.phone === 'string' ? cleaned.phone.trim() : '',
+    passcode: resolvedPin,
+    pin: resolvedPin,
+    circleIds: resolvedCircles,
+    assignedCircles: resolvedCircles,
+    avatarIcon: String(cleaned.avatarIcon || 'mushaf'),
+    avatarColor: String(cleaned.avatarColor || '#ad4e00'),
+    signatureUrl: typeof cleaned.signatureUrl === 'string' ? cleaned.signatureUrl : '',
+    welcomeTitle: typeof cleaned.welcomeTitle === 'string' ? cleaned.welcomeTitle : '',
+    status: cleaned.status === 'inactive' || cleaned.status === 'archived' ? cleaned.status : 'active',
+    isActive: typeof cleaned.isActive === 'boolean' ? cleaned.isActive : true,
+    createdAt: typeof cleaned.createdAt === 'string' && cleaned.createdAt ? cleaned.createdAt : nowIso,
+    updatedAt: typeof cleaned.updatedAt === 'string' && cleaned.updatedAt ? cleaned.updatedAt : nowIso
+  };
+};
+
 export const sanitizeCloudState = (state: any) => {
   const safe = { ...(state || {}) };
   // Preserve users and their passcodes intact
@@ -31,7 +105,11 @@ export const mergeArrayByKey = (
   const stripUndefined = (obj: Record<string, any>) => {
     const out: Record<string, any> = {};
     for (const [k, v] of Object.entries(obj || {})) {
-      if (v !== undefined) out[k] = v;
+      if (v !== undefined && v !== null) {
+        out[k] = deepCleanForFirestore(v);
+      } else if (v === null) {
+        out[k] = null;
+      }
     }
     return out;
   };
@@ -39,12 +117,12 @@ export const mergeArrayByKey = (
   const deleted = new Set(deletedIds.map(String));
   const map = new Map<string, any>();
   for (const item of existingList) {
-    if (item && item[key] !== undefined && !deleted.has(String(item[key]))) {
+    if (item && item[key] !== undefined && item[key] !== null && !deleted.has(String(item[key]))) {
       map.set(String(item[key]), stripUndefined(item));
     }
   }
   for (const rawItem of incomingList) {
-    if (!rawItem || rawItem[key] === undefined || deleted.has(String(rawItem[key]))) continue;
+    if (!rawItem || rawItem[key] === undefined || rawItem[key] === null || deleted.has(String(rawItem[key]))) continue;
     const item = stripUndefined(rawItem);
     const id = String(item[key]);
     const existing = map.get(id);
@@ -72,12 +150,13 @@ export const mergeArrayByKey = (
       base.tasks = existing.tasks;
     }
 
-    // For user items or items with passcode, never overwrite a set passcode with an empty or missing one
-    const existingPass = (existing.passcode && String(existing.passcode).trim()) || '';
-    const incomingPass = (item.passcode && String(item.passcode).trim()) || '';
+    // For user items or items with passcode/pin, never overwrite a set passcode with an empty or missing one
+    const existingPass = (existing.passcode && String(existing.passcode).trim()) || (existing.pin && String(existing.pin).trim()) || '';
+    const incomingPass = (item.passcode && String(item.passcode).trim()) || (item.pin && String(item.pin).trim()) || '';
     const resolvedPasscode = incomingPass || existingPass;
     if (resolvedPasscode) {
       base.passcode = resolvedPasscode;
+      base.pin = resolvedPasscode;
     }
     map.set(id, base);
   }
