@@ -94,6 +94,7 @@ export interface User {
   phone?: string;
   circleIds: string[];
   assignedCircles?: string[];
+  icon?: string;
   avatarIcon?: string;
   avatarColor?: string;
   status?: 'active' | 'inactive' | 'archived';
@@ -312,6 +313,63 @@ export const isPlanHistoricalOrArchived = (
     const otherTime = Date.parse(other.createdAt || '') || 0;
     return otherTime > thisTime && plan.id === 'mp-1';
   });
+};
+
+export const isExamHistoricalOrArchived = (
+  exam: MonthlyExam | null | undefined,
+  allExams: MonthlyExam[] = [],
+  allPlans: MonthlyPlan[] = []
+): boolean => {
+  if (!exam) return false;
+  if (Boolean(exam.isArchived)) return true;
+  if (exam.monthlyPlanId && allPlans.length > 0) {
+    const linkedPlan = allPlans.find(p => p.id === exam.monthlyPlanId);
+    if (linkedPlan && isPlanHistoricalOrArchived(linkedPlan, allPlans)) {
+      return true;
+    }
+  }
+  const sameTrackExams = allExams.filter(e => !exam.trackId || !e.trackId || e.trackId === exam.trackId);
+  if (sameTrackExams.length <= 1) return false;
+  const thisText = `${exam.title || ''} ${exam.examDateHijri || ''}`;
+  return sameTrackExams.some(other => {
+    if (other.id === exam.id || Boolean(other.isArchived)) return false;
+    const otherText = `${other.title || ''} ${other.examDateHijri || ''}`;
+    if (
+      (thisText.includes('جمادى الأولى') || thisText.includes('ربيع الآخر')) &&
+      !thisText.includes('جمادى الآخرة') &&
+      (otherText.includes('جمادى الآخرة') || otherText.includes('رجب') || otherText.includes('شعبان') || otherText.includes('رمضان'))
+    ) {
+      return true;
+    }
+    return false;
+  });
+};
+
+export const deduplicateStudentsByName = <T extends Pick<Student, 'id' | 'name' | 'createdAt' | 'updatedAt' | 'status' | 'archived'>>(
+  list: T[] = []
+): T[] => {
+  const byName = new Map<string, T>();
+  for (const st of list) {
+    if (!st || !st.name) continue;
+    const key = st.name.trim().replace(/\s+/g, ' ');
+    const existing = byName.get(key);
+    if (!existing) {
+      byName.set(key, st);
+    } else {
+      const exArchived = existing.status === 'archived' || Boolean(existing.archived);
+      const stArchived = st.status === 'archived' || Boolean(st.archived);
+      if (exArchived && !stArchived) {
+        byName.set(key, st);
+      } else if (exArchived === stArchived) {
+        const exTime = Date.parse(existing.updatedAt || existing.createdAt || '') || 0;
+        const stTime = Date.parse(st.updatedAt || st.createdAt || '') || 0;
+        if (stTime >= exTime) {
+          byName.set(key, st);
+        }
+      }
+    }
+  }
+  return Array.from(byName.values());
 };
 
 export interface PlanBranchConfig {

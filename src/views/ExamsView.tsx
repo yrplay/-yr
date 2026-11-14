@@ -5,7 +5,14 @@ import {
   AlertCircle, ChevronLeft, UserCheck, Shield, Trash2,
   FileCheck2, Star, Clock, XCircle, X
 } from 'lucide-react';
-import { MonthlyExam, StudentExamResult, ExamResultStatus, isStudentEffectivelyArchived } from '../types';
+import {
+  MonthlyExam,
+  StudentExamResult,
+  ExamResultStatus,
+  isStudentEffectivelyArchived,
+  isExamHistoricalOrArchived,
+  deduplicateStudentsByName
+} from '../types';
 import { formatHijriShort } from '../utils/hijriDate';
 
 export const ExamsView: React.FC = () => {
@@ -82,6 +89,36 @@ export const ExamsView: React.FC = () => {
 
   const currentExam = monthlyExams.find(e => e.id === selectedExamId) || monthlyExams[0];
   const currentExamMaxScore = currentExam?.maxScore || 100;
+  const isCurrentExamHistorical = React.useMemo(
+    () => isExamHistoricalOrArchived(currentExam, monthlyExams, monthlyPlans),
+    [currentExam, monthlyExams, monthlyPlans]
+  );
+
+  const examStudentsList = React.useMemo(() => {
+    const trackScoped = students.filter(s => {
+      const circle = circles.find(c => c.id === s.circleId);
+      const stTrackId = s.trackId || circle?.trackId;
+      if (selectedTrackId && selectedTrackId !== 'all') {
+        return stTrackId === selectedTrackId;
+      }
+      if (currentExam?.trackId && tracks.length > 1) {
+        return !stTrackId || stTrackId === currentExam.trackId;
+      }
+      return true;
+    });
+
+    if (!isCurrentExamHistorical) {
+      const activeOnly = trackScoped.filter(s => !isStudentEffectivelyArchived(s, circles, tracks));
+      return deduplicateStudentsByName(activeOnly);
+    }
+
+    const inHistoricalExam = trackScoped.filter(
+      s =>
+        isStudentEffectivelyArchived(s, circles, tracks) ||
+        studentExamResults.some(r => r.examId === currentExam?.id && r.studentId === s.id)
+    );
+    return deduplicateStudentsByName(inHistoricalExam.length > 0 ? inHistoricalExam : trackScoped);
+  }, [students, circles, tracks, selectedTrackId, currentExam, isCurrentExamHistorical, studentExamResults]);
 
   const getEffectiveExamStatus = (res?: StudentExamResult): ExamResultStatus => {
     if (!res) return 'postponed';
@@ -438,17 +475,7 @@ export const ExamsView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
-              {students
-                .filter(s => {
-                  if (isStudentEffectivelyArchived(s, circles, tracks)) return false;
-                  if (selectedTrackId && selectedTrackId !== 'all') {
-                    const circle = circles.find(c => c.id === s.circleId);
-                    const stTrackId = s.trackId || circle?.trackId;
-                    if (stTrackId && stTrackId !== selectedTrackId) return false;
-                  }
-                  return true;
-                })
-                .map((student, idx) => {
+              {examStudentsList.map((student, idx) => {
                 const res = studentExamResults.find(
                   r => r.examId === currentExam?.id && r.studentId === student.id
                 );

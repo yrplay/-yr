@@ -63,6 +63,8 @@ export const sanitizeStaffUserForFirestore = (raw: any): any => {
     : [];
   const nowIso = new Date().toISOString();
 
+  const resolvedIcon = String(cleaned.icon || cleaned.avatarIcon || 'mushaf');
+
   return {
     ...cleaned,
     id: String(cleaned.id || `u-${Date.now()}`).trim(),
@@ -75,7 +77,8 @@ export const sanitizeStaffUserForFirestore = (raw: any): any => {
     pin: resolvedPin,
     circleIds: resolvedCircles,
     assignedCircles: resolvedCircles,
-    avatarIcon: String(cleaned.avatarIcon || 'mushaf'),
+    icon: resolvedIcon,
+    avatarIcon: resolvedIcon,
     avatarColor: String(cleaned.avatarColor || '#ad4e00'),
     signatureUrl: typeof cleaned.signatureUrl === 'string' ? cleaned.signatureUrl : '',
     welcomeTitle: typeof cleaned.welcomeTitle === 'string' ? cleaned.welcomeTitle : '',

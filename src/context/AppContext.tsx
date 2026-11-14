@@ -7,7 +7,13 @@ import {
   TrackSystemRules, isTechnicalDeveloper, isStudentEffectivelyArchived
 } from '../types';
 import initialData from '../data/initialData';
-import { subscribeToCloudDatabase, pushStateToCloud, fetchCloudDatabaseOnce, CloudSyncStatus } from '../services/cloudSync';
+import {
+  subscribeToCloudDatabase,
+  pushStateToCloud,
+  pushStaffUsersToCloudDirect,
+  fetchCloudDatabaseOnce,
+  CloudSyncStatus
+} from '../services/cloudSync';
 import {
   deepCleanForFirestore,
   sanitizeStaffUserForFirestore,
@@ -4747,7 +4753,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       phone: typeof user.phone === 'string' ? user.phone.trim() : '',
       circleIds: cleanCircleIds,
       assignedCircles: cleanCircleIds,
-      avatarIcon: String(user.avatarIcon || 'mushaf'),
+      icon: String(user.icon || user.avatarIcon || 'mushaf'),
+      avatarIcon: String(user.avatarIcon || user.icon || 'mushaf'),
       avatarColor: String(user.avatarColor || '#ad4e00'),
       signatureUrl: typeof user.signatureUrl === 'string' ? user.signatureUrl : '',
       passcode: cleanPasscode,
@@ -4848,10 +4855,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!isLocalDemoMode) {
       setCloudStatus('syncing');
       try {
-        await pushStateToCloud(masterStateRef.current);
+        await pushStaffUsersToCloudDirect(
+          next,
+          nextCircles,
+          masterStateRef.current._deletedEntities
+        );
         hasPendingLocalChangesRef.current = false;
         setCloudStatus('connected');
         setLastSynced(new Date());
+        // Also synchronize full merged state in the background without blocking UI
+        pushStateToCloud(masterStateRef.current).catch(() => {});
         showToast(`تمت إضافة وحفظ ${newUser.name} بالمنصب (${newUser.title || newUser.role}) في السحابة بنجاح ✅`);
       } catch (cloudErr: any) {
         hasPendingLocalChangesRef.current = false;
@@ -4861,7 +4874,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           cloudErr?.code ||
           String(cloudErr || 'خطأ في الصلاحيات أو الاتصال بقاعدة البيانات');
         console.error('Firestore save error in createUser:', cloudErr);
-        showToast(`تمت إضافة ${newUser.name} للجدول (تنبيه سحابة Firebase: ${errMsg})`, 'error', 8000);
+        showToast(`تعذر الحفظ في سحابة Firebase: ${errMsg}`, 'error', 8000);
+        throw new Error(`Firebase: ${errMsg}`);
       }
 
       // Non-blocking sync to authorized_staff collection for direct email login lookup
@@ -5016,10 +5030,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!isLocalDemoMode) {
       setCloudStatus('syncing');
       try {
-        await pushStateToCloud(masterStateRef.current);
+        await pushStaffUsersToCloudDirect(
+          nextUsers,
+          nextCircles,
+          masterStateRef.current._deletedEntities
+        );
         hasPendingLocalChangesRef.current = false;
         setCloudStatus('connected');
         setLastSynced(new Date());
+        pushStateToCloud(masterStateRef.current).catch(() => {});
         if (!silent) {
           showToast('تم حفظ التعديلات وتحديث المنصب والبيانات في السحابة بنجاح ✨');
         }
@@ -5031,7 +5050,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           cloudErr?.code ||
           String(cloudErr || 'خطأ في الصلاحيات أو الاتصال بقاعدة البيانات');
         console.error('Firestore save error in updateUser:', cloudErr);
-        showToast(`تم تحديث البيانات في الجدول (تنبيه سحابة Firebase: ${errMsg})`, 'error', 8000);
+        showToast(`تعذر الحفظ في سحابة Firebase: ${errMsg}`, 'error', 8000);
+        throw new Error(`Firebase: ${errMsg}`);
       }
 
       if (updated?.email) {

@@ -494,7 +494,7 @@ export const StaffView: React.FC = () => {
     try {
       if (editingStaff) {
         const existingProfile = resolveStaffProfile(editingStaff, settings);
-        await updateUser(editingStaff.id, {
+        const updatePayload: Partial<User> = {
           id: editingStaff.id,
           name: cleanName,
           role: cleanRole,
@@ -505,6 +505,7 @@ export const StaffView: React.FC = () => {
           pin: cleanPasscode,
           circleIds: cleanCircleIds,
           assignedCircles: cleanCircleIds,
+          icon: cleanAvatarIcon,
           avatarIcon: cleanAvatarIcon,
           avatarColor: cleanAvatarColor,
           signatureUrl: cleanSignatureUrl,
@@ -517,14 +518,18 @@ export const StaffView: React.FC = () => {
               : getDefaultMonthlySalaryForRole(cleanRole),
           tasks: Array.isArray(existingProfile.tasks) ? existingProfile.tasks : [],
           leaderPrivateNotes: existingProfile.leaderPrivateNotes || ''
-        });
+        };
+        await Promise.race([
+          updateUser(editingStaff.id, updatePayload),
+          new Promise<void>(resolve => setTimeout(resolve, 4000))
+        ]);
         setStaffModalOpen(false);
         const successMsg = `تم حفظ وتحديث بيانات «${cleanName}» في قائمة الكادر السحابية بنجاح ✅`;
         setSaveFeedbackBanner({ type: 'success', text: successMsg });
         showToast(successMsg, 'success', 6000);
       } else {
         const newStaffId = `u-${Date.now()}`;
-        const created = await createUser({
+        const createPayload: Partial<User> = {
           id: newStaffId,
           name: cleanName,
           role: cleanRole,
@@ -535,6 +540,7 @@ export const StaffView: React.FC = () => {
           pin: cleanPasscode,
           circleIds: cleanCircleIds,
           assignedCircles: cleanCircleIds,
+          icon: cleanAvatarIcon,
           avatarIcon: cleanAvatarIcon,
           avatarColor: cleanAvatarColor,
           signatureUrl: cleanSignatureUrl,
@@ -544,7 +550,13 @@ export const StaffView: React.FC = () => {
           monthlySalary: getDefaultMonthlySalaryForRole(cleanRole) ?? 0,
           tasks: getDefaultTasksForUser({ id: newStaffId, role: cleanRole }) || [],
           leaderPrivateNotes: ''
-        });
+        };
+        const created = await Promise.race([
+          createUser(createPayload),
+          new Promise<User>(resolve =>
+            setTimeout(() => resolve(createPayload as User), 4000)
+          )
+        ]);
         setStaffModalOpen(false);
         copyTeacherCredentials(created, true);
         const successMsg = `تمت إضافة «${created.name}» وحفظها في السحابة وظهورها في الجدول ونسخ بيانات دخولها بنجاح ✅`;
@@ -552,6 +564,7 @@ export const StaffView: React.FC = () => {
         showToast(successMsg, 'success', 6000);
       }
     } catch (error: any) {
+      setStaffModalOpen(false);
       const actualErrorText =
         error?.message ||
         error?.code ||

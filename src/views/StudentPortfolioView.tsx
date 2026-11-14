@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { OfficialSeal } from '../components/OfficialSeal';
 import { isStudentDefaultNoorania } from './MonthlyPlansView';
-import { ExamResultStatus, isStudentEffectivelyArchived, isPlanHistoricalOrArchived } from '../types';
+import { ExamResultStatus, isStudentEffectivelyArchived, isPlanHistoricalOrArchived, deduplicateStudentsByName } from '../types';
 
 interface StudentPortfolioViewProps {
   initialStudentId?: string;
@@ -66,11 +66,13 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
     });
 
     if (!isHistoricalPortfolioMode) {
-      return trackScoped.filter(s => !isStudentEffectivelyArchived(s, circles, tracks));
+      return deduplicateStudentsByName(
+        trackScoped.filter(s => !isStudentEffectivelyArchived(s, circles, tracks))
+      );
     }
 
     const archivedList = trackScoped.filter(s => isStudentEffectivelyArchived(s, circles, tracks));
-    return archivedList.length > 0 ? archivedList : trackScoped;
+    return deduplicateStudentsByName(archivedList.length > 0 ? archivedList : trackScoped);
   }, [students, circles, tracks, selectedTrackId, isHistoricalPortfolioMode]);
 
   const [selectedStudentId, setSelectedStudentId] = useState<string>(

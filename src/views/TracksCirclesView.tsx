@@ -7,7 +7,7 @@ import {
   Eye, EyeOff, AlertTriangle, X, ExternalLink, CreditCard, FolderOpen, Sprout, Leaf,
   HeartHandshake, Send, Copy
 } from 'lucide-react';
-import { Circle, hasFullAccess, Track, defaultMasteryGuideConfig } from '../types';
+import { Circle, hasFullAccess, Track, defaultMasteryGuideConfig, isStudentEffectivelyArchived } from '../types';
 import {
   CircleIconPicker,
   RenderEntityIcon,
@@ -388,10 +388,10 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
 
   const activeCircle = selectedCircleId ? circles.find(c => c.id === selectedCircleId) : null;
   const activeCircleStudents = activeCircle
-    ? students.filter(s => s.circleId === activeCircle.id && s.status === 'active' && !s.archived)
+    ? students.filter(s => s.circleId === activeCircle.id && !isStudentEffectivelyArchived(s, circles, tracks))
     : [];
   const archivedCircleStudents = activeCircle
-    ? students.filter(s => s.circleId === activeCircle.id && (s.status === 'archived' || s.archived))
+    ? students.filter(s => s.circleId === activeCircle.id && isStudentEffectivelyArchived(s, circles, tracks))
     : [];
 
   return (

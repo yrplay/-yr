@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronUp, Edit, Lock, Unlock,
   CalendarRange, Star, BarChart3, Zap, HeartHandshake, BookOpen, Archive, RotateCcw
 } from 'lucide-react';
-import { MonthlyPlan, PlanBranchConfig, isStudentEffectivelyArchived, isPlanHistoricalOrArchived } from '../types';
+import { MonthlyPlan, PlanBranchConfig, isStudentEffectivelyArchived, isPlanHistoricalOrArchived, deduplicateStudentsByName } from '../types';
 import { summarizeDailyPageProgress } from '../services/recitationProgress';
 
 // قيم العداد التدريجي الموحد (0.25 ربع وجه لكل ضغطة) لجميع الأقسام الثلاثة
@@ -169,8 +169,10 @@ export const MonthlyPlansView: React.FC = () => {
     });
 
     if (!isCurrentPlanHistorical) {
-      // خطة الشهر الحالي النشطة: إخفاء جميع الطالبات المؤرشفات أو التابعات لحلقات مؤرشفة
-      return trackScoped.filter(s => !isStudentEffectivelyArchived(s, circles, tracks));
+      // خطة الشهر الحالي النشطة: إخفاء جميع الطالبات المؤرشفات أو التابعات لحلقات مؤرشفة ومنع تكرار الاسم المنسوخ
+      return deduplicateStudentsByName(
+        trackScoped.filter(s => !isStudentEffectivelyArchived(s, circles, tracks))
+      );
     }
 
     // خطة شهر سابق مؤرشف: إظهار الطالبات المؤرشفات أو اللاتي لديهن سجل في هذه الخطة السابقة
@@ -179,7 +181,7 @@ export const MonthlyPlansView: React.FC = () => {
         isStudentEffectivelyArchived(s, circles, tracks) ||
         studentPlans.some(sp => sp.studentId === s.id && sp.monthlyPlanId === currentPlan?.id)
     );
-    return archivedOrInPlan.length > 0 ? archivedOrInPlan : trackScoped;
+    return deduplicateStudentsByName(archivedOrInPlan.length > 0 ? archivedOrInPlan : trackScoped);
   }, [students, circles, tracks, selectedTrackId, isCurrentPlanHistorical, studentPlans, currentPlan]);
 
   const [selectedStudentId, setSelectedStudentId] = useState<string>(availableStudents[0]?.id || students[0]?.id || 's-1');

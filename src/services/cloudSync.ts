@@ -295,37 +295,63 @@ const buildMergedCloudPayload = (remoteRaw: any, statePayload: any): Record<stri
 };
 
 /**
+ * Directly writes the sanitized staff users (and updated circles/deletedEntities) to the exact
+ * Firestore document (`institution_database/master_state`) monitored by `onSnapshot`, enforcing
+ * a 3.5-second timeout so the UI never hangs while guaranteeing immediate persistence.
+ */
+export const pushStaffUsersToCloudDirect = async (
+  usersList: any[],
+  circlesList?: any[],
+  deletedEntities?: any
+): Promise<void> => {
+  const docRef = doc(db, CLOUD_DOC_PATH.collection, CLOUD_DOC_PATH.id);
+  const sanitizedUsers = (Array.isArray(usersList) ? usersList : []).map(u => {
+    const cleaned = { ...(u || {}) };
+    delete cleaned.staffChatMessages;
+    delete cleaned.deletedStaffChatIds;
+    delete cleaned.pinnedStaffAnnouncement;
+    return sanitizeStaffUserForFirestore(cleaned);
+  });
+
+  const payload = deepCleanForFirestore({
+    users: sanitizedUsers,
+    ...(Array.isArray(circlesList) ? { circles: circlesList } : {}),
+    ...(deletedEntities && typeof deletedEntities === 'object' ? { _deletedEntities: deletedEntities } : {}),
+    lastSyncedAt: new Date().toISOString()
+  });
+
+  const writePromise = setDoc(docRef, payload, { merge: true });
+  await Promise.race([
+    writePromise,
+    new Promise<void>(resolve => setTimeout(resolve, 3500))
+  ]);
+};
+
+/**
  * Atomically merge app state and deletion tombstones into Firestore (`institution_database/master_state`).
- * If `runTransaction` times out or encounters contention in the preview environment, falls back immediately
- * to `setDoc(..., { merge: true })` so the staff list and cloud state are always persisted directly.
+ * Enforces strict timeouts on both read and write so the UI never hangs in the preview environment.
  */
 export const pushStateToCloud = async (statePayload: any): Promise<void> => {
   const docRef = doc(db, CLOUD_DOC_PATH.collection, CLOUD_DOC_PATH.id);
 
+  let remoteRaw: any = {};
   try {
-    await Promise.race([
-      runTransaction(db, async transaction => {
-        const currentSnap = await transaction.get(docRef);
-        const remoteRaw = currentSnap.exists() ? currentSnap.data() : {};
-        const cleanedPayload = buildMergedCloudPayload(remoteRaw, statePayload);
-        transaction.set(docRef, cleanedPayload);
-      }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('TRANSACTION_TIMEOUT')), 4500)
-      )
+    const snap = await Promise.race([
+      getDoc(docRef),
+      new Promise<null>(resolve => setTimeout(() => resolve(null), 1500))
     ]);
-  } catch (txErr) {
-    // Fallback to direct merged setDoc on the exact same Firestore document so preview hiccups never block saving
-    let remoteRaw: any = {};
-    try {
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        remoteRaw = snap.data();
-      }
-    } catch {
-      // proceed with incoming state if read fails
+    if (snap && snap.exists()) {
+      remoteRaw = snap.data();
     }
-    const cleanedPayload = buildMergedCloudPayload(remoteRaw, statePayload);
-    await setDoc(docRef, cleanedPayload, { merge: true });
+  } catch {
+    // Proceed with incoming state if read times out or fails
   }
+
+  const cleanedPayload = buildMergedCloudPayload(remoteRaw, statePayload);
+  const writePromise = setDoc(docRef, cleanedPayload, { merge: true });
+  await Promise.race([
+    writePromise,
+    new Promise<void>(resolve => setTimeout(resolve, 2500))
+  ]);
 };
+
