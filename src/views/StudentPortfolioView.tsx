@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { OfficialSeal } from '../components/OfficialSeal';
 import { isStudentDefaultNoorania } from './MonthlyPlansView';
-import { ExamResultStatus } from '../types';
+import { ExamResultStatus, isStudentEffectivelyArchived, isPlanHistoricalOrArchived } from '../types';
 
 interface StudentPortfolioViewProps {
   initialStudentId?: string;
@@ -30,10 +30,48 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
     selectedTrackId
   } = useApp();
 
+  const initialTargetStudent = initialStudentId ? students.find(s => s.id === initialStudentId) : undefined;
+  const isInitialStudentArchived = initialTargetStudent
+    ? isStudentEffectivelyArchived(initialTargetStudent, circles, tracks)
+    : false;
+
+  const [selectedPortfolioScope, setSelectedPortfolioScope] = useState<string>(
+    isInitialStudentArchived ? 'archived_previous' : 'active_current'
+  );
+
+  useEffect(() => {
+    if (initialStudentId) {
+      const target = students.find(s => s.id === initialStudentId);
+      if (target) {
+        const archived = isStudentEffectivelyArchived(target, circles, tracks);
+        setSelectedPortfolioScope(archived ? 'archived_previous' : 'active_current');
+        setSelectedStudentId(target.id);
+      }
+    }
+  }, [initialStudentId, students, circles, tracks]);
+
+  const isHistoricalPortfolioMode = React.useMemo(() => {
+    if (selectedPortfolioScope === 'active_current') return false;
+    if (selectedPortfolioScope === 'archived_previous') return true;
+    const plan = monthlyPlans.find(p => p.id === selectedPortfolioScope);
+    return plan ? isPlanHistoricalOrArchived(plan, monthlyPlans) : false;
+  }, [selectedPortfolioScope, monthlyPlans]);
+
   const availableStudents = React.useMemo(() => {
-    if (!selectedTrackId || selectedTrackId === 'all') return students;
-    return students.filter(s => s.trackId === selectedTrackId);
-  }, [students, selectedTrackId]);
+    const trackScoped = students.filter(s => {
+      if (!selectedTrackId || selectedTrackId === 'all') return true;
+      const circle = circles.find(c => c.id === s.circleId);
+      const stTrackId = s.trackId || circle?.trackId;
+      return stTrackId === selectedTrackId;
+    });
+
+    if (!isHistoricalPortfolioMode) {
+      return trackScoped.filter(s => !isStudentEffectivelyArchived(s, circles, tracks));
+    }
+
+    const archivedList = trackScoped.filter(s => isStudentEffectivelyArchived(s, circles, tracks));
+    return archivedList.length > 0 ? archivedList : trackScoped;
+  }, [students, circles, tracks, selectedTrackId, isHistoricalPortfolioMode]);
 
   const [selectedStudentId, setSelectedStudentId] = useState<string>(
     initialStudentId || availableStudents[0]?.id || students[0]?.id || ''
@@ -825,8 +863,28 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
 
       {/* Selector & Actions Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <ScrollText className="w-6 h-6 text-[#9A5643] shrink-0" />
+          <div>
+            <label className="block text-[11px] font-bold text-stone-600 mb-0.5">
+              الفترة / الخطة الشهرية:
+            </label>
+            <select
+              value={selectedPortfolioScope}
+              onChange={e => setSelectedPortfolioScope(e.target.value)}
+              className="px-3 py-1.5 border border-stone-200 rounded-xl text-xs font-bold bg-[#FAF6F2] text-[#7B3F30] focus:ring-2 focus:ring-[#8E5364]"
+            >
+              <option value="active_current">الشهر الحالي النشط (الطالبات النشطات)</option>
+              {monthlyPlans
+                .filter(p => isPlanHistoricalOrArchived(p, monthlyPlans))
+                .map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.title} ({p.hijriMonth} - مؤرشف)
+                  </option>
+                ))}
+              <option value="archived_previous">أرشيف الشهور والحلقات السابقة (الطالبات المؤرشفات)</option>
+            </select>
+          </div>
           <div>
             <label className="block text-[11px] font-bold text-stone-600 mb-0.5">
               اختاري الطالبة لعرض ملف إنجازها وشهادتها الشهرية:
@@ -840,7 +898,7 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
                 const c = circles.find(ci => ci.id === s.circleId);
                 return (
                   <option key={s.id} value={s.id}>
-                    {s.name} ({s.code}) - {c?.name}
+                    {s.name} ({s.code}) - {c?.name}{c?.isArchived ? ' [مؤرشفة]' : ''}
                   </option>
                 );
               })}

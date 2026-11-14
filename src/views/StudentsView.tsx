@@ -5,7 +5,7 @@ import {
   UserCheck, Shield, Phone, Mail, Award, ArrowUpDown, ChevronLeft,
   Calendar, CheckCircle2, AlertCircle, AlertTriangle, Trash2, RotateCcw, Send, Star, Copy
 } from 'lucide-react';
-import { hasFullAccess, StudentStatus } from '../types';
+import { hasFullAccess, StudentStatus, isStudentEffectivelyArchived } from '../types';
 import { formatHijriShort, HijriJoinDateSelector } from '../utils/hijriDate';
 import { cleanTelegramUsername, triggerStudentTelegramAlert } from '../utils/telegramAlert';
 
@@ -63,18 +63,22 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
     }
   }, [quickModalAction]);
 
+  const isStudentArchived = (st: any) => isStudentEffectivelyArchived(st, circles, tracks);
+
   const scopedStudents = students.filter(st => {
-    if (selectedTrackId && selectedTrackId !== 'all' && st.trackId !== selectedTrackId) return false;
+    const circle = circles.find(c => c.id === st.circleId);
+    const stTrackId = st.trackId || circle?.trackId;
+    if (selectedTrackId && selectedTrackId !== 'all' && stTrackId !== selectedTrackId) return false;
     if (selectedCircleId !== 'all' && st.circleId !== selectedCircleId) return false;
     return true;
   });
-  const activeScopedCount = scopedStudents.filter(st => st.status === 'active' && !st.archived).length;
-  const archivedScopedCount = scopedStudents.filter(st => st.status === 'archived' || st.archived).length;
+  const activeScopedCount = scopedStudents.filter(st => !isStudentArchived(st)).length;
+  const archivedScopedCount = scopedStudents.filter(st => isStudentArchived(st)).length;
 
   // Filtered & sorted students
   const filteredStudents = scopedStudents.filter(st => {
-    const isArchivedSt = st.status === 'archived' || Boolean(st.archived);
-    if (selectedStatus === 'active' && (st.status !== 'active' || isArchivedSt)) return false;
+    const isArchivedSt = isStudentArchived(st);
+    if (selectedStatus === 'active' && isArchivedSt) return false;
     if (selectedStatus === 'archived' && !isArchivedSt) return false;
     if (selectedStatus !== 'all' && selectedStatus !== 'active' && selectedStatus !== 'archived' && st.status !== selectedStatus) return false;
     if (searchQuery.trim()) {
@@ -168,8 +172,11 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
     const activeTracks = tracks.filter(t => !t.isArchived);
     const currentCircle = circles.find(c => c.id === student.circleId);
     const sourceTrackId = student.trackId || currentCircle?.trackId || '';
+    const isStArchived = isStudentArchived(student);
     const otherTracks = activeTracks.filter(t => t.id !== sourceTrackId);
-    const defaultTrack = otherTracks[0] || activeTracks[0];
+    const defaultTrack = isStArchived
+      ? (activeTracks.find(t => t.id === sourceTrackId) || activeTracks[0])
+      : (otherTracks[0] || activeTracks[0]);
     const defaultTrackId = defaultTrack?.id || '';
     const trackCircles = circles.filter(c => !c.isArchived && (!defaultTrackId || c.trackId === defaultTrackId));
     const defaultCircleId = trackCircles[0]?.id || circles.find(c => !c.isArchived)?.id || '';
@@ -299,14 +306,14 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
             >
               <option value="all">
                 {selectedTrackId && selectedTrackId !== 'all'
-                  ? `حلقات المسار (${circles.filter(c => !c.isArchived && c.trackId === selectedTrackId).length})`
-                  : `جميع الحلقات (${circles.filter(c => !c.isArchived).length})`
+                  ? `حلقات المسار (${circles.filter(c => (selectedStatus === 'archived' ? true : !c.isArchived) && c.trackId === selectedTrackId).length})`
+                  : `جميع الحلقات (${circles.filter(c => (selectedStatus === 'archived' ? true : !c.isArchived)).length})`
                 }
               </option>
               {circles
-                .filter(c => !c.isArchived && (!selectedTrackId || selectedTrackId === 'all' || c.trackId === selectedTrackId))
+                .filter(c => (selectedStatus === 'archived' || selectedStatus === 'all' ? true : !c.isArchived) && (!selectedTrackId || selectedTrackId === 'all' || c.trackId === selectedTrackId))
                 .map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <option key={c.id} value={c.id}>{c.name}{c.isArchived ? ' (مؤرشفة)' : ''}</option>
                 ))}
             </select>
           </div>
@@ -373,6 +380,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
               {filteredStudents.map((student) => {
                 const score = allStudentScores[student.id];
                 const circle = circles.find(c => c.id === student.circleId);
+                const isArchivedRow = isStudentArchived(student);
 
                 return (
                   <tr key={student.id} className="hover:bg-[#FCF9FA] transition group">
@@ -383,10 +391,10 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                     <td className="p-3.5">
                       <div className="font-bold text-stone-900 text-sm group-hover:text-[#8E5364] transition flex flex-wrap items-center gap-1.5">
                         <span className="privacy-student-name">{student.name}</span>
-                        {((score?.absentUnexcusedCount ?? 0) >= 3 || student.status === 'archived' || student.archived) && (
+                        {((score?.absentUnexcusedCount ?? 0) >= 3 || isArchivedRow) && (
                           <span className="px-2.5 py-0.5 rounded-full bg-[#FDF6F2] text-[#9A5643] border border-[#E5C3B3] text-[10px] font-bold inline-flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3 text-[#9A5643]" />
-                            <span>تجاوزت حد الغياب (منقطعة)</span>
+                            <span>{circle?.isArchived ? 'حلقة مؤرشفة' : 'مؤرشفة / منقطعة'}</span>
                           </span>
                         )}
                       </div>
@@ -399,15 +407,18 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                         )}
                         {student.joinDate ? <span>• انضمت: {formatHijriShort(student.joinDate)}</span> : null}
                       </div>
-                      {(student.status === 'archived' || student.archived) && student.archivedReason && (
+                      {isArchivedRow && (student.archivedReason || circle?.isArchived) && (
                         <div className="text-[10px] text-[#A14A2A] font-semibold mt-0.5">
-                          سبب الأرشفة: {student.archivedReason}
+                          سبب الأرشفة: {student.archivedReason || 'أرشفة الحلقة التابعة لها'}
                         </div>
                       )}
                     </td>
 
                     <td className="p-3.5">
-                      <div className="font-semibold text-stone-800">{circle?.name || 'غير محدد'}</div>
+                      <div className="font-semibold text-stone-800">
+                        {circle?.name || 'غير محدد'}
+                        {circle?.isArchived ? <span className="text-[10px] text-[#9A5643] mr-1">(مؤرشفة)</span> : null}
+                      </div>
                       <div className="text-[11px] text-stone-400">أ. {circle?.teacherName}</div>
                     </td>
 
@@ -480,23 +491,23 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
 
                     <td className="p-3.5">
                       <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold ${
-                        student.status === 'active' && !student.archived
+                        !isArchivedRow && student.status === 'active'
                           ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                          : student.status === 'suspended'
+                          : !isArchivedRow && student.status === 'suspended'
                           ? 'bg-amber-50 text-amber-800 border border-amber-200'
                           : 'bg-[#F6EFEA] text-[#7B3F30] border border-[#DFCEBF]'
                       }`}>
-                        {student.status === 'active' && !student.archived
+                        {!isArchivedRow && student.status === 'active'
                           ? 'نشطة'
-                          : student.status === 'suspended'
+                          : !isArchivedRow && student.status === 'suspended'
                           ? 'موقوفة'
-                          : 'مؤرشفة (منقطعة)'}
+                          : 'مؤرشفة'}
                       </span>
                     </td>
 
                     <td className="p-3.5 text-center">
                       <div className="flex flex-wrap items-center justify-center gap-1.5">
-                        {((score?.absentUnexcusedCount ?? 0) >= 3 || student.status === 'archived' || student.archived) && (
+                        {((score?.absentUnexcusedCount ?? 0) >= 3 || isArchivedRow) && (
                           <button
                             type="button"
                             onClick={() =>
@@ -515,7 +526,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                             <span>تنبيه تيليجرام</span>
                           </button>
                         )}
-                        {(student.status === 'archived' || student.archived) ? (
+                        {isArchivedRow ? (
                           <button
                             type="button"
                             onClick={() => restoreStudent(student.id)}
@@ -818,9 +829,9 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                   className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
                 >
                   <option value="">-- اختاري طالبة من أي حلقة --</option>
-                  {circles.map(c => {
+                  {circles.filter(c => !c.isArchived).map(c => {
                     const cStudents = students.filter(
-                      s => s.circleId === c.id && s.id !== selectedStudentForPartner.id && s.status === 'active'
+                      s => s.circleId === c.id && s.id !== selectedStudentForPartner.id && !isStudentArchived(s)
                     );
                     if (cStudents.length === 0) return null;
                     return (

@@ -5,7 +5,7 @@ import {
   AlertCircle, BookOpen, Clock, Award, Star, Video, Image, FileText,
   AlertTriangle, X, Check
 } from 'lucide-react';
-import { AtqiniAssignment, AtqiniRating, StudentAtqiniSubmission } from '../types';
+import { AtqiniAssignment, AtqiniRating, StudentAtqiniSubmission, isStudentEffectivelyArchived } from '../types';
 import { formatHijriDate, formatHijriShort, formatHijriDateTime, HijriDateNavigationBar } from '../utils/hijriDate';
 
 export const AtqiniView: React.FC = () => {
@@ -22,9 +22,14 @@ export const AtqiniView: React.FC = () => {
   }, [atqiniAssignments, selectedTrackId]);
 
   const availableStudents = React.useMemo(() => {
-    if (!selectedTrackId || selectedTrackId === 'all') return students;
-    return students.filter(s => s.trackId === selectedTrackId);
-  }, [students, selectedTrackId]);
+    return students.filter(s => {
+      if (isStudentEffectivelyArchived(s, circles, tracks)) return false;
+      if (!selectedTrackId || selectedTrackId === 'all') return true;
+      const circle = circles.find(c => c.id === s.circleId);
+      const stTrackId = s.trackId || circle?.trackId;
+      return stTrackId === selectedTrackId;
+    });
+  }, [students, circles, tracks, selectedTrackId]);
 
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>(
     availableAssignments[0]?.id || atqiniAssignments[0]?.id || ''

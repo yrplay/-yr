@@ -3,15 +3,16 @@ import { useApp } from '../context/AppContext';
 import {
   Trophy, Plus, Edit, Trash2, HeartHandshake, CheckCircle2,
   Calendar, Clock, Star, Users, Award, Shield, FileText, ChevronLeft,
-  Printer, X, AlertCircle, UsersRound, ClipboardCheck, ScrollText, ArrowLeftRight
+  Printer, X, AlertCircle, UsersRound, ClipboardCheck, ScrollText, ArrowLeftRight,
+  Archive, RotateCcw
 } from 'lucide-react';
-import { Challenge, ChallengeType, hasFullAccess, StudentChallengeSubmission } from '../types';
+import { Challenge, ChallengeType, hasFullAccess, StudentChallengeSubmission, isStudentEffectivelyArchived } from '../types';
 import { formatHijriShort, formatHijriDateTime, getTodayISO } from '../utils/hijriDate';
 
 export const ChallengesView: React.FC = () => {
   const {
     challenges, studentChallengeSubmissions, students, circles, tracks,
-    createChallenge, updateChallenge, deleteChallenge,
+    createChallenge, updateChallenge, archiveChallenge, restoreChallenge, deleteChallenge,
     saveChallengeSubmission, toggleChallengeEarlyAchievement, toggleChallengeWeeklyStar,
     currentUser, quickModalAction, clearQuickModal, settings,
     attendanceRecords, allStudentScores, selectedTrackId, selectedDate
@@ -22,16 +23,32 @@ export const ChallengesView: React.FC = () => {
     return challenges.filter(ch => !ch.trackId || ch.trackId === selectedTrackId);
   }, [challenges, selectedTrackId]);
 
-  const [activeTab, setActiveTab] = useState<'thursday' | 'grand' | 'peer_review'>('thursday');
+  const activeChallenges = React.useMemo(
+    () => availableChallenges.filter(ch => !ch.isArchived && ch.status !== 'archived'),
+    [availableChallenges]
+  );
+
+  const archivedChallenges = React.useMemo(
+    () => availableChallenges.filter(ch => Boolean(ch.isArchived || ch.status === 'archived')),
+    [availableChallenges]
+  );
+
+  const [activeTab, setActiveTab] = useState<'thursday' | 'archived' | 'peer_review'>('thursday');
+
+  const displayedChallenges = React.useMemo(
+    () => (activeTab === 'archived' ? archivedChallenges : activeChallenges),
+    [activeTab, activeChallenges, archivedChallenges]
+  );
+
   const [selectedChallengeId, setSelectedChallengeId] = useState<string>(
-    availableChallenges[0]?.id || challenges[0]?.id || ''
+    activeChallenges[0]?.id || availableChallenges[0]?.id || challenges[0]?.id || ''
   );
 
   React.useEffect(() => {
-    if (availableChallenges.length > 0 && !availableChallenges.some(c => c.id === selectedChallengeId)) {
-      setSelectedChallengeId(availableChallenges[0].id);
+    if (displayedChallenges.length > 0 && !displayedChallenges.some(c => c.id === selectedChallengeId)) {
+      setSelectedChallengeId(displayedChallenges[0].id);
     }
-  }, [availableChallenges, selectedChallengeId]);
+  }, [displayedChallenges, selectedChallengeId]);
 
   // حالة فلترة وبحث الإنجاز المبكر
   const [earlySearchQuery, setEarlySearchQuery] = useState('');
@@ -111,11 +128,40 @@ export const ChallengesView: React.FC = () => {
   const [challengeToDelete, setChallengeToDelete] = useState<{ id: string; title: string } | null>(null);
   const [cannotDeleteNotice, setCannotDeleteNotice] = useState(false);
 
-  const currentChallenge = availableChallenges.find(c => c.id === selectedChallengeId) || availableChallenges[0] || challenges[0];
+  const currentChallenge =
+    displayedChallenges.find(c => c.id === selectedChallengeId) ||
+    displayedChallenges[0] ||
+    activeChallenges[0] ||
+    availableChallenges[0] ||
+    challenges[0];
 
-  const activeStudents = students.filter(s => s.status === 'active' && (!selectedTrackId || selectedTrackId === 'all' || s.trackId === selectedTrackId));
+  const isViewingArchivedChallenge = Boolean(
+    activeTab === 'archived' || currentChallenge?.isArchived || currentChallenge?.status === 'archived'
+  );
 
-  const trackCircles = circles.filter(c => !selectedTrackId || selectedTrackId === 'all' || c.trackId === selectedTrackId);
+  const activeStudents = React.useMemo(() => {
+    return students.filter(s => {
+      const circle = circles.find(c => c.id === s.circleId);
+      const stTrackId = s.trackId || circle?.trackId;
+      if (selectedTrackId && selectedTrackId !== 'all' && stTrackId !== selectedTrackId) return false;
+
+      const isArchivedSt = isStudentEffectivelyArchived(s, circles, tracks);
+      if (!isViewingArchivedChallenge) {
+        return !isArchivedSt;
+      }
+      // عند استعراض تحدٍ مؤرشف سابق، نظهر الطالبات النشطات أو اللاتي لديهن نقاط مرصودة في هذا التحدي
+      const hasSubmissionInChallenge = studentChallengeSubmissions.some(
+        sub => sub.challengeId === currentChallenge?.id && sub.studentId === s.id
+      );
+      return !isArchivedSt || hasSubmissionInChallenge;
+    });
+  }, [students, circles, tracks, selectedTrackId, isViewingArchivedChallenge, studentChallengeSubmissions, currentChallenge?.id]);
+
+  const trackCircles = circles.filter(
+    c =>
+      (isViewingArchivedChallenge ? true : !c.isArchived) &&
+      (!selectedTrackId || selectedTrackId === 'all' || c.trackId === selectedTrackId)
+  );
   const effectiveCircleFilter = earlyCircleFilter !== 'all' && trackCircles.some(c => c.id === earlyCircleFilter)
     ? earlyCircleFilter
     : 'all';
@@ -393,23 +439,35 @@ export const ChallengesView: React.FC = () => {
         </button>
       </div>
 
-      {/* Section Tabs: Challenges vs Peer Review Matrix */}
-      <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
+      {/* Section Tabs: Active Challenges vs Archived Challenges vs Peer Review Matrix */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-stone-200 pb-2">
         <button
           onClick={() => setActiveTab('thursday')}
-          className={`px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold transition flex items-center gap-2 ${
+          className={`px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
             activeTab === 'thursday'
               ? 'bg-[#8E5364] text-white shadow-xs'
               : 'text-stone-600 hover:bg-[#FAF6F2]'
           }`}
         >
           <Calendar className="w-4 h-4" />
-          <span>سجل التحديات القرآنية ({challenges.length})</span>
+          <span>التحديات النشطة ({activeChallenges.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('archived')}
+          className={`px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
+            activeTab === 'archived'
+              ? 'bg-[#7B3F30] text-white shadow-xs'
+              : 'text-[#7B3F30] bg-[#F6EFEA]/70 hover:bg-[#EDE0D6] border border-[#DFCEBF]'
+          }`}
+        >
+          <Archive className="w-4 h-4" />
+          <span>التحديات المؤرشفة ({archivedChallenges.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('peer_review')}
-          className={`px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold transition flex items-center gap-2 ${
+          className={`px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
             activeTab === 'peer_review'
               ? 'bg-[#8E5364] text-white shadow-xs'
               : 'text-stone-600 hover:bg-[#FAF6F2]'
@@ -420,21 +478,29 @@ export const ChallengesView: React.FC = () => {
         </button>
       </div>
 
-      {/* Challenges List Selector (عرض جميع التحديات مع إمكانية التحديد والحذف والتعديل) */}
+      {/* Challenges List Selector (عرض التحديات النشطة أو المؤرشفة مع إمكانية الأرشفة والاستعادة والحذف والتعديل) */}
       {activeTab !== 'peer_review' && (
         <div className="bg-white p-4 sm:p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-2.5">
-            <div className="flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-[#8E5364]" />
+            <div className="flex flex-wrap items-center gap-2">
+              {activeTab === 'archived' ? (
+                <Archive className="w-4 h-4 text-[#7B3F30]" />
+              ) : (
+                <Trophy className="w-4 h-4 text-[#8E5364]" />
+              )}
               <h3 className="font-bold text-stone-900 text-sm">
-                جميع التحديات القرآنية المتاحة في المقرأة ({challenges.length}):
+                {activeTab === 'archived'
+                  ? `التحديات القرآنية المؤرشفة (${archivedChallenges.length}):`
+                  : `التحديات القرآنية النشطة للشهر الحالي (${activeChallenges.length}):`}
               </h3>
               <span className="text-[11px] text-stone-400">
-                (انقري على أي تحدٍ لاختياره وعرض تفاصيله ورصد طالباته بالأسفل)
+                {activeTab === 'archived'
+                  ? '(جميع نقاط وسجلات الطالبات في التحديات المؤرشفة محفوظة بالكامل ويمكن استعادتها بضغطة واحدة)'
+                  : '(انقري على أي تحدٍ لاختياره وعرض تفاصيله ورصد طالباته بالأسفل)'}
               </span>
             </div>
 
-            {hasFullAccess(currentUser) && (
+            {hasFullAccess(currentUser) && activeTab !== 'archived' && (
               <button
                 type="button"
                 onClick={() => handleOpenChallengeModal()}
@@ -446,125 +512,189 @@ export const ChallengesView: React.FC = () => {
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {availableChallenges.map(ch => {
-              const isSelected = currentChallenge?.id === ch.id;
-              return (
-                <div
-                  key={ch.id}
-                  onClick={() => setSelectedChallengeId(ch.id)}
-                  className={`p-3.5 rounded-2xl border transition text-right cursor-pointer flex flex-col justify-between ${
-                    isSelected
-                      ? 'bg-[#FAF2F4] border-[#8E5364] ring-2 ring-[#8E5364]/20 shadow-xs'
-                      : 'bg-[#FCFAF8] border-stone-200 hover:border-stone-300 hover:bg-stone-50'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-2 mb-1.5">
-                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                        <Star className={`w-4 h-4 shrink-0 ${isSelected ? 'text-[#9A5643] fill-[#9A5643]' : 'text-stone-400'}`} />
-                        <span className={`font-bold text-xs truncate ${isSelected ? 'text-[#8E5364]' : 'text-stone-900'}`}>
-                          {ch.title}
+          {displayedChallenges.length === 0 ? (
+            <div className="p-8 text-center rounded-2xl bg-[#FAF6F2] border border-[#EFE8E2] text-stone-500 text-xs space-y-2">
+              <Archive className="w-6 h-6 text-[#9A5643] mx-auto opacity-80" />
+              <p className="font-bold text-stone-700">
+                {activeTab === 'archived'
+                  ? 'لا توجد تحديات مؤرشفة حالياً'
+                  : 'لا توجد تحديات نشطة حالياً — يمكنك إنشاء تحدٍ جديد للشهر الحالي أو استعادة تحدٍ من الأرشيف'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {displayedChallenges.map(ch => {
+                const isSelected = currentChallenge?.id === ch.id;
+                const isArchivedCh = Boolean(ch.isArchived || ch.status === 'archived');
+                return (
+                  <div
+                    key={ch.id}
+                    onClick={() => setSelectedChallengeId(ch.id)}
+                    className={`p-3.5 rounded-2xl border transition text-right cursor-pointer flex flex-col justify-between ${
+                      isSelected
+                        ? 'bg-[#FAF2F4] border-[#8E5364] ring-2 ring-[#8E5364]/20 shadow-xs'
+                        : 'bg-[#FCFAF8] border-stone-200 hover:border-stone-300 hover:bg-stone-50'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <Star className={`w-4 h-4 shrink-0 ${isSelected ? 'text-[#9A5643] fill-[#9A5643]' : 'text-stone-400'}`} />
+                          <span className={`font-bold text-xs truncate ${isSelected ? 'text-[#8E5364]' : 'text-stone-900'}`}>
+                            {ch.title}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 shrink-0">
+                          {ch.maxTotalPoints} نقاط
                         </span>
                       </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 shrink-0">
-                        {ch.maxTotalPoints} نقاط
+
+                      <div className="text-[11px] text-stone-500 space-y-1 mb-2">
+                        <div className="truncate">
+                          آلية ومقرر: <strong className="text-stone-700">{ch.requiredSurahs || 'غير محدد'}</strong>
+                        </div>
+                        <div className="text-[10px] text-stone-400 flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-[#9A5643]" />
+                          <span>{ch.dueDateDescription || formatHijriShort(ch.startDate)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-stone-200/60 mt-auto gap-1">
+                      <span className={`text-[10px] font-bold inline-flex items-center gap-1 ${isSelected ? 'text-[#8E5364]' : 'text-stone-400'}`}>
+                        {isSelected ? (
+                          <>
+                            <span>المحدد والمعروض حالياً</span>
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          </>
+                        ) : (
+                          <span>انقري لاختياره</span>
+                        )}
                       </span>
-                    </div>
 
-                    <div className="text-[11px] text-stone-500 space-y-1 mb-2">
-                      <div className="truncate">
-                        آلية ومقرر: <strong className="text-stone-700">{ch.requiredSurahs || 'غير محدد'}</strong>
-                      </div>
-                      <div className="text-[10px] text-stone-400 flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-[#9A5643]" />
-                        <span>{ch.dueDateDescription || formatHijriShort(ch.startDate)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-stone-200/60 mt-auto">
-                    <span className={`text-[10px] font-bold inline-flex items-center gap-1 ${isSelected ? 'text-[#8E5364]' : 'text-stone-400'}`}>
-                      {isSelected ? (
-                        <>
-                          <span>المحدد والمعروض حالياً</span>
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        </>
-                      ) : (
-                        <span>انقري لاختياره</span>
-                      )}
-                    </span>
-
-                    {hasFullAccess(currentUser) && (
                       <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenChallengeModal(ch)}
-                          className="p-1.5 text-stone-500 hover:text-[#8E5364] hover:bg-white rounded-lg transition"
-                          title="تعديل هذا التحدي"
-                        >
-                          <Edit className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteChallenge(ch.id, ch.title)}
-                          className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                          title="حذف هذا التحدي"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {isArchivedCh ? (
+                          <button
+                            type="button"
+                            onClick={() => restoreChallenge(ch.id)}
+                            className="px-2 py-1 text-[10px] font-bold bg-[#EBF3EE] hover:bg-[#DCEADA] text-[#2D5A43] border border-[#B8D8C5] rounded-lg inline-flex items-center gap-1 transition cursor-pointer"
+                            title="استعادة التحدي إلى قائمة التحديات النشطة"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>استعادة</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => archiveChallenge(ch.id)}
+                            className="px-2 py-1 text-[10px] font-bold bg-[#F6EFEA] hover:bg-[#7B3F30] text-[#7B3F30] hover:text-white border border-[#DFCEBF] rounded-lg inline-flex items-center gap-1 transition cursor-pointer"
+                            title="أرشفة التحدي مع الاحتفاظ بجميع نقاطه وسجلات الطالبات"
+                          >
+                            <Archive className="w-3 h-3" />
+                            <span>أرشفة التحدي</span>
+                          </button>
+                        )}
+                        {hasFullAccess(currentUser) && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenChallengeModal(ch)}
+                              className="p-1.5 text-stone-500 hover:text-[#8E5364] hover:bg-white rounded-lg transition cursor-pointer"
+                              title="تعديل هذا التحدي"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteChallenge(ch.id, ch.title)}
+                              className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                              title="حذف هذا التحدي"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
       {/* Challenge Overview Card (معلومات وتفاصيل التحدي المختار) */}
-      {currentChallenge && activeTab !== 'peer_review' && (
+      {currentChallenge && activeTab !== 'peer_review' && displayedChallenges.length > 0 && (
         <div className="bg-white p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Star className="w-5 h-5 text-[#9A5643] fill-[#9A5643] shrink-0" />
                 <h3 className="text-base sm:text-lg font-bold text-stone-900">{currentChallenge.title}</h3>
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">
                   {currentChallenge.maxTotalPoints} نقاط
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
-                  التحدي المختار المعروض حالياً
-                </span>
+                {currentChallenge.isArchived || currentChallenge.status === 'archived' ? (
+                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#F6EFEA] text-[#7B3F30] font-bold border border-[#DFCEBF] inline-flex items-center gap-1">
+                    <Archive className="w-3 h-3 text-[#9A5643]" />
+                    <span>تحدٍ مؤرشف (سجلات محفوظة)</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+                    التحدي المختار المعروض حالياً
+                  </span>
+                )}
               </div>
               <p className="text-xs text-stone-500 mt-1">
                 آلية التحدي والمقرر: <strong className="text-stone-800">{currentChallenge.requiredSurahs}</strong> • الموعد: <strong>{currentChallenge.dueDateDescription}</strong>
               </p>
             </div>
 
-            {hasFullAccess(currentUser) && (
-              <div className="flex items-center gap-2 self-start sm:self-auto">
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+              {currentChallenge.isArchived || currentChallenge.status === 'archived' ? (
                 <button
                   type="button"
-                  onClick={() => handleOpenChallengeModal(currentChallenge)}
-                  className="px-3 py-1.5 text-stone-700 hover:text-[#8E5364] bg-stone-50 hover:bg-[#FAF0F3] rounded-xl text-xs font-bold flex items-center gap-1.5 border border-stone-200 transition cursor-pointer"
-                  title="تعديل هذا التحدي"
+                  onClick={() => restoreChallenge(currentChallenge.id)}
+                  className="px-3 py-1.5 text-[#2D5A43] bg-[#EBF3EE] hover:bg-[#DCEADA] rounded-xl text-xs font-bold flex items-center gap-1.5 border border-[#B8D8C5] transition cursor-pointer"
                 >
-                  <Edit className="w-3.5 h-3.5 text-[#8E5364]" />
-                  <span>تعديل هذا التحدي</span>
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>استعادة إلى التحديات النشطة</span>
                 </button>
+              ) : (
                 <button
                   type="button"
-                  onClick={() => handleDeleteChallenge(currentChallenge.id, currentChallenge.title)}
-                  className="px-3 py-1.5 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-rose-200 transition cursor-pointer"
-                  title="حذف هذا التحدي"
+                  onClick={() => archiveChallenge(currentChallenge.id)}
+                  className="px-3 py-1.5 text-[#7B3F30] bg-[#F6EFEA] hover:bg-[#7B3F30] hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5 border border-[#DFCEBF] transition cursor-pointer"
+                  title="نقل إلى قسم التحديات المؤرشفة مع الاحتفاظ بجميع نقاط وسجلات الطالبات"
                 >
-                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                  <span>حذف التحدي</span>
+                  <Archive className="w-3.5 h-3.5" />
+                  <span>أرشفة التحدي</span>
                 </button>
-              </div>
-            )}
+              )}
+              {hasFullAccess(currentUser) && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenChallengeModal(currentChallenge)}
+                    className="px-3 py-1.5 text-stone-700 hover:text-[#8E5364] bg-stone-50 hover:bg-[#FAF0F3] rounded-xl text-xs font-bold flex items-center gap-1.5 border border-stone-200 transition cursor-pointer"
+                    title="تعديل هذا التحدي"
+                  >
+                    <Edit className="w-3.5 h-3.5 text-[#8E5364]" />
+                    <span>تعديل هذا التحدي</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteChallenge(currentChallenge.id, currentChallenge.title)}
+                    className="px-3 py-1.5 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-rose-200 transition cursor-pointer"
+                    title="حذف هذا التحدي"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                    <span>حذف التحدي</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">

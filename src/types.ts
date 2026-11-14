@@ -258,9 +258,58 @@ export interface MonthlyPlan {
   scheduleDays: string[];
   thursdayFocus: string;
   status: 'active' | 'archived';
+  isArchived?: boolean;
   createdAt: string;
   updatedAt?: string;
 }
+
+export const isStudentEffectivelyArchived = (
+  student: Pick<Student, 'status' | 'archived' | 'circleId' | 'trackId'> | null | undefined,
+  circles?: Pick<Circle, 'id' | 'isArchived' | 'trackId'>[],
+  tracks?: Pick<Track, 'id' | 'isArchived'>[]
+): boolean => {
+  if (!student) return true;
+  if (student.status === 'archived' || Boolean(student.archived)) return true;
+  if (Array.isArray(circles) && student.circleId) {
+    const circle = circles.find(c => c.id === student.circleId);
+    if (circle?.isArchived) return true;
+    if (Array.isArray(tracks) && circle?.trackId) {
+      const circleTrack = tracks.find(t => t.id === circle.trackId);
+      if (circleTrack?.isArchived) return true;
+    }
+  }
+  if (Array.isArray(tracks) && student.trackId) {
+    const track = tracks.find(t => t.id === student.trackId);
+    if (track?.isArchived) return true;
+  }
+  return false;
+};
+
+export const isPlanHistoricalOrArchived = (
+  plan: MonthlyPlan | null | undefined,
+  allPlans: MonthlyPlan[] = []
+): boolean => {
+  if (!plan) return false;
+  if (plan.status === 'archived' || Boolean(plan.isArchived)) return true;
+  const sameTrackPlans = allPlans.filter(p => !plan.trackId || !p.trackId || p.trackId === plan.trackId);
+  if (sameTrackPlans.length <= 1) return false;
+  const thisText = `${plan.title || ''} ${plan.hijriMonth || ''}`;
+  const thisTime = Date.parse(plan.createdAt || '') || 0;
+  return sameTrackPlans.some(other => {
+    if (other.id === plan.id) return false;
+    if (other.status === 'archived' || Boolean(other.isArchived)) return false;
+    const otherText = `${other.title || ''} ${other.hijriMonth || ''}`;
+    if (
+      (thisText.includes('جمادى الأولى') || thisText.includes('ربيع الآخر')) &&
+      !thisText.includes('جمادى الآخرة') &&
+      (otherText.includes('جمادى الآخرة') || otherText.includes('رجب') || otherText.includes('شعبان') || otherText.includes('رمضان'))
+    ) {
+      return true;
+    }
+    const otherTime = Date.parse(other.createdAt || '') || 0;
+    return otherTime > thisTime && plan.id === 'mp-1';
+  });
+};
 
 export interface PlanBranchConfig {
   enabled?: boolean;
@@ -455,7 +504,9 @@ export interface Challenge {
   earlyPrepPoints: number;
   includesPeerReview: boolean;
   tasks: ChallengeTask[] | any[];
-  status: 'active' | 'completed';
+  status: 'active' | 'completed' | 'archived';
+  isArchived?: boolean;
+  archivedAt?: string;
   createdAt: string;
   updatedAt?: string;
 }
@@ -491,6 +542,7 @@ export interface MonthlyExam {
   requiredPortion: string;
   maxScore: number;
   notes?: string;
+  isArchived?: boolean;
   createdAt: string;
   updatedAt?: string;
 }

@@ -5,7 +5,7 @@ import {
   AlertCircle, ChevronLeft, UserCheck, Shield, Trash2,
   FileCheck2, Star, Clock, XCircle, X
 } from 'lucide-react';
-import { MonthlyExam, StudentExamResult, ExamResultStatus } from '../types';
+import { MonthlyExam, StudentExamResult, ExamResultStatus, isStudentEffectivelyArchived } from '../types';
 import { formatHijriShort } from '../utils/hijriDate';
 
 export const ExamsView: React.FC = () => {
@@ -438,7 +438,17 @@ export const ExamsView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
-              {students.filter(s => s.status === 'active').map((student, idx) => {
+              {students
+                .filter(s => {
+                  if (isStudentEffectivelyArchived(s, circles, tracks)) return false;
+                  if (selectedTrackId && selectedTrackId !== 'all') {
+                    const circle = circles.find(c => c.id === s.circleId);
+                    const stTrackId = s.trackId || circle?.trackId;
+                    if (stTrackId && stTrackId !== selectedTrackId) return false;
+                  }
+                  return true;
+                })
+                .map((student, idx) => {
                 const res = studentExamResults.find(
                   r => r.examId === currentExam?.id && r.studentId === student.id
                 );

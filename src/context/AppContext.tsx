@@ -4,7 +4,7 @@ import {
   DailyRecord, AttendanceRecord, AtqiniAssignment, StudentAtqiniSubmission,
   Challenge, StudentChallengeSubmission, MonthlyExam, StudentExamResult,
   TrackGradingConfig, InstitutionSettings, AuditLog, StudentSubscription,
-  TrackSystemRules, isTechnicalDeveloper
+  TrackSystemRules, isTechnicalDeveloper, isStudentEffectivelyArchived
 } from '../types';
 import initialData from '../data/initialData';
 import { subscribeToCloudDatabase, pushStateToCloud, fetchCloudDatabaseOnce, CloudSyncStatus } from '../services/cloudSync';
@@ -183,6 +183,8 @@ interface AppContextType {
   
   createChallenge: (challenge: Partial<Challenge>) => Promise<Challenge>;
   updateChallenge: (id: string, challenge: Partial<Challenge>) => Promise<void>;
+  archiveChallenge: (id: string) => Promise<void>;
+  restoreChallenge: (id: string) => Promise<void>;
   deleteChallenge: (id: string) => Promise<void>;
   saveChallengeSubmission: (sub: Partial<StudentChallengeSubmission>) => Promise<void>;
   toggleChallengeEarlyAchievement: (challengeId: string, studentId: string) => Promise<void>;
@@ -561,6 +563,113 @@ const ensureDefaultTrackIntegrity = (data: any) => {
       }
     }
     data.studentPlans = Array.from(spMap.values());
+  }
+
+  // 7. Merge local staff users (teachers & supervisors) so newly created staff never disappear on refresh/sync
+  if (Array.isArray(data.users)) {
+    const deletedUserIds = new Set(
+      Array.isArray(data._deletedEntities?.users) ? data._deletedEntities.users.map(String) : []
+    );
+    let usersList = data.users.filter((u: any) => u && u.id && !deletedUserIds.has(String(u.id)));
+    try {
+      if (typeof window !== 'undefined') {
+        const localUsersRaw = localStorage.getItem('ghaith_staff_users');
+        if (localUsersRaw) {
+          const localUsers: any[] = JSON.parse(localUsersRaw);
+          if (Array.isArray(localUsers) && localUsers.length > 0) {
+            const byId = new Map<string, any>();
+            usersList.forEach((u: any) => {
+              if (u && u.id) byId.set(String(u.id), u);
+            });
+            localUsers.forEach((loc: any) => {
+              if (!loc || !loc.id || deletedUserIds.has(String(loc.id))) return;
+              const existing = byId.get(String(loc.id));
+              if (!existing) {
+                byId.set(String(loc.id), loc);
+              } else {
+                const locTime = Date.parse(loc.updatedAt || loc.createdAt || '') || 0;
+                const exTime = Date.parse(existing.updatedAt || existing.createdAt || '') || 0;
+                if (locTime >= exTime) {
+                  byId.set(String(loc.id), { ...existing, ...loc });
+                }
+              }
+            });
+            usersList = Array.from(byId.values());
+          }
+        }
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    data.users = usersList;
+  }
+
+  // 8. Merge local challenges (including archived status) so challenge archiving persists across reloads
+  if (Array.isArray(data.challenges)) {
+    const deletedChallengeIds = new Set(
+      Array.isArray(data._deletedEntities?.challenges) ? data._deletedEntities.challenges.map(String) : []
+    );
+    let chList = data.challenges.filter((c: any) => c && c.id && !deletedChallengeIds.has(String(c.id)));
+    try {
+      if (typeof window !== 'undefined') {
+        const localChRaw = localStorage.getItem('ghaith_challenges_local_v1');
+        if (localChRaw) {
+          const localCh: any[] = JSON.parse(localChRaw);
+          if (Array.isArray(localCh) && localCh.length > 0) {
+            const byId = new Map<string, any>();
+            chList.forEach((c: any) => {
+              if (c && c.id) byId.set(String(c.id), c);
+            });
+            localCh.forEach((loc: any) => {
+              if (!loc || !loc.id || deletedChallengeIds.has(String(loc.id))) return;
+              const existing = byId.get(String(loc.id));
+              if (!existing) {
+                byId.set(String(loc.id), loc);
+              } else {
+                const locTime = Date.parse(loc.updatedAt || loc.createdAt || '') || 0;
+                const exTime = Date.parse(existing.updatedAt || existing.createdAt || '') || 0;
+                if (locTime >= exTime) {
+                  byId.set(String(loc.id), { ...existing, ...loc });
+                }
+              }
+            });
+            chList = Array.from(byId.values());
+          }
+        }
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    data.challenges = chList;
+  }
+
+  // 9. Automatically treat any student belonging to an archived circle or archived track as archived
+  if (Array.isArray(data.students) && Array.isArray(data.circles)) {
+    const archivedCircleIds = new Set(
+      data.circles.filter((c: any) => c && c.isArchived).map((c: any) => String(c.id))
+    );
+    const archivedTrackIds = new Set(
+      Array.isArray(data.tracks)
+        ? data.tracks.filter((t: any) => t && t.isArchived).map((t: any) => String(t.id))
+        : []
+    );
+    if (archivedCircleIds.size > 0 || archivedTrackIds.size > 0) {
+      data.students = data.students.map((s: any) => {
+        if (!s) return s;
+        const inArchivedCircle = s.circleId && archivedCircleIds.has(String(s.circleId));
+        const inArchivedTrack = s.trackId && archivedTrackIds.has(String(s.trackId));
+        if ((inArchivedCircle || inArchivedTrack) && (s.status !== 'archived' || !s.archived)) {
+          return {
+            ...s,
+            status: 'archived',
+            archived: true,
+            archivedAt: s.archivedAt || new Date().toISOString(),
+            archivedReason: s.archivedReason || 'أرشفة الحلقة التابعة لها'
+          };
+        }
+        return s;
+      });
+    }
   }
 
   return data;
@@ -1936,6 +2045,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       try {
         if (typeof window !== 'undefined') {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(rawPayload));
+          localStorage.setItem('ghaith_staff_users', JSON.stringify(rawPayload.users));
+          localStorage.setItem('ghaith_circles_local_v1', JSON.stringify(rawPayload.circles));
+          localStorage.setItem('ghaith_tracks_local_v1', JSON.stringify(rawPayload.tracks));
+          localStorage.setItem('ghaith_challenges_local_v1', JSON.stringify(rawPayload.challenges));
           localStorage.setItem(STUDENTS_LOCAL_KEY, JSON.stringify(rawPayload.students));
           localStorage.setItem('ghaith_attendance_local_v1', JSON.stringify(rawPayload.attendanceRecords));
           localStorage.setItem('ghaith_daily_records_local_v1', JSON.stringify(rawPayload.dailyRecords));
@@ -2435,30 +2548,82 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // ignore storage errors
     }
     const nextLogs = appendAuditEntry('update', 'circle', `تحديث بيانات الحلقة: ${circle.name || existingCircle?.name || id}`, id);
-    persistState({ circles: next, auditLogs: nextLogs });
+    persistState({ circles: next, auditLogs: nextLogs, _immediateSync: true });
     showToast('تم تحديث بيانات الحلقة بنجاح');
   };
 
   const archiveCircle = async (id: string) => {
+    const nowIso = new Date().toISOString();
     const currentCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
     const existingCircle = currentCircles.find((c: Circle) => c.id === id);
-    const next = currentCircles.map((c: Circle) => c.id === id ? { ...c, isArchived: true, updatedAt: new Date().toISOString() } : c);
+    const next = currentCircles.map((c: Circle) => c.id === id ? { ...c, isArchived: true, updatedAt: nowIso } : c);
     masterStateRef.current.circles = next;
     setCircles(next);
-    const nextLogs = appendAuditEntry('archive', 'circle', `أرشفة الحلقة: ${existingCircle?.name || id}`, id);
-    persistState({ circles: next, auditLogs: nextLogs });
-    showToast('تمت أرشفة الحلقة');
+
+    // Automatically mark all students in this archived circle as archived
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const nextStudents = currentStudents.map((s: Student) =>
+      s.circleId === id
+        ? {
+            ...s,
+            status: 'archived' as const,
+            archived: true,
+            archivedAt: s.archivedAt || nowIso,
+            archivedReason: s.archivedReason || `أرشفة حلقة (${existingCircle?.name || ''})`,
+            updatedAt: nowIso
+          }
+        : s
+    );
+    masterStateRef.current.students = nextStudents;
+    setStudents(nextStudents);
+
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_circles_local_v1', JSON.stringify(next));
+        localStorage.setItem(STUDENTS_LOCAL_KEY, JSON.stringify(nextStudents));
+      }
+    } catch {}
+
+    const nextLogs = appendAuditEntry('archive', 'circle', `أرشفة الحلقة وطالباتها: ${existingCircle?.name || id}`, id);
+    persistState({ circles: next, students: nextStudents, auditLogs: nextLogs, _immediateSync: true });
+    showToast('تمت أرشفة الحلقة ونقل طالباتها تلقائياً إلى قسم الطالبات المؤرشفات');
   };
 
   const restoreCircle = async (id: string) => {
+    const nowIso = new Date().toISOString();
     const currentCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
     const existingCircle = currentCircles.find((c: Circle) => c.id === id);
-    const next = currentCircles.map((c: Circle) => c.id === id ? { ...c, isArchived: false, updatedAt: new Date().toISOString() } : c);
+    const next = currentCircles.map((c: Circle) => c.id === id ? { ...c, isArchived: false, updatedAt: nowIso } : c);
     masterStateRef.current.circles = next;
     setCircles(next);
-    const nextLogs = appendAuditEntry('update', 'circle', `استعادة الحلقة من الأرشيف: ${existingCircle?.name || id}`, id);
-    persistState({ circles: next, auditLogs: nextLogs });
-    showToast('تمت استعادة الحلقة');
+
+    // Restore students belonging to this circle
+    const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const nextStudents = currentStudents.map((s: Student) =>
+      s.circleId === id
+        ? {
+            ...s,
+            status: 'active' as const,
+            archived: false,
+            archivedAt: undefined,
+            archivedReason: undefined,
+            updatedAt: nowIso
+          }
+        : s
+    );
+    masterStateRef.current.students = nextStudents;
+    setStudents(nextStudents);
+
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_circles_local_v1', JSON.stringify(next));
+        localStorage.setItem(STUDENTS_LOCAL_KEY, JSON.stringify(nextStudents));
+      }
+    } catch {}
+
+    const nextLogs = appendAuditEntry('update', 'circle', `استعادة الحلقة وطالباتها من الأرشيف: ${existingCircle?.name || id}`, id);
+    persistState({ circles: next, students: nextStudents, auditLogs: nextLogs, _immediateSync: true });
+    showToast('تمت استعادة الحلقة وطالباتها بنجاح');
   };
 
   const deleteCircle = async (id: string) => {
@@ -2569,12 +2734,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const restoreStudent = async (id: string) => {
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
+    const currentCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
     const existingStudent = currentStudents.find((s: Student) => s.id === id);
     const nowIso = new Date().toISOString();
+
+    // If the student's current circle is archived, place her in an active circle of the same track (or any active circle)
+    const studentCircle = currentCircles.find((c: Circle) => c.id === existingStudent?.circleId);
+    let targetCircleId = existingStudent?.circleId || '';
+    let targetTrackId = existingStudent?.trackId || '';
+    if (studentCircle?.isArchived) {
+      const activeCircleInTrack = currentCircles.find(
+        (c: Circle) => !c.isArchived && c.trackId === existingStudent?.trackId
+      );
+      const anyActiveCircle = currentCircles.find((c: Circle) => !c.isArchived);
+      const fallbackActive = activeCircleInTrack || anyActiveCircle;
+      if (fallbackActive) {
+        targetCircleId = fallbackActive.id;
+        targetTrackId = fallbackActive.trackId || targetTrackId;
+      }
+    }
+
     const nextStudents = currentStudents.map((s: Student) =>
       s.id === id
         ? {
             ...s,
+            circleId: targetCircleId || s.circleId,
+            trackId: targetTrackId || s.trackId,
             status: 'active' as const,
             archived: false,
             archivedAt: undefined,
@@ -2626,10 +2811,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
     persistState(
       attUpdated
-        ? { students: nextStudents, attendanceRecords: nextAtt, auditLogs: nextLogs }
-        : { students: nextStudents, auditLogs: nextLogs }
+        ? { students: nextStudents, attendanceRecords: nextAtt, auditLogs: nextLogs, _immediateSync: true }
+        : { students: nextStudents, auditLogs: nextLogs, _immediateSync: true }
     );
-    showToast(`تم إلغاء الأرشفة واستعادة الطالبة "${existingStudent?.name || ''}" للحلقة بنجاح 🔄✅`);
+    showToast(`تم إلغاء الأرشفة واستعادة الطالبة "${existingStudent?.name || ''}" للحلقة النشطة بنجاح`);
   };
 
   const deleteStudent = async (id: string) => {
@@ -3639,8 +3824,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = [...currentCh.filter((c: Challenge) => c.id !== newCh.id), newCh];
     masterStateRef.current.challenges = next;
     setChallenges(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_challenges_local_v1', JSON.stringify(next));
+      }
+    } catch {}
     const nextLogs = appendAuditEntry('create', 'challenge', `إطلاق تحدٍ قرآني جديد: ${newCh.title}`, newCh.id);
-    persistState({ challenges: next, auditLogs: nextLogs });
+    persistState({ challenges: next, auditLogs: nextLogs, _immediateSync: true });
     showToast(`تم إطلاق التحدي القرآني: ${newCh.title}`);
     return newCh;
   };
@@ -3651,9 +3841,56 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = currentCh.map((c: Challenge) => c.id === id ? { ...c, ...challenge, updatedAt: new Date().toISOString() } : c);
     masterStateRef.current.challenges = next;
     setChallenges(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_challenges_local_v1', JSON.stringify(next));
+      }
+    } catch {}
     const nextLogs = appendAuditEntry('update', 'challenge', `تحديث بيانات التحدي القرآني: ${challenge.title || existingCh?.title || id}`, id);
-    persistState({ challenges: next, auditLogs: nextLogs });
+    persistState({ challenges: next, auditLogs: nextLogs, _immediateSync: true });
     showToast('تم تحديث التحدي القرآني');
+  };
+
+  const archiveChallenge = async (id: string) => {
+    const nowIso = new Date().toISOString();
+    const currentCh = masterStateRef.current.challenges?.length ? masterStateRef.current.challenges : challenges;
+    const existingCh = currentCh.find((c: Challenge) => c.id === id);
+    const next = currentCh.map((c: Challenge) =>
+      c.id === id
+        ? { ...c, isArchived: true, status: 'archived' as const, archivedAt: nowIso, updatedAt: nowIso }
+        : c
+    );
+    masterStateRef.current.challenges = next;
+    setChallenges(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_challenges_local_v1', JSON.stringify(next));
+      }
+    } catch {}
+    const nextLogs = appendAuditEntry('archive', 'challenge', `أرشفة التحدي القرآني مع حفظ سجلاته ونقاطه: ${existingCh?.title || id}`, id);
+    persistState({ challenges: next, auditLogs: nextLogs, _immediateSync: true });
+    showToast(`تمت أرشفة التحدي «${existingCh?.title || ''}» مع الاحتفاظ بكامل نقاطه وسجلات الطالبات`);
+  };
+
+  const restoreChallenge = async (id: string) => {
+    const nowIso = new Date().toISOString();
+    const currentCh = masterStateRef.current.challenges?.length ? masterStateRef.current.challenges : challenges;
+    const existingCh = currentCh.find((c: Challenge) => c.id === id);
+    const next = currentCh.map((c: Challenge) =>
+      c.id === id
+        ? { ...c, isArchived: false, status: 'active' as const, archivedAt: undefined, updatedAt: nowIso }
+        : c
+    );
+    masterStateRef.current.challenges = next;
+    setChallenges(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_challenges_local_v1', JSON.stringify(next));
+      }
+    } catch {}
+    const nextLogs = appendAuditEntry('update', 'challenge', `استعادة التحدي القرآني من الأرشيف: ${existingCh?.title || id}`, id);
+    persistState({ challenges: next, auditLogs: nextLogs, _immediateSync: true });
+    showToast(`تمت استعادة التحدي «${existingCh?.title || ''}» إلى التحديات النشطة`);
   };
 
   const deleteChallenge = async (id: string) => {
@@ -3662,8 +3899,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const next = currentCh.filter((c: Challenge) => c.id !== id);
     masterStateRef.current.challenges = next;
     setChallenges(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_challenges_local_v1', JSON.stringify(next));
+      }
+    } catch {}
     const nextLogs = appendAuditEntry('delete', 'challenge', `حذف التحدي القرآني: ${existingCh?.title || id}`, id);
-    persistState({ challenges: next, auditLogs: nextLogs, _deletedEntities: addDeletedEntity('challenges', id) });
+    persistState({ challenges: next, auditLogs: nextLogs, _deletedEntities: addDeletedEntity('challenges', id), _immediateSync: true });
     showToast('تم حذف التحدي');
   };
 
@@ -4327,12 +4569,33 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       writeLocalStaffProfiles(mergedProfiles);
     }
 
-    const next = [...users.filter(existing => existing.id !== newUser.id), newUser];
+    const baseUsersList: User[] = masterStateRef.current.users?.length ? masterStateRef.current.users : users;
+    const next = [...baseUsersList.filter(existing => existing.id !== newUser.id), newUser];
     masterStateRef.current.users = next;
     setUsers(next);
+
+    // Sync assigned circleIds onto circles (teacherId/teacherName or supervisorId/supervisorName)
+    let nextCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
+    if (Array.isArray(newUser.circleIds) && newUser.circleIds.length > 0) {
+      const assignedSet = new Set(newUser.circleIds);
+      nextCircles = nextCircles.map((c: Circle) => {
+        if (!assignedSet.has(c.id)) return c;
+        if (newUser.role === 'teacher') {
+          return { ...c, teacherId: newUser.id, teacherName: newUser.name, updatedAt: nowIso };
+        }
+        if (newUser.role === 'supervisor') {
+          return { ...c, supervisorId: newUser.id, supervisorName: newUser.name, updatedAt: nowIso };
+        }
+        return c;
+      });
+      masterStateRef.current.circles = nextCircles;
+      setCircles(nextCircles);
+    }
+
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem('ghaith_staff_users', JSON.stringify(next));
+        localStorage.setItem('ghaith_circles_local_v1', JSON.stringify(nextCircles));
       } catch {}
     }
 
@@ -4360,8 +4623,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       `إضافة حساب جديد في الكادر: ${newUser.name} (${newUser.title || newUser.role})`,
       newUser.id
     );
-    persistState({ users: next, auditLogs: nextLogs, _immediateSync: true });
-    showToast(`تمت إضافة ${newUser.name} بالمنصب (${newUser.title || newUser.role}) بنجاح ✨`);
+    persistState({ users: next, circles: nextCircles, auditLogs: nextLogs, _immediateSync: true });
+    if (!isLocalDemoMode) {
+      try {
+        await pushStateToCloud(masterStateRef.current);
+      } catch (cloudErr) {
+        console.warn('Immediate cloud sync for new user notice:', cloudErr);
+      }
+    }
+    showToast(`تمت إضافة وحفظ ${newUser.name} بالمنصب (${newUser.title || newUser.role}) في السحابة بنجاح`);
     return newUser;
   };
 
@@ -4408,26 +4678,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     let nextCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
-    if (user.name) {
+    const updated = nextUsers.find(u => u.id === id);
+    if (user.name || Array.isArray(user.circleIds)) {
+      const assignedSet = Array.isArray(user.circleIds) ? new Set(user.circleIds) : null;
+      const effectiveRole = updated?.role || target.role;
+      const effectiveName = updated?.name || target.name;
       nextCircles = nextCircles.map((c: Circle) => {
         let changed = false;
+        let tId = c.teacherId;
         let tName = c.teacherName;
+        let sId = c.supervisorId;
         let sName = c.supervisorName;
-        if (c.teacherId === id) {
-          tName = user.name!;
+
+        if (assignedSet) {
+          if (effectiveRole === 'teacher' && assignedSet.has(c.id)) {
+            tId = id;
+            tName = effectiveName;
+            changed = true;
+          } else if (effectiveRole === 'supervisor' && assignedSet.has(c.id)) {
+            sId = id;
+            sName = effectiveName;
+            changed = true;
+          }
+        }
+        if (tId === id && user.name) {
+          tName = user.name;
           changed = true;
         }
-        if (c.supervisorId === id) {
-          sName = user.name!;
+        if (sId === id && user.name) {
+          sName = user.name;
           changed = true;
         }
-        return changed ? { ...c, teacherName: tName, supervisorName: sName } : c;
+        return changed
+          ? { ...c, teacherId: tId, teacherName: tName, supervisorId: sId, supervisorName: sName, updatedAt: nowIso }
+          : c;
       });
       masterStateRef.current.circles = nextCircles;
       setCircles(nextCircles);
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('ghaith_circles_local_v1', JSON.stringify(nextCircles));
+        }
+      } catch {}
     }
-
-    const updated = nextUsers.find(u => u.id === id);
 
     if (!silent) {
       const isPermissionsOnly = Object.keys(user).length === 1 && 'permissions' in user;
@@ -5054,7 +5347,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     circles.forEach(circle => {
       const circleStudents = students
-        .filter(s => s.circleId === circle.id)
+        .filter(s => s.circleId === circle.id && !isStudentEffectivelyArchived(s, circles, tracks))
         .sort((a, b) => (scoresMap[b.id]?.finalPercentage || 0) - (scoresMap[a.id]?.finalPercentage || 0));
       circleStudents.forEach((st, idx) => {
         if (scoresMap[st.id]) scoresMap[st.id].rankInCircle = idx + 1;
@@ -5063,7 +5356,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     tracks.forEach(track => {
       const trackStudents = students
-        .filter(s => s.trackId === track.id)
+        .filter(s => s.trackId === track.id && !isStudentEffectivelyArchived(s, circles, tracks))
         .sort((a, b) => (scoresMap[b.id]?.finalPercentage || 0) - (scoresMap[a.id]?.finalPercentage || 0));
       trackStudents.forEach((st, idx) => {
         if (scoresMap[st.id]) scoresMap[st.id].rankInTrack = idx + 1;
@@ -5195,6 +5488,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         deleteStudentAtqiniSubmission,
         createChallenge,
         updateChallenge,
+        archiveChallenge,
+        restoreChallenge,
         deleteChallenge,
         saveChallengeSubmission,
         toggleChallengeEarlyAchievement,

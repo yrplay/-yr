@@ -435,15 +435,12 @@ export const StaffView: React.FC = () => {
 
   const handleSaveStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!staffForm.name.trim() || !staffForm.email.trim()) {
-      showToast('يرجى إدخال الاسم الكامل والبريد الإلكتروني', 'error');
+    if (!staffForm.name.trim()) {
+      showToast('يرجى إدخال الاسم الكامل للمعلمة أو المشرفة', 'error');
       return;
     }
-    const cleanPasscode = staffForm.passcode?.trim() || '';
-    if (!cleanPasscode) {
-      showToast('يرجى تحديد الرمز السري للدخول (PIN) للحساب', 'error');
-      return;
-    }
+    const cleanEmail = staffForm.email.trim() || `staff.${Date.now()}@ghaym.org`;
+    const cleanPasscode = staffForm.passcode?.trim() || String(Math.floor(1000 + Math.random() * 9000));
     if (cleanPasscode.length < 4) {
       showToast('الرمز السري للدخول يجب ألا يقل عن 4 خانات', 'error');
       return;
@@ -453,18 +450,22 @@ export const StaffView: React.FC = () => {
       const existingProfile = resolveStaffProfile(editingStaff, settings);
       await updateUser(editingStaff.id, {
         ...staffForm,
+        name: staffForm.name.trim(),
+        email: cleanEmail,
         passcode: cleanPasscode,
         workingHours: existingProfile.workingHours,
         monthlySalary: existingProfile.monthlySalary,
         tasks: existingProfile.tasks,
         leaderPrivateNotes: existingProfile.leaderPrivateNotes
       });
-      showToast(`تم حفظ وتحديث بيانات ${staffForm.name} بنجاح`);
+      showToast(`تم حفظ وتحديث بيانات ${staffForm.name} في السحابة بنجاح`);
       setStaffModalOpen(false);
     } else {
       try {
         const created = await createUser({
           ...staffForm,
+          name: staffForm.name.trim(),
+          email: cleanEmail,
           passcode: cleanPasscode,
           workingHours: getDefaultWorkingHoursForRole(staffForm.role),
           monthlySalary: getDefaultMonthlySalaryForRole(staffForm.role),
@@ -472,6 +473,7 @@ export const StaffView: React.FC = () => {
           leaderPrivateNotes: ''
         });
         setStaffModalOpen(false);
+        showToast(`تمت إضافة ${created.name} وحفظها في السحابة بنجاح`);
         copyTeacherCredentials(created);
       } catch (error: any) {
         showToast(error?.message || 'تعذر إضافة المعلمة', 'error');
@@ -1108,11 +1110,10 @@ export const StaffView: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-stone-700 mb-1.5">
-                    البريد الإلكتروني (لتسجيل الدخول) *
+                    البريد الإلكتروني (اختياري)
                   </label>
                   <input
                     type="email"
-                    required
                     value={staffForm.email}
                     onChange={e => setStaffForm({ ...staffForm, email: e.target.value })}
                     placeholder="reef@ghaym.org"

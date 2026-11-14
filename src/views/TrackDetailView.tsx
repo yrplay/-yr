@@ -6,7 +6,7 @@ import {
   Award, Calendar, MessageSquareQuote
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { hasFullAccess, Track, CustomMasteryCriterion, Circle, Student } from '../types';
+import { hasFullAccess, Track, CustomMasteryCriterion, Circle, Student, isStudentEffectivelyArchived } from '../types';
 import { RenderEntityIcon } from '../components/CircleIconLibrary';
 import { HijriJoinDateSelector, formatHijriShort } from '../utils/hijriDate';
 
@@ -22,7 +22,7 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
   onNavigateToSection 
 }) => {
   const { 
-    tracks, circles, students, currentUser,
+    tracks, circles, students, users, currentUser,
     updateTrack, updateTrackSystemRules,
     updateCircle, deleteCircle,
     updateStudent, deleteStudent
@@ -36,7 +36,9 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
   const [circleForm, setCircleForm] = useState({
     name: '',
     trackId: '',
+    teacherId: '',
     teacherName: '',
+    supervisorId: '',
     supervisorName: '',
     maxStudents: 15,
     scheduleDays: [] as string[]
@@ -83,8 +85,8 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
 
   const trackStudents = useMemo(() => {
     if (!track) return [];
-    return students.filter(s => s.trackId === track.id && s.status === 'active');
-  }, [students, track]);
+    return students.filter(s => s.trackId === track.id && !isStudentEffectivelyArchived(s, circles, tracks));
+  }, [students, circles, tracks, track]);
 
   // المعايير الموحدة للمسار (كلها زي بعض)
   const unifiedCriteriaList = useMemo(() => {
@@ -226,7 +228,9 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
     setCircleForm({
       name: c.name || '',
       trackId: c.trackId || track?.id || '',
+      teacherId: c.teacherId || '',
       teacherName: c.teacherName || '',
+      supervisorId: c.supervisorId || '',
       supervisorName: c.supervisorName || '',
       maxStudents: c.maxStudents || 15,
       scheduleDays: c.scheduleDays ? [...c.scheduleDays] : ['الأحد', 'الثلاثاء', 'الخميس']
@@ -239,7 +243,9 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
     await updateCircle(editingCircle.id, {
       name: circleForm.name.trim(),
       trackId: circleForm.trackId || editingCircle.trackId,
+      teacherId: circleForm.teacherId || editingCircle.teacherId,
       teacherName: circleForm.teacherName.trim(),
+      supervisorId: circleForm.supervisorId || editingCircle.supervisorId,
       supervisorName: circleForm.supervisorName.trim(),
       maxStudents: Number(circleForm.maxStudents) || 15,
       scheduleDays: circleForm.scheduleDays
@@ -1083,21 +1089,57 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">المعلمة</label>
+                  <select
+                    value={circleForm.teacherId}
+                    onChange={e => {
+                      const tUser = users.find(u => u.id === e.target.value);
+                      setCircleForm({
+                        ...circleForm,
+                        teacherId: e.target.value,
+                        teacherName: tUser?.name || circleForm.teacherName
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden mb-1"
+                  >
+                    <option value="">-- اختاري المعلمة --</option>
+                    {users.filter(u => u.role === 'teacher').map(u => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                  </select>
                   <input
                     type="text"
                     required
+                    placeholder="أو اكتبي اسم المعلمة..."
                     value={circleForm.teacherName}
                     onChange={e => setCircleForm({ ...circleForm, teacherName: e.target.value })}
-                    className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden"
+                    className="w-full px-3 py-1.5 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden text-[11px]"
                   />
                 </div>
                 <div>
                   <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">المشرفة</label>
+                  <select
+                    value={circleForm.supervisorId}
+                    onChange={e => {
+                      const sUser = users.find(u => u.id === e.target.value);
+                      setCircleForm({
+                        ...circleForm,
+                        supervisorId: e.target.value,
+                        supervisorName: sUser?.name || circleForm.supervisorName
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden mb-1"
+                  >
+                    <option value="">-- اختاري المشرفة --</option>
+                    {users.filter(u => u.role === 'supervisor' || u.role === 'leader').map(u => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                  </select>
                   <input
                     type="text"
+                    placeholder="أو اكتبي اسم المشرفة..."
                     value={circleForm.supervisorName}
                     onChange={e => setCircleForm({ ...circleForm, supervisorName: e.target.value })}
-                    className="w-full px-3 py-2 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden"
+                    className="w-full px-3 py-1.5 border border-stone-200 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden text-[11px]"
                   />
                 </div>
               </div>

@@ -4,9 +4,9 @@ import { QURAN_SURAHS, getSurahByNumber, getAyahCount } from '../data/quranData'
 import {
   Plus, Copy, CheckCircle2,
   ChevronDown, ChevronUp, Edit, Lock, Unlock,
-  CalendarRange, Star, BarChart3, Zap, HeartHandshake, BookOpen
+  CalendarRange, Star, BarChart3, Zap, HeartHandshake, BookOpen, Archive, RotateCcw
 } from 'lucide-react';
-import { MonthlyPlan, PlanBranchConfig } from '../types';
+import { MonthlyPlan, PlanBranchConfig, isStudentEffectivelyArchived, isPlanHistoricalOrArchived } from '../types';
 import { summarizeDailyPageProgress } from '../services/recitationProgress';
 
 // قيم العداد التدريجي الموحد (0.25 ربع وجه لكل ضغطة) لجميع الأقسام الثلاثة
@@ -153,12 +153,35 @@ export const MonthlyPlansView: React.FC = () => {
     return monthlyPlans.filter(p => !p.trackId || p.trackId === selectedTrackId);
   }, [monthlyPlans, selectedTrackId]);
 
-  const availableStudents = useMemo(() => {
-    if (!selectedTrackId || selectedTrackId === 'all') return students;
-    return students.filter(s => s.trackId === selectedTrackId);
-  }, [students, selectedTrackId]);
-
   const [selectedPlanId, setSelectedPlanId] = useState<string>(availablePlans[0]?.id || monthlyPlans[0]?.id || 'mp-1');
+  const currentPlan = availablePlans.find(p => p.id === selectedPlanId) || availablePlans[0] || monthlyPlans[0];
+  const isCurrentPlanHistorical = useMemo(
+    () => isPlanHistoricalOrArchived(currentPlan, availablePlans),
+    [currentPlan, availablePlans]
+  );
+
+  const availableStudents = useMemo(() => {
+    const trackScoped = students.filter(s => {
+      if (!selectedTrackId || selectedTrackId === 'all') return true;
+      const circle = circles.find(c => c.id === s.circleId);
+      const stTrackId = s.trackId || circle?.trackId;
+      return stTrackId === selectedTrackId;
+    });
+
+    if (!isCurrentPlanHistorical) {
+      // خطة الشهر الحالي النشطة: إخفاء جميع الطالبات المؤرشفات أو التابعات لحلقات مؤرشفة
+      return trackScoped.filter(s => !isStudentEffectivelyArchived(s, circles, tracks));
+    }
+
+    // خطة شهر سابق مؤرشف: إظهار الطالبات المؤرشفات أو اللاتي لديهن سجل في هذه الخطة السابقة
+    const archivedOrInPlan = trackScoped.filter(
+      s =>
+        isStudentEffectivelyArchived(s, circles, tracks) ||
+        studentPlans.some(sp => sp.studentId === s.id && sp.monthlyPlanId === currentPlan?.id)
+    );
+    return archivedOrInPlan.length > 0 ? archivedOrInPlan : trackScoped;
+  }, [students, circles, tracks, selectedTrackId, isCurrentPlanHistorical, studentPlans, currentPlan]);
+
   const [selectedStudentId, setSelectedStudentId] = useState<string>(availableStudents[0]?.id || students[0]?.id || 's-1');
   const [isStudentDropdownOpen, setIsStudentDropdownOpen] = useState(false);
 
@@ -189,8 +212,7 @@ export const MonthlyPlansView: React.FC = () => {
     thursdayFocus: 'مخصص للتحديات والمراجعة الثنائية بحسب التحدي المعتمد'
   });
 
-  const currentPlan = availablePlans.find(p => p.id === selectedPlanId) || availablePlans[0] || monthlyPlans[0];
-  const selectedStudent = availableStudents.find(s => s.id === selectedStudentId) || availableStudents[0] || students[0];
+  const selectedStudent = availableStudents.find(s => s.id === selectedStudentId) || availableStudents[0];
 
   // حساب الصفحات المنجزة تلقائياً من سجل الحفظ والتسميع للطالبة المحددة
   const autoProgress = useMemo(() => {
@@ -1341,25 +1363,60 @@ export const MonthlyPlansView: React.FC = () => {
         <div className="bg-white p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-base sm:text-lg font-bold text-stone-900">{currentPlan.title}</h3>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold">
-                  نشطة معتمدة
-                </span>
+                {isCurrentPlanHistorical ? (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#F6EFEA] text-[#7B3F30] border border-[#DFCEBF] font-semibold inline-flex items-center gap-1">
+                    <Archive className="w-3 h-3 text-[#9A5643]" />
+                    <span>خطة شهر سابق (مؤرشفة)</span>
+                  </span>
+                ) : (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold">
+                    نشطة معتمدة (الشهر الحالي)
+                  </span>
+                )}
               </div>
               <p className="text-xs text-stone-500 mt-1">
                 المسار: {tracks.find(t => t.id === currentPlan.trackId)?.name || 'مشكاة الغيم للحفظ'}
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => handleOpenPlanModal(currentPlan)}
-              className="px-3.5 py-2 text-[#744251] bg-[#FAF6F2] hover:bg-[#F2ECE6] rounded-xl text-xs font-bold flex items-center gap-1.5 border border-[#E2D5CC] self-start sm:self-auto cursor-pointer active:scale-95 transition"
-            >
-              <Edit className="w-3.5 h-3.5" />
-              <span>تعديل تواريخ وتفاصيل الخطة</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() =>
+                  updateMonthlyPlan(currentPlan.id, {
+                    status: isCurrentPlanHistorical ? 'active' : 'archived',
+                    isArchived: !isCurrentPlanHistorical
+                  })
+                }
+                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border cursor-pointer active:scale-95 transition ${
+                  isCurrentPlanHistorical
+                    ? 'bg-[#EBF3EE] text-[#2D5A43] border-[#B8D8C5] hover:bg-[#DCEADA]'
+                    : 'bg-[#F6EFEA] text-[#7B3F30] border-[#DFCEBF] hover:bg-[#EDE0D6]'
+                }`}
+              >
+                {isCurrentPlanHistorical ? (
+                  <>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>تفعيل كخطة الشهر الحالي</span>
+                  </>
+                ) : (
+                  <>
+                    <Archive className="w-3.5 h-3.5" />
+                    <span>أرشفة كخطة شهر سابق</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenPlanModal(currentPlan)}
+                className="px-3.5 py-2 text-[#744251] bg-[#FAF6F2] hover:bg-[#F2ECE6] rounded-xl text-xs font-bold flex items-center gap-1.5 border border-[#E2D5CC] cursor-pointer active:scale-95 transition"
+              >
+                <Edit className="w-3.5 h-3.5" />
+                <span>تعديل تواريخ وتفاصيل الخطة</span>
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

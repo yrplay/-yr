@@ -8,7 +8,7 @@ import {
   ClipboardCheck, Zap, Send
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
-import { AttendanceRecord } from '../types';
+import { AttendanceRecord, isStudentEffectivelyArchived } from '../types';
 import { HijriDateNavigationBar, formatHijriDate, formatHijriDateTime, getHijriParts, getTodayISO } from '../utils/hijriDate';
 import { triggerStudentTelegramAlert } from '../utils/telegramAlert';
 
@@ -59,12 +59,12 @@ export const AttendanceView: React.FC = () => {
     [tracks, activeCircle?.trackId]
   );
   const circleStudents = React.useMemo(
-    () => students.filter(s => s.circleId === activeCircle?.id && s.status === 'active' && !s.archived),
-    [students, activeCircle?.id]
+    () => students.filter(s => s.circleId === activeCircle?.id && !isStudentEffectivelyArchived(s, circles, tracks)),
+    [students, circles, tracks, activeCircle?.id]
   );
   const archivedCircleStudents = React.useMemo(
-    () => students.filter(s => s.circleId === activeCircle?.id && (s.status === 'archived' || s.archived)),
-    [students, activeCircle?.id]
+    () => students.filter(s => s.circleId === activeCircle?.id && isStudentEffectivelyArchived(s, circles, tracks)),
+    [students, circles, tracks, activeCircle?.id]
   );
 
   const isSelectedDateThursday = React.useMemo(() => {

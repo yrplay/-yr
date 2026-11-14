@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { QURAN_SURAHS, SurahInfo } from '../data/quranData';
-import { defaultMasteryGuideConfig, CustomMasteryCriterion, MasteryGuideConfig, Student } from '../types';
+import { defaultMasteryGuideConfig, CustomMasteryCriterion, MasteryGuideConfig, Student, isStudentEffectivelyArchived } from '../types';
 import { HijriDateNavigationBar, formatHijriDate, formatHijriShort, getHijriParts, getTodayISO } from '../utils/hijriDate';
 import { NOORANIA_LESSONS, isStudentDefaultNoorania, formatNooraniaRangeLabel, formatDailyStepLabel } from './MonthlyPlansView';
 
@@ -501,9 +501,9 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     return Math.max(0, Math.round((baseScore - totalDeductions) * 100) / 100);
   }, [form.hifzErrors, form.alerts, form.tajweedErrors, form.newOutcome, baseScore, hifzDeduction, alertDeduction, tajweedDeduction]);
 
-  // تصفية الطالبات (إخفاء المؤرشفات من شاشة التسميع اليومي)
+  // تصفية الطالبات (إخفاء المؤرشفات أو التابعات لحلقات مؤرشفة من شاشة التسميع اليومي)
   const circleStudents = useMemo(() => {
-    let list = students.filter(s => s.status === 'active' && !s.archived);
+    let list = students.filter(s => !isStudentEffectivelyArchived(s, circles, tracks));
     if (selectedCircleId) {
       list = list.filter(s => s.circleId === selectedCircleId);
     }
@@ -513,7 +513,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       );
     }
     return list;
-  }, [students, selectedCircleId, searchQuery]);
+  }, [students, circles, tracks, selectedCircleId, searchQuery]);
 
   // فتح نافذة الرصد مع دعم تعديل السجلات السابقة
   const handleOpenModal = (studentId: string, customRecord?: any) => {
