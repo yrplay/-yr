@@ -226,6 +226,16 @@ const buildMergedCloudPayload = (remoteRaw: any, statePayload: any): Record<stri
     lastSyncedAt: new Date().toISOString()
   };
 
+  const FAKE_DEMO_IDS = new Set(['u-1', 'u-2', 'u-3', 'u-4', 'u-5', 'u-leader']);
+  const FAKE_DEMO_EMAILS = new Set([
+    'rifa@ghaym.org',
+    'khadija@ghaym.org',
+    'maryam@ghaym.org',
+    'fatima@ghaym.org',
+    'hind@ghaym.org',
+    'leader@ghaym.org'
+  ]);
+
   for (const [collection, key] of ARRAY_COLLECTIONS) {
     let mergedItems = mergeArrayByKey(
       remoteData[collection] || [],
@@ -234,35 +244,37 @@ const buildMergedCloudPayload = (remoteRaw: any, statePayload: any): Record<stri
       deletedEntities[collection] || []
     );
     if (collection === 'users') {
-      mergedItems = mergedItems.map((u: any) => {
-        if (!u || !u.id) return u;
-        const profileCfg = mergedStaffProfiles[u.id];
-        const isAdminRecord =
-          u.role === 'owner' || u.role === 'leader' || u.role === 'developer';
-        const withSharedChat = isAdminRecord
-          ? {
-              ...u,
-              staffChatMessages: mergedStaffChatMessages,
-              deletedStaffChatIds: mergedDeletedChatIds,
-              ...(mergedPinnedAnnouncement
-                ? { pinnedStaffAnnouncement: mergedPinnedAnnouncement }
-                : {})
-            }
-          : u;
-        const mergedUser = !profileCfg
-          ? withSharedChat
-          : {
-              ...withSharedChat,
-              ...(profileCfg.workingHours !== undefined ? { workingHours: profileCfg.workingHours } : {}),
-              ...(profileCfg.monthlySalary !== undefined ? { monthlySalary: profileCfg.monthlySalary } : {}),
-              ...(Array.isArray(profileCfg.tasks) ? { tasks: profileCfg.tasks } : {}),
-              ...(profileCfg.leaderPrivateNotes !== undefined
-                ? { leaderPrivateNotes: profileCfg.leaderPrivateNotes }
-                : {}),
-              updatedAt: profileCfg.updatedAt || u.updatedAt
-            };
-        return sanitizeStaffUserForFirestore(mergedUser);
-      });
+      mergedItems = mergedItems
+        .filter((u: any) => {
+          if (!u || !u.id) return false;
+          const email = (u.email || '').trim().toLowerCase();
+          return !FAKE_DEMO_IDS.has(String(u.id)) && !FAKE_DEMO_EMAILS.has(email);
+        })
+        .map((u: any) => {
+          const profileCfg = mergedStaffProfiles[u.id];
+          const cleanedUser = { ...u };
+          delete cleanedUser.staffChatMessages;
+          delete cleanedUser.deletedStaffChatIds;
+          delete cleanedUser.pinnedStaffAnnouncement;
+          const mergedUser = !profileCfg
+            ? cleanedUser
+            : {
+                ...cleanedUser,
+                ...(profileCfg.workingHours !== undefined ? { workingHours: profileCfg.workingHours } : {}),
+                ...(profileCfg.monthlySalary !== undefined ? { monthlySalary: profileCfg.monthlySalary } : {}),
+                ...(Array.isArray(profileCfg.tasks) ? { tasks: profileCfg.tasks } : {}),
+                ...(profileCfg.leaderPrivateNotes !== undefined
+                  ? { leaderPrivateNotes: profileCfg.leaderPrivateNotes }
+                  : {}),
+                updatedAt: profileCfg.updatedAt || u.updatedAt
+              };
+          return sanitizeStaffUserForFirestore(mergedUser);
+        });
+    } else if (collection === 'auditLogs') {
+      mergedItems.sort(
+        (a: any, b: any) => (Date.parse(b?.timestamp || '') || 0) - (Date.parse(a?.timestamp || '') || 0)
+      );
+      mergedItems = mergedItems.slice(0, 100);
     } else if (collection === 'studentAtqiniSubmissions') {
       mergedItems = deduplicateAtqiniSubmissions(mergedItems);
     } else if (collection === 'studentChallengeSubmissions') {

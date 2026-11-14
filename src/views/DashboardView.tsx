@@ -29,7 +29,9 @@ import {
   LOGIN_WELCOME_DURATION_MS,
   readLocalStaffProfiles,
   writeLocalStaffProfiles,
-  isSupervisorOrTeacherOnly
+  isSupervisorOrTeacherOnly,
+  isExactOwnerReefa,
+  isExactFounderOmar
 } from '../utils/staffHelpers';
 
 interface DashboardViewProps {
@@ -66,10 +68,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // - All Supervisors (مشرفة حلقات) and All Teachers (معلمة حلقة)
   const allRegisteredAccountsForWelcome: User[] = React.useMemo(() => {
     const rolePriority = (u: User) => {
-      const email = (u.email || '').trim().toLowerCase();
-      const name = (u.name || '').trim();
-      if (email === 'reef@ghaym.org' || name.includes('ريفة المنصوري') || u.role === 'owner') return 1;
-      if (email === 'omar@ghaym.org' || name.includes('عمر عبدالرحمن') || u.role === 'leader') return 2;
+      if (isExactOwnerReefa(u) || u.role === 'owner') return 1;
+      if (isExactFounderOmar(u) || u.role === 'leader') return 2;
       if (u.role === 'supervisor') return 3;
       if (u.role === 'teacher') return 4;
       return 5;
@@ -120,10 +120,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       const cleanName = (targetUserObj.name || '').trim();
 
       const aliasKeys = [targetUserObj.id, cleanEmail, cleanName].filter(Boolean);
-      if (cleanEmail === 'reef@ghaym.org' || cleanName.includes('ريفة المنصوري') || targetUserObj.role === 'owner') {
+      if (isExactOwnerReefa(targetUserObj) || targetUserObj.role === 'owner') {
         aliasKeys.push('u-owner', 'reef@ghaym.org', 'ريفة المنصوري');
       }
-      if (cleanEmail === 'omar@ghaym.org' || cleanName.includes('عمر عبدالرحمن')) {
+      if (isExactFounderOmar(targetUserObj)) {
         aliasKeys.push('u-omar', 'u-founder-omar', 'omar@ghaym.org', 'أ. عمر عبدالرحمن');
       }
 

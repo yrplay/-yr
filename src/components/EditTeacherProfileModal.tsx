@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { User } from '../types';
 import { IslamicIconPicker, renderUserAvatarBadge, getAvatarLabel } from './IslamicIconLibrary';
 import { X, Upload, Trash2, FileSignature, Sparkles, Check, KeyRound, Lock, Eye, EyeOff } from 'lucide-react';
+import { optimizeImageFile } from '../utils/imageOptimizer';
 
 interface EditTeacherProfileModalProps {
   user: User;
@@ -32,20 +33,20 @@ export const EditTeacherProfileModal: React.FC<EditTeacherProfileModalProps> = (
 
   const [showPasscode, setShowPasscode] = useState(false);
 
-  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      showToast('حجم ملف التوقيع يجب أن يكون أقل من 2 ميجابايت', 'error');
+    if (file.size > 4 * 1024 * 1024) {
+      showToast('حجم ملف التوقيع يجب أن يكون أقل من 4 ميجابايت', 'error');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const dataUrl = ev.target?.result as string;
-      setFormData(prev => ({ ...prev, signatureUrl: dataUrl }));
-      showToast('تم رفع صورة التوقيع المعتمد بنجاح ✍️', 'success');
-    };
-    reader.readAsDataURL(file);
+    try {
+      const optimizedDataUrl = await optimizeImageFile(file, 400, 200);
+      setFormData(prev => ({ ...prev, signatureUrl: optimizedDataUrl }));
+      showToast('تم رفع وضغط صورة التوقيع المعتمد بنجاح ✍️', 'success');
+    } catch {
+      showToast('تعذر معالجة صورة التوقيع', 'error');
+    }
   };
 
   const handleRemoveSignature = () => {

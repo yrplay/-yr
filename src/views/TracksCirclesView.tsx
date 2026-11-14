@@ -320,6 +320,8 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     } else {
       await createCircle(payload);
     }
+    setSelectedTrackId(trackId);
+    setGlobalSelectedTrackId(trackId);
     setCircleModalOpen(false);
   };
 

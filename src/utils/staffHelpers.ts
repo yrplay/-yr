@@ -21,23 +21,57 @@ export const STAFF_PROFILES_LOCAL_KEY = 'ghaith_staff_profiles_local_v1';
  * These accounts have 100% full administrative oversight and are strictly EXCLUDED
  * from personal attendance check-in, daily/monthly attendance tables, working hours, tasks, and salary cards.
  */
+export const isExactOwnerReefa = (
+  user: Pick<User, 'id' | 'role' | 'name' | 'title' | 'email'> | null | undefined
+): boolean => {
+  if (!user) return false;
+  if (user.role === 'teacher' || user.role === 'supervisor') return false;
+  const email = (user.email || '').trim().toLowerCase();
+  const name = (user.name || '').trim();
+  return (
+    user.id === 'u-owner' ||
+    user.role === 'owner' ||
+    email === 'reef@ghaym.org' ||
+    email === 'owner@ghaym.org' ||
+    name === 'ريفة المنصوري' ||
+    name === 'أ. ريفة المنصوري'
+  );
+};
+
+export const isExactFounderOmar = (
+  user: Pick<User, 'id' | 'role' | 'name' | 'title' | 'email'> | null | undefined
+): boolean => {
+  if (!user) return false;
+  if (user.role === 'teacher' || user.role === 'supervisor') return false;
+  const email = (user.email || '').trim().toLowerCase();
+  const name = (user.name || '').trim();
+  return (
+    user.id === 'u-omar' ||
+    user.id === 'u-founder-omar' ||
+    user.id === 'u-1792848402832' ||
+    email === 'omar@ghaym.org' ||
+    name === 'أ. عمر عبدالرحمن' ||
+    name === 'عمر عبدالرحمن'
+  );
+};
+
 export const isFounderOrOwnerOrLeader = (
   user: Pick<User, 'id' | 'role' | 'name' | 'title' | 'email'> | null | undefined
 ): boolean => {
   if (!user) return false;
+  if (user.role === 'teacher' || user.role === 'supervisor') return false;
   if (hasFullAccess(user)) return true;
   if (user.role === 'developer' || user.role === 'owner' || user.role === 'leader') return true;
   if (user.id === 'u-dev' || user.id === 'u-owner' || user.id === 'u-admin') return true;
+  if (isExactOwnerReefa(user) || isExactFounderOmar(user)) return true;
   const email = (user.email || '').trim().toLowerCase();
   if (email === 'yr.play.com@gmail.com' || email === 'owner@ghaym.org') return true;
   const name = (user.name || '').trim();
   const title = (user.title || '').trim();
   if (
-    name.includes('عمر عبدالرحمن') ||
-    name.includes('ريفة المنصوري') ||
-    name.includes('مطور المنصة') ||
-    name.includes('مؤسس المنصة') ||
-    name.includes('مالك المنصة') ||
+    name === 'مطور المنصة' ||
+    name === 'مؤسس المنصة' ||
+    name === 'مالك المنصة' ||
     title.includes('مؤسس المنصة') ||
     title.includes('مالك المنصة')
   ) {
@@ -81,17 +115,16 @@ export const formatCurrentArabicTime = (date: Date = new Date()): string => {
  */
 export const getStaffShortRoleLabel = (
   role?: UserRole,
-  user?: Pick<User, 'name' | 'title' | 'email'> | null
+  user?: Pick<User, 'name' | 'title' | 'email' | 'id' | 'role'> | null
 ): string => {
   const email = (user?.email || '').trim().toLowerCase();
-  const name = (user?.name || '').trim();
   if (role === 'developer' || email === 'yr.play.com@gmail.com') {
     return 'المطور التقني';
   }
-  if (role === 'owner' || email === 'reef@ghaym.org' || name.includes('ريفة المنصوري')) {
+  if (role === 'owner' || isExactOwnerReefa(user ? { ...user, id: user.id || '', role: role || user.role || 'teacher' } : null)) {
     return 'مالك المنصة';
   }
-  if (role === 'leader' || email === 'omar@ghaym.org' || name.includes('عمر عبدالرحمن')) {
+  if (role === 'leader' || isExactFounderOmar(user ? { ...user, id: user.id || '', role: role || user.role || 'teacher' } : null)) {
     return 'قائدة المقرأة';
   }
   if (role === 'supervisor') return 'مشرفة حلقات';
@@ -111,17 +144,16 @@ export const canManageAllWelcomeMessages = (
   user: Pick<User, 'id' | 'role' | 'name' | 'title' | 'email'> | null | undefined
 ): boolean => {
   if (!user) return false;
+  if (user.role === 'teacher' || user.role === 'supervisor') return false;
   if (hasFullAccess(user)) return true;
+  if (isExactOwnerReefa(user) || isExactFounderOmar(user)) return true;
   const email = (user.email || '').trim().toLowerCase();
-  const name = (user.name || '').trim();
   const title = (user.title || '').trim();
   if (
     email === 'reef@ghaym.org' ||
     email === 'omar@ghaym.org' ||
     email === 'owner@ghaym.org' ||
     email === 'yr.play.com@gmail.com' ||
-    name.includes('ريفة المنصوري') ||
-    name.includes('عمر عبدالرحمن') ||
     title.includes('مالك المنصة') ||
     title.includes('مؤسس غيث الغيم')
   ) {
@@ -138,16 +170,15 @@ export const canManageAllWelcomeMessages = (
  * - معلمة -> معلمة حلقة (or custom title)
  */
 export const getStaffDropdownRoleBadge = (
-  user: Pick<User, 'role' | 'name' | 'title' | 'email'> | null | undefined
+  user: Pick<User, 'id' | 'role' | 'name' | 'title' | 'email'> | null | undefined
 ): string => {
   if (!user) return 'مالك المنصة العام';
   const email = (user.email || '').trim().toLowerCase();
-  const name = (user.name || '').trim();
   const title = (user.title || '').trim();
-  if (email === 'reef@ghaym.org' || name.includes('ريفة المنصوري') || user.role === 'owner') {
+  if (isExactOwnerReefa(user) || user.role === 'owner') {
     return title || 'مالك المنصة العام';
   }
-  if (email === 'omar@ghaym.org' || name.includes('عمر عبدالرحمن')) {
+  if (isExactFounderOmar(user)) {
     return title || 'مؤسس غيث الغيم';
   }
   if (user.role === 'developer' || email === 'yr.play.com@gmail.com') {
@@ -205,10 +236,10 @@ export const resolveUserWelcomeConfig = (
   const lookupKeys = [targetUser.id, cleanEmail, cleanName].filter(Boolean);
 
   // Also add canonical alias keys for Reefa and Omar so cross-device ID differences never miss
-  if (cleanEmail === 'reef@ghaym.org' || cleanName.includes('ريفة المنصوري') || targetUser.role === 'owner') {
+  if (isExactOwnerReefa(targetUser)) {
     lookupKeys.push('u-owner', 'reef@ghaym.org', 'ريفة المنصوري');
   }
-  if (cleanEmail === 'omar@ghaym.org' || cleanName.includes('عمر عبدالرحمن')) {
+  if (isExactFounderOmar(targetUser)) {
     lookupKeys.push('u-omar', 'u-founder-omar', 'omar@ghaym.org', 'أ. عمر عبدالرحمن');
   }
 
@@ -666,16 +697,14 @@ export const canEditOrDeleteStaffChat = (
 ): boolean => {
   if (!user) return false;
   if (user.role === 'supervisor' || user.role === 'teacher') return false;
+  if (isExactOwnerReefa(user) || isExactFounderOmar(user)) return true;
   const email = (user.email || '').trim().toLowerCase();
-  const name = (user.name || '').trim();
   const title = (user.title || '').trim();
   if (
     email === 'reef@ghaym.org' ||
     email === 'omar@ghaym.org' ||
     email === 'owner@ghaym.org' ||
     email === 'yr.play.com@gmail.com' ||
-    name.includes('ريفة المنصوري') ||
-    name.includes('عمر عبدالرحمن') ||
     user.role === 'owner' ||
     user.role === 'leader' ||
     user.role === 'developer' ||

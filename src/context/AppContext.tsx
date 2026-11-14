@@ -40,7 +40,9 @@ import {
   writeLocalStaffAttendanceRecords,
   getDefaultTasksForUser,
   getDefaultWorkingHoursForRole,
-  getDefaultMonthlySalaryForRole
+  getDefaultMonthlySalaryForRole,
+  isExactOwnerReefa,
+  isExactFounderOmar
 } from '../utils/staffHelpers';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
@@ -295,7 +297,7 @@ const sanitizeAndSortAuditLogs = (logs: any[]): AuditLog[] => {
   }
   const result = Array.from(map.values());
   result.sort((a, b) => (Date.parse(b.timestamp) || 0) - (Date.parse(a.timestamp) || 0));
-  return result.slice(0, 500);
+  return result.slice(0, 100);
 };
 
 const ensureDefaultTrackIntegrity = (data: any) => {
@@ -313,16 +315,25 @@ const ensureDefaultTrackIntegrity = (data: any) => {
     return raw;
   };
 
-  // 1. Ensure track t-1 exists and is named 'مسار مشكاة الغيم', and clean emojis from track names
+  const deletedTrackIds = new Set(
+    Array.isArray(data._deletedEntities?.tracks) ? data._deletedEntities.tracks.map(String) : []
+  );
+  const deletedStudentIds = new Set(
+    Array.isArray(data._deletedEntities?.students) ? data._deletedEntities.students.map(String) : []
+  );
+  const deletedCircleIds = new Set(
+    Array.isArray(data._deletedEntities?.circles) ? data._deletedEntities.circles.map(String) : []
+  );
+
+  // 1. Ensure track t-1 exists and clean emojis from track names while respecting deleted tracks
   if (Array.isArray(data.tracks)) {
-    let tracksList = data.tracks.map((t: any) => {
-      const cleanedName = String(t.name || '').replace(/[🪴🤎]/g, '').trim();
-      const cleanedIcon = normalizeIconVal(t.icon);
-      if (t.id === 't-1' && (cleanedName === 'مشكاة الغيم للحفظ' || !cleanedName.includes('مشكاة الغيم'))) {
-        return { ...t, name: 'مسار مشكاة الغيم', icon: cleanedIcon };
-      }
-      return { ...t, name: cleanedName || t.name, icon: cleanedIcon };
-    });
+    let tracksList = data.tracks
+      .filter((t: any) => t && t.id && !deletedTrackIds.has(String(t.id)))
+      .map((t: any) => {
+        const cleanedName = String(t.name || '').replace(/[🪴🤎]/g, '').trim();
+        const cleanedIcon = normalizeIconVal(t.icon);
+        return { ...t, name: cleanedName || t.name || 'مسار مشكاة الغيم', icon: cleanedIcon };
+      });
     try {
       if (typeof window !== 'undefined') {
         const localTracksRaw = localStorage.getItem('ghaith_tracks_local_v1');
@@ -332,7 +343,7 @@ const ensureDefaultTrackIntegrity = (data: any) => {
             const byId = new Map<string, any>();
             tracksList.forEach((tr: any) => tr?.id && byId.set(tr.id, tr));
             localTracks.forEach((loc: any) => {
-              if (!loc?.id) return;
+              if (!loc?.id || deletedTrackIds.has(String(loc.id))) return;
               const ex = byId.get(loc.id);
               const locTime = Date.parse(loc.updatedAt || '') || 0;
               const exTime = ex ? (Date.parse(ex.updatedAt || '') || 0) : -1;
@@ -352,10 +363,12 @@ const ensureDefaultTrackIntegrity = (data: any) => {
 
   // 2. Ensure all students have a valid trackId (default to t-1) and merge local saved student edits
   if (Array.isArray(data.students)) {
-    let studentsList = data.students.map((s: any) => ({
-      ...s,
-      trackId: s.trackId || 't-1'
-    }));
+    let studentsList = data.students
+      .filter((s: any) => s && s.id && !deletedStudentIds.has(String(s.id)))
+      .map((s: any) => ({
+        ...s,
+        trackId: s.trackId || 't-1'
+      }));
     try {
       if (typeof window !== 'undefined') {
         const localStudentsRaw = localStorage.getItem(STUDENTS_LOCAL_KEY);
@@ -365,7 +378,7 @@ const ensureDefaultTrackIntegrity = (data: any) => {
             const byId = new Map<string, any>();
             studentsList.forEach((st: any) => st?.id && byId.set(st.id, st));
             localStudents.forEach((loc: any) => {
-              if (!loc?.id) return;
+              if (!loc?.id || deletedStudentIds.has(String(loc.id))) return;
               const ex = byId.get(loc.id);
               const locTime = Date.parse(loc.updatedAt || '') || 0;
               const exTime = ex ? (Date.parse(ex.updatedAt || '') || 0) : -1;
@@ -385,12 +398,14 @@ const ensureDefaultTrackIntegrity = (data: any) => {
 
   // 3. Ensure all circles have a valid trackId (default to t-1) and clean emojis from circle names
   if (Array.isArray(data.circles)) {
-    let circlesList = data.circles.map((c: any) => ({
-      ...c,
-      name: String(c.name || '').replace(/[🪴🤎]/g, '').trim() || c.name,
-      icon: normalizeIconVal(c.icon),
-      trackId: c.trackId || 't-1'
-    }));
+    let circlesList = data.circles
+      .filter((c: any) => c && c.id && !deletedCircleIds.has(String(c.id)))
+      .map((c: any) => ({
+        ...c,
+        name: String(c.name || '').replace(/[🪴🤎]/g, '').trim() || c.name,
+        icon: normalizeIconVal(c.icon),
+        trackId: c.trackId || 't-1'
+      }));
     try {
       if (typeof window !== 'undefined') {
         const localCirclesRaw = localStorage.getItem('ghaith_circles_local_v1');
@@ -400,7 +415,7 @@ const ensureDefaultTrackIntegrity = (data: any) => {
             const byId = new Map<string, any>();
             circlesList.forEach((ci: any) => ci?.id && byId.set(ci.id, ci));
             localCircles.forEach((loc: any) => {
-              if (!loc?.id) return;
+              if (!loc?.id || deletedCircleIds.has(String(loc.id))) return;
               const ex = byId.get(loc.id);
               const locTime = Date.parse(loc.updatedAt || '') || 0;
               const exTime = ex ? (Date.parse(ex.updatedAt || '') || 0) : -1;
@@ -797,12 +812,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       // 2. Ensure ريفة المنصوري (reef@ghaym.org, PIN 2005) is role 'owner' (مالك المنصة) & title 'مالك المنصة العام'
-      if (
-        email === 'reef@ghaym.org' ||
-        email === 'owner@ghaym.org' ||
-        name.includes('ريفة المنصوري') ||
-        u.id === 'u-owner'
-      ) {
+      // Strictly never match teachers or supervisors
+      if (isExactOwnerReefa(u)) {
         const currentPin = u.passcode ? String(u.passcode).trim() : '';
         const resolvedPin = (!currentPin || currentPin === '7788') ? '2005' : currentPin;
         return {
@@ -819,7 +830,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       // 3. Ensure أ. عمر عبدالرحمن (omar@ghaym.org) is role 'leader' (قائدة المقرأة) & title 'مؤسس غيث الغيم'
-      if (email === 'omar@ghaym.org' || name.includes('عمر عبدالرحمن')) {
+      // Strictly never match teachers whose father's name is Omar Abdulrahman (e.g. صفية عمر عبدالرحمن)
+      if (isExactFounderOmar(u)) {
         return {
           ...u,
           name: name || 'أ. عمر عبدالرحمن',
@@ -849,12 +861,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     // Deduplicate Reefa owner accounts without removing any other newly added staff accounts
-    const reefaAccounts = list.filter(
-      u =>
-        u.id === 'u-owner' ||
-        (u.email || '').trim().toLowerCase() === 'reef@ghaym.org' ||
-        (u.name || '').includes('ريفة المنصوري')
-    );
+    const reefaAccounts = list.filter(u => isExactOwnerReefa(u));
     if (reefaAccounts.length === 0) {
       list.push(defaultOwner);
     } else if (reefaAccounts.length > 1) {
@@ -872,10 +879,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         .map(u => (u.id === preferredOwner.id ? mergedOwner : u));
     }
 
-    // Ensure أ. عمر عبدالرحمن (omar@ghaym.org) is present and deduplicated cleanly
-    const omarAccounts = list.filter(
-      u => (u.email || '').trim().toLowerCase() === 'omar@ghaym.org' || (u.name || '').includes('عمر عبدالرحمن')
-    );
+    // Ensure أ. عمر عبدالرحمن (omar@ghaym.org) is present and deduplicated cleanly without touching any teacher
+    const omarAccounts = list.filter(u => isExactFounderOmar(u));
     if (omarAccounts.length === 0) {
       list.push(defaultFounderLeader);
     } else if (omarAccounts.length > 1) {
@@ -2067,25 +2072,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const syncedUsersList: User[] = Array.isArray(baseUsers)
         ? baseUsers.map((u: User) => {
             const p = mergedProfiles[u.id];
-            const isOwnerOrLeader =
-              u.id === 'user-owner' ||
-              u.id === 'user-leader' ||
-              u.role === 'owner' ||
-              u.role === 'leader' ||
-              u.role === 'developer';
+            const cleanedUser = { ...u } as any;
+            delete cleanedUser.staffChatMessages;
+            delete cleanedUser.deletedStaffChatIds;
+            delete cleanedUser.pinnedStaffAnnouncement;
             return sanitizeStaffUserForFirestore({
-              ...u,
+              ...cleanedUser,
               ...(p?.workingHours !== undefined ? { workingHours: p.workingHours } : {}),
               ...(p?.monthlySalary !== undefined ? { monthlySalary: p.monthlySalary } : {}),
               ...(Array.isArray(p?.tasks) ? { tasks: p.tasks } : {}),
-              ...(p?.leaderPrivateNotes !== undefined ? { leaderPrivateNotes: p.leaderPrivateNotes } : {}),
-              ...(isOwnerOrLeader
-                ? {
-                    staffChatMessages: mergedChatMessages,
-                    deletedStaffChatIds: mergedDeletedChatIds,
-                    ...(mergedPin ? { pinnedStaffAnnouncement: mergedPin } : {})
-                  }
-                : {})
+              ...(p?.leaderPrivateNotes !== undefined ? { leaderPrivateNotes: p.leaderPrivateNotes } : {})
             }) as User;
           })
         : baseUsers;
@@ -2108,7 +2104,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         studentSubscriptions: masterStateRef.current.studentSubscriptions || studentSubscriptions,
         gradingConfigs: masterStateRef.current.gradingConfigs || gradingConfigs,
         _deletedEntities: masterStateRef.current._deletedEntities || {},
-        auditLogs: masterStateRef.current.auditLogs || auditLogs,
+        auditLogs: sanitizeAndSortAuditLogs(overrides?.auditLogs || masterStateRef.current.auditLogs || auditLogs),
         ...overrides,
         users: syncedUsersList,
         settings: mergedSettingsObj,
@@ -2126,27 +2122,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       rawPayload.dailyRecords = deduplicateDailyRecords(rawPayload.dailyRecords);
       rawPayload.studentChallengeSubmissions = deduplicateChallengeSubmissions(rawPayload.studentChallengeSubmissions);
       rawPayload.studentAtqiniSubmissions = deduplicateAtqiniSubmissions(rawPayload.studentAtqiniSubmissions);
+      rawPayload.auditLogs = sanitizeAndSortAuditLogs(rawPayload.auditLogs);
 
       masterStateRef.current = deepCleanForFirestore(rawPayload);
 
       if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('ghaith_staff_users', JSON.stringify(masterStateRef.current.users));
-          localStorage.setItem('ghaith_circles_local_v1', JSON.stringify(masterStateRef.current.circles));
-          localStorage.setItem('ghaith_tracks_local_v1', JSON.stringify(masterStateRef.current.tracks));
-          localStorage.setItem('ghaith_challenges_local_v1', JSON.stringify(masterStateRef.current.challenges));
-          localStorage.setItem(STUDENTS_LOCAL_KEY, JSON.stringify(masterStateRef.current.students));
-        } catch (staffStorageError) {
-          console.warn('Primary entity localStorage save notice:', staffStorageError);
-        }
+        const safeSetItem = (key: string, val: any) => {
+          try {
+            localStorage.setItem(key, JSON.stringify(val));
+          } catch {
+            try {
+              localStorage.removeItem(STORAGE_KEY);
+              localStorage.setItem(key, JSON.stringify(val));
+            } catch {
+              // ignore quota errors after fallback
+            }
+          }
+        };
+        safeSetItem('ghaith_circles_local_v1', masterStateRef.current.circles);
+        safeSetItem('ghaith_tracks_local_v1', masterStateRef.current.tracks);
+        safeSetItem('ghaith_staff_users', masterStateRef.current.users);
+        safeSetItem('ghaith_challenges_local_v1', masterStateRef.current.challenges);
+        safeSetItem(STUDENTS_LOCAL_KEY, masterStateRef.current.students);
+        safeSetItem('ghaith_attendance_local_v1', masterStateRef.current.attendanceRecords);
+        safeSetItem('ghaith_daily_records_local_v1', masterStateRef.current.dailyRecords);
+        safeSetItem('ghaith_challenge_subs_local_v1', masterStateRef.current.studentChallengeSubmissions);
+        safeSetItem(STUDENT_PLANS_LOCAL_KEY, masterStateRef.current.studentPlans);
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(masterStateRef.current));
-          localStorage.setItem('ghaith_attendance_local_v1', JSON.stringify(masterStateRef.current.attendanceRecords));
-          localStorage.setItem('ghaith_daily_records_local_v1', JSON.stringify(masterStateRef.current.dailyRecords));
-          localStorage.setItem('ghaith_challenge_subs_local_v1', JSON.stringify(masterStateRef.current.studentChallengeSubmissions));
-          localStorage.setItem(STUDENT_PLANS_LOCAL_KEY, JSON.stringify(masterStateRef.current.studentPlans));
-        } catch (storageError) {
-          console.warn('LocalStorage save failed; continuing with cloud sync:', storageError);
+        } catch {
+          // If master snapshot exceeds localStorage quota, individual entity keys above already saved cleanly
         }
       }
 
@@ -2577,46 +2582,93 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const createCircle = async (circle: Partial<Circle>) => {
+    lastLocalMutationTimeRef.current = Date.now();
+    hasPendingLocalChangesRef.current = true;
+    const nowIso = new Date().toISOString();
     const currentUsers = masterStateRef.current.users?.length ? masterStateRef.current.users : users;
     const teacherObj = currentUsers.find((u: User) => u.id === circle.teacherId);
     const supervisorObj = currentUsers.find((u: User) => u.id === circle.supervisorId);
     const newCircle: Circle = {
+      ...circle,
       id: circle.id || `c-${Date.now()}`,
       trackId: circle.trackId || (tracks[0]?.id ?? 't-1'),
-      name: circle.name || 'حلقة جديدة',
+      name: (circle.name || '').trim() || 'حلقة جديدة',
       icon: circle.icon || '📖',
       teacherId: circle.teacherId || '',
       teacherName: teacherObj ? teacherObj.name : (circle.teacherName || 'غير محدد'),
       supervisorId: circle.supervisorId || '',
       supervisorName: supervisorObj ? supervisorObj.name : (circle.supervisorName || 'غير محدد'),
-      maxStudents: circle.maxStudents || 15,
-      scheduleDays: circle.scheduleDays || ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء'],
+      maxStudents: Number(circle.maxStudents) || 15,
+      scheduleDays: Array.isArray(circle.scheduleDays) && circle.scheduleDays.length > 0
+        ? circle.scheduleDays
+        : ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء'],
       startTime: circle.startTime || '16:00',
       endTime: circle.endTime || '18:00',
       earlyPrepCutoffTime: circle.earlyPrepCutoffTime || '15:45',
-      isArchived: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      ...circle
+      isArchived: Boolean(circle.isArchived),
+      createdAt: circle.createdAt || nowIso,
+      updatedAt: nowIso
     };
     const currentCircles = masterStateRef.current.circles?.length ? masterStateRef.current.circles : circles;
     const next = [...currentCircles.filter((c: Circle) => c.id !== newCircle.id), newCircle];
     masterStateRef.current.circles = next;
     setCircles(next);
-    try {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('ghaith_circles_local_v1', JSON.stringify(next));
-      }
-    } catch {
-      // ignore storage errors
+
+    // Sync assigned teacher/supervisor circleIds so the circle is linked bidirectionally
+    let nextUsers = currentUsers;
+    if (newCircle.teacherId || newCircle.supervisorId) {
+      nextUsers = currentUsers.map((u: User) => {
+        if (u.id === newCircle.teacherId || u.id === newCircle.supervisorId) {
+          const updatedIds = Array.from(new Set([...(u.circleIds || []), newCircle.id]));
+          return sanitizeStaffUserForFirestore({
+            ...u,
+            circleIds: updatedIds,
+            assignedCircles: updatedIds,
+            updatedAt: nowIso
+          }) as User;
+        }
+        return u;
+      });
+      masterStateRef.current.users = nextUsers;
+      setUsers(nextUsers);
     }
+
+    // Ensure the circle is never in _deletedEntities.circles
+    const nextDeleted = { ...(masterStateRef.current._deletedEntities || {}) };
+    if (Array.isArray(nextDeleted.circles)) {
+      nextDeleted.circles = nextDeleted.circles.filter((cid: string) => String(cid) !== String(newCircle.id));
+    }
+    masterStateRef.current._deletedEntities = nextDeleted;
+
     const nextLogs = appendAuditEntry('create', 'circle', `إضافة حلقة قرآنية جديدة: ${newCircle.name} (المعلمة: ${newCircle.teacherName})`, newCircle.id);
-    persistState({ circles: next, auditLogs: nextLogs });
+    persistState({
+      circles: next,
+      users: nextUsers,
+      _deletedEntities: nextDeleted,
+      auditLogs: nextLogs,
+      _skipCloudPush: true
+    });
+
+    if (!isLocalDemoMode) {
+      setCloudStatus('syncing');
+      try {
+        await pushStateToCloud(masterStateRef.current);
+        hasPendingLocalChangesRef.current = false;
+        setCloudStatus('connected');
+        setLastSynced(new Date());
+      } catch (err) {
+        console.warn('Direct Firestore sync on createCircle notice:', err);
+        setCloudStatus('error');
+      }
+    }
     showToast(`تمت إضافة الحلقة "${newCircle.name}" بنجاح`);
     return newCircle;
   };
 
   const updateCircle = async (id: string, circle: Partial<Circle>) => {
+    lastLocalMutationTimeRef.current = Date.now();
+    hasPendingLocalChangesRef.current = true;
+    const nowIso = new Date().toISOString();
     const currentUsers = masterStateRef.current.users?.length ? masterStateRef.current.users : users;
     const teacherObj = currentUsers.find((u: User) => u.id === circle.teacherId);
     const supervisorObj = currentUsers.find((u: User) => u.id === circle.supervisorId);
@@ -2629,20 +2681,64 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ...circle,
         teacherName: teacherObj ? teacherObj.name : (circle.teacherName || c.teacherName),
         supervisorName: supervisorObj ? supervisorObj.name : (circle.supervisorName || c.supervisorName),
-        updatedAt: new Date().toISOString()
+        updatedAt: nowIso
       };
     });
     masterStateRef.current.circles = next;
     setCircles(next);
-    try {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('ghaith_circles_local_v1', JSON.stringify(next));
-      }
-    } catch {
-      // ignore storage errors
+
+    let nextUsers = currentUsers;
+    if (circle.teacherId !== undefined || circle.supervisorId !== undefined) {
+      const updatedCircleObj = next.find((c: Circle) => c.id === id);
+      nextUsers = currentUsers.map((u: User) => {
+        const isAssignedTeacher = updatedCircleObj?.teacherId === u.id;
+        const isAssignedSupervisor = updatedCircleObj?.supervisorId === u.id;
+        const wasPreviousTeacher = existingCircle?.teacherId === u.id && !isAssignedTeacher;
+        const wasPreviousSupervisor = existingCircle?.supervisorId === u.id && !isAssignedSupervisor;
+        if (isAssignedTeacher || isAssignedSupervisor) {
+          const updatedIds = Array.from(new Set([...(u.circleIds || []), id]));
+          return sanitizeStaffUserForFirestore({
+            ...u,
+            circleIds: updatedIds,
+            assignedCircles: updatedIds,
+            updatedAt: nowIso
+          }) as User;
+        }
+        if (wasPreviousTeacher || wasPreviousSupervisor) {
+          const updatedIds = (u.circleIds || []).filter((cid: string) => cid !== id);
+          return sanitizeStaffUserForFirestore({
+            ...u,
+            circleIds: updatedIds,
+            assignedCircles: updatedIds,
+            updatedAt: nowIso
+          }) as User;
+        }
+        return u;
+      });
+      masterStateRef.current.users = nextUsers;
+      setUsers(nextUsers);
     }
+
     const nextLogs = appendAuditEntry('update', 'circle', `تحديث بيانات الحلقة: ${circle.name || existingCircle?.name || id}`, id);
-    persistState({ circles: next, auditLogs: nextLogs, _immediateSync: true });
+    persistState({
+      circles: next,
+      users: nextUsers,
+      auditLogs: nextLogs,
+      _skipCloudPush: true
+    });
+
+    if (!isLocalDemoMode) {
+      setCloudStatus('syncing');
+      try {
+        await pushStateToCloud(masterStateRef.current);
+        hasPendingLocalChangesRef.current = false;
+        setCloudStatus('connected');
+        setLastSynced(new Date());
+      } catch (err) {
+        console.warn('Direct Firestore sync on updateCircle notice:', err);
+        setCloudStatus('error');
+      }
+    }
     showToast('تم تحديث بيانات الحلقة بنجاح');
   };
 
@@ -4860,14 +4956,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         let sName = c.supervisorName;
 
         if (assignedSet) {
-          if (effectiveRole === 'teacher' && assignedSet.has(c.id)) {
-            tId = id;
-            tName = effectiveName;
-            changed = true;
-          } else if (effectiveRole === 'supervisor' && assignedSet.has(c.id)) {
-            sId = id;
-            sName = effectiveName;
-            changed = true;
+          if (effectiveRole === 'teacher') {
+            if (assignedSet.has(c.id)) {
+              tId = id;
+              tName = effectiveName;
+              changed = true;
+            } else if (c.teacherId === id) {
+              tId = '';
+              tName = 'غير محدد';
+              changed = true;
+            }
+          } else if (effectiveRole === 'supervisor') {
+            if (assignedSet.has(c.id)) {
+              sId = id;
+              sName = effectiveName;
+              changed = true;
+            } else if (c.supervisorId === id) {
+              sId = '';
+              sName = 'غير محدد';
+              changed = true;
+            }
           }
         }
         if (tId === id && user.name) {
