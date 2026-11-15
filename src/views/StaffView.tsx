@@ -128,6 +128,7 @@ export const StaffView: React.FC = () => {
   const {
     users,
     circles,
+    tracks,
     currentUser,
     createUser,
     updateUser,
@@ -136,6 +137,19 @@ export const StaffView: React.FC = () => {
     updateSettings,
     showToast
   } = useApp();
+
+  const activeCirclesOnly = React.useMemo(
+    () =>
+      circles.filter(c => {
+        if (!c || c.isArchived || (c as any).status === 'archived') return false;
+        if (c.trackId && Array.isArray(tracks) && tracks.length > 0) {
+          const parentTrack = tracks.find(t => t.id === c.trackId);
+          if (parentTrack?.isArchived) return false;
+        }
+        return true;
+      }),
+    [circles, tracks]
+  );
 
   // Default to the original table view ('table')
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
@@ -402,7 +416,7 @@ export const StaffView: React.FC = () => {
         avatarIcon: user.avatarIcon || 'mushaf',
         avatarColor: user.avatarColor || '#ad4e00',
         signatureUrl: user.signatureUrl || '',
-        circleIds: user.circleIds || [],
+        circleIds: (user.circleIds || []).filter(id => activeCirclesOnly.some(c => c.id === id)),
         passcode: user.passcode || ''
       });
     } else {
@@ -794,8 +808,8 @@ export const StaffView: React.FC = () => {
 
                   const assignedCircles =
                     user.role === 'supervisor'
-                      ? circles.filter(c => c.supervisorId === user.id || user.circleIds?.includes(c.id))
-                      : circles.filter(c => c.teacherId === user.id || user.circleIds?.includes(c.id));
+                      ? activeCirclesOnly.filter(c => c.supervisorId === user.id || user.circleIds?.includes(c.id))
+                      : activeCirclesOnly.filter(c => c.teacherId === user.id || user.circleIds?.includes(c.id));
 
                   const roleInfo = roleLabels[user.role] || roleLabels.teacher;
 
@@ -964,8 +978,8 @@ export const StaffView: React.FC = () => {
 
             const assignedCircles =
               user.role === 'supervisor'
-                ? circles.filter(c => c.supervisorId === user.id || user.circleIds?.includes(c.id))
-                : circles.filter(c => c.teacherId === user.id || user.circleIds?.includes(c.id));
+                ? activeCirclesOnly.filter(c => c.supervisorId === user.id || user.circleIds?.includes(c.id))
+                : activeCirclesOnly.filter(c => c.teacherId === user.id || user.circleIds?.includes(c.id));
 
             const roleInfo = roleLabels[user.role] || roleLabels.teacher;
 
@@ -1319,7 +1333,7 @@ export const StaffView: React.FC = () => {
                     الحلقات المسندة ({staffForm.circleIds.length} محددة):
                   </label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-1">
-                    {circles.filter(c => !c.isArchived).map(circle => {
+                    {activeCirclesOnly.map(circle => {
                       const isSelected = staffForm.circleIds.includes(circle.id);
                       return (
                         <button
