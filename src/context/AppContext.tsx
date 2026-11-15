@@ -3093,7 +3093,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       paymentMethod: isExempt ? 'exempt' : (sub.paymentMethod || existingForStudent?.paymentMethod || 'bank_transfer'),
       paymentDate: sub.paymentDate || new Date().toISOString().split('T')[0],
       receiptNumber: sub.receiptNumber ?? existingForStudent?.receiptNumber ?? '',
-      signatureUrl: sub.signatureUrl ?? existingForStudent?.signatureUrl,
+      signatureUrl: sub.signatureUrl ?? existingForStudent?.signatureUrl ?? '',
       notes: sub.notes ?? existingForStudent?.notes ?? '',
       updatedAt: new Date().toISOString()
     };
@@ -3138,7 +3138,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       `توثيق سند اشتراك للطالبة ${studentObj?.name || studentId} (${cycleMonth}) — الحالة: ${statusAr} (${newSub.paidAmount} ر.س)`,
       cleanId
     );
-    persistState({ studentSubscriptions: next, auditLogs: nextLogs });
+    persistState({ studentSubscriptions: next, auditLogs: nextLogs, _immediateSync: true });
     showToast('تم حفظ التعديلات واعتماد سند الاشتراك المالي بنجاح 💳');
   };
 

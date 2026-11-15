@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { 
   DollarSign, Users, CreditCard, FileText, CheckCircle2, 
-  AlertCircle, Search, ArrowRight, ShieldAlert, Check, Edit3, Settings, Calendar, Filter, RotateCcw, Layers
+  AlertCircle, Search, ArrowRight, ShieldAlert, Check, Edit3, Settings, Calendar, Filter, RotateCcw, Layers, Archive
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { hasFullAccess, StudentSubscription } from '../types';
+import { hasFullAccess, StudentSubscription, isStudentEffectivelyArchived, deduplicateStudentsByName } from '../types';
 import { calculateSubscriptionStats, deduplicateSubscriptionsByCycle } from '../services/subscriptionMath';
 import { RenderEntityIcon } from '../components/CircleIconLibrary';
 
@@ -37,6 +37,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [subscriptionTab, setSubscriptionTab] = useState<'active' | 'archived'>('active');
   const [selectedSub, setSelectedSub] = useState<Partial<StudentSubscription> | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
@@ -110,12 +111,33 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
   const effectiveFee = activeTrack?.subscriptionFee?.amount ?? defaultFee;
 
   // الطالبات الخاضعات للعرض المالي (معزولة بالمسار عند تحديده، أو كافة الطالبات)
-  const allStudents = useMemo(() => {
+  const scopedStudents = useMemo(() => {
+    const list = students || [];
     if (activeTrack) {
-      return (students || []).filter(s => s.trackId === activeTrack.id);
+      return list.filter(s => {
+        const circle = circles.find(c => c.id === s.circleId);
+        const stTrackId = s.trackId || circle?.trackId;
+        return stTrackId === activeTrack.id;
+      });
     }
-    return students || [];
-  }, [students, activeTrack]);
+    return list;
+  }, [students, circles, activeTrack]);
+
+  // الطالبات النشطات فقط (استبعاد المؤرشفات أو المنتميات لحلقات مؤرشفة + منع تكرار الطالبة المنسوخة لحلقة جديدة)
+  const activeScopedStudents = useMemo(() => {
+    const activeOnly = scopedStudents.filter(s => !isStudentEffectivelyArchived(s, circles, tracks));
+    return deduplicateStudentsByName(activeOnly);
+  }, [scopedStudents, circles, tracks]);
+
+  // الطالبات المؤرشفات أو المنتميات لحلقات مؤرشفة (مع الاحتفاظ بسجلاتهن المالية التاريخية كاملة)
+  const archivedScopedStudents = useMemo(() => {
+    return scopedStudents.filter(s => isStudentEffectivelyArchived(s, circles, tracks));
+  }, [scopedStudents, circles, tracks]);
+
+  // القائمة المعروضة في الجدول بحسب التبويب المحدد
+  const allStudents = useMemo(() => {
+    return subscriptionTab === 'archived' ? archivedScopedStudents : activeScopedStudents;
+  }, [subscriptionTab, activeScopedStudents, archivedScopedStudents]);
 
   const filteredStudents = useMemo(() => {
     if (!searchQuery.trim()) return allStudents;
@@ -124,16 +146,30 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
     );
   }, [allStudents, searchQuery]);
 
-  // الإحصاءات المالية المباشرة وفق المسار النشط والفلتر المحدد
-  const stats = useMemo(
+  // الإحصاءات المالية المباشرة للطالبات النشطات دائماً في العدادات الأساسية (أو للتبويب المعروض)
+  const activeStats = useMemo(
+    () => calculateSubscriptionStats(activeScopedStudents, studentSubscriptions || [], currentCycle, selectedCycleFilter, effectiveFee),
+    [activeScopedStudents, studentSubscriptions, effectiveFee, selectedCycleFilter, currentCycle]
+  );
+
+  const displayedTabStats = useMemo(
     () => calculateSubscriptionStats(allStudents, studentSubscriptions || [], currentCycle, selectedCycleFilter, effectiveFee),
     [allStudents, studentSubscriptions, effectiveFee, selectedCycleFilter, currentCycle]
   );
 
-  // سجلات الحسابات المالية المستقلة لكل مسار للعرض الإداري المجمّع
+  // العدادات العلوية تعرض إحصاءات الاشتراكات النشطة افتراضياً (وعند فتح تبويب المؤرشفة تعرض إحصاءات المؤرشفة)
+  const stats = subscriptionTab === 'archived' ? displayedTabStats : activeStats;
+
+  // سجلات الحسابات المالية المستقلة لكل مسار نشط (تقتصر على الطالبات النشطات فقط دون المؤرشفات)
   const trackLedgers = useMemo(() => {
     return tracks.filter(t => !t.isArchived).map(t => {
-      const trackStudents = (students || []).filter(s => s.trackId === t.id);
+      const rawTrackStudents = (students || []).filter(s => {
+        if (isStudentEffectivelyArchived(s, circles, tracks)) return false;
+        const circle = circles.find(c => c.id === s.circleId);
+        const stTrackId = s.trackId || circle?.trackId;
+        return stTrackId === t.id;
+      });
+      const trackStudents = deduplicateStudentsByName(rawTrackStudents);
       const fee = t.subscriptionFee?.amount ?? defaultFee;
       const trackStats = calculateSubscriptionStats(
         trackStudents,
@@ -149,7 +185,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
         stats: trackStats
       };
     });
-  }, [tracks, students, studentSubscriptions, currentCycle, selectedCycleFilter, defaultFee]);
+  }, [tracks, students, circles, studentSubscriptions, currentCycle, selectedCycleFilter, defaultFee]);
 
   const handleOpenPayment = (studentId: string) => {
     const student = students.find(s => s.id === studentId);
@@ -221,9 +257,9 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
         currency: editingCurrency
       });
 
-      // إذا طلبت الإدارة تطبيق الرسم الجديد على الطالبات
-      if (applyToExisting && allStudents.length > 0) {
-        for (const st of allStudents) {
+      // إذا طلبت الإدارة تطبيق الرسم الجديد على الطالبات النشطات فقط (حفاظاً على السجلات التاريخية للمؤرشفات)
+      if (applyToExisting && activeScopedStudents.length > 0) {
+        for (const st of activeScopedStudents) {
           const existing = getStudentSubscriptions(st.id, editingCycle)[0];
           const newFee = Number(editingDefaultFee) || 150;
           if (existing) {
@@ -486,26 +522,67 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
 
       {/* جدول كشف حسابات الطالبات */}
       <div className="bg-white dark:bg-stone-900 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 overflow-hidden shadow-xs space-y-3">
-        <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h3 className="font-bold text-sm text-stone-800 dark:text-stone-100 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-[#8E5364]" />
-              <span>كشف سداد الطالبات {activeTrack ? `(خاص بـ ${activeTrack.name})` : '(كافة المسارات)'} ({allStudents.length} طالبة)</span>
-            </h3>
-            <span className="text-xs text-stone-500 mt-0.5 block">
-              مدفوع بالكامل: {stats.paidCount} • مدفوع جزئياً: {stats.partialCount ?? 0} • غير مدفوع / متأخر: {(stats.pendingCount || 0) - (stats.partialCount || 0)} • المعفيات: {stats.exemptCount}
-            </span>
+        <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-sm text-stone-800 dark:text-stone-100 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-[#8E5364]" />
+                <span>
+                  {subscriptionTab === 'archived' ? 'سجل الاشتراكات المؤرشفة' : 'كشف سداد الطالبات النشطات'}{' '}
+                  {activeTrack ? `(خاص بـ ${activeTrack.name})` : '(كافة المسارات)'} ({allStudents.length} طالبة)
+                </span>
+              </h3>
+              <span className="text-xs text-stone-500 mt-0.5 block">
+                مدفوع بالكامل: {displayedTabStats.paidCount} • مدفوع جزئياً: {displayedTabStats.partialCount ?? 0} • غير مدفوع / متأخر: {(displayedTabStats.pendingCount || 0) - (displayedTabStats.partialCount || 0)} • المعفيات: {displayedTabStats.exemptCount}
+              </span>
+            </div>
+
+            <div className="relative w-full sm:w-64">
+              <Search className="w-4 h-4 text-stone-400 absolute right-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="بحث باسم الطالبة أو الكود..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full bg-[#FAF7F5] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl pr-9 pl-3 py-2 text-xs outline-hidden"
+              />
+            </div>
           </div>
 
-          <div className="relative w-full sm:w-64">
-            <Search className="w-4 h-4 text-stone-400 absolute right-3 top-2.5" />
-            <input
-              type="text"
-              placeholder="بحث باسم الطالبة أو الكود..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full bg-[#FAF7F5] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl pr-9 pl-3 py-2 text-xs outline-hidden"
-            />
+          {/* تبويبات التبديل بين الاشتراكات النشطة والاشتراكات المؤرشفة */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <div className="inline-flex items-center p-1 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800 border border-[#E2D5CC] dark:border-stone-700">
+              <button
+                type="button"
+                onClick={() => setSubscriptionTab('active')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  subscriptionTab === 'active'
+                    ? 'bg-[#8E5364] text-white shadow-2xs'
+                    : 'text-stone-600 dark:text-stone-300 hover:text-stone-900'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>الاشتراكات النشطة ({activeScopedStudents.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubscriptionTab('archived')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  subscriptionTab === 'archived'
+                    ? 'bg-amber-700 text-white shadow-2xs'
+                    : 'text-stone-600 dark:text-stone-300 hover:text-stone-900'
+                }`}
+              >
+                <Archive className="w-3.5 h-3.5" />
+                <span>الاشتراكات المؤرشفة ({archivedScopedStudents.length})</span>
+              </button>
+            </div>
+
+            {subscriptionTab === 'archived' && (
+              <span className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-3 py-1 rounded-xl font-medium">
+                سجل مالي تاريخي محفوظ للطالبات المؤرشفات أو المنتميات لحلقات مؤرشفة (محفوظ بالكامل مع سندات السداد)
+              </span>
+            )}
           </div>
         </div>
 
@@ -580,7 +657,16 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                         </span>
                       </td>
                     )}
-                    <td className="p-3.5 text-stone-500">{circle?.name || 'غير محدد'}</td>
+                    <td className="p-3.5 text-stone-500">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span>{circle?.name || 'غير محدد'}</span>
+                        {isStudentEffectivelyArchived(st, circles, tracks) && (
+                          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                            مؤرشفة
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="p-3.5 font-mono">{isExempt ? `0 ${currency} (إعفاء)` : `${reqAmount} ${currency}`}</td>
                     <td className="p-3.5 font-mono font-bold text-emerald-600">{paidAmount} {currency}</td>
                     <td className={`p-3.5 font-mono font-bold ${remainingAmount > 0 ? 'text-rose-600' : 'text-stone-400'}`}>
@@ -616,7 +702,11 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
               {filteredStudents.length === 0 && (
                 <tr>
                   <td colSpan={activeTrack ? 8 : 9} className="p-8 text-center text-stone-400 text-xs">
-                    {activeTrack ? `لا توجد طالبات مسجلات في ${activeTrack.name} حالياً.` : 'لا توجد طالبات مسجلات في المنظومة حتى الآن.'}
+                    {subscriptionTab === 'archived'
+                      ? 'لا توجد اشتراكات مؤرشفة مطابقة للعرض حالياً.'
+                      : activeTrack
+                      ? `لا توجد طالبات نشطات مسجلات في ${activeTrack.name} حالياً.`
+                      : 'لا توجد طالبات نشطات مسجلات في المنظومة حتى الآن.'}
                   </td>
                 </tr>
               )}
@@ -977,7 +1067,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                   <span className="absolute left-3 top-2.5 text-stone-400 font-bold">{editingCurrency}</span>
                 </div>
                 <p className="text-[11px] text-stone-400 mt-1">
-                  المبلغ المتوقع الإجمالي = عدد الطالبات ({allStudents.length}) × {editingDefaultFee} = {(allStudents.length * editingDefaultFee).toLocaleString()} {editingCurrency}
+                  المبلغ المتوقع الإجمالي للطالبات النشطات = عدد الطالبات النشطات ({activeScopedStudents.length}) × {editingDefaultFee} = {(activeScopedStudents.length * editingDefaultFee).toLocaleString()} {editingCurrency}
                 </p>
               </div>
 
@@ -1016,10 +1106,10 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                   />
                   <div>
                     <span className="text-[11px] text-stone-800 dark:text-stone-200 font-bold block">
-                      تطبيق الرسم الجديد فوراً على سجلات الطالبات المسجلات ({allStudents.length} طالبة)
+                      تطبيق الرسم الجديد فوراً على سجلات الطالبات النشطات ({activeScopedStudents.length} طالبة)
                     </span>
                     <span className="text-[10px] text-stone-500 block mt-0.5 leading-relaxed">
-                      عند التفعيل، سيتم تحديث المبلغ المطلوب في كشف الطالبات غير المعفيات تلقائياً بالقيمة الجديدة ({editingDefaultFee} {editingCurrency}).
+                      عند التفعيل، سيتم تحديث المبلغ المطلوب في كشف الطالبات النشطات غير المعفيات تلقائياً بالقيمة الجديدة ({editingDefaultFee} {editingCurrency}) دون المساس بالسجلات المؤرشفة.
                     </span>
                   </div>
                 </label>
