@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import {
   Users, Search, Filter, Plus, Edit, Archive, HeartHandshake,
   UserCheck, Shield, Phone, Mail, Award, ArrowUpDown, ChevronLeft,
-  Calendar, CheckCircle2, AlertCircle, AlertTriangle, Trash2, RotateCcw, Send, Star, Copy
+  Calendar, CheckCircle2, AlertCircle, AlertTriangle, Trash2, RotateCcw, Send, Star, Copy, X
 } from 'lucide-react';
 import { hasFullAccess, StudentStatus, isStudentEffectivelyArchived } from '../types';
 import { formatHijriShort, HijriJoinDateSelector } from '../utils/hijriDate';
@@ -26,6 +26,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [selectedCircleId, setSelectedCircleId] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('active');
   const [sortBy, setSortBy] = useState<'name' | 'score' | 'code'>('score');
@@ -227,7 +228,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <Users className="w-5 h-5 text-[#9A5643]" />
+            <Users className="w-5 h-5 text-theme-primary" />
             <h2 className="text-xl font-bold text-stone-900 font-quran">شؤون وسجلات الطالبات</h2>
           </div>
           <p className="text-xs text-stone-500">
@@ -235,23 +236,54 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => handleOpenStudentModal()}
-          style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
-          title="تسجيل طالبة جديدة"
-          aria-label="تسجيل طالبة جديدة"
-          className="w-10 h-10 flex items-center justify-center hover:brightness-105 text-white rounded-xl font-bold shadow-xs transition self-start sm:self-auto cursor-pointer active:scale-95 shrink-0"
-        >
-          <Plus className="w-5 h-5 shrink-0" />
-        </button>
-      </div>
+        {/* All 4 Action Icons Grouped on a Single Horizontal Row */}
+        <div className="flex items-center gap-2 flex-nowrap self-start sm:self-auto shrink-0">
+          {/* 1. Expandable Search Icon Button */}
+          <div className="flex items-center gap-1.5 flex-nowrap">
+            <button
+              type="button"
+              onClick={() => setIsSearchExpanded(prev => !prev)}
+              title="بحث بالاسم أو الكود أو الجوال"
+              aria-label="بحث بالاسم أو الكود أو الجوال"
+              className={`w-10 h-10 rounded-xl border transition flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 shrink-0 ${
+                isSearchExpanded || searchQuery
+                  ? 'bg-theme-primary hover:bg-theme-primary-hover text-white border-theme-primary'
+                  : 'bg-white hover:bg-stone-50 text-theme-primary border-stone-200'
+              }`}
+            >
+              <Search className="w-4 h-4 shrink-0" />
+            </button>
 
-      {/* Filter & Search Bar */}
-      <div className="bg-white p-4 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-3">
-        {/* Prominent Roster vs Archive Tabs */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-stone-100">
-          <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-[#FAF6F2] border border-[#E2D5CC] shrink-0">
+            {(isSearchExpanded || searchQuery) && (
+              <div className="relative w-44 sm:w-56 animate-in fade-in duration-150">
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="ابحثي بالاسم أو الكود أو الجوال..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full h-10 bg-white border border-stone-200 rounded-xl pr-3 pl-8 text-xs text-stone-800 outline-hidden focus:ring-2 focus:ring-theme-primary focus:border-theme-primary"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setIsSearchExpanded(false);
+                    }}
+                    title="مسح البحث"
+                    aria-label="مسح البحث"
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-theme-primary cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 2 & 3. Active & Archived Students Icon Toggle Buttons */}
+          <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-white border border-stone-200 shrink-0 shadow-2xs">
             <button
               type="button"
               onClick={() => setSelectedStatus('active')}
@@ -259,15 +291,15 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
               aria-label="الطالبات النشطات"
               className={`h-9 px-2.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 shrink-0 ${
                 selectedStatus === 'active'
-                  ? 'bg-[#7B3F30] text-white shadow-2xs'
-                  : 'text-[#7B3F30] hover:bg-[#F2ECE6]'
+                  ? 'bg-theme-primary text-white shadow-2xs'
+                  : 'bg-white text-stone-600 hover:bg-stone-50 hover:text-theme-primary'
               }`}
             >
-              <Users className="w-4 h-4 shrink-0" />
+              <Users className={`w-4 h-4 shrink-0 ${selectedStatus === 'active' ? 'text-white' : 'text-theme-primary'}`} />
               <span className={`px-1.5 py-0.5 rounded-full text-[10px] leading-none font-bold ${
                 selectedStatus === 'active'
                   ? 'bg-white/20 text-white'
-                  : 'bg-[#EDE3DC] text-[#7B3F30]'
+                  : 'bg-stone-100 text-stone-600'
               }`}>
                 {activeScopedCount}
               </span>
@@ -279,48 +311,52 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
               aria-label="قسم الطالبات المؤرشفات"
               className={`h-9 px-2.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 shrink-0 ${
                 selectedStatus === 'archived'
-                  ? 'bg-[#7B3F30] text-white shadow-2xs'
-                  : 'text-[#7B3F30] hover:bg-[#F2ECE6]'
+                  ? 'bg-theme-primary text-white shadow-2xs'
+                  : 'bg-white text-stone-600 hover:bg-stone-50 hover:text-theme-primary'
               }`}
             >
-              <Archive className="w-4 h-4 shrink-0" />
+              <Archive className={`w-4 h-4 shrink-0 ${selectedStatus === 'archived' ? 'text-white' : 'text-theme-primary'}`} />
               <span className={`px-1.5 py-0.5 rounded-full text-[10px] leading-none font-bold ${
                 selectedStatus === 'archived'
                   ? 'bg-white/20 text-white'
-                  : 'bg-[#EDE3DC] text-[#7B3F30]'
+                  : 'bg-stone-100 text-stone-600'
               }`}>
                 {archivedScopedCount}
               </span>
             </button>
           </div>
-          {selectedStatus === 'archived' && (
-            <span className="text-[11px] font-bold text-[#7B3F30] bg-[#F6EFEA] px-3 py-1 rounded-full border border-[#DFCEBF] inline-flex items-center gap-1.5">
-              <Archive className="w-3.5 h-3.5 text-[#9A5643]" />
+
+          {/* 4. Add New Student ("+") Icon Button */}
+          <button
+            type="button"
+            onClick={() => handleOpenStudentModal()}
+            title="تسجيل طالبة جديدة"
+            aria-label="تسجيل طالبة جديدة"
+            className="w-10 h-10 bg-theme-primary hover:bg-theme-primary-hover text-white border border-theme-primary rounded-xl font-bold shadow-xs transition flex items-center justify-center cursor-pointer active:scale-95 shrink-0"
+          >
+            <Plus className="w-5 h-5 shrink-0" />
+          </button>
+        </div>
+      </div>
+
+      {/* Filter Bar */}
+      <div className="bg-white p-4 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-3">
+        {selectedStatus === 'archived' && (
+          <div className="pb-2 border-b border-stone-100">
+            <span className="text-[11px] font-bold text-theme-primary bg-stone-50 px-3 py-1 rounded-full border border-stone-200 inline-flex items-center gap-1.5">
+              <Archive className="w-3.5 h-3.5 text-theme-primary" />
               <span>جميع سجلات التسميع والدرجات وملف الإنجاز محفوظة 100% ويمكن استعادة الطالبة بضغطة واحدة</span>
             </span>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          
-          {/* Search */}
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="ابحثي بالاسم أو الكود أو الجوال..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-3 pr-9 py-2 border border-stone-200 rounded-xl text-xs focus:ring-2 focus:ring-[#8E5364]"
-            />
-            <Search className="w-4 h-4 text-stone-400 absolute right-3 top-2.5 pointer-events-none" />
           </div>
+        )}
 
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {/* Circle filter */}
           <div>
             <select
               value={selectedCircleId}
               onChange={e => setSelectedCircleId(e.target.value)}
-              className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
+              className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-theme-primary"
             >
               <option value="all">
                 {selectedTrackId && selectedTrackId !== 'all'
@@ -341,7 +377,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
             <select
               value={selectedStatus}
               onChange={e => setSelectedStatus(e.target.value)}
-              className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
+              className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-theme-primary"
             >
               <option value="all">جميع الحالات</option>
               <option value="active">نشطة (منتظمة)</option>
@@ -356,21 +392,20 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
             <select
               value={sortBy}
               onChange={e => setSortBy(e.target.value as any)}
-              className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-[#8E5364]"
+              className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-theme-primary"
             >
               <option value="score">ترتيب بحسب النسبة والدرجات (الأعلى أولاً)</option>
               <option value="name">ترتيب أبجدي بالاسم</option>
               <option value="code">ترتيب بحسب كود الطالبة</option>
             </select>
           </div>
-
         </div>
 
         {/* Counter Summary */}
         <div className="flex items-center justify-between text-xs text-stone-500 pt-1 border-t border-stone-100">
           <span>يتم عرض {filteredStudents.length} من أصل {students.length} طالبة</span>
-          <span className="font-semibold text-[#8E5364] inline-flex items-center gap-1">
-            <HeartHandshake className="w-3.5 h-3.5 text-[#9A5643]" />
+          <span className="font-semibold text-theme-primary inline-flex items-center gap-1">
+            <HeartHandshake className="w-3.5 h-3.5 text-theme-primary" />
             <span>{filteredStudents.filter(s => s.partnerStudentId).length} طالبة لديها رفيقة معينة</span>
           </span>
         </div>
@@ -538,7 +573,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                                   showToast
                                 })
                               }
-                              className="w-8 h-8 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                              className="w-8 h-8 bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                               title="نسخ رسالة التنبيه وفتح محادثة تيليجرام الطالبة مباشرة"
                               aria-label="نسخ رسالة التنبيه وفتح محادثة تيليجرام الطالبة مباشرة"
                             >
@@ -549,7 +584,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                             <button
                               type="button"
                               onClick={() => restoreStudent(student.id)}
-                              className="w-8 h-8 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                              className="w-8 h-8 bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                               title="استعادة الطالبة"
                               aria-label="استعادة الطالبة"
                             >
@@ -559,7 +594,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                             <button
                               type="button"
                               onClick={() => archiveStudent(student.id, 'نقل إلى قسم المؤرشفات (تجاوز حد الغياب)')}
-                              className="w-8 h-8 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                              className="w-8 h-8 bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                               title="نقل إلى قسم المؤرشفات"
                               aria-label="نقل إلى قسم المؤرشفات"
                             >
@@ -569,8 +604,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                           <button
                             type="button"
                             onClick={() => onSelectStudent(student.id)}
-                            style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
-                            className="px-2.5 h-8 hover:brightness-105 text-white rounded-lg text-[11px] font-bold transition shadow-2xs cursor-pointer active:scale-95 whitespace-nowrap inline-flex items-center justify-center shrink-0"
+                            className="px-2.5 h-8 bg-theme-primary hover:bg-theme-primary-hover text-white rounded-lg text-[11px] font-bold transition shadow-2xs cursor-pointer active:scale-95 whitespace-nowrap inline-flex items-center justify-center shrink-0"
                             title="عرض ملف الإنجاز والشهادة"
                             aria-label="عرض ملف الإنجاز والشهادة"
                           >
@@ -582,7 +616,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleOpenStudentModal(student)}
-                            className="w-8 h-8 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                            className="w-8 h-8 bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                             title="تعديل"
                             aria-label="تعديل"
                           >
@@ -591,7 +625,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleOpenCopyModal(student)}
-                            className="w-8 h-8 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                            className="w-8 h-8 bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                             title="نسخ لحلقة جديدة"
                             aria-label="نسخ لحلقة جديدة"
                           >
@@ -600,7 +634,7 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                           <button
                             type="button"
                             onClick={() => setStudentToDelete(student)}
-                            className="w-8 h-8 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                            className="w-8 h-8 bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                             title="حذف"
                             aria-label="حذف"
                           >

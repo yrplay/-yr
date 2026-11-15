@@ -301,9 +301,9 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
         <div>
           <div className="flex items-center gap-2">
             {activeTrack ? (
-              <RenderEntityIcon icon={activeTrack.icon} className="text-2xl" sproutClassName="w-6 h-6 text-[#96503E]" />
+              <RenderEntityIcon icon={activeTrack.icon} className="text-2xl" sproutClassName="w-6 h-6 text-theme-primary" />
             ) : (
-              <CreditCard className="w-6 h-6 text-[#7B3F30] shrink-0" />
+              <CreditCard className="w-6 h-6 text-theme-primary shrink-0" />
             )}
             <h1 className="text-xl font-bold text-stone-800 dark:text-stone-100 font-quran">
               {activeTrack ? `سجل اشتراكات ${activeTrack.name}` : 'الاشتراكات والمالية العامة (كافة المسارات)'}
@@ -324,7 +324,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
               <button
                 type="button"
                 onClick={() => setSelectedTrackId(null)}
-                className="w-9 h-9 p-2.5 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-xl transition flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                className="w-9 h-9 p-2.5 bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 rounded-xl transition flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 shrink-0"
                 title="كافة المسارات"
                 aria-label="كافة المسارات"
               >
@@ -340,7 +340,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                 setEditingCurrency(currency);
                 setShowFeeSettingsModal(true);
               }}
-              className="w-9 h-9 p-2.5 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-xl transition flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 shrink-0"
+              className="w-9 h-9 p-2.5 bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 rounded-xl transition flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 shrink-0"
               title="تعديل الرسوم والدورة"
               aria-label="تعديل الرسوم والدورة"
             >
@@ -547,8 +547,8 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                   aria-label="بحث باسم الطالبة أو الكود"
                   className={`w-10 h-10 rounded-xl border transition flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 shrink-0 ${
                     isSearchExpanded || searchQuery
-                      ? 'bg-[#7B3F30] text-white border-[#7B3F30]'
-                      : 'bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border-[#E2D5CC]'
+                      ? 'bg-theme-primary hover:bg-theme-primary-hover text-white border-theme-primary'
+                      : 'bg-white hover:bg-stone-50 text-theme-primary border-stone-200'
                   }`}
                 >
                   <Search className="w-4 h-4 shrink-0" />
@@ -562,7 +562,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                       placeholder="بحث باسم الطالبة أو الكود..."
                       value={searchQuery}
                       onChange={e => setSearchQuery(e.target.value)}
-                      className="w-full h-10 bg-[#FAF6F2] dark:bg-stone-800 border border-[#E2D5CC] dark:border-stone-700 rounded-xl pr-3 pl-8 text-xs text-stone-800 dark:text-stone-100 outline-hidden focus:border-[#7B3F30]"
+                      className="w-full h-10 bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl pr-3 pl-8 text-xs text-stone-800 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-theme-primary focus:border-theme-primary"
                     />
                     {searchQuery && (
                       <button
@@ -573,7 +573,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                         }}
                         title="مسح البحث"
                         aria-label="مسح البحث"
-                        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-[#7B3F30] cursor-pointer"
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-theme-primary cursor-pointer"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -582,7 +582,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                 )}
               </div>
 
-              <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-[#FAF6F2] border border-[#E2D5CC] shrink-0">
+              <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-white border border-stone-200 shrink-0 shadow-2xs">
                 <button
                   type="button"
                   onClick={() => setSubscriptionTab('active')}
@@ -590,15 +590,15 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                   aria-label="الاشتراكات النشطة"
                   className={`h-9 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 ${
                     subscriptionTab === 'active'
-                      ? 'bg-[#7B3F30] text-white shadow-2xs'
-                      : 'text-[#7B3F30] hover:bg-[#F2ECE6]'
+                      ? 'bg-theme-primary text-white shadow-2xs'
+                      : 'bg-white text-stone-600 hover:bg-stone-50 hover:text-theme-primary'
                   }`}
                 >
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <CheckCircle2 className={`w-4 h-4 shrink-0 ${subscriptionTab === 'active' ? 'text-white' : 'text-theme-primary'}`} />
                   <span className={`px-1.5 py-0.5 rounded-full text-[10px] leading-none font-bold ${
                     subscriptionTab === 'active'
                       ? 'bg-white/20 text-white'
-                      : 'bg-[#EDE3DC] text-[#7B3F30]'
+                      : 'bg-stone-100 text-stone-600'
                   }`}>
                     {activeScopedStudents.length}
                   </span>
@@ -610,15 +610,15 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                   aria-label="الاشتراكات المؤرشفة"
                   className={`h-9 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 ${
                     subscriptionTab === 'archived'
-                      ? 'bg-[#7B3F30] text-white shadow-2xs'
-                      : 'text-[#7B3F30] hover:bg-[#F2ECE6]'
+                      ? 'bg-theme-primary text-white shadow-2xs'
+                      : 'bg-white text-stone-600 hover:bg-stone-50 hover:text-theme-primary'
                   }`}
                 >
-                  <Archive className="w-4 h-4 shrink-0" />
+                  <Archive className={`w-4 h-4 shrink-0 ${subscriptionTab === 'archived' ? 'text-white' : 'text-theme-primary'}`} />
                   <span className={`px-1.5 py-0.5 rounded-full text-[10px] leading-none font-bold ${
                     subscriptionTab === 'archived'
                       ? 'bg-white/20 text-white'
-                      : 'bg-[#EDE3DC] text-[#7B3F30]'
+                      : 'bg-stone-100 text-stone-600'
                   }`}>
                     {archivedScopedStudents.length}
                   </span>
@@ -629,7 +629,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
 
           {subscriptionTab === 'archived' && (
             <div className="pt-1">
-              <span className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-3 py-1 rounded-xl font-medium inline-block">
+              <span className="text-[11px] text-theme-primary bg-stone-50 border border-stone-200 px-3 py-1 rounded-xl font-medium inline-block">
                 سجل مالي تاريخي محفوظ للطالبات المؤرشفات أو المنتميات لحلقات مؤرشفة (محفوظ بالكامل مع سندات السداد)
               </span>
             </div>
@@ -737,7 +737,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                         <button
                           type="button"
                           onClick={() => handleOpenPayment(st.id)}
-                          className="w-9 h-9 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-xl transition flex items-center justify-center shadow-2xs cursor-pointer active:scale-95 shrink-0"
+                          className="w-9 h-9 bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 rounded-xl transition flex items-center justify-center shadow-2xs cursor-pointer active:scale-95 shrink-0"
                           title="سند السداد"
                           aria-label="سند السداد"
                         >

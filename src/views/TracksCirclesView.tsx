@@ -418,8 +418,8 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
               aria-label={showArchived ? 'إخفاء الأرشيف' : 'عرض المحذوف والمؤرشف'}
               className={`w-10 h-10 rounded-xl flex items-center justify-center transition border cursor-pointer active:scale-95 shrink-0 ${
                 showArchived
-                  ? 'bg-[#7B3F30] text-white border-[#7B3F30] shadow-2xs'
-                  : 'bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border-[#E2D5CC]'
+                  ? 'bg-theme-primary text-white border-theme-primary shadow-2xs'
+                  : 'bg-white hover:bg-stone-50 text-theme-primary border-stone-200'
               }`}
             >
               <Archive className="w-4 h-4" />
@@ -432,7 +432,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
               onClick={() => handleOpenTrackModal()}
               title="إضافة مسار جديد"
               aria-label="إضافة مسار جديد"
-              className="w-10 h-10 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-xl flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
+              className="w-10 h-10 bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 rounded-xl flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
             >
               <FolderPlus className="w-4 h-4" />
             </button>
@@ -442,7 +442,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
             onClick={() => handleOpenCircleModal()}
             title="إضافة حلقة جديدة"
             aria-label="إضافة حلقة جديدة"
-            className="w-10 h-10 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl flex items-center justify-center shadow-xs transition cursor-pointer active:scale-95 shrink-0"
+            className="w-10 h-10 bg-theme-primary hover:bg-theme-primary-hover text-white border border-theme-primary rounded-xl flex items-center justify-center shadow-xs transition cursor-pointer active:scale-95 shrink-0"
           >
             <Plus className="w-5 h-5" />
           </button>
@@ -524,7 +524,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 onClick={() => onNavigateToSection('staff')}
                 title="المعلمات والمشرفات"
                 aria-label="المعلمات والمشرفات"
-                className="w-9 h-9 p-2.5 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
+                className="w-9 h-9 p-2.5 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
               >
                 <Users className="w-4 h-4" />
               </button>
@@ -535,7 +535,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 onClick={() => onNavigateToTrackDetail ? onNavigateToTrackDetail(currentTrack.id) : setSelectedTrackDetailId(currentTrack.id)}
                 title="دليل الإتقان والمعايير"
                 aria-label="دليل الإتقان والمعايير"
-                className="w-9 h-9 p-2.5 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
+                className="w-9 h-9 p-2.5 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
               >
                 <BookOpen className="w-4 h-4" />
               </button>
@@ -547,7 +547,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                     onClick={() => handleOpenTrackModal(currentTrack)}
                     title="تعديل المسار"
                     aria-label="تعديل المسار"
-                    className="w-9 h-9 p-2.5 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
+                    className="w-9 h-9 p-2.5 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
                   >
                     <Edit className="w-4 h-4" />
                   </button>
@@ -557,7 +557,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                     onClick={() => confirmDeleteTrack(currentTrack)}
                     title="حذف المسار"
                     aria-label="حذف المسار"
-                    className="w-9 h-9 p-2.5 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
+                    className="w-9 h-9 p-2.5 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -743,7 +743,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                           e.stopPropagation();
                           handleOpenCircleModal(circle);
                         }}
-                        className="w-8 h-8 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                        className="w-8 h-8 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                         title="تعديل الحلقة"
                         aria-label="تعديل الحلقة"
                       >
@@ -753,7 +753,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                       <button
                         type="button"
                         onClick={(e) => confirmDeleteCircle(circle, e)}
-                        className="w-8 h-8 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                        className="w-8 h-8 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                         title="حذف الحلقة"
                         aria-label="حذف الحلقة"
                       >
@@ -866,7 +866,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
               <button
                 type="button"
                 onClick={() => handleOpenCircleModal(activeCircle)}
-                className="w-8 h-8 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                className="w-8 h-8 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                 title="تعديل الحلقة"
                 aria-label="تعديل الحلقة"
               >
@@ -875,7 +875,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
               <button
                 type="button"
                 onClick={(e) => confirmDeleteCircle(activeCircle, e)}
-                className="w-8 h-8 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                className="w-8 h-8 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                 title="حذف الحلقة"
                 aria-label="حذف الحلقة"
               >

@@ -94,17 +94,29 @@
 }
 
 .text-\[\#8E5364\],
-.text-theme-primary {
+.text-theme-primary,
+.hover\:text-theme-primary:hover {
   color: var(--theme-primary, #8E5364) !important;
 }
 
 .border-\[\#8E5364\],
-.border-theme-primary {
+.border-theme-primary,
+.hover\:border-theme-primary:hover,
+.focus\:border-theme-primary:focus {
   border-color: var(--theme-primary, #8E5364) !important;
 }
 
-.focus\:ring-\[\#8E5364\]:focus {
+.focus\:ring-\[\#8E5364\]:focus,
+.focus\:ring-theme-primary:focus {
   --tw-ring-color: var(--theme-primary, #8E5364) !important;
+}
+
+.bg-theme-soft {
+  background-color: color-mix(in srgb, var(--theme-primary, #8E5364) 10%, white) !important;
+}
+
+.border-theme-soft {
+  border-color: color-mix(in srgb, var(--theme-primary, #8E5364) 24%, white) !important;
 }
 
 .bg-\[\#2D5A43\],
