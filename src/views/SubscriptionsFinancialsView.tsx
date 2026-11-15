@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  DollarSign, Users, CreditCard, FileText, CheckCircle2, 
-  AlertCircle, Search, ArrowRight, ShieldAlert, Check, Edit3, Settings, Calendar, Filter, RotateCcw, Layers, Archive
+  DollarSign, Users, CreditCard, FileText, FileCheck, CheckCircle2, 
+  AlertCircle, Search, ArrowRight, ShieldAlert, Check, Edit3, Settings, Calendar, Filter, RotateCcw, Layers, Archive, X
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { hasFullAccess, StudentSubscription, isStudentEffectivelyArchived, deduplicateStudentsByName } from '../types';
@@ -37,6 +37,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [subscriptionTab, setSubscriptionTab] = useState<'active' | 'archived'>('active');
   const [selectedSub, setSelectedSub] = useState<Partial<StudentSubscription> | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -299,17 +300,14 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
       <div className="bg-white dark:bg-stone-900 p-6 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <RenderEntityIcon icon={activeTrack?.icon} className="text-2xl" sproutClassName="w-6 h-6 text-[#96503E]" fallback="credit" />
+            {activeTrack ? (
+              <RenderEntityIcon icon={activeTrack.icon} className="text-2xl" sproutClassName="w-6 h-6 text-[#96503E]" />
+            ) : (
+              <CreditCard className="w-6 h-6 text-[#7B3F30] shrink-0" />
+            )}
             <h1 className="text-xl font-bold text-stone-800 dark:text-stone-100 font-quran">
               {activeTrack ? `سجل اشتراكات ${activeTrack.name}` : 'الاشتراكات والمالية العامة (كافة المسارات)'}
             </h1>
-            <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold ${
-              activeTrack
-                ? 'bg-[#8E5364]/10 text-[#722F37] border border-[#8E5364]/20'
-                : 'bg-[#FAF7F5] dark:bg-stone-800 text-[#8E5364] dark:text-[#E8BDC8]'
-            }`}>
-              {activeTrack ? 'سجل مالي معزول' : 'ملخص إداري مجمّع'}
-            </span>
           </div>
           <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
             {activeTrack 
@@ -319,19 +317,36 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
           </p>
         </div>
 
-        {/* القسم الأيمن في الترويسة: فلتر دورة التحصيل بحسب الأشهر وزر التعديل أو العودة */}
+        {/* القسم الأيمن في الترويسة: أزرار الإجراءات الأيقونية جنباً إلى جنب وفلتر دورة التحصيل */}
         <div className="flex flex-wrap items-center gap-2">
-          {activeTrack && (
+          <div className="flex items-center gap-2 flex-nowrap shrink-0">
+            {activeTrack && (
+              <button
+                type="button"
+                onClick={() => setSelectedTrackId(null)}
+                className="w-9 h-9 p-2.5 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-xl transition flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                title="كافة المسارات"
+                aria-label="كافة المسارات"
+              >
+                <RotateCcw className="w-4 h-4 shrink-0" />
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={() => setSelectedTrackId(null)}
-              className="px-3.5 py-2 bg-white dark:bg-stone-800 hover:bg-stone-100 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-200 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
-              title="عرض الملخص الإداري لكافة المسارات"
+              onClick={() => {
+                setEditingDefaultFee(effectiveFee);
+                setEditingCycle(currentCycle);
+                setEditingCurrency(currency);
+                setShowFeeSettingsModal(true);
+              }}
+              className="w-9 h-9 p-2.5 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-xl transition flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 shrink-0"
+              title="تعديل الرسوم والدورة"
+              aria-label="تعديل الرسوم والدورة"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-[#8E5364]" />
-              <span>كافة المسارات</span>
+              <Edit3 className="w-4 h-4 shrink-0" />
             </button>
-          )}
+          </div>
 
           <div className="bg-[#FAF7F5] dark:bg-stone-800 px-3.5 py-2 rounded-2xl border border-[#E2D5CC] dark:border-stone-700 flex items-center gap-2 shadow-2xs">
             <Calendar className="w-3.5 h-3.5 text-[#8E5364] shrink-0" />
@@ -354,21 +369,6 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
               ))}
             </select>
           </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setEditingDefaultFee(effectiveFee);
-              setEditingCycle(currentCycle);
-              setEditingCurrency(currency);
-              setShowFeeSettingsModal(true);
-            }}
-            className="px-3.5 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
-            title="تعديل قيمة رسم الاشتراك ودورة التحصيل"
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-            <span>تعديل الرسوم والدورة</span>
-          </button>
         </div>
       </div>
 
@@ -522,7 +522,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
 
       {/* جدول كشف حسابات الطالبات */}
       <div className="bg-white dark:bg-stone-900 rounded-3xl border border-[#E2D5CC] dark:border-stone-800 overflow-hidden shadow-xs space-y-3">
-        <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex flex-col gap-4">
+        <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex flex-col gap-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="font-bold text-sm text-stone-800 dark:text-stone-100 flex items-center gap-2">
@@ -537,53 +537,103 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
               </span>
             </div>
 
-            <div className="relative w-full sm:w-64">
-              <Search className="w-4 h-4 text-stone-400 absolute right-3 top-2.5" />
-              <input
-                type="text"
-                placeholder="بحث باسم الطالبة أو الكود..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full bg-[#FAF7F5] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl pr-9 pl-3 py-2 text-xs outline-hidden"
-              />
+            {/* شريط الأدوات الموحد: أيقونة البحث + تبويبات الاشتراكات النشطة والمؤرشفة في صف أفقي واحد */}
+            <div className="flex items-center gap-2 flex-nowrap self-start sm:self-auto">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setIsSearchExpanded(prev => !prev)}
+                  title="بحث باسم الطالبة أو الكود"
+                  aria-label="بحث باسم الطالبة أو الكود"
+                  className={`w-10 h-10 rounded-xl border transition flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 shrink-0 ${
+                    isSearchExpanded || searchQuery
+                      ? 'bg-[#7B3F30] text-white border-[#7B3F30]'
+                      : 'bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border-[#E2D5CC]'
+                  }`}
+                >
+                  <Search className="w-4 h-4 shrink-0" />
+                </button>
+
+                {(isSearchExpanded || searchQuery) && (
+                  <div className="relative w-48 sm:w-56 animate-in fade-in duration-150">
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="بحث باسم الطالبة أو الكود..."
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      className="w-full h-10 bg-[#FAF6F2] dark:bg-stone-800 border border-[#E2D5CC] dark:border-stone-700 rounded-xl pr-3 pl-8 text-xs text-stone-800 dark:text-stone-100 outline-hidden focus:border-[#7B3F30]"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery('');
+                          setIsSearchExpanded(false);
+                        }}
+                        title="مسح البحث"
+                        aria-label="مسح البحث"
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-[#7B3F30] cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-[#FAF6F2] border border-[#E2D5CC] shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSubscriptionTab('active')}
+                  title="الاشتراكات النشطة"
+                  aria-label="الاشتراكات النشطة"
+                  className={`h-9 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 ${
+                    subscriptionTab === 'active'
+                      ? 'bg-[#7B3F30] text-white shadow-2xs'
+                      : 'text-[#7B3F30] hover:bg-[#F2ECE6]'
+                  }`}
+                >
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] leading-none font-bold ${
+                    subscriptionTab === 'active'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-[#EDE3DC] text-[#7B3F30]'
+                  }`}>
+                    {activeScopedStudents.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubscriptionTab('archived')}
+                  title="الاشتراكات المؤرشفة"
+                  aria-label="الاشتراكات المؤرشفة"
+                  className={`h-9 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 ${
+                    subscriptionTab === 'archived'
+                      ? 'bg-[#7B3F30] text-white shadow-2xs'
+                      : 'text-[#7B3F30] hover:bg-[#F2ECE6]'
+                  }`}
+                >
+                  <Archive className="w-4 h-4 shrink-0" />
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] leading-none font-bold ${
+                    subscriptionTab === 'archived'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-[#EDE3DC] text-[#7B3F30]'
+                  }`}>
+                    {archivedScopedStudents.length}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* تبويبات التبديل بين الاشتراكات النشطة والاشتراكات المؤرشفة */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-            <div className="inline-flex items-center p-1 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800 border border-[#E2D5CC] dark:border-stone-700">
-              <button
-                type="button"
-                onClick={() => setSubscriptionTab('active')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                  subscriptionTab === 'active'
-                    ? 'bg-[#8E5364] text-white shadow-2xs'
-                    : 'text-stone-600 dark:text-stone-300 hover:text-stone-900'
-                }`}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>الاشتراكات النشطة ({activeScopedStudents.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSubscriptionTab('archived')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                  subscriptionTab === 'archived'
-                    ? 'bg-amber-700 text-white shadow-2xs'
-                    : 'text-stone-600 dark:text-stone-300 hover:text-stone-900'
-                }`}
-              >
-                <Archive className="w-3.5 h-3.5" />
-                <span>الاشتراكات المؤرشفة ({archivedScopedStudents.length})</span>
-              </button>
-            </div>
-
-            {subscriptionTab === 'archived' && (
-              <span className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-3 py-1 rounded-xl font-medium">
+          {subscriptionTab === 'archived' && (
+            <div className="pt-1">
+              <span className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-3 py-1 rounded-xl font-medium inline-block">
                 سجل مالي تاريخي محفوظ للطالبات المؤرشفات أو المنتميات لحلقات مؤرشفة (محفوظ بالكامل مع سندات السداد)
               </span>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -687,11 +737,11 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                         <button
                           type="button"
                           onClick={() => handleOpenPayment(st.id)}
-                          className="px-3.5 py-1.5 bg-[#FAF7F5] dark:bg-stone-800 hover:bg-[#8E5364] hover:text-white dark:hover:bg-[#8E5364] text-[#8E5364] dark:text-[#E8BDC8] rounded-xl text-[11px] font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95 border border-[#E2D5CC] dark:border-stone-700"
-                          title="تعديل بيانات الاشتراك وسند السداد"
+                          className="w-9 h-9 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-xl transition flex items-center justify-center shadow-2xs cursor-pointer active:scale-95 shrink-0"
+                          title="سند السداد"
+                          aria-label="سند السداد"
                         >
-                          <CreditCard className="w-3.5 h-3.5" />
-                          <span>سند السداد</span>
+                          <FileCheck className="w-4 h-4 shrink-0" />
                         </button>
                       </div>
                     </td>

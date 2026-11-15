@@ -236,12 +236,14 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
         </div>
 
         <button
+          type="button"
           onClick={() => handleOpenStudentModal()}
           style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
-          className="flex items-center gap-1.5 px-4 py-2.5 hover:brightness-105 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs transition self-start sm:self-auto cursor-pointer active:scale-95"
+          title="تسجيل طالبة جديدة"
+          aria-label="تسجيل طالبة جديدة"
+          className="w-10 h-10 flex items-center justify-center hover:brightness-105 text-white rounded-xl font-bold shadow-xs transition self-start sm:self-auto cursor-pointer active:scale-95 shrink-0"
         >
-          <Plus className="w-4 h-4" />
-          <span>تسجيل طالبة جديدة</span>
+          <Plus className="w-5 h-5 shrink-0" />
         </button>
       </div>
 
@@ -249,30 +251,46 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
       <div className="bg-white p-4 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-3">
         {/* Prominent Roster vs Archive Tabs */}
         <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-stone-100">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-[#FAF6F2] border border-[#E2D5CC] shrink-0">
             <button
               type="button"
               onClick={() => setSelectedStatus('active')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 ${
+              title="الطالبات النشطات"
+              aria-label="الطالبات النشطات"
+              className={`h-9 px-2.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 shrink-0 ${
                 selectedStatus === 'active'
-                  ? 'bg-[#8E5364] text-white shadow-2xs'
-                  : 'bg-[#FAF6F2] text-stone-700 hover:bg-stone-200/70 border border-stone-200'
+                  ? 'bg-[#7B3F30] text-white shadow-2xs'
+                  : 'text-[#7B3F30] hover:bg-[#F2ECE6]'
               }`}
             >
-              <Users className="w-3.5 h-3.5" />
-              <span>الطالبات النشطات ({activeScopedCount})</span>
+              <Users className="w-4 h-4 shrink-0" />
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] leading-none font-bold ${
+                selectedStatus === 'active'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-[#EDE3DC] text-[#7B3F30]'
+              }`}>
+                {activeScopedCount}
+              </span>
             </button>
             <button
               type="button"
               onClick={() => setSelectedStatus('archived')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 ${
+              title="قسم الطالبات المؤرشفات"
+              aria-label="قسم الطالبات المؤرشفات"
+              className={`h-9 px-2.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 shrink-0 ${
                 selectedStatus === 'archived'
                   ? 'bg-[#7B3F30] text-white shadow-2xs'
-                  : 'bg-[#F6EFEA] text-[#7B3F30] hover:bg-[#EDE0D6] border border-[#DFCEBF]'
+                  : 'text-[#7B3F30] hover:bg-[#F2ECE6]'
               }`}
             >
-              <Archive className="w-3.5 h-3.5" />
-              <span>قسم الطالبات المؤرشفات ({archivedScopedCount})</span>
+              <Archive className="w-4 h-4 shrink-0" />
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] leading-none font-bold ${
+                selectedStatus === 'archived'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-[#EDE3DC] text-[#7B3F30]'
+              }`}>
+                {archivedScopedCount}
+              </span>
             </button>
           </div>
           {selectedStatus === 'archived' && (
@@ -506,78 +524,89 @@ export const StudentsView: React.FC<StudentsViewProps> = ({
                     </td>
 
                     <td className="p-3.5 text-center">
-                      <div className="flex flex-wrap items-center justify-center gap-1.5">
-                        {((score?.absentUnexcusedCount ?? 0) >= 3 || isArchivedRow) && (
+                      <div className="flex flex-col items-center justify-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5 flex-nowrap">
+                          {((score?.absentUnexcusedCount ?? 0) >= 3 || isArchivedRow) && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                triggerStudentTelegramAlert({
+                                  studentName: student.name,
+                                  circleName: circle?.name || 'الحلقة القرآنية',
+                                  absenceCount: Math.max(4, score?.absentUnexcusedCount ?? 4),
+                                  telegramUsername: student.telegramUsername,
+                                  showToast
+                                })
+                              }
+                              className="w-8 h-8 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                              title="نسخ رسالة التنبيه وفتح محادثة تيليجرام الطالبة مباشرة"
+                              aria-label="نسخ رسالة التنبيه وفتح محادثة تيليجرام الطالبة مباشرة"
+                            >
+                              <Send className="w-3.5 h-3.5 shrink-0" />
+                            </button>
+                          )}
+                          {isArchivedRow ? (
+                            <button
+                              type="button"
+                              onClick={() => restoreStudent(student.id)}
+                              className="w-8 h-8 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                              title="استعادة الطالبة"
+                              aria-label="استعادة الطالبة"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => archiveStudent(student.id, 'نقل إلى قسم المؤرشفات (تجاوز حد الغياب)')}
+                              className="w-8 h-8 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                              title="نقل إلى قسم المؤرشفات"
+                              aria-label="نقل إلى قسم المؤرشفات"
+                            >
+                              <Archive className="w-3.5 h-3.5 shrink-0" />
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() =>
-                              triggerStudentTelegramAlert({
-                                studentName: student.name,
-                                circleName: circle?.name || 'الحلقة القرآنية',
-                                absenceCount: Math.max(4, score?.absentUnexcusedCount ?? 4),
-                                telegramUsername: student.telegramUsername,
-                                showToast
-                              })
-                            }
-                            className="px-2.5 py-1.5 bg-[#FDF6F2] hover:bg-[#9A5643] text-[#9A5643] hover:text-white border border-[#E5C3B3] rounded-lg text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer shadow-2xs"
-                            title="نسخ رسالة التنبيه وفتح محادثة تيليجرام الطالبة مباشرة"
+                            onClick={() => onSelectStudent(student.id)}
+                            style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
+                            className="px-2.5 h-8 hover:brightness-105 text-white rounded-lg text-[11px] font-bold transition shadow-2xs cursor-pointer active:scale-95 whitespace-nowrap inline-flex items-center justify-center shrink-0"
+                            title="عرض ملف الإنجاز والشهادة"
+                            aria-label="عرض ملف الإنجاز والشهادة"
                           >
-                            <Send className="w-3.5 h-3.5" />
-                            <span>تنبيه تيليجرام</span>
+                            ملف الإنجاز
                           </button>
-                        )}
-                        {isArchivedRow ? (
+                        </div>
+
+                        <div className="flex items-center justify-center gap-1.5 flex-nowrap">
                           <button
                             type="button"
-                            onClick={() => restoreStudent(student.id)}
-                            className="px-3 py-1.5 bg-[#EBF3EE] hover:bg-[#DCEADA] text-[#2D5A43] border border-[#B8D8C5] rounded-lg text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                            onClick={() => handleOpenStudentModal(student)}
+                            className="w-8 h-8 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                            title="تعديل"
+                            aria-label="تعديل"
                           >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            <span>إلغاء الأرشفة واستعادة للحلقة</span>
+                            <Edit className="w-3.5 h-3.5 shrink-0" />
                           </button>
-                        ) : (
                           <button
                             type="button"
-                            onClick={() => archiveStudent(student.id, 'نقل إلى قسم المؤرشفات (تجاوز حد الغياب)')}
-                            className="px-2.5 py-1 bg-[#F6EFEA] hover:bg-[#7B3F30] text-[#7B3F30] hover:text-white border border-[#DFCEBF] rounded-lg text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer"
-                            title="نقل إلى قسم المؤرشفات"
+                            onClick={() => handleOpenCopyModal(student)}
+                            className="w-8 h-8 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                            title="نسخ لحلقة جديدة"
+                            aria-label="نسخ لحلقة جديدة"
                           >
-                            <Archive className="w-3 h-3" />
-                            <span>نقل إلى قسم المؤرشفات</span>
+                            <Copy className="w-3.5 h-3.5 shrink-0" />
                           </button>
-                        )}
-                        <button
-                          onClick={() => onSelectStudent(student.id)}
-                          style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
-                          className="px-2.5 py-1 hover:brightness-105 text-white rounded-lg text-[11px] font-bold transition shadow-2xs cursor-pointer active:scale-95"
-                          title="عرض ملف الإنجاز والشهادة"
-                        >
-                          ملف الإنجاز
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenCopyModal(student)}
-                          className="p-1.5 text-stone-500 hover:text-[#9A5643] rounded-lg hover:bg-[#FAF6F2] transition cursor-pointer"
-                          title="نسخ الطالبة إلى مسار وحلقة أخرى"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenStudentModal(student)}
-                          className="p-1.5 text-stone-500 hover:text-[#8E5364] rounded-lg hover:bg-[#FAF0F3] transition cursor-pointer"
-                          title="تعديل بيانات الطالبة"
-                        >
-                          <Edit className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setStudentToDelete(student)}
-                          className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition cursor-pointer"
-                          title="حذف الطالبة"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => setStudentToDelete(student)}
+                            className="w-8 h-8 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-lg inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                            title="حذف"
+                            aria-label="حذف"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                          </button>
+                        </div>
                       </div>
                     </td>
                   </tr>

@@ -590,7 +590,9 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 <span>عدد الحلقات النشطة</span>
                 <ChevronLeft className="w-3 h-3 text-stone-400 group-hover:text-[#8E5364] group-hover:-translate-x-0.5 transition" />
               </div>
-              <div className="text-xl font-extrabold text-[#8E5364]">{trackCircles.length}</div>
+              <div className="text-xl font-extrabold text-[#8E5364]">
+                <span className="privacy-count-digit">{trackCircles.length}</span>
+              </div>
             </div>
             <div
               onClick={() => onNavigateToSection('staff')}
@@ -734,26 +736,28 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                   </div>
 
                   <div className="flex items-center justify-between pt-3 border-t border-stone-100">
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5 flex-nowrap">
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleOpenCircleModal(circle);
                         }}
-                        className="p-1.5 text-stone-500 hover:text-stone-800 hover:bg-stone-100 rounded-lg text-xs flex items-center gap-1 transition"
-                        title="تعديل بيانات الحلقة"
+                        className="w-8 h-8 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                        title="تعديل الحلقة"
+                        aria-label="تعديل الحلقة"
                       >
-                        <Edit className="w-3.5 h-3.5" />
-                        <span>تعديل</span>
+                        <Edit className="w-3.5 h-3.5 shrink-0" />
                       </button>
 
                       <button
+                        type="button"
                         onClick={(e) => confirmDeleteCircle(circle, e)}
-                        className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs flex items-center gap-1 transition"
-                        title="أرشفة / حذف الحلقة"
+                        className="w-8 h-8 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                        title="حذف الحلقة"
+                        aria-label="حذف الحلقة"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>حذف</span>
+                        <Trash2 className="w-3.5 h-3.5 shrink-0" />
                       </button>
                     </div>
 
@@ -860,20 +864,22 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 جلسة التسميع اليومي
               </button>
               <button
+                type="button"
                 onClick={() => handleOpenCircleModal(activeCircle)}
-                className="p-1.5 text-stone-600 hover:bg-stone-100 rounded-xl text-xs border border-stone-200 flex items-center gap-1"
+                className="w-8 h-8 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                 title="تعديل الحلقة"
+                aria-label="تعديل الحلقة"
               >
-                <Edit className="w-3.5 h-3.5" />
-                <span>تعديل الحلقة</span>
+                <Edit className="w-3.5 h-3.5 shrink-0" />
               </button>
               <button
+                type="button"
                 onClick={(e) => confirmDeleteCircle(activeCircle, e)}
-                className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-xl text-xs border border-rose-200 flex items-center gap-1"
-                title="أرشفة / حذف الحلقة"
+                className="w-8 h-8 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                title="حذف الحلقة"
+                aria-label="حذف الحلقة"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>أرشفة / حذف الحلقة</span>
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
               </button>
             </div>
           </div>
