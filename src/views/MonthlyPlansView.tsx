@@ -4,7 +4,7 @@ import { QURAN_SURAHS, getSurahByNumber, getAyahCount } from '../data/quranData'
 import {
   Plus, Copy, CheckCircle2,
   ChevronDown, ChevronUp, Edit, Lock, Unlock,
-  CalendarRange, Star, BarChart3, Zap, HeartHandshake, BookOpen, Archive, RotateCcw
+  CalendarRange, Star, BarChart3, Zap, HeartHandshake, BookOpen, Archive, RotateCcw, Trash2
 } from 'lucide-react';
 import { MonthlyPlan, PlanBranchConfig, isStudentEffectivelyArchived, isPlanHistoricalOrArchived, deduplicateStudentsByName } from '../types';
 import { summarizeDailyPageProgress } from '../services/recitationProgress';
@@ -144,7 +144,7 @@ const parseDailyStepFromLegacy = (branch: any, fallback: number, isNewMem: boole
 export const MonthlyPlansView: React.FC = () => {
   const {
     monthlyPlans, studentPlans, students, circles, tracks, dailyRecords,
-    createMonthlyPlan, updateMonthlyPlan, duplicateMonthlyPlan, saveStudentPlan,
+    createMonthlyPlan, updateMonthlyPlan, duplicateMonthlyPlan, deleteMonthlyPlan, saveStudentPlan,
     showToast, selectedTrackId
   } = useApp();
 
@@ -189,7 +189,8 @@ export const MonthlyPlansView: React.FC = () => {
 
   React.useEffect(() => {
     if (availablePlans.length > 0 && !availablePlans.some(p => p.id === selectedPlanId)) {
-      setSelectedPlanId(availablePlans[0].id);
+      const activePlan = availablePlans.find(p => !isPlanHistoricalOrArchived(p, availablePlans));
+      setSelectedPlanId((activePlan || availablePlans[0]).id);
     }
   }, [availablePlans, selectedPlanId]);
 
@@ -201,6 +202,7 @@ export const MonthlyPlansView: React.FC = () => {
 
   const [planModalOpen, setPlanModalOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<MonthlyPlan | null>(null);
+  const [deletePlanConfirmOpen, setDeletePlanConfirmOpen] = useState(false);
 
   const [planForm, setPlanForm] = useState({
     title: '',
@@ -660,6 +662,21 @@ export const MonthlyPlansView: React.FC = () => {
       setSelectedPlanId(created.id);
     }
     setPlanModalOpen(false);
+  };
+
+  const handleDeleteCurrentPlan = async () => {
+    if (!currentPlan) return;
+    const planIdToDelete = currentPlan.id;
+    const remainingPlans = availablePlans.filter(p => p.id !== planIdToDelete);
+    const fallbackAllPlans = monthlyPlans.filter(p => p.id !== planIdToDelete);
+    const pool = remainingPlans.length > 0 ? remainingPlans : fallbackAllPlans;
+    const nextActivePlan = pool.find(p => !isPlanHistoricalOrArchived(p, pool)) || pool[0];
+
+    setDeletePlanConfirmOpen(false);
+    if (nextActivePlan) {
+      setSelectedPlanId(nextActivePlan.id);
+    }
+    await deleteMonthlyPlan(planIdToDelete);
   };
 
   // الحسابات التلقائية لنسب الإنجاز لكل فرع (مع دعم الكسور العشرية مثل 4.25، 7.5، 12.75، 23.5 دون تقريب لأعداد صحيحة)
@@ -1318,8 +1335,9 @@ export const MonthlyPlansView: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => duplicateMonthlyPlan(currentPlan.id)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#744251] border border-[#E2D5CC] rounded-xl text-xs font-bold transition cursor-pointer active:scale-95"
+            disabled={!currentPlan}
+            onClick={() => currentPlan && duplicateMonthlyPlan(currentPlan.id)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#744251] border border-[#E2D5CC] rounded-xl text-xs font-bold transition cursor-pointer active:scale-95 disabled:opacity-50"
             title="نسخ الخطة السابقة وتعديلها دون فقد سجلات الماضي"
           >
             <Copy className="w-3.5 h-3.5" />
@@ -1417,6 +1435,15 @@ export const MonthlyPlansView: React.FC = () => {
               >
                 <Edit className="w-3.5 h-3.5" />
                 <span>تعديل تواريخ وتفاصيل الخطة</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeletePlanConfirmOpen(true)}
+                className="px-3.5 py-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-rose-200 transition cursor-pointer active:scale-95"
+                title="حذف هذه الخطة الشهرية نهائياً"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف الخطة</span>
               </button>
             </div>
           </div>
@@ -1793,6 +1820,41 @@ export const MonthlyPlansView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Monthly Plan Confirmation Modal */}
+      {deletePlanConfirmOpen && currentPlan && (
+        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-xl border border-stone-200 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1.5">
+              <h3 className="font-bold text-stone-900 text-sm sm:text-base">
+                هل أنتِ متأكدة من حذف هذه الخطة الشهرية نهائياً؟
+              </h3>
+              <p className="text-xs text-stone-500 leading-relaxed">
+                سيتم حذف <strong>«{currentPlan.title}»</strong> نهائياً من السحابة ولن تعود للظهور عند تحديث الصفحة.
+              </p>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeletePlanConfirmOpen(false)}
+                className="flex-1 py-2 rounded-xl border border-stone-200 text-stone-700 text-xs font-bold hover:bg-stone-50 transition cursor-pointer"
+              >
+                تراجع
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteCurrentPlan}
+                className="flex-1 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 transition cursor-pointer"
+              >
+                نعم، احذف الخطة
+              </button>
+            </div>
           </div>
         </div>
       )}

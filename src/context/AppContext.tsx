@@ -172,6 +172,7 @@ interface AppContextType {
   createMonthlyPlan: (plan: Partial<MonthlyPlan>) => Promise<MonthlyPlan>;
   updateMonthlyPlan: (id: string, plan: Partial<MonthlyPlan>) => Promise<void>;
   duplicateMonthlyPlan: (id: string) => Promise<void>;
+  deleteMonthlyPlan: (id: string) => Promise<void>;
   saveStudentPlan: (plan: Partial<StudentMonthlyPlan>) => Promise<void>;
   
   saveDailyRecord: (record: Partial<DailyRecord>) => Promise<void>;
@@ -486,9 +487,33 @@ const ensureDefaultTrackIntegrity = (data: any) => {
     data.studentSubscriptions = subsList;
   }
 
-  // 5. Ensure monthlyPlans, challenges, atqiniAssignments, monthlyExams have trackId
+  // 5. Ensure monthlyPlans, challenges, atqiniAssignments, monthlyExams have trackId (and filter locally deleted monthlyPlans)
   if (Array.isArray(data.monthlyPlans)) {
-    data.monthlyPlans = data.monthlyPlans.map((p: any) => ({ ...p, trackId: p.trackId || 't-1' }));
+    const deletedPlanIds = new Set<string>(
+      Array.isArray(data._deletedEntities?.monthlyPlans) ? data._deletedEntities.monthlyPlans.map(String) : []
+    );
+    try {
+      if (typeof window !== 'undefined') {
+        const localDeletedRaw = localStorage.getItem('ghaith_deleted_monthly_plans_v1');
+        if (localDeletedRaw) {
+          const parsedIds = JSON.parse(localDeletedRaw);
+          if (Array.isArray(parsedIds)) {
+            parsedIds.forEach((id: any) => deletedPlanIds.add(String(id)));
+          }
+        }
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    if (deletedPlanIds.size > 0) {
+      data._deletedEntities = {
+        ...(data._deletedEntities || {}),
+        monthlyPlans: Array.from(deletedPlanIds)
+      };
+    }
+    data.monthlyPlans = data.monthlyPlans
+      .filter((p: any) => p && !deletedPlanIds.has(String(p.id)))
+      .map((p: any) => ({ ...p, trackId: p.trackId || 't-1' }));
   }
   if (Array.isArray(data.challenges)) {
     data.challenges = data.challenges.map((ch: any) => ({ ...ch, trackId: ch.trackId || 't-1' }));
@@ -3159,29 +3184,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       updatedAt: new Date().toISOString(),
       ...plan
     };
-    const currentPlans = masterStateRef.current.monthlyPlans?.length ? masterStateRef.current.monthlyPlans : monthlyPlans;
+    const currentPlans = Array.isArray(masterStateRef.current.monthlyPlans) ? masterStateRef.current.monthlyPlans : monthlyPlans;
     const next = [...currentPlans.filter((p: MonthlyPlan) => p.id !== newPlan.id), newPlan];
     masterStateRef.current.monthlyPlans = next;
     setMonthlyPlans(next);
     const nextLogs = appendAuditEntry('create', 'monthlyPlan', `إنشاء خطة شهرية جديدة: ${newPlan.title} (${newPlan.hijriMonth})`, newPlan.id);
-    persistState({ monthlyPlans: next, auditLogs: nextLogs });
+    persistState({ monthlyPlans: next, auditLogs: nextLogs, _immediateSync: true });
     showToast(`تم إنشاء الخطة الشهرية: ${newPlan.title}`);
     return newPlan;
   };
 
   const updateMonthlyPlan = async (id: string, plan: Partial<MonthlyPlan>) => {
-    const currentPlans = masterStateRef.current.monthlyPlans?.length ? masterStateRef.current.monthlyPlans : monthlyPlans;
+    const currentPlans = Array.isArray(masterStateRef.current.monthlyPlans) ? masterStateRef.current.monthlyPlans : monthlyPlans;
     const existingPlan = currentPlans.find((p: MonthlyPlan) => p.id === id);
     const next = currentPlans.map((p: MonthlyPlan) => p.id === id ? { ...p, ...plan, updatedAt: new Date().toISOString() } : p);
     masterStateRef.current.monthlyPlans = next;
     setMonthlyPlans(next);
     const nextLogs = appendAuditEntry('update', 'monthlyPlan', `تعديل الخطة الشهرية: ${plan.title || existingPlan?.title || id}`, id);
-    persistState({ monthlyPlans: next, auditLogs: nextLogs });
+    persistState({ monthlyPlans: next, auditLogs: nextLogs, _immediateSync: true });
     showToast('تم تعديل الخطة الشهرية');
   };
 
   const duplicateMonthlyPlan = async (id: string) => {
-    const currentPlans = masterStateRef.current.monthlyPlans?.length ? masterStateRef.current.monthlyPlans : monthlyPlans;
+    const currentPlans = Array.isArray(masterStateRef.current.monthlyPlans) ? masterStateRef.current.monthlyPlans : monthlyPlans;
     const orig = currentPlans.find((p: MonthlyPlan) => p.id === id);
     if (!orig) return;
     const duplicated: MonthlyPlan = {
@@ -3195,8 +3220,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     masterStateRef.current.monthlyPlans = next;
     setMonthlyPlans(next);
     const nextLogs = appendAuditEntry('create', 'monthlyPlan', `نسخ الخطة الشهرية: ${duplicated.title}`, duplicated.id);
-    persistState({ monthlyPlans: next, auditLogs: nextLogs });
+    persistState({ monthlyPlans: next, auditLogs: nextLogs, _immediateSync: true });
     showToast('تم نسخ الخطة الشهرية بنجاح');
+  };
+
+  const deleteMonthlyPlan = async (id: string) => {
+    const currentPlans = Array.isArray(masterStateRef.current.monthlyPlans) ? masterStateRef.current.monthlyPlans : monthlyPlans;
+    const existingPlan = currentPlans.find((p: MonthlyPlan) => p.id === id);
+    const nextPlans = currentPlans.filter((p: MonthlyPlan) => p.id !== id);
+    const currentStudentPlans = Array.isArray(masterStateRef.current.studentPlans) ? masterStateRef.current.studentPlans : studentPlans;
+    const nextStudentPlans = currentStudentPlans.filter((sp: StudentMonthlyPlan) => sp.monthlyPlanId !== id);
+    const removedStudentPlans = currentStudentPlans.filter((sp: StudentMonthlyPlan) => sp.monthlyPlanId === id);
+
+    masterStateRef.current.monthlyPlans = nextPlans;
+    masterStateRef.current.studentPlans = nextStudentPlans;
+    setMonthlyPlans(nextPlans);
+    setStudentPlans(nextStudentPlans);
+
+    try {
+      if (typeof window !== 'undefined') {
+        const localDeletedRaw = localStorage.getItem('ghaith_deleted_monthly_plans_v1');
+        const prevDeleted: string[] = localDeletedRaw ? JSON.parse(localDeletedRaw) : [];
+        const updatedDeleted = Array.from(new Set([...(Array.isArray(prevDeleted) ? prevDeleted : []), String(id)]));
+        localStorage.setItem('ghaith_deleted_monthly_plans_v1', JSON.stringify(updatedDeleted));
+      }
+    } catch {
+      // ignore storage write errors
+    }
+
+    const nextLogs = appendAuditEntry('delete', 'monthlyPlan', `حذف الخطة الشهرية نهائياً: ${existingPlan?.title || id}`, id);
+    persistState({
+      monthlyPlans: nextPlans,
+      studentPlans: nextStudentPlans,
+      auditLogs: nextLogs,
+      _deletedEntities: mergeDeletedEntityMaps(
+        addDeletedEntity('monthlyPlans', id),
+        { studentPlans: removedStudentPlans.map((sp: StudentMonthlyPlan) => sp.id) }
+      ),
+      _immediateSync: true
+    });
+    showToast('تم حذف الخطة الشهرية نهائياً من السحابة بنجاح 🗑️');
   };
 
   const saveStudentPlan = async (plan: Partial<StudentMonthlyPlan>) => {
@@ -5817,6 +5880,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         createMonthlyPlan,
         updateMonthlyPlan,
         duplicateMonthlyPlan,
+        deleteMonthlyPlan,
         saveStudentPlan,
         saveDailyRecord,
         deleteDailyRecord,
