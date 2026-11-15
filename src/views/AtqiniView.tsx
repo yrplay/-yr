@@ -453,14 +453,14 @@ export const AtqiniView: React.FC = () => {
               className={`h-9 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
                 assignmentTab === 'active'
                   ? 'bg-[#8E5364] text-white shadow-2xs'
-                  : 'text-stone-600 hover:text-stone-900'
+                  : 'text-[#7B3F30] hover:bg-[#F2ECE6]'
               }`}
             >
               <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono leading-none ${
                 assignmentTab === 'active'
                   ? 'bg-white/20 text-white'
-                  : 'bg-stone-200/80 text-stone-700'
+                  : 'bg-[#EDE0D6] text-[#7B3F30]'
               }`}>
                 {activeAssignments.length}
               </span>
@@ -472,15 +472,15 @@ export const AtqiniView: React.FC = () => {
               aria-label="الواجبات المؤرشفة"
               className={`h-9 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
                 assignmentTab === 'archived'
-                  ? 'bg-amber-700 text-white shadow-2xs'
-                  : 'text-stone-600 hover:text-stone-900'
+                  ? 'bg-[#7B3F30] text-white shadow-2xs'
+                  : 'text-[#7B3F30] hover:bg-[#F2ECE6]'
               }`}
             >
               <Archive className="w-4 h-4 shrink-0" />
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono leading-none ${
                 assignmentTab === 'archived'
                   ? 'bg-white/20 text-white'
-                  : 'bg-stone-200/80 text-stone-700'
+                  : 'bg-[#EDE0D6] text-[#7B3F30]'
               }`}>
                 {archivedAssignments.length}
               </span>
@@ -488,7 +488,7 @@ export const AtqiniView: React.FC = () => {
           </div>
 
           {assignmentTab === 'archived' && (
-            <span className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1 rounded-xl font-medium">
+            <span className="text-[11px] text-[#7B3F30] bg-[#FAF6F2] border border-[#E2D5CC] px-3 py-1 rounded-xl font-medium">
               سجل الواجبات المؤرشفة محفوظ بالكامل مع كشف إنجاز وتصحيح الطالبات السابق
             </span>
           )}
@@ -588,7 +588,7 @@ export const AtqiniView: React.FC = () => {
                   rel="noopener noreferrer"
                   title="شرح الشيخ المرئي"
                   aria-label="شرح الشيخ المرئي"
-                  className="w-9 h-9 p-2.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 flex items-center justify-center hover:bg-rose-100 transition shrink-0"
+                  className="w-9 h-9 p-2.5 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition active:scale-95 shrink-0"
                 >
                   <Video className="w-4 h-4" />
                 </a>
@@ -600,11 +600,7 @@ export const AtqiniView: React.FC = () => {
                 onClick={() => handleToggleArchiveAssignment(currentAssignment)}
                 title={isCurrentArchived ? 'إلغاء الأرشفة' : 'أرشفة الواجب'}
                 aria-label={isCurrentArchived ? 'إلغاء الأرشفة' : 'أرشفة الواجب'}
-                className={`w-9 h-9 p-2.5 rounded-xl flex items-center justify-center border transition cursor-pointer active:scale-95 shrink-0 ${
-                  isCurrentArchived
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                    : 'bg-[#FAF6F2] text-[#7B3F30] border-[#DFCEBF] hover:bg-[#EDE0D6]'
-                }`}
+                className="w-9 h-9 p-2.5 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
               >
                 {isCurrentArchived ? (
                   <RotateCcw className="w-4 h-4" />
@@ -619,7 +615,7 @@ export const AtqiniView: React.FC = () => {
                 onClick={() => handleOpenAssignmentModal(currentAssignment)}
                 title="تعديل الواجب"
                 aria-label="تعديل الواجب"
-                className="w-9 h-9 p-2.5 text-stone-600 hover:text-stone-900 rounded-xl hover:bg-stone-100 flex items-center justify-center border border-stone-200 transition cursor-pointer active:scale-95 shrink-0"
+                className="w-9 h-9 p-2.5 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
               >
                 <Edit className="w-4 h-4" />
               </button>
@@ -630,7 +626,7 @@ export const AtqiniView: React.FC = () => {
                 onClick={() => confirmDeleteAssignment(currentAssignment)}
                 title="حذف الواجب"
                 aria-label="حذف الواجب"
-                className="w-9 h-9 p-2.5 text-rose-600 hover:text-rose-800 rounded-xl hover:bg-rose-50 flex items-center justify-center border border-rose-200 transition cursor-pointer active:scale-95 shrink-0"
+                className="w-9 h-9 p-2.5 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
               >
                 <Trash2 className="w-4 h-4" />
               </button>

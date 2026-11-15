@@ -4,7 +4,7 @@ import {
   Layers, Plus, Edit, Archive, Users, Calendar, Clock,
   Sparkles, Trophy, BookOpen, ChevronLeft, CheckCircle2,
   Sliders, UserCheck, Shield, AlertCircle, Trash2, RotateCcw,
-  Eye, EyeOff, AlertTriangle, X, ExternalLink, CreditCard, FolderOpen, Sprout, Leaf,
+  Eye, EyeOff, AlertTriangle, X, ExternalLink, CreditCard, FolderOpen, FolderPlus, Sprout, Leaf,
   HeartHandshake, Send, Copy
 } from 'lucide-react';
 import { Circle, hasFullAccess, Track, defaultMasteryGuideConfig, isStudentEffectivelyArchived } from '../types';
@@ -409,37 +409,42 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-nowrap items-center gap-2 shrink-0 self-start sm:self-auto">
           {(archivedTracks.length > 0 || archivedTrackCircles.length > 0) && (
             <button
+              type="button"
               onClick={() => setShowArchived(!showArchived)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition border ${
+              title={showArchived ? 'إخفاء الأرشيف' : 'عرض المحذوف والمؤرشف'}
+              aria-label={showArchived ? 'إخفاء الأرشيف' : 'عرض المحذوف والمؤرشف'}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition border cursor-pointer active:scale-95 shrink-0 ${
                 showArchived
-                  ? 'bg-amber-100 text-amber-900 border-amber-300'
-                  : 'bg-stone-50 hover:bg-stone-100 text-stone-600 border-stone-200'
+                  ? 'bg-[#7B3F30] text-white border-[#7B3F30] shadow-2xs'
+                  : 'bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border-[#E2D5CC]'
               }`}
-              title="عرض الحلقات والمسارات المؤرشفة"
             >
-              <Archive className="w-3.5 h-3.5" />
-              <span>{showArchived ? 'إخفاء الأرشيف' : 'عرض المحذوف والمؤرشف'}</span>
+              <Archive className="w-4 h-4" />
             </button>
           )}
 
           {hasFullAccess(currentUser) && (
             <button
+              type="button"
               onClick={() => handleOpenTrackModal()}
-              className="flex items-center gap-1.5 px-3 py-2 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#744251] border border-[#E2D5CC] rounded-xl text-xs font-bold transition"
+              title="إضافة مسار جديد"
+              aria-label="إضافة مسار جديد"
+              className="w-10 h-10 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] rounded-xl flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>إضافة مسار جديد</span>
+              <FolderPlus className="w-4 h-4" />
             </button>
           )}
           <button
+            type="button"
             onClick={() => handleOpenCircleModal()}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold shadow-xs transition active:scale-95"
+            title="إضافة حلقة جديدة"
+            aria-label="إضافة حلقة جديدة"
+            className="w-10 h-10 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl flex items-center justify-center shadow-xs transition cursor-pointer active:scale-95 shrink-0"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>إضافة حلقة جديدة</span>
+            <Plus className="w-5 h-5" />
           </button>
         </div>
       </div>
@@ -512,46 +517,49 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex flex-nowrap items-center gap-2 shrink-0 self-start sm:self-auto">
               {/* زر الانتقال إلى قسم المعلمات والمشرفات */}
               <button
                 type="button"
                 onClick={() => onNavigateToSection('staff')}
-                className="px-3.5 py-2 rounded-xl bg-[#FAF0F3] hover:bg-[#8E5364] text-[#8E5364] hover:text-white text-xs font-bold flex items-center gap-1.5 border border-[#8E5364]/30 transition cursor-pointer active:scale-95 shadow-2xs"
-                title="إدارة سجل المعلمات والمشرفات وتوزيع الحلقات والصلاحيات"
+                title="المعلمات والمشرفات"
+                aria-label="المعلمات والمشرفات"
+                className="w-9 h-9 p-2.5 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
               >
-                <Users className="w-3.5 h-3.5" />
-                <span>المعلمات والمشرفات</span>
+                <Users className="w-4 h-4" />
               </button>
 
               {/* زر الدخول لصفحة دليل الإتقان ومعايير المسار */}
               <button
+                type="button"
                 onClick={() => onNavigateToTrackDetail ? onNavigateToTrackDetail(currentTrack.id) : setSelectedTrackDetailId(currentTrack.id)}
-                className="px-3.5 py-2 rounded-xl bg-[#FAF0F3] hover:bg-[#F2E0E6] text-[#8E5364] text-xs font-bold flex items-center gap-1.5 border border-[#E2D5CC] transition cursor-pointer active:scale-95 shadow-2xs"
-                title="عرض وإدارة معايير دليل الإتقان والمنهجية الخاصة بهذا المسار"
+                title="دليل الإتقان والمعايير"
+                aria-label="دليل الإتقان والمعايير"
+                className="w-9 h-9 p-2.5 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
               >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>دليل الإتقان والمعايير</span>
+                <BookOpen className="w-4 h-4" />
               </button>
 
               {hasFullAccess(currentUser) && (
                 <>
                   <button
+                    type="button"
                     onClick={() => handleOpenTrackModal(currentTrack)}
-                    className="p-2 rounded-xl text-stone-600 hover:bg-stone-100 text-xs flex items-center gap-1 border border-stone-200 transition cursor-pointer"
                     title="تعديل المسار"
+                    aria-label="تعديل المسار"
+                    className="w-9 h-9 p-2.5 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
                   >
-                    <Edit className="w-3.5 h-3.5" />
-                    <span>تعديل</span>
+                    <Edit className="w-4 h-4" />
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => confirmDeleteTrack(currentTrack)}
-                    className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 text-xs flex items-center gap-1 border border-rose-200 transition cursor-pointer"
-                    title="أرشفة أو حذف هذا المسار"
+                    title="حذف المسار"
+                    aria-label="حذف المسار"
+                    className="w-9 h-9 p-2.5 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#7B3F30] border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>حذف المسار</span>
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </>
               )}
