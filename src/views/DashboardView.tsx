@@ -119,12 +119,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       const cleanEmail = (targetUserObj.email || '').trim().toLowerCase();
       const cleanName = (targetUserObj.name || '').trim();
 
-      const aliasKeys = [targetUserObj.id, cleanEmail, cleanName].filter(Boolean);
+      const aliasKeys = [targetUserObj.id, cleanEmail].filter(Boolean);
       if (isExactOwnerReefa(targetUserObj) || targetUserObj.role === 'owner') {
         aliasKeys.push('u-owner', 'reef@ghaym.org', 'ريفة المنصوري');
-      }
-      if (isExactFounderOmar(targetUserObj)) {
+      } else if (isExactFounderOmar(targetUserObj)) {
         aliasKeys.push('u-omar', 'u-founder-omar', 'omar@ghaym.org', 'أ. عمر عبدالرحمن');
+      } else if (targetUserObj.role !== 'teacher' && targetUserObj.role !== 'supervisor' && cleanName) {
+        aliasKeys.push(cleanName);
       }
 
       const nextWelcomeMessages: Record<string, string> = {

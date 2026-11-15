@@ -1,4 +1,4 @@
-import { doc, getDoc, getDocFromServer, onSnapshot, runTransaction, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocFromServer, getDocs, onSnapshot, runTransaction, setDoc } from 'firebase/firestore';
 import { db, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID } from '../firebase';
 import {
   mergeArrayByKey,
@@ -23,6 +23,76 @@ export type CloudSyncStatus = 'connected' | 'syncing' | 'offline' | 'error';
 const CLOUD_DOC_PATH = { collection: FIRESTORE_COLLECTION, id: FIRESTORE_DOC_ID };
 
 /**
+ * Reconciles active records from `authorized_staff` into `stateData.users` if a stale published tab
+ * accidentally omitted a staff member without deleting them (`_deletedEntities.users`).
+ */
+const reconcileAuthorizedStaffUsers = async (stateData: any): Promise<any> => {
+  if (!stateData || typeof stateData !== 'object') return stateData;
+  try {
+    const authSnap = await getDocs(collection(db, 'authorized_staff'));
+    if (authSnap.empty) return stateData;
+
+    const users: any[] = Array.isArray(stateData.users) ? [...stateData.users] : [];
+    const circles: any[] = Array.isArray(stateData.circles) ? stateData.circles : [];
+    const deletedUsers = new Set<string>(
+      Array.isArray(stateData._deletedEntities?.users)
+        ? stateData._deletedEntities.users.map(String)
+        : []
+    );
+
+    let modified = false;
+    authSnap.forEach((docSnap) => {
+      const d = docSnap.data();
+      if (!d || d.active === false || !d.staffId) return;
+      const staffId = String(d.staffId);
+      if (deletedUsers.has(staffId)) return;
+      const cleanEmail = String(d.email || docSnap.id || '').trim().toLowerCase();
+      const role = d.role || 'teacher';
+
+      const alreadyExists = users.some(
+        (u) =>
+          u &&
+          (String(u.id) === staffId ||
+            (u.role === role && cleanEmail && String(u.email || '').trim().toLowerCase() === cleanEmail))
+      );
+      if (alreadyExists) return;
+
+      const linkedCircleIds = circles
+        .filter((c) => c && (c.teacherId === staffId || c.supervisorId === staffId))
+        .map((c) => c.id);
+
+      users.push(
+        sanitizeStaffUserForFirestore({
+          id: staffId,
+          name: d.name || 'عضوة الكادر',
+          role,
+          title: d.title || (role === 'supervisor' ? 'مشرفة حلقات' : 'معلمة حلقة قرآنية'),
+          email: cleanEmail,
+          phone: d.phone || '',
+          passcode: d.passcode || '',
+          pin: d.passcode || '',
+          circleIds: linkedCircleIds,
+          isActive: true,
+          ...(d.welcomeTitle ? { welcomeTitle: String(d.welcomeTitle).trim() } : {}),
+          updatedAt: d.updatedAt || new Date().toISOString()
+        })
+      );
+      modified = true;
+    });
+
+    if (modified) {
+      return {
+        ...stateData,
+        users
+      };
+    }
+  } catch {
+    // Non-blocking fallback if offline
+  }
+  return stateData;
+};
+
+/**
  * Fetches the latest cloud database state directly from the server (bypassing local cache),
  * falling back to standard getDoc only if the device is temporarily offline.
  */
@@ -32,7 +102,8 @@ export const fetchCloudDatabaseOnce = async (forceServer = true): Promise<any | 
     try {
       const serverSnap = await getDocFromServer(docRef);
       if (serverSnap.exists()) {
-        return sanitizeCloudState(serverSnap.data());
+        const sanitized = sanitizeCloudState(serverSnap.data());
+        return await reconcileAuthorizedStaffUsers(sanitized);
       }
       return null;
     } catch {
@@ -42,7 +113,8 @@ export const fetchCloudDatabaseOnce = async (forceServer = true): Promise<any | 
   try {
     const snap = await getDoc(docRef);
     if (snap.exists()) {
-      return sanitizeCloudState(snap.data());
+      const sanitized = sanitizeCloudState(snap.data());
+      return await reconcileAuthorizedStaffUsers(sanitized);
     }
   } catch (err) {
     console.warn('Initial cloud database fetch notice:', err);

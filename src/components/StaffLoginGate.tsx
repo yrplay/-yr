@@ -45,23 +45,33 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
     if (initialError) setError(initialError);
   }, [initialError]);
 
-  // البحث عن الحساب والتحقق من الهوية
-  const findStaffUser = async (rawIdentifier: string): Promise<UserType | null> => {
+  // البحث عن الحساب والتحقق من الهوية (يدعم تشابه الأسماء عبر مطابقة الرمز السري للحساب المقصود)
+  const pickMatchingPasscodeUser = (candidates: UserType[], cleanPass: string): UserType | null => {
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1 || !cleanPass) return candidates[0];
+    const exactMatch = candidates.find(
+      (u) => (u.passcode && u.passcode.trim() === cleanPass) || ((u as any).pin && String((u as any).pin).trim() === cleanPass)
+    );
+    return exactMatch || candidates[0];
+  };
+
+  const findStaffUser = async (rawIdentifier: string, rawPassword: string = ''): Promise<UserType | null> => {
     const clean = normalizeString(rawIdentifier);
+    const cleanPass = rawPassword.trim();
     if (!clean) return null;
 
     // 1. فحص البريد الإلكتروني
-    const byEmail = users.find((u) => normalizeString(u.email) === clean);
-    if (byEmail) return byEmail;
+    const byEmail = users.filter((u) => normalizeString(u.email) === clean);
+    if (byEmail.length > 0) return pickMatchingPasscodeUser(byEmail, cleanPass);
 
-    // 2. فحص الاسم
-    const byName = users.find((u) => normalizeString(u.name) === clean);
-    if (byName) return byName;
+    // 2. فحص الاسم (مع التمييز بالرمز السري في حال وجود حساب مالك وحساب معلمة بنفس الاسم أو معلمتين بنفس الاسم)
+    const byName = users.filter((u) => normalizeString(u.name) === clean);
+    if (byName.length > 0) return pickMatchingPasscodeUser(byName, cleanPass);
 
     // 3. فحص الجوال
     const cleanPhone = rawIdentifier.trim().replace(/\s+/g, '');
-    const byPhone = users.find((u) => u.phone && u.phone.trim().replace(/\s+/g, '') === cleanPhone);
-    if (byPhone) return byPhone;
+    const byPhone = users.filter((u) => u.phone && u.phone.trim().replace(/\s+/g, '') === cleanPhone);
+    if (byPhone.length > 0) return pickMatchingPasscodeUser(byPhone, cleanPass);
 
     // 4. فحص المعرّف
     const byId = users.find((u) => normalizeString(u.id) === clean);
@@ -85,6 +95,7 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
         const snap = await getDoc(doc(db, 'authorized_staff', clean));
         if (snap.exists()) {
           const data = snap.data();
+          if (data?.active === false) return null;
           const found = users.find((u) => u.id === data.staffId || normalizeString(u.email) === clean);
           if (found) {
             return {
@@ -134,8 +145,8 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess, onClo
     }
 
     try {
-      // البحث عن المستخدم
-      const targetUser = await findStaffUser(rawInput);
+      // البحث عن المستخدم (مع تمرير الرمز السري للتمييز عند تشابه الأسماء)
+      const targetUser = await findStaffUser(rawInput, cleanPassword);
 
       if (!targetUser) {
         setLoading(false);

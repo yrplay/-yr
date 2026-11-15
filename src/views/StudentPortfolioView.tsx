@@ -138,7 +138,10 @@ export const StudentPortfolioView: React.FC<StudentPortfolioViewProps> = ({
   const challengesMaxScore = score?.challengesMax ?? 10;
   const challengesEarnedScore = score?.challengesScore ?? challengesMaxScore;
 
-  const teacher = users.find(u => u.id === circle?.teacherId);
+  const teacher =
+    users.find(u => u.id === circle?.teacherId) ||
+    users.find(u => u.role === 'teacher' && Boolean(circle?.id) && Array.isArray(u.circleIds) && u.circleIds.includes(circle!.id)) ||
+    users.find(u => u.role === 'teacher' && Boolean(circle?.teacherName) && u.name.trim() === String(circle?.teacherName || '').trim());
   const leader = users.find(u => u.role === 'leader');
   const teacherSig = teacher?.signatureUrl;
   const leaderSig = settings.leaderSignatureUrl || leader?.signatureUrl;

@@ -75,7 +75,9 @@ export const Header: React.FC<HeaderProps> = ({
 
   const isLeader = currentUser?.role === 'leader';
   const canOpenAdminSettings = hasFullAccess(currentUser);
-  const userCircle = circles.find((c) => c.teacherId === currentUser?.id);
+  const userCircle = circles.find(
+    (c) => c.teacherId === currentUser?.id || (Boolean(currentUser?.id) && Array.isArray(currentUser?.circleIds) && currentUser!.circleIds.includes(c.id))
+  );
   const subtitle = currentUser?.title || (userCircle ? userCircle.name : 'معلمة حلقة');
 
   const handlePasswordReset = async () => {

@@ -28,13 +28,18 @@ export const isExactOwnerReefa = (
   if (user.role === 'teacher' || user.role === 'supervisor') return false;
   const email = (user.email || '').trim().toLowerCase();
   const name = (user.name || '').trim();
-  return (
+  const title = (user.title || '').trim();
+  if (
     user.id === 'u-owner' ||
     user.role === 'owner' ||
     email === 'reef@ghaym.org' ||
-    email === 'owner@ghaym.org' ||
-    name === 'ريفة المنصوري' ||
-    name === 'أ. ريفة المنصوري'
+    email === 'owner@ghaym.org'
+  ) {
+    return true;
+  }
+  return (
+    (user.role === 'leader' || title.includes('مالك المنصة')) &&
+    (name === 'ريفة المنصوري' || name === 'أ. ريفة المنصوري')
   );
 };
 
@@ -45,13 +50,18 @@ export const isExactFounderOmar = (
   if (user.role === 'teacher' || user.role === 'supervisor') return false;
   const email = (user.email || '').trim().toLowerCase();
   const name = (user.name || '').trim();
-  return (
+  const title = (user.title || '').trim();
+  if (
     user.id === 'u-omar' ||
     user.id === 'u-founder-omar' ||
     user.id === 'u-1792848402832' ||
-    email === 'omar@ghaym.org' ||
-    name === 'أ. عمر عبدالرحمن' ||
-    name === 'عمر عبدالرحمن'
+    email === 'omar@ghaym.org'
+  ) {
+    return true;
+  }
+  return (
+    (user.role === 'leader' || title.includes('مؤسس')) &&
+    (name === 'أ. عمر عبدالرحمن' || name === 'عمر عبدالرحمن')
   );
 };
 
@@ -233,14 +243,15 @@ export const resolveUserWelcomeConfig = (
 
   const cleanEmail = (targetUser.email || '').trim().toLowerCase();
   const cleanName = (targetUser.name || '').trim();
-  const lookupKeys = [targetUser.id, cleanEmail, cleanName].filter(Boolean);
+  const lookupKeys = [targetUser.id, cleanEmail].filter(Boolean);
 
   // Also add canonical alias keys for Reefa and Omar so cross-device ID differences never miss
   if (isExactOwnerReefa(targetUser)) {
     lookupKeys.push('u-owner', 'reef@ghaym.org', 'ريفة المنصوري');
-  }
-  if (isExactFounderOmar(targetUser)) {
+  } else if (isExactFounderOmar(targetUser)) {
     lookupKeys.push('u-omar', 'u-founder-omar', 'omar@ghaym.org', 'أ. عمر عبدالرحمن');
+  } else if (targetUser.role !== 'teacher' && targetUser.role !== 'supervisor' && cleanName) {
+    lookupKeys.push(cleanName);
   }
 
   const localMap = readLocalWelcomeMessages();

@@ -1782,10 +1782,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (Array.isArray(incomingCircles)) {
       const normalizedCircles = incomingCircles.map((c: any) => {
-        const t = userList.find(u => u.id === c.teacherId);
-        const s = userList.find(u => u.id === c.supervisorId);
+        const t =
+          userList.find(u => u.id === c.teacherId) ||
+          userList.find(u => u.role === 'teacher' && Array.isArray(u.circleIds) && u.circleIds.includes(c.id)) ||
+          (c.teacherName && c.teacherName !== 'غير محدد'
+            ? userList.find(u => u.role === 'teacher' && u.name.trim() === String(c.teacherName).trim())
+            : undefined);
+        const s =
+          userList.find(u => u.id === c.supervisorId) ||
+          userList.find(u => u.role === 'supervisor' && Array.isArray(u.circleIds) && u.circleIds.includes(c.id));
         return {
           ...c,
+          teacherId: t ? t.id : c.teacherId,
+          supervisorId: s ? s.id : c.supervisorId,
           teacherName: t ? t.name : (c.teacherName || 'غير محدد'),
           supervisorName: s ? s.name : (c.supervisorName || 'غير محدد')
         };
@@ -5135,11 +5144,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCircles(nextCircles);
 
     if (target.email) {
-      try {
-        await deleteDoc(doc(db, 'authorized_staff', target.email.trim().toLowerCase()));
-      } catch (e) {
-        console.warn('authorized_staff delete notice:', e);
-      }
+      const cleanEmail = target.email.trim().toLowerCase();
+      setDoc(
+        doc(db, 'authorized_staff', cleanEmail),
+        {
+          email: cleanEmail,
+          staffId: target.id,
+          role: target.role || 'teacher',
+          active: false,
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      ).catch((e) => {
+        console.warn('authorized_staff deactivate notice:', e);
+      });
     }
 
     const nextLogs = appendAuditEntry(
