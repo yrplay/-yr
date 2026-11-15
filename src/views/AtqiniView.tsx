@@ -432,40 +432,58 @@ export const AtqiniView: React.FC = () => {
           </div>
 
           <button
+            type="button"
             onClick={() => handleOpenAssignmentModal()}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs transition self-start sm:self-auto cursor-pointer active:scale-95"
+            title="نشر واجب تجويد جديد"
+            aria-label="نشر واجب تجويد جديد"
+            className="w-10 h-10 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl flex items-center justify-center shadow-xs transition self-start sm:self-auto shrink-0 cursor-pointer active:scale-95"
           >
-            <Plus className="w-4 h-4" />
-            <span>نشر واجب تجويد جديد</span>
+            <Plus className="w-5 h-5" />
           </button>
         </div>
 
         {/* Toggle between Active and Archived Assignments */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-stone-100">
-          <div className="inline-flex items-center p-1 rounded-2xl bg-[#FAF6F2] border border-[#E2D5CC]">
+          <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-[#FAF6F2] border border-[#E2D5CC]">
             <button
               type="button"
               onClick={() => setAssignmentTab('active')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+              title="الواجبات النشطة"
+              aria-label="الواجبات النشطة"
+              className={`h-9 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
                 assignmentTab === 'active'
                   ? 'bg-[#8E5364] text-white shadow-2xs'
                   : 'text-stone-600 hover:text-stone-900'
               }`}
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>الواجبات النشطة ({activeAssignments.length})</span>
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono leading-none ${
+                assignmentTab === 'active'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-stone-200/80 text-stone-700'
+              }`}>
+                {activeAssignments.length}
+              </span>
             </button>
             <button
               type="button"
               onClick={() => setAssignmentTab('archived')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+              title="الواجبات المؤرشفة"
+              aria-label="الواجبات المؤرشفة"
+              className={`h-9 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
                 assignmentTab === 'archived'
                   ? 'bg-amber-700 text-white shadow-2xs'
                   : 'text-stone-600 hover:text-stone-900'
               }`}
             >
-              <Archive className="w-3.5 h-3.5" />
-              <span>الواجبات المؤرشفة ({archivedAssignments.length})</span>
+              <Archive className="w-4 h-4 shrink-0" />
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono leading-none ${
+                assignmentTab === 'archived'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-stone-200/80 text-stone-700'
+              }`}>
+                {archivedAssignments.length}
+              </span>
             </button>
           </div>
 
