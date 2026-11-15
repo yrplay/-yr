@@ -513,9 +513,18 @@ export interface AtqiniAssignment {
   examplesRequirement: string;
   recitationRuleApplication: string;
   maxScore: number;
+  status?: 'active' | 'archived';
+  archived?: boolean;
+  isArchived?: boolean;
+  archivedAt?: string;
   createdAt?: string;
   updatedAt?: string;
 }
+
+export const isAtqiniAssignmentArchived = (assignment?: AtqiniAssignment | null): boolean => {
+  if (!assignment) return false;
+  return Boolean(assignment.archived || assignment.isArchived || assignment.status === 'archived');
+};
 
 export interface StudentAtqiniSubmission {
   id: string;

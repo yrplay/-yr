@@ -519,7 +519,43 @@ const ensureDefaultTrackIntegrity = (data: any) => {
     data.challenges = data.challenges.map((ch: any) => ({ ...ch, trackId: ch.trackId || 't-1' }));
   }
   if (Array.isArray(data.atqiniAssignments)) {
-    data.atqiniAssignments = data.atqiniAssignments.map((a: any) => ({ ...a, trackId: a.trackId || 't-1' }));
+    const deletedAtqIds = new Set<string>(
+      Array.isArray(data._deletedEntities?.atqiniAssignments) ? data._deletedEntities.atqiniAssignments.map(String) : []
+    );
+    let atqList = data.atqiniAssignments
+      .filter((a: any) => a && !deletedAtqIds.has(String(a.id)))
+      .map((a: any) => ({ ...a, trackId: a.trackId || 't-1' }));
+    try {
+      if (typeof window !== 'undefined') {
+        const localAtqRaw = localStorage.getItem('ghaith_atqini_assignments_local_v1');
+        if (localAtqRaw) {
+          const localAtq: any[] = JSON.parse(localAtqRaw);
+          if (Array.isArray(localAtq) && localAtq.length > 0) {
+            const byId = new Map<string, any>();
+            atqList.forEach((a: any) => {
+              if (a && a.id) byId.set(String(a.id), a);
+            });
+            localAtq.forEach((loc: any) => {
+              if (!loc || !loc.id || deletedAtqIds.has(String(loc.id))) return;
+              const existing = byId.get(String(loc.id));
+              if (!existing) {
+                byId.set(String(loc.id), { ...loc, trackId: loc.trackId || 't-1' });
+              } else {
+                const locTime = Date.parse(loc.updatedAt || loc.createdAt || '') || 0;
+                const exTime = Date.parse(existing.updatedAt || existing.createdAt || '') || 0;
+                if (locTime >= exTime) {
+                  byId.set(String(loc.id), { ...existing, ...loc, trackId: loc.trackId || existing.trackId || 't-1' });
+                }
+              }
+            });
+            atqList = Array.from(byId.values());
+          }
+        }
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    data.atqiniAssignments = atqList;
   }
   if (Array.isArray(data.monthlyExams)) {
     data.monthlyExams = data.monthlyExams.map((e: any) => ({ ...e, trackId: e.trackId || 't-1' }));
@@ -3928,46 +3964,78 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       title: assignment.title || 'واجب تجويد جديد',
       tajweedRule: assignment.tajweedRule || '',
       description: assignment.description || '',
-      sheikhVideoUrl: assignment.sheikhVideoUrl,
+      sheikhVideoUrl: assignment.sheikhVideoUrl || '',
+      lessonImageUrl: assignment.lessonImageUrl || '',
       publishedDate: assignment.publishedDate || new Date().toISOString().split('T')[0],
       dueDate: assignment.dueDate || '',
       requiredInstructions: assignment.requiredInstructions || '',
       examplesRequirement: assignment.examplesRequirement || '',
       recitationRuleApplication: assignment.recitationRuleApplication || '',
       maxScore: assignment.maxScore || 10,
+      status: assignment.status || 'active',
+      archived: Boolean(assignment.archived || assignment.isArchived),
+      isArchived: Boolean(assignment.archived || assignment.isArchived),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       ...assignment
     };
-    const currentAtq = masterStateRef.current.atqiniAssignments?.length ? masterStateRef.current.atqiniAssignments : atqiniAssignments;
+    const currentAtq = Array.isArray(masterStateRef.current.atqiniAssignments) ? masterStateRef.current.atqiniAssignments : atqiniAssignments;
     const next = [...currentAtq.filter((a: AtqiniAssignment) => a.id !== newAss.id), newAss];
     masterStateRef.current.atqiniAssignments = next;
     setAtqiniAssignments(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_atqini_assignments_local_v1', JSON.stringify(next));
+      }
+    } catch {}
     const nextLogs = appendAuditEntry('create', 'atqini', `نشر واجب تجويد «أتقني» جديد: ${newAss.title}`, newAss.id);
-    persistState({ atqiniAssignments: next, auditLogs: nextLogs });
+    persistState({ atqiniAssignments: next, auditLogs: nextLogs, _immediateSync: true });
     showToast(`تم نشر واجب التجويد: ${newAss.title}`);
     return newAss;
   };
 
   const updateAtqiniAssignment = async (id: string, assignment: Partial<AtqiniAssignment>) => {
-    const currentAtq = masterStateRef.current.atqiniAssignments?.length ? masterStateRef.current.atqiniAssignments : atqiniAssignments;
+    const currentAtq = Array.isArray(masterStateRef.current.atqiniAssignments) ? masterStateRef.current.atqiniAssignments : atqiniAssignments;
     const existingAss = currentAtq.find((a: AtqiniAssignment) => a.id === id);
     const next = currentAtq.map((a: AtqiniAssignment) => a.id === id ? { ...a, ...assignment, updatedAt: new Date().toISOString() } : a);
     masterStateRef.current.atqiniAssignments = next;
     setAtqiniAssignments(next);
-    const nextLogs = appendAuditEntry('update', 'atqini', `تعديل واجب التجويد «أتقني»: ${assignment.title || existingAss?.title || id}`, id);
-    persistState({ atqiniAssignments: next, auditLogs: nextLogs });
-    showToast('تم تعديل واجب التجويد');
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_atqini_assignments_local_v1', JSON.stringify(next));
+      }
+    } catch {}
+    const isArchiveToggle = assignment.archived !== undefined || assignment.isArchived !== undefined || assignment.status !== undefined;
+    const isNowArchived = Boolean(assignment.archived ?? assignment.isArchived ?? (assignment.status === 'archived'));
+    const nextLogs = appendAuditEntry(
+      isArchiveToggle ? 'archive' : 'update',
+      'atqini',
+      isArchiveToggle
+        ? `${isNowArchived ? 'أرشفة' : 'استعادة'} واجب التجويد «أتقني»: ${existingAss?.title || id}`
+        : `تعديل واجب التجويد «أتقني»: ${assignment.title || existingAss?.title || id}`,
+      id
+    );
+    persistState({ atqiniAssignments: next, auditLogs: nextLogs, _immediateSync: true });
+    showToast(
+      isArchiveToggle
+        ? (isNowArchived ? 'تم أرشفة واجب «أتقني» ونقله إلى الواجبات المؤرشفة 📦' : 'تم إلغاء أرشفة الواجب واستعادته إلى الواجبات النشطة ✅')
+        : 'تم تعديل واجب التجويد'
+    );
   };
 
   const deleteAtqiniAssignment = async (id: string) => {
-    const currentAtq = masterStateRef.current.atqiniAssignments?.length ? masterStateRef.current.atqiniAssignments : atqiniAssignments;
+    const currentAtq = Array.isArray(masterStateRef.current.atqiniAssignments) ? masterStateRef.current.atqiniAssignments : atqiniAssignments;
     const existingAss = currentAtq.find((a: AtqiniAssignment) => a.id === id);
     const next = currentAtq.filter((a: AtqiniAssignment) => a.id !== id);
     masterStateRef.current.atqiniAssignments = next;
     setAtqiniAssignments(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_atqini_assignments_local_v1', JSON.stringify(next));
+      }
+    } catch {}
     const nextLogs = appendAuditEntry('delete', 'atqini', `حذف واجب التجويد «أتقني»: ${existingAss?.title || id}`, id);
-    persistState({ atqiniAssignments: next, auditLogs: nextLogs, _deletedEntities: addDeletedEntity('atqiniAssignments', id) });
+    persistState({ atqiniAssignments: next, auditLogs: nextLogs, _deletedEntities: addDeletedEntity('atqiniAssignments', id), _immediateSync: true });
     showToast('تم حذف واجب التجويد');
   };
 

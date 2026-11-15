@@ -3,9 +3,12 @@ import { useApp } from '../context/AppContext';
 import {
   Sparkles, Plus, Edit, Trash2, ExternalLink, CheckCircle2,
   AlertCircle, BookOpen, Clock, Award, Star, Video, Image, FileText,
-  AlertTriangle, X, Check
+  AlertTriangle, X, Check, Archive, RotateCcw
 } from 'lucide-react';
-import { AtqiniAssignment, AtqiniRating, StudentAtqiniSubmission, isStudentEffectivelyArchived } from '../types';
+import {
+  AtqiniAssignment, AtqiniRating, StudentAtqiniSubmission,
+  isStudentEffectivelyArchived, isAtqiniAssignmentArchived, deduplicateStudentsByName
+} from '../types';
 import { formatHijriDate, formatHijriShort, formatHijriDateTime, HijriDateNavigationBar } from '../utils/hijriDate';
 
 export const AtqiniView: React.FC = () => {
@@ -16,24 +19,58 @@ export const AtqiniView: React.FC = () => {
     quickModalAction, clearQuickModal, showToast, selectedTrackId
   } = useApp();
 
-  const availableAssignments = React.useMemo(() => {
+  const [assignmentTab, setAssignmentTab] = useState<'active' | 'archived'>('active');
+
+  const trackScopedAssignments = React.useMemo(() => {
     if (!selectedTrackId || selectedTrackId === 'all') return atqiniAssignments;
     return atqiniAssignments.filter(a => !a.trackId || a.trackId === selectedTrackId);
   }, [atqiniAssignments, selectedTrackId]);
 
+  const activeAssignments = React.useMemo(
+    () => trackScopedAssignments.filter(a => !isAtqiniAssignmentArchived(a)),
+    [trackScopedAssignments]
+  );
+
+  const archivedAssignments = React.useMemo(
+    () => trackScopedAssignments.filter(a => isAtqiniAssignmentArchived(a)),
+    [trackScopedAssignments]
+  );
+
+  const availableAssignments = assignmentTab === 'archived' ? archivedAssignments : activeAssignments;
+
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>(
+    activeAssignments[0]?.id || atqiniAssignments[0]?.id || ''
+  );
+
+  const currentAssignment =
+    availableAssignments.find(a => a.id === selectedAssignmentId) ||
+    availableAssignments[0] ||
+    null;
+
+  const isCurrentArchived = isAtqiniAssignmentArchived(currentAssignment);
+
   const availableStudents = React.useMemo(() => {
-    return students.filter(s => {
-      if (isStudentEffectivelyArchived(s, circles, tracks)) return false;
+    const trackScopedStudents = students.filter(s => {
       if (!selectedTrackId || selectedTrackId === 'all') return true;
       const circle = circles.find(c => c.id === s.circleId);
       const stTrackId = s.trackId || circle?.trackId;
       return stTrackId === selectedTrackId;
     });
-  }, [students, circles, tracks, selectedTrackId]);
 
-  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>(
-    availableAssignments[0]?.id || atqiniAssignments[0]?.id || ''
-  );
+    if (!isCurrentArchived) {
+      return deduplicateStudentsByName(
+        trackScopedStudents.filter(s => !isStudentEffectivelyArchived(s, circles, tracks))
+      );
+    }
+
+    // في الواجبات المؤرشفة: الحفاظ على السجل التاريخي الكامل للطالبات المؤرشفات أو اللاتي لديهن رصد في هذا الواجب
+    const historicalStudents = trackScopedStudents.filter(
+      s =>
+        isStudentEffectivelyArchived(s, circles, tracks) ||
+        studentAtqiniSubmissions.some(sub => sub.assignmentId === currentAssignment?.id && sub.studentId === s.id)
+    );
+    return historicalStudents.length > 0 ? historicalStudents : trackScopedStudents;
+  }, [students, circles, tracks, selectedTrackId, isCurrentArchived, studentAtqiniSubmissions, currentAssignment?.id]);
 
   // Modals state
   const [assignmentModalOpen, setAssignmentModalOpen] = useState(false);
@@ -55,10 +92,12 @@ export const AtqiniView: React.FC = () => {
     }
   }, [quickModalAction]);
 
-  // Keep selectedAssignmentId pointing to a valid assignment
+  // Keep selectedAssignmentId pointing to a valid assignment in the active tab
   React.useEffect(() => {
     if (availableAssignments.length > 0 && !availableAssignments.some(a => a.id === selectedAssignmentId)) {
       setSelectedAssignmentId(availableAssignments[0].id);
+    } else if (availableAssignments.length === 0 && selectedAssignmentId) {
+      setSelectedAssignmentId('');
     }
   }, [availableAssignments, selectedAssignmentId]);
 
@@ -154,7 +193,20 @@ export const AtqiniView: React.FC = () => {
     teacherNotes: ''
   });
 
-  const currentAssignment = atqiniAssignments.find(a => a.id === selectedAssignmentId) || atqiniAssignments[0];
+  const handleToggleArchiveAssignment = async (assignment: AtqiniAssignment) => {
+    const currentlyArchived = isAtqiniAssignmentArchived(assignment);
+    const nextArchived = !currentlyArchived;
+    const remainingInTab = availableAssignments.filter(a => a.id !== assignment.id);
+    await updateAtqiniAssignment(assignment.id, {
+      archived: nextArchived,
+      isArchived: nextArchived,
+      status: nextArchived ? 'archived' : 'active',
+      archivedAt: nextArchived ? new Date().toISOString() : ''
+    });
+    if (remainingInTab.length > 0) {
+      setSelectedAssignmentId(remainingInTab[0].id);
+    }
+  };
 
   const handleApplyTemplate = (tpl: typeof TAJWEED_TEMPLATES[0]) => {
     setAssignmentForm(prev => ({
@@ -367,24 +419,62 @@ export const AtqiniView: React.FC = () => {
     <div className="space-y-6">
 
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Sparkles className="w-5 h-5 text-[#9A5643] shrink-0" />
-            <h2 className="text-xl font-bold text-stone-900 font-quran">قسم «أتقني» — واجبات التجويد حصرياً</h2>
+      <div className="flex flex-col gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Sparkles className="w-5 h-5 text-[#9A5643] shrink-0" />
+              <h2 className="text-xl font-bold text-stone-900 font-quran">قسم «أتقني» — واجبات التجويد حصرياً</h2>
+            </div>
+            <p className="text-xs text-stone-500">
+              مخصص حصرياً لواجبات أحكام التلاوة والتجويد، استخراج الأمثلة من المحفوظ، وتطبيقها أثناء التسميع
+            </p>
           </div>
-          <p className="text-xs text-stone-500">
-            مخصص حصرياً لواجبات أحكام التلاوة والتجويد، استخراج الأمثلة من المحفوظ، وتطبيقها أثناء التسميع
-          </p>
+
+          <button
+            onClick={() => handleOpenAssignmentModal()}
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs transition self-start sm:self-auto cursor-pointer active:scale-95"
+          >
+            <Plus className="w-4 h-4" />
+            <span>نشر واجب تجويد جديد</span>
+          </button>
         </div>
 
-        <button
-          onClick={() => handleOpenAssignmentModal()}
-          className="flex items-center gap-1.5 px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs transition self-start sm:self-auto cursor-pointer active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-          <span>نشر واجب تجويد جديد</span>
-        </button>
+        {/* Toggle between Active and Archived Assignments */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-stone-100">
+          <div className="inline-flex items-center p-1 rounded-2xl bg-[#FAF6F2] border border-[#E2D5CC]">
+            <button
+              type="button"
+              onClick={() => setAssignmentTab('active')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                assignmentTab === 'active'
+                  ? 'bg-[#8E5364] text-white shadow-2xs'
+                  : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>الواجبات النشطة ({activeAssignments.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAssignmentTab('archived')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                assignmentTab === 'archived'
+                  ? 'bg-amber-700 text-white shadow-2xs'
+                  : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              <Archive className="w-3.5 h-3.5" />
+              <span>الواجبات المؤرشفة ({archivedAssignments.length})</span>
+            </button>
+          </div>
+
+          {assignmentTab === 'archived' && (
+            <span className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1 rounded-xl font-medium">
+              سجل الواجبات المؤرشفة محفوظ بالكامل مع كشف إنجاز وتصحيح الطالبات السابق
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Assignments Selection Tabs */}
@@ -399,7 +489,11 @@ export const AtqiniView: React.FC = () => {
                 : 'bg-white text-stone-700 hover:bg-[#FAF6F2] border border-[#E8DFD8]'
             }`}
           >
-            <Sparkles className="w-4 h-4" />
+            {isAtqiniAssignmentArchived(as) ? (
+              <Archive className="w-4 h-4" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
             <span>{as.tajweedRule}</span>
             <span className={`text-[10px] px-2 py-0.5 rounded-full ${
               selectedAssignmentId === as.id ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-600'
@@ -409,31 +503,41 @@ export const AtqiniView: React.FC = () => {
           </button>
         ))}
 
-        {atqiniAssignments.length === 0 && (
+        {availableAssignments.length === 0 && (
           <div className="w-full p-6 bg-white rounded-3xl border border-dashed border-[#8E5364]/40 text-center space-y-3 my-2 shadow-2xs">
             <div className="flex justify-center">
-              <Sparkles className="w-8 h-8 text-[#9A5643]" />
+              {assignmentTab === 'archived' ? (
+                <Archive className="w-8 h-8 text-amber-700" />
+              ) : (
+                <Sparkles className="w-8 h-8 text-[#9A5643]" />
+              )}
             </div>
-            <h4 className="font-bold text-stone-800 text-sm">لا توجد واجبات تجويد حالية</h4>
+            <h4 className="font-bold text-stone-800 text-sm">
+              {assignmentTab === 'archived' ? 'لا توجد واجبات مؤرشفة حالياً' : 'لا توجد واجبات تجويد نشطة حالية'}
+            </h4>
             <p className="text-xs text-stone-500 max-w-md mx-auto">
-              يمكنكِ نشر واجب تجويد جديد مخصص الآن أو استعادة الواجبات النموذجية (أحكام الإدغام، الإخفاء، القلقلة) بضغطة زر واحدة.
+              {assignmentTab === 'archived'
+                ? 'عند أرشفة أي واجب من تبويب «الواجبات النشطة» سيظهر هنا بكامل سجلات ودرجات الطالبات التاريخية.'
+                : 'يمكنكِ نشر واجب تجويد جديد مخصص الآن أو استعادة الواجبات النموذجية (أحكام الإدغام، الإخفاء، القلقلة) بضغطة زر واحدة.'}
             </p>
-            <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
-              <button
-                onClick={handleRestoreSampleAssignments}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>استعادة الواجبات النموذجية التلقائية</span>
-              </button>
-              <button
-                onClick={() => handleOpenAssignmentModal()}
-                className="px-4 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>نشر واجب جديد</span>
-              </button>
-            </div>
+            {assignmentTab === 'active' && (
+              <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
+                <button
+                  onClick={handleRestoreSampleAssignments}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>استعادة الواجبات النموذجية التلقائية</span>
+                </button>
+                <button
+                  onClick={() => handleOpenAssignmentModal()}
+                  className="px-4 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>نشر واجب جديد</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -443,47 +547,74 @@ export const AtqiniView: React.FC = () => {
         <div className="bg-white p-6 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <BookOpen className="w-4 h-4 text-[#9A5643]" />
                 <h3 className="text-base sm:text-lg font-bold text-stone-900">{currentAssignment.title}</h3>
+                {isCurrentArchived && (
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 font-bold inline-flex items-center gap-1">
+                    <Archive className="w-3 h-3" />
+                    <span>واجب مؤرشف</span>
+                  </span>
+                )}
               </div>
               <p className="text-xs text-stone-500 mt-0.5">
                 الحكم: <strong className="text-[#8E5364]">{currentAssignment.tajweedRule}</strong> • النشر: <strong>{formatHijriShort(currentAssignment.publishedDate)}</strong> • التسليم: <strong className="text-rose-700">{formatHijriShort(currentAssignment.dueDate)}</strong>
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-nowrap items-center gap-2 shrink-0">
               {currentAssignment.sheikhVideoUrl && (
                 <a
                   href={currentAssignment.sheikhVideoUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 text-xs font-semibold flex items-center gap-1.5 hover:bg-rose-100 transition"
+                  title="شرح الشيخ المرئي"
+                  aria-label="شرح الشيخ المرئي"
+                  className="w-9 h-9 p-2.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 flex items-center justify-center hover:bg-rose-100 transition shrink-0"
                 >
-                  <Video className="w-3.5 h-3.5" />
-                  <span>شرح الشيخ المرئي</span>
-                  <ExternalLink className="w-3 h-3 opacity-60" />
+                  <Video className="w-4 h-4" />
                 </a>
               )}
 
+              {/* Archive / Unarchive Assignment Button */}
+              <button
+                type="button"
+                onClick={() => handleToggleArchiveAssignment(currentAssignment)}
+                title={isCurrentArchived ? 'إلغاء الأرشفة' : 'أرشفة الواجب'}
+                aria-label={isCurrentArchived ? 'إلغاء الأرشفة' : 'أرشفة الواجب'}
+                className={`w-9 h-9 p-2.5 rounded-xl flex items-center justify-center border transition cursor-pointer active:scale-95 shrink-0 ${
+                  isCurrentArchived
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                    : 'bg-[#FAF6F2] text-[#7B3F30] border-[#DFCEBF] hover:bg-[#EDE0D6]'
+                }`}
+              >
+                {isCurrentArchived ? (
+                  <RotateCcw className="w-4 h-4" />
+                ) : (
+                  <Archive className="w-4 h-4" />
+                )}
+              </button>
+
               {/* Edit Assignment Button */}
               <button
+                type="button"
                 onClick={() => handleOpenAssignmentModal(currentAssignment)}
-                className="p-2 text-stone-600 hover:text-stone-900 rounded-xl hover:bg-stone-100 text-xs flex items-center gap-1 border border-stone-200 transition cursor-pointer"
-                title="تعديل بيانات الواجب"
+                title="تعديل الواجب"
+                aria-label="تعديل الواجب"
+                className="w-9 h-9 p-2.5 text-stone-600 hover:text-stone-900 rounded-xl hover:bg-stone-100 flex items-center justify-center border border-stone-200 transition cursor-pointer active:scale-95 shrink-0"
               >
-                <Edit className="w-3.5 h-3.5" />
-                <span>تعديل</span>
+                <Edit className="w-4 h-4" />
               </button>
 
               {/* Delete Assignment Button */}
               <button
+                type="button"
                 onClick={() => confirmDeleteAssignment(currentAssignment)}
-                className="p-2 text-rose-600 hover:text-rose-800 rounded-xl hover:bg-rose-50 text-xs flex items-center gap-1 border border-rose-200 transition cursor-pointer"
-                title="حذف هذا الواجب من المقرأة"
+                title="حذف الواجب"
+                aria-label="حذف الواجب"
+                className="w-9 h-9 p-2.5 text-rose-600 hover:text-rose-800 rounded-xl hover:bg-rose-50 flex items-center justify-center border border-rose-200 transition cursor-pointer active:scale-95 shrink-0"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>حذف الواجب</span>
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
           </div>
