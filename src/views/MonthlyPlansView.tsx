@@ -1332,24 +1332,25 @@ export const MonthlyPlansView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-nowrap self-start sm:self-auto shrink-0">
           <button
             type="button"
             disabled={!currentPlan}
             onClick={() => currentPlan && duplicateMonthlyPlan(currentPlan.id)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-[#744251] border border-[#E2D5CC] rounded-xl text-xs font-bold transition cursor-pointer active:scale-95 disabled:opacity-50"
-            title="نسخ الخطة السابقة وتعديلها دون فقد سجلات الماضي"
+            className="w-10 h-10 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-theme-primary border border-[#E2D5CC] rounded-xl flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 disabled:opacity-50 shrink-0"
+            title="نسخ الخطة السابقة"
+            aria-label="نسخ الخطة السابقة"
           >
-            <Copy className="w-3.5 h-3.5" />
-            <span>نسخ الخطة السابقة</span>
+            <Copy className="w-4 h-4 shrink-0" />
           </button>
           <button
             type="button"
             onClick={() => handleOpenPlanModal()}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer active:scale-95"
+            className="w-10 h-10 bg-theme-primary hover:bg-theme-primary-hover text-white border border-theme-primary rounded-xl flex items-center justify-center shadow-xs transition cursor-pointer active:scale-95 shrink-0"
+            title="إنشاء خطة شهرية جديدة"
+            aria-label="إنشاء خطة شهرية جديدة"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>إنشاء خطة شهرية جديدة</span>
+            <Plus className="w-5 h-5 shrink-0" />
           </button>
         </div>
       </div>
@@ -1401,7 +1402,7 @@ export const MonthlyPlansView: React.FC = () => {
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <div className="flex items-center gap-2 flex-nowrap self-start sm:self-auto shrink-0">
               <button
                 type="button"
                 onClick={() =>
@@ -1410,40 +1411,33 @@ export const MonthlyPlansView: React.FC = () => {
                     isArchived: !isCurrentPlanHistorical
                   })
                 }
-                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border cursor-pointer active:scale-95 transition ${
-                  isCurrentPlanHistorical
-                    ? 'bg-[#EBF3EE] text-[#2D5A43] border-[#B8D8C5] hover:bg-[#DCEADA]'
-                    : 'bg-[#F6EFEA] text-[#7B3F30] border-[#DFCEBF] hover:bg-[#EDE0D6]'
-                }`}
+                title={isCurrentPlanHistorical ? 'تفعيل كخطة الشهر الحالي' : 'أرشفة كخطة شهر سابق'}
+                aria-label={isCurrentPlanHistorical ? 'تفعيل كخطة الشهر الحالي' : 'أرشفة كخطة شهر سابق'}
+                className="w-9 h-9 p-2.5 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-theme-primary border border-[#E2D5CC] rounded-xl flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
               >
                 {isCurrentPlanHistorical ? (
-                  <>
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>تفعيل كخطة الشهر الحالي</span>
-                  </>
+                  <RotateCcw className="w-4 h-4 shrink-0" />
                 ) : (
-                  <>
-                    <Archive className="w-3.5 h-3.5" />
-                    <span>أرشفة كخطة شهر سابق</span>
-                  </>
+                  <Archive className="w-4 h-4 shrink-0" />
                 )}
               </button>
               <button
                 type="button"
                 onClick={() => handleOpenPlanModal(currentPlan)}
-                className="px-3.5 py-2 text-[#744251] bg-[#FAF6F2] hover:bg-[#F2ECE6] rounded-xl text-xs font-bold flex items-center gap-1.5 border border-[#E2D5CC] cursor-pointer active:scale-95 transition"
+                title="تعديل تواريخ وتفاصيل الخطة"
+                aria-label="تعديل تواريخ وتفاصيل الخطة"
+                className="w-9 h-9 p-2.5 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-theme-primary border border-[#E2D5CC] rounded-xl flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
               >
-                <Edit className="w-3.5 h-3.5" />
-                <span>تعديل تواريخ وتفاصيل الخطة</span>
+                <Edit className="w-4 h-4 shrink-0" />
               </button>
               <button
                 type="button"
                 onClick={() => setDeletePlanConfirmOpen(true)}
-                className="px-3.5 py-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-rose-200 transition cursor-pointer active:scale-95"
-                title="حذف هذه الخطة الشهرية نهائياً"
+                title="حذف الخطة"
+                aria-label="حذف الخطة"
+                className="w-9 h-9 p-2.5 bg-[#FAF6F2] hover:bg-[#F2ECE6] text-theme-primary border border-[#E2D5CC] rounded-xl flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>حذف الخطة</span>
+                <Trash2 className="w-4 h-4 shrink-0" />
               </button>
             </div>
           </div>
