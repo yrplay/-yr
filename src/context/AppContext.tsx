@@ -5215,15 +5215,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const updateUser = async (id: string, user: Partial<User>, silent?: boolean) => {
     const baseUsers: User[] = masterStateRef.current.users?.length ? masterStateRef.current.users : users;
-    const target = baseUsers.find(u => u.id === id);
+    const target =
+      baseUsers.find(u => u.id === id) ||
+      (id === 'u-omar' || id === 'u-founder-omar' ? baseUsers.find(u => isExactFounderOmar(u)) : undefined) ||
+      (id === 'u-owner' ? baseUsers.find(u => isExactOwnerReefa(u)) : undefined);
     if (!target) return;
+    const effectiveTargetId = target.id;
 
     const isCurrentFullAdmin =
       currentUser?.role === 'developer' ||
       currentUser?.role === 'owner' ||
       currentUser?.role === 'leader' ||
       isTechnicalDeveloper(currentUser);
-    if (!isCurrentFullAdmin && currentUser?.id !== id) {
+    if (!isCurrentFullAdmin && currentUser?.id !== effectiveTargetId && currentUser?.id !== id) {
       showToast('تعديل بيانات الحسابات متاح لإدارة المنصة فقط', 'error');
       return;
     }
@@ -5233,9 +5237,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const nowIso = new Date().toISOString();
     const cleanedUpdates = deepCleanForFirestore(user) || {};
+    const isTargetOmar = isExactFounderOmar(target);
+    const isTargetReefa = isExactOwnerReefa(target);
+
     const nextUsers = sanitizeUsersList(
       baseUsers.map(u => {
-        if (u.id !== id) return u;
+        const matchesUser =
+          u.id === effectiveTargetId ||
+          u.id === id ||
+          (isTargetOmar && isExactFounderOmar(u)) ||
+          (isTargetReefa && isExactOwnerReefa(u));
+        if (!matchesUser) return u;
         const merged = {
           ...u,
           ...cleanedUpdates,
@@ -5252,16 +5264,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         localStorage.setItem('ghaith_staff_users', JSON.stringify(nextUsers));
       } catch {}
     }
-    const updated = nextUsers.find(u => u.id === id);
-    if (currentUser?.id === id && updated) {
+    const updated =
+      nextUsers.find(u => u.id === effectiveTargetId) ||
+      (isTargetOmar ? nextUsers.find(u => isExactFounderOmar(u)) : undefined) ||
+      (isTargetReefa ? nextUsers.find(u => isExactOwnerReefa(u)) : undefined);
+    if (
+      updated &&
+      (currentUser?.id === effectiveTargetId ||
+        currentUser?.id === id ||
+        (isTargetOmar && isExactFounderOmar(currentUser)) ||
+        (isTargetReefa && isExactOwnerReefa(currentUser)))
+    ) {
       setCurrentUser(updated);
     }
 
-    if (id === 'u-dev' || target.role === 'developer' || target.email?.trim().toLowerCase() === 'yr.play.com@gmail.com') {
+    if (effectiveTargetId === 'u-dev' || target.role === 'developer' || target.email?.trim().toLowerCase() === 'yr.play.com@gmail.com') {
       if (user.passcode && typeof window !== 'undefined') {
         localStorage.setItem('ghaith_dev_passcode', user.passcode.trim());
       }
-    } else if (id === 'u-owner' || target.role === 'owner' || user.role === 'owner') {
+    } else if (effectiveTargetId === 'u-owner' || target.role === 'owner' || user.role === 'owner') {
       if (user.passcode && typeof window !== 'undefined') {
         localStorage.setItem('ghaith_owner_passcode', user.passcode.trim());
       }
@@ -5282,31 +5303,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (assignedSet) {
           if (effectiveRole === 'teacher') {
             if (assignedSet.has(c.id)) {
-              tId = id;
+              tId = effectiveTargetId;
               tName = effectiveName;
               changed = true;
-            } else if (c.teacherId === id) {
+            } else if (c.teacherId === effectiveTargetId) {
               tId = '';
               tName = 'غير محدد';
               changed = true;
             }
           } else if (effectiveRole === 'supervisor') {
             if (assignedSet.has(c.id)) {
-              sId = id;
+              sId = effectiveTargetId;
               sName = effectiveName;
               changed = true;
-            } else if (c.supervisorId === id) {
+            } else if (c.supervisorId === effectiveTargetId) {
               sId = '';
               sName = 'غير محدد';
               changed = true;
             }
           }
         }
-        if (tId === id && user.name) {
+        if (tId === effectiveTargetId && user.name) {
           tName = user.name;
           changed = true;
         }
-        if (sId === id && user.name) {
+        if (sId === effectiveTargetId && user.name) {
           sName = user.name;
           changed = true;
         }
@@ -5331,54 +5352,59 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         : isPasscodeOnly
         ? `تحديث الرمز السري للدخول لحساب: ${updated?.name || target.name}`
         : `تعديل بيانات/منصب حساب الكادر: ${updated?.name || target.name} (${updated?.title || updated?.role || target.role})`;
-      const nextLogs = appendAuditEntry('update', 'auth', logDetail, id);
+      const nextLogs = appendAuditEntry('update', 'auth', logDetail, effectiveTargetId);
       persistState({ users: nextUsers, circles: nextCircles, auditLogs: nextLogs, _skipCloudPush: true });
     } else {
       persistState({ users: nextUsers, circles: nextCircles, _skipCloudPush: true });
     }
 
     if (!isLocalDemoMode) {
-      setCloudStatus('syncing');
-      try {
-        await pushStaffUsersToCloudDirect(
-          nextUsers,
-          nextCircles,
-          masterStateRef.current._deletedEntities
-        );
-        hasPendingLocalChangesRef.current = false;
-        setCloudStatus('connected');
-        setLastSynced(new Date());
-        pushStateToCloud(masterStateRef.current).catch(() => {});
-        if (!silent) {
-          showToast('تم حفظ التعديلات وتحديث المنصب والبيانات في السحابة بنجاح ✨');
+      const syncTask = async () => {
+        setCloudStatus('syncing');
+        try {
+          await pushStaffUsersToCloudDirect(
+            nextUsers,
+            nextCircles,
+            masterStateRef.current._deletedEntities,
+            masterStateRef.current.settings
+          );
+          hasPendingLocalChangesRef.current = false;
+          setCloudStatus('connected');
+          setLastSynced(new Date());
+          pushStateToCloud(masterStateRef.current).catch(() => {});
+        } catch (cloudErr: any) {
+          hasPendingLocalChangesRef.current = false;
+          console.warn('Firestore save notice in updateUser:', cloudErr);
         }
-      } catch (cloudErr: any) {
-        hasPendingLocalChangesRef.current = false;
-        setCloudStatus('error');
-        const errMsg =
-          cloudErr?.message ||
-          cloudErr?.code ||
-          String(cloudErr || 'خطأ في الصلاحيات أو الاتصال بقاعدة البيانات');
-        console.error('Firestore save error in updateUser:', cloudErr);
-        showToast(`تعذر الحفظ في سحابة Firebase: ${errMsg}`, 'error', 8000);
-        throw new Error(`Firebase: ${errMsg}`);
-      }
+      };
 
       if (updated?.email) {
         const cleanEmail = updated.email.trim().toLowerCase();
-        setDoc(doc(db, 'authorized_staff', cleanEmail), {
-          email: cleanEmail,
-          staffId: updated.id,
-          role: updated.role,
-          name: updated.name,
-          passcode: updated.passcode || '',
-          pin: updated.passcode || '',
-          status: 'active',
-          active: true,
-          updatedAt: nowIso
-        }, { merge: true }).catch(e => {
+        setDoc(
+          doc(db, 'authorized_staff', cleanEmail),
+          {
+            email: cleanEmail,
+            staffId: updated.id,
+            role: updated.role,
+            name: updated.name,
+            passcode: updated.passcode || '',
+            pin: updated.passcode || '',
+            ...(updated.welcomeTitle ? { welcomeTitle: updated.welcomeTitle } : {}),
+            status: 'active',
+            active: true,
+            updatedAt: nowIso
+          },
+          { merge: true }
+        ).catch(e => {
           console.warn('authorized_staff update notice:', e);
         });
+      }
+
+      if (silent) {
+        void syncTask();
+      } else {
+        await syncTask();
+        showToast('تم حفظ التعديلات وتحديث المنصب والبيانات في السحابة بنجاح ✨');
       }
     } else {
       hasPendingLocalChangesRef.current = false;

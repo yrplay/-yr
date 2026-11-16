@@ -100,11 +100,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     setEditBannerModalOpen(true);
   };
 
-  const handleSaveLoginToastText = async (e: React.FormEvent) => {
+  const handleSaveLoginToastText = (e: React.FormEvent) => {
     e.preventDefault();
     const targetUserObj =
       isLeaderOrAdmin
-        ? (users.find(u => u.id === selectedTargetUserId) || currentUser)
+        ? (users.find(u => u.id === selectedTargetUserId) ||
+            (selectedTargetUserId === 'u-omar' || selectedTargetUserId === 'u-founder-omar'
+              ? users.find(u => isExactFounderOmar(u))
+              : undefined) ||
+            (selectedTargetUserId === 'u-owner'
+              ? users.find(u => isExactOwnerReefa(u))
+              : undefined) ||
+            currentUser)
         : currentUser;
 
     const fallbackText = targetUserObj
@@ -113,13 +120,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const cleanTitle = loginToastTextInput.trim() || fallbackText;
     const nowIso = new Date().toISOString();
 
+    // Immediately close modal and display green confirmation toast
+    setEditBannerModalOpen(false);
+    showToast('تم حفظ نص الترحيب بنجاح', 'success', LOGIN_WELCOME_DURATION_MS);
+
     if (targetUserObj) {
       const isTargetAdmin = canManageAllWelcomeMessages(targetUserObj);
       const nextCanEdit = isTargetAdmin ? true : targetCanEditOwnWelcome;
       const cleanEmail = (targetUserObj.email || '').trim().toLowerCase();
       const cleanName = (targetUserObj.name || '').trim();
 
-      const aliasKeys = [targetUserObj.id, cleanEmail].filter(Boolean);
+      const aliasKeys = [targetUserObj.id, selectedTargetUserId, cleanEmail].filter(Boolean);
       if (isExactOwnerReefa(targetUserObj) || targetUserObj.role === 'owner') {
         aliasKeys.push('u-owner', 'reef@ghaym.org', 'ريفة المنصوري');
       } else if (isExactFounderOmar(targetUserObj)) {
@@ -151,39 +162,42 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       writeLocalWelcomeMessages(nextWelcomeMessages);
 
-      await updateUser(targetUserObj.id, {
-        welcomeTitle: cleanTitle,
-        canEditOwnWelcome: nextCanEdit,
-        permissions: {
-          ...(targetUserObj.permissions || {}),
-          canEditOwnWelcome: nextCanEdit
-        }
-      }, true);
+      void updateSettings(
+        {
+          welcomeMessages: nextWelcomeMessages,
+          staffWelcomeConfigs: nextStaffConfigs
+        },
+        true
+      ).catch(() => {});
 
-      await updateSettings({
-        welcomeMessages: nextWelcomeMessages,
-        staffWelcomeConfigs: nextStaffConfigs
-      }, true);
+      void updateUser(
+        targetUserObj.id,
+        {
+          welcomeTitle: cleanTitle,
+          canEditOwnWelcome: nextCanEdit,
+          permissions: {
+            ...(targetUserObj.permissions || {}),
+            canEditOwnWelcome: nextCanEdit
+          }
+        },
+        true
+      ).catch(() => {});
 
       if (cleanEmail) {
-        try {
-          await setDoc(doc(db, 'authorized_staff', cleanEmail), {
+        setDoc(
+          doc(db, 'authorized_staff', cleanEmail),
+          {
             email: cleanEmail,
             staffId: targetUserObj.id,
             role: targetUserObj.role,
             name: targetUserObj.name,
             welcomeTitle: cleanTitle,
             updatedAt: nowIso
-          }, { merge: true });
-        } catch {}
+          },
+          { merge: true }
+        ).catch(() => {});
       }
-
-      showToast(cleanTitle, 'success', LOGIN_WELCOME_DURATION_MS);
-    } else {
-      showToast(cleanTitle, 'success', LOGIN_WELCOME_DURATION_MS);
     }
-
-    setEditBannerModalOpen(false);
   };
 
   // Active track information

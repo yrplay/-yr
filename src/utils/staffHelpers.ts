@@ -258,28 +258,31 @@ export const resolveUserWelcomeConfig = (
   const welcomeMessagesMap = settings?.welcomeMessages || {};
   const staffConfigsMap = settings?.staffWelcomeConfigs || {};
 
+  const isValidWelcomeText = (txt?: string | null): txt is string =>
+    Boolean(txt && txt.trim() && !txt.includes('CLOUD_STAFF_WRITE_TIMEOUT'));
+
   let resolvedMessage = '';
   for (const key of lookupKeys) {
     const fromConfigs = staffConfigsMap[key]?.welcomeTitle?.trim();
-    if (fromConfigs) {
+    if (isValidWelcomeText(fromConfigs)) {
       resolvedMessage = fromConfigs;
       break;
     }
     const fromWelcomeMap = welcomeMessagesMap[key]?.trim();
-    if (fromWelcomeMap) {
+    if (isValidWelcomeText(fromWelcomeMap)) {
       resolvedMessage = fromWelcomeMap;
       break;
     }
   }
 
-  if (!resolvedMessage && targetUser.welcomeTitle?.trim()) {
-    resolvedMessage = targetUser.welcomeTitle.trim();
+  if (!resolvedMessage && isValidWelcomeText(targetUser.welcomeTitle?.trim())) {
+    resolvedMessage = targetUser.welcomeTitle!.trim();
   }
 
   if (!resolvedMessage) {
     for (const key of lookupKeys) {
       const fromLocal = localMap[key]?.trim();
-      if (fromLocal) {
+      if (isValidWelcomeText(fromLocal)) {
         resolvedMessage = fromLocal;
         break;
       }
