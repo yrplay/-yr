@@ -3,13 +3,16 @@ import { useApp } from '../context/AppContext';
 import {
   Sparkles, Plus, Edit, Trash2, ExternalLink, CheckCircle2,
   AlertCircle, BookOpen, Clock, Award, Star, Video, Image, FileText,
-  AlertTriangle, X, Check, Archive, RotateCcw
+  AlertTriangle, X, Check, Archive, RotateCcw, Copy, Calendar, ChevronRight, ChevronLeft
 } from 'lucide-react';
 import {
   AtqiniAssignment, AtqiniRating, StudentAtqiniSubmission,
   isStudentEffectivelyArchived, isAtqiniAssignmentArchived, deduplicateStudentsByName
 } from '../types';
-import { formatHijriDate, formatHijriShort, formatHijriDateTime, HijriDateNavigationBar } from '../utils/hijriDate';
+import {
+  formatHijriDate, formatHijriShort, formatHijriDateTime,
+  HijriDateNavigationBar, getTodayISO, getHijriParts, shiftHijriDay
+} from '../utils/hijriDate';
 
 export const AtqiniView: React.FC = () => {
   const {
@@ -83,6 +86,176 @@ export const AtqiniView: React.FC = () => {
   const [evalModalOpen, setEvalModalOpen] = useState(false);
   const [evalStudent, setEvalStudent] = useState<any>(null);
   const [submissionToDelete, setSubmissionToDelete] = useState<{ id: string; studentName: string } | null>(null);
+
+  const todayIso = React.useMemo(() => getTodayISO(), []);
+  const [selectedSessionDate, setSelectedSessionDate] = useState<string>(todayIso);
+
+  const computeDailyCriteriaGrade = React.useCallback(
+    (
+      isCompletedCorrectly: boolean,
+      extractedExamplesDone: boolean,
+      appliedDuringRecitation: boolean,
+      maxScore: number
+    ): { score: number; rating: AtqiniRating; status: 'completed' | 'not_started' } => {
+      const checkedCount =
+        (isCompletedCorrectly ? 1 : 0) +
+        (extractedExamplesDone ? 1 : 0) +
+        (appliedDuringRecitation ? 1 : 0);
+      if (checkedCount === 3) {
+        return { score: maxScore, rating: 'ممتاز', status: 'completed' };
+      }
+      if (checkedCount === 2) {
+        return {
+          score: Math.round(((2 / 3) * maxScore) * 10) / 10,
+          rating: 'جيد جدًا',
+          status: 'completed'
+        };
+      }
+      if (checkedCount === 1) {
+        return {
+          score: Math.round(((1 / 3) * maxScore) * 10) / 10,
+          rating: 'جيد',
+          status: 'completed'
+        };
+      }
+      return { score: 0, rating: 'لم يُنجز', status: 'not_started' };
+    },
+    []
+  );
+
+  // Build Hijri session days between assignment publishDate & dueDate + active week's session days (الأحد - الأربعاء)
+  const sessionHijriDays = React.useMemo(() => {
+    const parseIso = (iso?: string): Date | null => {
+      const m = String(iso || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return null;
+      const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
+      return isNaN(dt.getTime()) ? null : dt;
+    };
+    const formatIso = (dt: Date): string => {
+      const y = dt.getFullYear();
+      const mo = String(dt.getMonth() + 1).padStart(2, '0');
+      const da = String(dt.getDate()).padStart(2, '0');
+      return `${y}-${mo}-${da}`;
+    };
+
+    const isoSet = new Set<string>();
+
+    // 1. Add active week's session days (الأحد، الاثنين، الثلاثاء، الأربعاء) around selectedSessionDate
+    const anchorDt = parseIso(selectedSessionDate) || parseIso(todayIso) || new Date();
+    const dayOfWeek = anchorDt.getDay(); // 0 = Sun ... 6 = Sat
+    const sundayDt = new Date(anchorDt);
+    sundayDt.setDate(anchorDt.getDate() - dayOfWeek);
+    for (let d = 0; d <= 3; d++) {
+      const cur = new Date(sundayDt);
+      cur.setDate(sundayDt.getDate() + d);
+      isoSet.add(formatIso(cur));
+    }
+
+    // 2. Add session days between currentAssignment.publishedDate and currentAssignment.dueDate (up to 10 session days)
+    if (currentAssignment?.publishedDate && currentAssignment?.dueDate) {
+      const startDt = parseIso(currentAssignment.publishedDate);
+      const endDt = parseIso(currentAssignment.dueDate);
+      if (startDt && endDt && startDt.getTime() <= endDt.getTime()) {
+        const cursor = new Date(startDt);
+        let steps = 0;
+        while (cursor.getTime() <= endDt.getTime() && steps < 14) {
+          const wd = cursor.getDay();
+          if (wd >= 0 && wd <= 3) {
+            isoSet.add(formatIso(cursor));
+          }
+          cursor.setDate(cursor.getDate() + 1);
+          steps++;
+        }
+      }
+    }
+
+    // 3. Always include any Hijri dates that already have recorded submissions for this assignment
+    if (currentAssignment?.id) {
+      studentAtqiniSubmissions.forEach(s => {
+        if (s.assignmentId === currentAssignment.id && s.hijriDate && /^\d{4}-\d{2}-\d{2}$/.test(s.hijriDate)) {
+          isoSet.add(s.hijriDate);
+        }
+      });
+    }
+
+    // 4. Always include selectedSessionDate and todayIso so the active day is visible
+    isoSet.add(selectedSessionDate);
+    isoSet.add(todayIso);
+
+    const sortedIsos = Array.from(isoSet).sort();
+    return sortedIsos.map(iso => {
+      const parts = getHijriParts(iso);
+      return {
+        iso,
+        weekday: parts.weekday,
+        hijriDayMonth: `${parts.day.toLocaleString('ar-SA')} ${parts.monthName}`,
+        hijriFull: formatHijriShort(iso),
+        isToday: iso === todayIso
+      };
+    });
+  }, [currentAssignment?.id, currentAssignment?.publishedDate, currentAssignment?.dueDate, selectedSessionDate, todayIso, studentAtqiniSubmissions]);
+
+  const getStudentDaySubmission = React.useCallback(
+    (studentId: string, dateIso: string = selectedSessionDate): StudentAtqiniSubmission | undefined => {
+      if (!currentAssignment) return undefined;
+      const studentSubs = studentAtqiniSubmissions.filter(
+        s => s.assignmentId === currentAssignment.id && s.studentId === studentId
+      );
+      if (studentSubs.length === 0) return undefined;
+
+      const exactMatch = studentSubs.find(s => String(s.hijriDate || '').trim() === dateIso);
+      if (exactMatch) return exactMatch;
+
+      // Fallback for legacy submissions saved before daily hijriDate was introduced
+      const legacyMatch = studentSubs.find(s => {
+        if (s.hijriDate && String(s.hijriDate).trim()) return false;
+        const fallbackDate =
+          (s.submittedAt && /^\d{4}-\d{2}-\d{2}/.test(s.submittedAt) ? s.submittedAt.slice(0, 10) : '') ||
+          currentAssignment.publishedDate ||
+          todayIso;
+        return fallbackDate === dateIso || (dateIso === todayIso && studentSubs.length === 1);
+      });
+      return legacyMatch;
+    },
+    [currentAssignment, studentAtqiniSubmissions, selectedSessionDate, todayIso]
+  );
+
+  const getStudentCumulativeStats = React.useCallback(
+    (studentId: string) => {
+      const maxScore = currentAssignment?.maxScore || 10;
+      if (!currentAssignment) {
+        return { gradedDaysCount: 0, totalScore: 0, totalPossible: 0, avgScore: 0 };
+      }
+      const studentSubs = studentAtqiniSubmissions.filter(
+        s =>
+          s.assignmentId === currentAssignment.id &&
+          s.studentId === studentId &&
+          (s.status === 'completed' ||
+            s.isCompletedCorrectly ||
+            s.extractedExamplesDone ||
+            s.appliedDuringRecitation ||
+            (typeof s.score === 'number' && s.score > 0))
+      );
+      if (studentSubs.length === 0) {
+        return { gradedDaysCount: 0, totalScore: 0, totalPossible: 0, avgScore: 0 };
+      }
+      const byDay = new Map<string, StudentAtqiniSubmission>();
+      studentSubs.forEach((s, i) => {
+        const key =
+          (s.hijriDate && String(s.hijriDate).trim()) ||
+          (s.submittedAt && /^\d{4}-\d{2}-\d{2}/.test(s.submittedAt) ? s.submittedAt.slice(0, 10) : `legacy_${i}`);
+        byDay.set(key, s);
+      });
+      const uniqueDays = Array.from(byDay.values());
+      const gradedDaysCount = uniqueDays.length;
+      const rawSum = uniqueDays.reduce((acc, s) => acc + Math.min(maxScore, Math.max(0, Number(s.score) || 0)), 0);
+      const totalScore = Math.round(rawSum * 10) / 10;
+      const totalPossible = gradedDaysCount * maxScore;
+      const avgScore = gradedDaysCount > 0 ? Math.round((rawSum / gradedDaysCount) * 10) / 10 : 0;
+      return { gradedDaysCount, totalScore, totalPossible, avgScore };
+    },
+    [currentAssignment, studentAtqiniSubmissions]
+  );
 
   // Automatically open modal when quickModalAction is triggered
   React.useEffect(() => {
@@ -256,6 +429,25 @@ export const AtqiniView: React.FC = () => {
     setAssignmentModalOpen(true);
   };
 
+  const handleDuplicateAssignmentModal = (assignment: AtqiniAssignment) => {
+    const todayIso = new Date().toISOString().split('T')[0];
+    setEditingAssignment(null);
+    setAssignmentForm({
+      title: assignment.title,
+      tajweedRule: assignment.tajweedRule,
+      description: assignment.description || '',
+      sheikhVideoUrl: assignment.sheikhVideoUrl || '',
+      lessonImageUrl: assignment.lessonImageUrl || '',
+      publishedDate: todayIso,
+      dueDate: todayIso,
+      requiredInstructions: assignment.requiredInstructions || '',
+      examplesRequirement: assignment.examplesRequirement || '',
+      recitationRuleApplication: assignment.recitationRuleApplication || '',
+      maxScore: assignment.maxScore || 10
+    });
+    setAssignmentModalOpen(true);
+  };
+
   const handleSaveAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!assignmentForm.title.trim() || !assignmentForm.tajweedRule.trim()) {
@@ -266,10 +458,15 @@ export const AtqiniView: React.FC = () => {
     if (editingAssignment) {
       await updateAtqiniAssignment(editingAssignment.id, assignmentForm);
     } else {
+      const targetTrackId =
+        selectedTrackId && selectedTrackId !== 'all'
+          ? selectedTrackId
+          : currentAssignment?.trackId || tracks[0]?.id || 't-1';
       const created = await createAtqiniAssignment({
         ...assignmentForm,
-        trackId: tracks[0]?.id || 't-1'
+        trackId: targetTrackId
       });
+      setAssignmentTab('active');
       setSelectedAssignmentId(created.id);
     }
     setAssignmentModalOpen(false);
@@ -310,9 +507,7 @@ export const AtqiniView: React.FC = () => {
 
   const handleOpenEvalModal = (student: any) => {
     setEvalStudent(student);
-    const existing = studentAtqiniSubmissions.find(
-      s => s.assignmentId === currentAssignment?.id && s.studentId === student.id
-    );
+    const existing = getStudentDaySubmission(student.id, selectedSessionDate);
     if (existing) {
       const normalizedRating = (existing.rating as string) === 'ممتاز جدًا' || (existing.rating as string) === 'ممتاز جدا'
         ? 'ممتاز'
@@ -322,7 +517,7 @@ export const AtqiniView: React.FC = () => {
         isCompletedCorrectly: existing.isCompletedCorrectly,
         extractedExamplesDone: existing.extractedExamplesDone,
         appliedDuringRecitation: existing.appliedDuringRecitation,
-        rating: normalizedRating,
+        rating: normalizedRating as AtqiniRating,
         score: existing.score,
         teacherNotes: existing.teacherNotes || ''
       });
@@ -343,14 +538,16 @@ export const AtqiniView: React.FC = () => {
   const handleSaveSubmission = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!evalStudent || !currentAssignment) return;
-    const existing = studentAtqiniSubmissions.find(
-      s => s.assignmentId === currentAssignment.id && s.studentId === evalStudent.id
-    );
+    const existing = getStudentDaySubmission(evalStudent.id, selectedSessionDate);
+    const anyChecked =
+      subForm.isCompletedCorrectly || subForm.extractedExamplesDone || subForm.appliedDuringRecitation;
     await saveAtqiniSubmission({
-      id: existing?.id,
+      id: existing?.hijriDate === selectedSessionDate ? existing?.id : undefined,
       assignmentId: currentAssignment.id,
       studentId: evalStudent.id,
-      status: subForm.isCompletedCorrectly ? 'completed' : 'not_started',
+      hijriDate: selectedSessionDate,
+      hijriDateLabel: formatHijriShort(selectedSessionDate),
+      status: anyChecked ? 'completed' : 'not_started',
       isCompletedCorrectly: subForm.isCompletedCorrectly,
       extractedExamplesDone: subForm.extractedExamplesDone,
       appliedDuringRecitation: subForm.appliedDuringRecitation,
@@ -361,69 +558,66 @@ export const AtqiniView: React.FC = () => {
     setEvalModalOpen(false);
   };
 
-  const handleToggleHomeworkStatus = async (studentId: string) => {
+  const handleToggleCriterion = async (
+    studentId: string,
+    criterion: 'isCompletedCorrectly' | 'extractedExamplesDone' | 'appliedDuringRecitation'
+  ) => {
     if (!currentAssignment) return;
-    const existing = studentAtqiniSubmissions.find(
-      s => s.assignmentId === currentAssignment.id && s.studentId === studentId
-    );
-    const newCompleted = !existing?.isCompletedCorrectly;
+    const existing = getStudentDaySubmission(studentId, selectedSessionDate);
     const maxScore = currentAssignment.maxScore || 10;
-    
+
+    const nextCompleted =
+      criterion === 'isCompletedCorrectly'
+        ? !existing?.isCompletedCorrectly
+        : (existing?.isCompletedCorrectly ?? false);
+    const nextExamples =
+      criterion === 'extractedExamplesDone'
+        ? !existing?.extractedExamplesDone
+        : (existing?.extractedExamplesDone ?? false);
+    const nextApplied =
+      criterion === 'appliedDuringRecitation'
+        ? !existing?.appliedDuringRecitation
+        : (existing?.appliedDuringRecitation ?? false);
+
+    const calc = computeDailyCriteriaGrade(nextCompleted, nextExamples, nextApplied, maxScore);
+
     await saveAtqiniSubmission({
-      id: existing?.id,
+      id: existing?.hijriDate === selectedSessionDate ? existing?.id : undefined,
       assignmentId: currentAssignment.id,
-      studentId: studentId,
-      status: newCompleted ? 'completed' : 'not_started',
-      isCompletedCorrectly: newCompleted,
-      extractedExamplesDone: newCompleted ? true : (existing?.extractedExamplesDone ?? false),
-      appliedDuringRecitation: newCompleted ? true : (existing?.appliedDuringRecitation ?? false),
-      rating: newCompleted ? (existing?.rating && existing.rating !== 'لم يُنجز' ? existing.rating : 'ممتاز') : 'لم يُنجز',
-      score: newCompleted ? (existing?.score && existing.score > 0 ? existing.score : maxScore) : 0,
+      studentId,
+      hijriDate: selectedSessionDate,
+      hijriDateLabel: formatHijriShort(selectedSessionDate),
+      status: calc.status,
+      isCompletedCorrectly: nextCompleted,
+      extractedExamplesDone: nextExamples,
+      appliedDuringRecitation: nextApplied,
+      rating: calc.rating,
+      score: calc.score,
       teacherNotes: existing?.teacherNotes || ''
     });
   };
 
+  const handleToggleHomeworkStatus = async (studentId: string) => {
+    await handleToggleCriterion(studentId, 'isCompletedCorrectly');
+  };
+
   const handleToggleExamplesStatus = async (studentId: string) => {
-    if (!currentAssignment) return;
-    const existing = studentAtqiniSubmissions.find(
-      s => s.assignmentId === currentAssignment.id && s.studentId === studentId
-    );
-    const nextVal = !existing?.extractedExamplesDone;
-    await saveAtqiniSubmission({
-      id: existing?.id,
-      assignmentId: currentAssignment.id,
-      studentId: studentId,
-      extractedExamplesDone: nextVal,
-      isCompletedCorrectly: existing?.isCompletedCorrectly ?? nextVal,
-      status: (existing?.isCompletedCorrectly ?? nextVal) ? 'completed' : 'not_started'
-    });
+    await handleToggleCriterion(studentId, 'extractedExamplesDone');
   };
 
   const handleToggleApplicationStatus = async (studentId: string) => {
-    if (!currentAssignment) return;
-    const existing = studentAtqiniSubmissions.find(
-      s => s.assignmentId === currentAssignment.id && s.studentId === studentId
-    );
-    const nextVal = !existing?.appliedDuringRecitation;
-    await saveAtqiniSubmission({
-      id: existing?.id,
-      assignmentId: currentAssignment.id,
-      studentId: studentId,
-      appliedDuringRecitation: nextVal,
-      isCompletedCorrectly: existing?.isCompletedCorrectly ?? nextVal,
-      status: (existing?.isCompletedCorrectly ?? nextVal) ? 'completed' : 'not_started'
-    });
+    await handleToggleCriterion(studentId, 'appliedDuringRecitation');
   };
 
   return (
     <div className="space-y-6">
 
       {/* Header Bar */}
-      <div className="flex flex-col gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
+      <div className="flex flex-col gap-3 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <Sparkles className="w-5 h-5 text-[#9A5643] shrink-0" />
+              <Sparkles className="w-5 h-5 text-theme-primary shrink-0" />
               <h2 className="text-xl font-bold text-stone-900 font-quran">قسم «أتقني» — واجبات التجويد حصرياً</h2>
             </div>
             <p className="text-xs text-stone-500">
@@ -431,68 +625,69 @@ export const AtqiniView: React.FC = () => {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => handleOpenAssignmentModal()}
-            title="نشر واجب تجويد جديد"
-            aria-label="نشر واجب تجويد جديد"
-            className="w-10 h-10 bg-theme-primary hover:bg-theme-primary-hover text-white border border-theme-primary rounded-xl flex items-center justify-center shadow-xs transition self-start sm:self-auto shrink-0 cursor-pointer active:scale-95"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-        </div>
+          <div className="flex items-center gap-2 flex-nowrap self-start sm:self-auto shrink-0">
+            <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-white border border-stone-200 shadow-2xs shrink-0">
+              <button
+                type="button"
+                onClick={() => setAssignmentTab('active')}
+                title="الواجبات النشطة"
+                aria-label="الواجبات النشطة"
+                className={`h-9 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shrink-0 ${
+                  assignmentTab === 'active'
+                    ? 'bg-theme-primary text-white shadow-2xs'
+                    : 'bg-white text-stone-600 hover:bg-stone-50 hover:text-theme-primary'
+                }`}
+              >
+                <CheckCircle2 className={`w-4 h-4 shrink-0 ${assignmentTab === 'active' ? 'text-white' : 'text-theme-primary'}`} />
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono leading-none ${
+                  assignmentTab === 'active'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-stone-100 text-stone-600'
+                }`}>
+                  {activeAssignments.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAssignmentTab('archived')}
+                title="الواجبات المؤرشفة"
+                aria-label="الواجبات المؤرشفة"
+                className={`h-9 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shrink-0 ${
+                  assignmentTab === 'archived'
+                    ? 'bg-theme-primary text-white shadow-2xs'
+                    : 'bg-white text-stone-600 hover:bg-stone-50 hover:text-theme-primary'
+                }`}
+              >
+                <Archive className={`w-4 h-4 shrink-0 ${assignmentTab === 'archived' ? 'text-white' : 'text-theme-primary'}`} />
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono leading-none ${
+                  assignmentTab === 'archived'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-stone-100 text-stone-600'
+                }`}>
+                  {archivedAssignments.length}
+                </span>
+              </button>
+            </div>
 
-        {/* Toggle between Active and Archived Assignments */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-stone-100">
-          <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-white border border-stone-200 shadow-2xs">
             <button
               type="button"
-              onClick={() => setAssignmentTab('active')}
-              title="الواجبات النشطة"
-              aria-label="الواجبات النشطة"
-              className={`h-9 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
-                assignmentTab === 'active'
-                  ? 'bg-theme-primary text-white shadow-2xs'
-                  : 'bg-white text-stone-600 hover:bg-stone-50 hover:text-theme-primary'
-              }`}
+              onClick={() => handleOpenAssignmentModal()}
+              title="نشر واجب تجويد جديد"
+              aria-label="نشر واجب تجويد جديد"
+              className="w-10 h-10 bg-theme-primary hover:bg-theme-primary-hover text-white border border-theme-primary rounded-xl flex items-center justify-center shadow-xs transition shrink-0 cursor-pointer active:scale-95"
             >
-              <CheckCircle2 className={`w-4 h-4 shrink-0 ${assignmentTab === 'active' ? 'text-white' : 'text-theme-primary'}`} />
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono leading-none ${
-                assignmentTab === 'active'
-                  ? 'bg-white/20 text-white'
-                  : 'bg-stone-100 text-stone-600'
-              }`}>
-                {activeAssignments.length}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setAssignmentTab('archived')}
-              title="الواجبات المؤرشفة"
-              aria-label="الواجبات المؤرشفة"
-              className={`h-9 px-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
-                assignmentTab === 'archived'
-                  ? 'bg-theme-primary text-white shadow-2xs'
-                  : 'bg-white text-stone-600 hover:bg-stone-50 hover:text-theme-primary'
-              }`}
-            >
-              <Archive className={`w-4 h-4 shrink-0 ${assignmentTab === 'archived' ? 'text-white' : 'text-theme-primary'}`} />
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono leading-none ${
-                assignmentTab === 'archived'
-                  ? 'bg-white/20 text-white'
-                  : 'bg-stone-100 text-stone-600'
-              }`}>
-                {archivedAssignments.length}
-              </span>
+              <Plus className="w-5 h-5 shrink-0" />
             </button>
           </div>
+        </div>
 
-          {assignmentTab === 'archived' && (
-            <span className="text-[11px] text-theme-primary bg-stone-50 border border-stone-200 px-3 py-1 rounded-xl font-medium">
+        {assignmentTab === 'archived' && (
+          <div className="pt-2 border-t border-stone-100">
+            <span className="text-[11px] text-theme-primary bg-stone-50 border border-stone-200 px-3 py-1 rounded-xl font-medium inline-block">
               سجل الواجبات المؤرشفة محفوظ بالكامل مع كشف إنجاز وتصحيح الطالبات السابق
             </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Assignments Selection Tabs */}
@@ -594,6 +789,17 @@ export const AtqiniView: React.FC = () => {
                 </a>
               )}
 
+              {/* Duplicate Assignment Button */}
+              <button
+                type="button"
+                onClick={() => handleDuplicateAssignmentModal(currentAssignment)}
+                title="نسخ الواجب"
+                aria-label="نسخ الواجب"
+                className="w-9 h-9 p-2.5 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95 shrink-0"
+              >
+                <Copy className="w-4 h-4" />
+              </button>
+
               {/* Archive / Unarchive Assignment Button */}
               <button
                 type="button"
@@ -655,18 +861,111 @@ export const AtqiniView: React.FC = () => {
       {/* Students Submissions & Evaluation Roster */}
       {currentAssignment && (
         <div className="bg-white rounded-3xl border border-[#E8DFD8] shadow-2xs overflow-hidden">
-          <div className="p-4 bg-[#FAF6F2] border-b border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <h3 className="font-bold text-stone-900 text-sm font-quran">
-                كشف إنجاز وتصحيح الطالبات لواجب: {currentAssignment.tajweedRule}
-              </h3>
-              <span className="text-[11px] text-stone-500">
-                رصد إتمام استخراج الأمثلة وتطبيق الحكم أثناء التسميع
-              </span>
+          <div className="p-4 bg-[#FAF6F2] border-b border-stone-200 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="font-bold text-stone-900 text-sm font-quran">
+                  كشف إنجاز وتصحيح الطالبات لواجب: {currentAssignment.tajweedRule}
+                </h3>
+                <span className="text-[11px] text-stone-500">
+                  رصد يومي بالهجري لإتمام الواجب، استخراج الأمثلة، وتطبيق الحكم أثناء التسميع (تُحتسب الدرجة اليومية تلقائياً وتُرحّل للمعدل التراكمي)
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs text-stone-600">
+                <span className="px-2.5 py-1 rounded-xl bg-white border border-[#E8DFD8] font-bold text-stone-700">
+                  اليوم المحدد: <strong className="text-theme-primary">{formatHijriDate(selectedSessionDate, { includeWeekday: true })}</strong>
+                </span>
+                <span className="px-2.5 py-1 rounded-xl bg-white border border-[#E8DFD8]">
+                  تم تصحيح اليوم:{' '}
+                  <strong className="text-theme-primary">
+                    {
+                      availableStudents.filter(st => {
+                        const sub = getStudentDaySubmission(st.id, selectedSessionDate);
+                        return Boolean(
+                          sub &&
+                            (sub.status === 'completed' ||
+                              sub.isCompletedCorrectly ||
+                              sub.extractedExamplesDone ||
+                              sub.appliedDuringRecitation ||
+                              (typeof sub.score === 'number' && sub.score > 0))
+                        );
+                      }).length
+                    }
+                  </strong>{' '}
+                  من {availableStudents.length} طالبة
+                </span>
+              </div>
             </div>
 
-            <div className="text-xs text-stone-600">
-              تم تصحيح: <strong>{studentAtqiniSubmissions.filter(s => s.assignmentId === currentAssignment.id && s.status === 'completed' && availableStudents.some(st => st.id === s.studentId)).length}</strong> من {availableStudents.length} طالبة
+            {/* Daily Hijri Session Selector */}
+            <div className="bg-white rounded-2xl p-2.5 border border-[#E8DFD8] flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
+                <span className="text-[11px] font-bold text-stone-600 shrink-0 flex items-center gap-1 pl-1">
+                  <Calendar className="w-3.5 h-3.5 text-theme-primary" />
+                  <span>أيام الرصد الهجرية:</span>
+                </span>
+                {sessionHijriDays.map(dayItem => {
+                  const isSelected = dayItem.iso === selectedSessionDate;
+                  const gradedOnDayCount = availableStudents.filter(st => {
+                    const s = getStudentDaySubmission(st.id, dayItem.iso);
+                    return Boolean(
+                      s &&
+                        (s.status === 'completed' ||
+                          s.isCompletedCorrectly ||
+                          s.extractedExamplesDone ||
+                          s.appliedDuringRecitation ||
+                          (typeof s.score === 'number' && s.score > 0))
+                    );
+                  }).length;
+
+                  return (
+                    <button
+                      key={dayItem.iso}
+                      type="button"
+                      onClick={() => setSelectedSessionDate(dayItem.iso)}
+                      title={`رصد يوم ${dayItem.weekday} — ${dayItem.hijriFull}`}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1.5 border ${
+                        isSelected
+                          ? 'bg-theme-primary text-white border-theme-primary shadow-2xs'
+                          : 'bg-[#FAF6F2] text-stone-700 border-[#E8DFD8] hover:border-theme-primary/40 hover:text-theme-primary'
+                      }`}
+                    >
+                      <span>{dayItem.weekday}</span>
+                      <span className={`text-[10px] ${isSelected ? 'text-white/90' : 'text-stone-500'}`}>
+                        ({dayItem.hijriDayMonth})
+                      </span>
+                      {dayItem.isToday && (
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                            isSelected ? 'bg-white/25 text-white' : 'bg-theme-primary/12 text-theme-primary'
+                          }`}
+                        >
+                          اليوم
+                        </span>
+                      )}
+                      {gradedOnDayCount > 0 && (
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono leading-none ${
+                            isSelected ? 'bg-white text-theme-primary font-extrabold' : 'bg-emerald-100 text-emerald-800'
+                          }`}
+                          title={`تم تصحيح ${gradedOnDayCount} طالبة في هذا اليوم الهجري`}
+                        >
+                          {gradedOnDayCount}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="shrink-0">
+                <HijriDateNavigationBar
+                  selectedDate={selectedSessionDate}
+                  onChangeDate={setSelectedSessionDate}
+                  compact
+                />
+              </div>
             </div>
           </div>
 
@@ -681,7 +980,8 @@ export const AtqiniView: React.FC = () => {
                   <th className="p-3.5 text-center">استخرجت الأمثلة</th>
                   <th className="p-3.5 text-center">طبقت أثناء التسميع</th>
                   <th className="p-3.5">التقدير</th>
-                  <th className="p-3.5">الدرجة</th>
+                  <th className="p-3.5">الدرجة اليومية</th>
+                  <th className="p-3.5 text-center">مجموع / متوسط الأيام</th>
                   <th className="p-3.5">ملاحظات المعلمة</th>
                   <th className="p-3.5 text-center">الإجراء</th>
                 </tr>
@@ -689,9 +989,8 @@ export const AtqiniView: React.FC = () => {
               <tbody className="divide-y divide-stone-100">
                 {availableStudents.map((student, idx) => {
                   const circle = circles.find(c => c.id === student.circleId);
-                  const sub = studentAtqiniSubmissions.find(
-                    s => s.assignmentId === currentAssignment.id && s.studentId === student.id
-                  );
+                  const sub = getStudentDaySubmission(student.id, selectedSessionDate);
+                  const cumStats = getStudentCumulativeStats(student.id);
 
                   return (
                     <tr key={student.id} className="hover:bg-[#FCF9FA] transition">
@@ -710,7 +1009,7 @@ export const AtqiniView: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleToggleHomeworkStatus(student.id)}
-                          title={sub?.isCompletedCorrectly ? 'انقري لتغيير الحالة إلى: لم ينجز' : 'انقري لتسجيل إتمام الواجب بنجاح'}
+                          title={sub?.isCompletedCorrectly ? 'انقري لإلغاء معيار إتمام الواجب لهذا اليوم الهجري' : 'انقري لتسجيل إتمام الواجب واحتساب درجته تلقائياً'}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs active:scale-95 flex items-center justify-center gap-1.5 mx-auto ${
                             sub?.isCompletedCorrectly
                               ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300'
@@ -735,7 +1034,7 @@ export const AtqiniView: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleToggleExamplesStatus(student.id)}
-                          title="انقري لتبديل حالة استخراج الأمثلة"
+                          title="انقري لتبديل حالة استخراج الأمثلة وتحديث الدرجة اليومية تلقائياً"
                           className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer inline-flex items-center gap-1 ${
                             sub?.extractedExamplesDone
                               ? 'text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100 border border-emerald-200'
@@ -757,7 +1056,7 @@ export const AtqiniView: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleToggleApplicationStatus(student.id)}
-                          title="انقري لتبديل حالة تطبيق الحكم أثناء التسميع"
+                          title="انقري لتبديل حالة تطبيق الحكم أثناء التسميع وتحديث الدرجة اليومية تلقائياً"
                           className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer inline-flex items-center gap-1 ${
                             sub?.appliedDuringRecitation
                               ? 'text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100 border border-emerald-200'
@@ -795,6 +1094,21 @@ export const AtqiniView: React.FC = () => {
                         )}
                       </td>
 
+                      <td className="p-3.5 text-center">
+                        {cumStats.gradedDaysCount > 0 ? (
+                          <div className="inline-flex flex-col items-center px-2.5 py-1 rounded-xl bg-[#FAF6F2] border border-[#E8DFD8]">
+                            <span className="font-extrabold text-xs text-theme-primary">
+                              المتوسط: <span className="privacy-score-digit">{cumStats.avgScore}</span> / {currentAssignment?.maxScore || 10}
+                            </span>
+                            <span className="text-[10px] text-stone-500">
+                              المجموع: <span className="privacy-score-digit">{cumStats.totalScore}</span> من {cumStats.totalPossible} ({cumStats.gradedDaysCount} {cumStats.gradedDaysCount === 1 ? 'يوم' : 'أيام'})
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-stone-300">—</span>
+                        )}
+                      </td>
+
                       <td className="p-3.5 text-stone-600 max-w-xs">
                         <div className="truncate">{sub?.teacherNotes || '—'}</div>
                         {(sub?.updatedAt || sub?.submittedAt) && (
@@ -826,7 +1140,7 @@ export const AtqiniView: React.FC = () => {
                               type="button"
                               onClick={() => setSubmissionToDelete({ id: sub.id, studentName: student.name })}
                               className="p-1 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                              title="حذف تصحيح الواجب"
+                              title="حذف تصحيح هذا اليوم الهجري"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1117,8 +1431,11 @@ export const AtqiniView: React.FC = () => {
             <h3 className="font-bold text-stone-900 text-base font-quran mb-1">
               تصحيح ورصد واجب «أتقني» للتجويد
             </h3>
-            <p className="text-xs text-stone-500 mb-4">
+            <p className="text-xs text-stone-500 mb-1">
               للطالبة: <strong className="privacy-student-name">{evalStudent.name}</strong> • الواجب: <strong>{currentAssignment?.tajweedRule}</strong>
+            </p>
+            <p className="text-[11px] text-theme-primary font-bold mb-4">
+              تاريخ الرصد الهجري: {formatHijriDate(selectedSessionDate, { includeWeekday: true })}
             </p>
 
             <form onSubmit={handleSaveSubmission} className="space-y-4">
@@ -1131,12 +1448,19 @@ export const AtqiniView: React.FC = () => {
                     checked={subForm.isCompletedCorrectly}
                     onChange={e => {
                       const checked = e.target.checked;
+                      const maxScore = currentAssignment?.maxScore || 10;
+                      const calc = computeDailyCriteriaGrade(
+                        checked,
+                        subForm.extractedExamplesDone,
+                        subForm.appliedDuringRecitation,
+                        maxScore
+                      );
                       setSubForm(prev => ({
                         ...prev,
                         isCompletedCorrectly: checked,
-                        status: checked ? 'completed' : 'not_started',
-                        score: checked ? (prev.score > 0 ? prev.score : (currentAssignment?.maxScore || 10)) : 0,
-                        rating: checked ? (prev.rating !== 'لم يُنجز' ? prev.rating : 'ممتاز') : 'لم يُنجز'
+                        status: calc.status,
+                        score: calc.score,
+                        rating: calc.rating
                       }));
                     }}
                     className="rounded text-[#8E5364]"
@@ -1148,7 +1472,23 @@ export const AtqiniView: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={subForm.extractedExamplesDone}
-                    onChange={e => setSubForm({ ...subForm, extractedExamplesDone: e.target.checked })}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      const maxScore = currentAssignment?.maxScore || 10;
+                      const calc = computeDailyCriteriaGrade(
+                        subForm.isCompletedCorrectly,
+                        checked,
+                        subForm.appliedDuringRecitation,
+                        maxScore
+                      );
+                      setSubForm(prev => ({
+                        ...prev,
+                        extractedExamplesDone: checked,
+                        status: calc.status,
+                        score: calc.score,
+                        rating: calc.rating
+                      }));
+                    }}
                     className="rounded text-[#8E5364]"
                   />
                   <span>استخرجت الأمثلة من محفوظها بدقة</span>
@@ -1158,7 +1498,23 @@ export const AtqiniView: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={subForm.appliedDuringRecitation}
-                    onChange={e => setSubForm({ ...subForm, appliedDuringRecitation: e.target.checked })}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      const maxScore = currentAssignment?.maxScore || 10;
+                      const calc = computeDailyCriteriaGrade(
+                        subForm.isCompletedCorrectly,
+                        subForm.extractedExamplesDone,
+                        checked,
+                        maxScore
+                      );
+                      setSubForm(prev => ({
+                        ...prev,
+                        appliedDuringRecitation: checked,
+                        status: calc.status,
+                        score: calc.score,
+                        rating: calc.rating
+                      }));
+                    }}
                     className="rounded text-[#8E5364]"
                   />
                   <span>طبقت الحكم التجويدي أثناء جلسة التسميع</span>

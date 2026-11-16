@@ -400,6 +400,8 @@ export interface StudentAtqiniSubmission {
   id: string;
   assignmentId: string;
   studentId: string;
+  hijriDate?: string;
+  hijriDateLabel?: string;
   status: 'not_started' | 'in_progress' | 'completed';
   isCompletedCorrectly: boolean; // هل أتمت الواجب بالشكل المطلوب؟
   extractedExamplesDone: boolean; // هل استخرجت الأمثلة؟

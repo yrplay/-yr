@@ -617,7 +617,28 @@ const ensureDefaultTrackIntegrity = (data: any) => {
   }
 
   if (Array.isArray(data.studentAtqiniSubmissions)) {
-    data.studentAtqiniSubmissions = deduplicateAtqiniSubmissions(data.studentAtqiniSubmissions);
+    let atqSubList = [...data.studentAtqiniSubmissions];
+    const deletedAtqSubIds = new Set<string>(
+      Array.isArray(data._deletedEntities?.studentAtqiniSubmissions)
+        ? data._deletedEntities.studentAtqiniSubmissions.map(String)
+        : []
+    );
+    try {
+      if (typeof window !== 'undefined') {
+        const localAtqSubRaw = localStorage.getItem('ghaith_atqini_subs_local_v1');
+        if (localAtqSubRaw) {
+          const localAtqSub: any[] = JSON.parse(localAtqSubRaw);
+          if (Array.isArray(localAtqSub) && localAtqSub.length > 0) {
+            atqSubList = [...atqSubList, ...localAtqSub];
+          }
+        }
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    data.studentAtqiniSubmissions = deduplicateAtqiniSubmissions(
+      atqSubList.filter((s: any) => s && !deletedAtqSubIds.has(String(s.id)))
+    );
   }
 
   if (Array.isArray(data.studentPlans)) {
@@ -4046,23 +4067,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         : (Array.isArray(studentAtqiniSubmissions) ? studentAtqiniSubmissions : [])
     );
 
-    // Locate existing submission by id OR by (assignmentId + studentId)
-    const existingSub = currentSubs.find(
-      (s: StudentAtqiniSubmission) =>
-        (sub.id && s.id === sub.id) ||
-        (s.assignmentId === sub.assignmentId && s.studentId === sub.studentId)
-    );
+    const targetHijriDate = sub.hijriDate ? String(sub.hijriDate).trim() : '';
 
-    const stableId = existingSub?.id || sub.id || `atqs_${sub.assignmentId}_${sub.studentId}`;
+    // Locate existing submission by id OR by (assignmentId + studentId + hijriDate)
+    const existingSub = currentSubs.find((s: StudentAtqiniSubmission) => {
+      if (sub.id && s.id === sub.id) return true;
+      if (s.assignmentId !== sub.assignmentId || s.studentId !== sub.studentId) return false;
+      const sDate = s.hijriDate ? String(s.hijriDate).trim() : '';
+      if (targetHijriDate && sDate) {
+        return sDate === targetHijriDate;
+      }
+      if (!targetHijriDate && !sDate) {
+        return true;
+      }
+      return false;
+    });
+
+    const resolvedHijriDate = targetHijriDate || (existingSub?.hijriDate ? String(existingSub.hijriDate).trim() : '');
+    const stableId =
+      existingSub?.id ||
+      sub.id ||
+      (resolvedHijriDate
+        ? `atqs_${sub.assignmentId}_${sub.studentId}_${resolvedHijriDate}`
+        : `atqs_${sub.assignmentId}_${sub.studentId}`);
     const nowIso = new Date().toISOString();
 
-    const isCompleted = sub.isCompletedCorrectly !== undefined
+    const c1 = sub.isCompletedCorrectly !== undefined
       ? !!sub.isCompletedCorrectly
-      : (sub.status ? sub.status === 'completed' : (existingSub?.isCompletedCorrectly ?? false));
+      : (existingSub?.isCompletedCorrectly ?? false);
+    const c2 = sub.extractedExamplesDone !== undefined
+      ? !!sub.extractedExamplesDone
+      : (existingSub?.extractedExamplesDone ?? false);
+    const c3 = sub.appliedDuringRecitation !== undefined
+      ? !!sub.appliedDuringRecitation
+      : (existingSub?.appliedDuringRecitation ?? false);
 
-    const statusVal: 'completed' | 'not_started' | 'in_progress' | 'late' | 'pending' = sub.status || (isCompleted ? 'completed' : 'not_started');
-    const scoreVal = sub.score !== undefined ? Number(sub.score) : (isCompleted ? 10 : 0);
-    const ratingVal = sub.rating || (isCompleted ? 'ممتاز' : 'لم يُنجز');
+    const anyChecked = c1 || c2 || c3;
+    const statusVal: 'completed' | 'not_started' | 'in_progress' | 'late' | 'pending' =
+      sub.status || (anyChecked ? 'completed' : 'not_started');
+    const scoreVal = sub.score !== undefined ? Number(sub.score) : (anyChecked ? 10 : 0);
+    const ratingVal = sub.rating || (anyChecked ? 'ممتاز' : 'لم يُنجز');
 
     const finalizedSub: StudentAtqiniSubmission = {
       ...existingSub,
@@ -4070,14 +4114,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       id: stableId,
       assignmentId: sub.assignmentId || existingSub?.assignmentId || '',
       studentId: sub.studentId || existingSub?.studentId || '',
+      ...(resolvedHijriDate ? { hijriDate: resolvedHijriDate } : {}),
+      ...(sub.hijriDateLabel || existingSub?.hijriDateLabel
+        ? { hijriDateLabel: sub.hijriDateLabel || existingSub?.hijriDateLabel }
+        : {}),
       status: statusVal,
-      isCompletedCorrectly: isCompleted,
-      extractedExamplesDone: sub.extractedExamplesDone !== undefined
-        ? !!sub.extractedExamplesDone
-        : (isCompleted ? true : (existingSub?.extractedExamplesDone ?? false)),
-      appliedDuringRecitation: sub.appliedDuringRecitation !== undefined
-        ? !!sub.appliedDuringRecitation
-        : (isCompleted ? true : (existingSub?.appliedDuringRecitation ?? false)),
+      isCompletedCorrectly: c1,
+      extractedExamplesDone: c2,
+      appliedDuringRecitation: c3,
       rating: ratingVal,
       score: scoreVal,
       teacherNotes: sub.teacherNotes !== undefined ? sub.teacherNotes : (existingSub?.teacherNotes || ''),
@@ -4086,16 +4130,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       updatedAt: nowIso
     };
 
-    // Immutably remove any old/duplicate versions of this record
-    const filtered = currentSubs.filter(
-      (s: StudentAtqiniSubmission) =>
-        s.id !== stableId &&
-        !(s.assignmentId === finalizedSub.assignmentId && s.studentId === finalizedSub.studentId)
-    );
+    // Immutably remove any old/duplicate versions of this specific daily slot
+    const filtered = currentSubs.filter((s: StudentAtqiniSubmission) => {
+      if (s.id === stableId) return false;
+      if (s.assignmentId === finalizedSub.assignmentId && s.studentId === finalizedSub.studentId) {
+        const sDate = s.hijriDate ? String(s.hijriDate).trim() : '';
+        if (resolvedHijriDate && sDate === resolvedHijriDate) return false;
+        if (!resolvedHijriDate && !sDate) return false;
+      }
+      return true;
+    });
 
     const next: StudentAtqiniSubmission[] = [...filtered, finalizedSub];
     masterStateRef.current.studentAtqiniSubmissions = next;
     setStudentAtqiniSubmissions(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_atqini_subs_local_v1', JSON.stringify(next));
+      }
+    } catch {
+      // ignore storage write errors
+    }
 
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
     const studentObj = currentStudents.find((s: Student) => s.id === finalizedSub.studentId);
@@ -4103,12 +4158,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const nextLogs = appendAuditEntry(
       'grade',
       'atqiniSubmission',
-      `تحديث واجب «أتقني» للطالبة ${studentObj?.name || finalizedSub.studentId}: ${isCompleted ? 'مكتمل ✅' : 'لم يُنجز ❌'} (الدرجة: ${finalizedSub.score})`,
+      `تحديث واجب «أتقني» للطالبة ${studentObj?.name || finalizedSub.studentId}: ${anyChecked ? `الدرجة اليومية ${finalizedSub.score} (${finalizedSub.rating})` : 'لم يُنجز ❌'}`,
       stableId
     );
 
     persistState({ studentAtqiniSubmissions: next, auditLogs: nextLogs });
-    showToast(isCompleted ? 'تم حفظ إنجاز الواجب بنجاح ✅' : 'تم تحديث حالة الواجب: لم يُنجز');
+    showToast(anyChecked ? `تم حفظ الدرجة اليومية (${finalizedSub.score}) بنجاح ✅` : 'تم تحديث حالة الواجب: لم يُنجز');
   };
 
   const deleteStudentAtqiniSubmission = async (id: string) => {
@@ -4116,13 +4171,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const subToDelete = currentSubs.find((s: StudentAtqiniSubmission) => s.id === id);
     const currentStudents = masterStateRef.current.students?.length ? masterStateRef.current.students : students;
     const studentObj = currentStudents.find((s: Student) => s.id === subToDelete?.studentId);
+    const targetDate = subToDelete?.hijriDate ? String(subToDelete.hijriDate).trim() : '';
     const next = currentSubs.filter((s: StudentAtqiniSubmission) => {
       if (s.id === id) return false;
-      if (subToDelete && s.assignmentId === subToDelete.assignmentId && s.studentId === subToDelete.studentId) return false;
+      if (
+        subToDelete &&
+        s.assignmentId === subToDelete.assignmentId &&
+        s.studentId === subToDelete.studentId
+      ) {
+        const sDate = s.hijriDate ? String(s.hijriDate).trim() : '';
+        if (targetDate && sDate === targetDate) return false;
+        if (!targetDate && !sDate) return false;
+      }
       return true;
     });
     masterStateRef.current.studentAtqiniSubmissions = next;
     setStudentAtqiniSubmissions(next);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ghaith_atqini_subs_local_v1', JSON.stringify(next));
+      }
+    } catch {
+      // ignore storage write errors
+    }
     const nextLogs = appendAuditEntry(
       'delete',
       'atqiniSubmission',
@@ -5538,7 +5609,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const atqiniItem = gradingConfig?.items.find(i => i.category === 'atqini');
     const atqiniMax = atqiniItem?.maxScore ?? 10;
-    const atqiniCompletedCount = sAtqini.filter(a => a.status === 'completed' || a.isCompletedCorrectly).length;
+    const atqiniCompletedCount = sAtqini.filter(
+      a =>
+        a.status === 'completed' ||
+        a.isCompletedCorrectly ||
+        a.extractedExamplesDone ||
+        a.appliedDuringRecitation ||
+        (typeof a.score === 'number' && a.score > 0)
+    ).length;
     const assignmentMaxById = new Map(atqiniAssignmentList.map(assignment => [assignment.id, assignment.maxScore ?? 10]));
     const atqiniRatioSum = sAtqini.reduce((sum, submission) => {
       const maxScore = assignmentMaxById.get(submission.assignmentId) ?? 10;

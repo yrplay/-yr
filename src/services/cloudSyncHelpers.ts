@@ -171,8 +171,8 @@ export const mergeArrayByKey = (
 };
 
 /**
- * Deduplicate homework submissions by (assignmentId, studentId) pair so there is strictly
- * at most ONE submission record per student per assignment, preserving the newest data and stable ID.
+ * Deduplicate homework submissions by (assignmentId, studentId, hijriDate) tuple so there is strictly
+ * at most ONE submission record per student per assignment per Hijri session date, preserving newest data and stable ID.
  */
 export const deduplicateAtqiniSubmissions = <T extends Record<string, any>>(list: T[] = []): T[] => {
   if (!Array.isArray(list)) return [];
@@ -187,8 +187,9 @@ export const deduplicateAtqiniSubmissions = <T extends Record<string, any>>(list
 
   for (const item of list) {
     if (!item) continue;
+    const dateSuffix = item.hijriDate ? `_${String(item.hijriDate).trim()}` : '';
     const key = (item.assignmentId && item.studentId)
-      ? `${item.assignmentId}_${item.studentId}`
+      ? `${item.assignmentId}_${item.studentId}${dateSuffix}`
       : String(item.id || Math.random());
 
     const existing = map.get(key);

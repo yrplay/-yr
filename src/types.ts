@@ -530,6 +530,8 @@ export interface StudentAtqiniSubmission {
   id: string;
   assignmentId: string;
   studentId: string;
+  hijriDate?: string;
+  hijriDateLabel?: string;
   status: 'completed' | 'pending' | 'late' | 'in_progress' | 'not_started';
   isCompletedCorrectly: boolean;
   extractedExamplesDone: boolean;
