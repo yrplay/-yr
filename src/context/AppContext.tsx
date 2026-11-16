@@ -16,6 +16,7 @@ import {
 } from '../services/cloudSync';
 import {
   deepCleanForFirestore,
+  pruneDeadStaffProfiles,
   sanitizeStaffUserForFirestore,
   deduplicateAtqiniSubmissions,
   deduplicateChallengeSubmissions,
@@ -304,7 +305,7 @@ const sanitizeAndSortAuditLogs = (logs: any[]): AuditLog[] => {
   }
   const result = Array.from(map.values());
   result.sort((a, b) => (Date.parse(b.timestamp) || 0) - (Date.parse(a.timestamp) || 0));
-  return result.slice(0, 100);
+  return result.slice(0, 60);
 };
 
 const ensureDefaultTrackIntegrity = (data: any) => {
@@ -664,7 +665,14 @@ const ensureDefaultTrackIntegrity = (data: any) => {
       if (!existing) {
         spMap.set(key, sp);
       } else {
-        spMap.set(key, { ...existing, ...sp, id: sp.id || existing.id });
+        const spTime = Date.parse(sp.updatedAt || sp.createdAt || '') || 0;
+        const exTime = Date.parse(existing.updatedAt || existing.createdAt || '') || 0;
+        spMap.set(
+          key,
+          spTime >= exTime
+            ? { ...existing, ...sp, id: sp.id || existing.id }
+            : { ...sp, ...existing, id: existing.id || sp.id }
+        );
       }
     }
     data.studentPlans = Array.from(spMap.values());
@@ -1192,6 +1200,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastLocalMutationTimeRef = useRef<number>(0);
   const hasPendingLocalChangesRef = useRef<boolean>(false);
+  const pendingChangedKeysRef = useRef<Set<string>>(new Set());
 
   const [theme, setThemeState] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
@@ -1535,8 +1544,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (!loc || !loc.studentId) continue;
       const key = `${loc.studentId}_${loc.monthlyPlanId || 'default'}`;
       const inc = map.get(key);
-      if (!inc) map.set(key, loc);
-      else map.set(key, { ...inc, ...loc, id: loc.id || inc.id });
+      if (!inc) {
+        map.set(key, loc);
+      } else {
+        const locTime = Date.parse(loc.updatedAt || (loc as any).createdAt || '') || 0;
+        const incTime = Date.parse(inc.updatedAt || (inc as any).createdAt || '') || 0;
+        map.set(
+          key,
+          locTime >= incTime
+            ? { ...inc, ...loc, id: loc.id || inc.id }
+            : { ...loc, ...inc, id: inc.id || loc.id }
+        );
+      }
     }
     return Array.from(map.values());
   };
@@ -1639,15 +1658,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         writeLocalPinnedAnnouncement(mergedPinnedAnnouncement);
       }
 
-      const mergedStaffProfiles = mergeStaffProfilesMap(
-        readLocalStaffProfiles(),
-        extractStaffProfilesFromUsers(localUsersList),
-        localSettings.staffProfiles,
-        localSettings.staffOperations,
-        extractStaffProfilesFromUsers(incomingUsersList),
-        incomingData.staffOperations,
-        incomingSettings.staffProfiles,
-        incomingSettings.staffOperations
+      const deletedUserIdsArr = [
+        ...(Array.isArray(masterStateRef.current._deletedEntities?.users)
+          ? masterStateRef.current._deletedEntities.users
+          : []),
+        ...(Array.isArray(incomingData._deletedEntities?.users)
+          ? incomingData._deletedEntities.users
+          : [])
+      ].map(String);
+      const mergedStaffProfiles = pruneDeadStaffProfiles(
+        mergeStaffProfilesMap(
+          readLocalStaffProfiles(),
+          extractStaffProfilesFromUsers(localUsersList),
+          localSettings.staffProfiles,
+          localSettings.staffOperations,
+          extractStaffProfilesFromUsers(incomingUsersList),
+          incomingData.staffOperations,
+          incomingSettings.staffProfiles,
+          incomingSettings.staffOperations
+        ),
+        incomingUsersList.length > 0 ? incomingUsersList : localUsersList,
+        deletedUserIdsArr
       );
       writeLocalStaffProfiles(mergedStaffProfiles);
 
@@ -2058,15 +2089,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         writeLocalPinnedAnnouncement(mergedPinnedAnnouncement);
       }
 
-      const mergedStaffProfiles = mergeStaffProfilesMap(
-        readLocalStaffProfiles(),
-        extractStaffProfilesFromUsers(userList),
-        localSettings.staffProfiles,
-        localSettings.staffOperations,
-        extractStaffProfilesFromUsers(data.users),
-        data.staffOperations,
-        incomingSettings.staffProfiles,
-        incomingSettings.staffOperations
+      const mergedStaffProfiles = pruneDeadStaffProfiles(
+        mergeStaffProfilesMap(
+          readLocalStaffProfiles(),
+          extractStaffProfilesFromUsers(userList),
+          localSettings.staffProfiles,
+          localSettings.staffOperations,
+          extractStaffProfilesFromUsers(data.users),
+          data.staffOperations,
+          incomingSettings.staffProfiles,
+          incomingSettings.staffOperations
+        ),
+        userList,
+        deletedEntities.users || []
       );
       writeLocalStaffProfiles(mergedStaffProfiles);
 
@@ -2103,11 +2138,33 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setAuditLogs(mergedLogs);
     }
 
-    // Re-apply local storage overrides and persist the unified state to STORAGE_KEY
+    // Re-apply local storage overrides and persist the unified state to STORAGE_KEY and entity caches
     masterStateRef.current = ensureDefaultTrackIntegrity(masterStateRef.current);
     try {
       if (typeof window !== 'undefined') {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(masterStateRef.current));
+        const safeCacheWrite = (k: string, v: any) => {
+          if (v === undefined) return;
+          try {
+            localStorage.setItem(k, JSON.stringify(v));
+          } catch {}
+        };
+        safeCacheWrite('ghaith_circles_local_v1', masterStateRef.current.circles);
+        safeCacheWrite('ghaith_tracks_local_v1', masterStateRef.current.tracks);
+        safeCacheWrite('ghaith_challenges_local_v1', masterStateRef.current.challenges);
+        safeCacheWrite(STUDENTS_LOCAL_KEY, masterStateRef.current.students);
+        safeCacheWrite('ghaith_attendance_local_v1', masterStateRef.current.attendanceRecords);
+        safeCacheWrite('ghaith_daily_records_local_v1', masterStateRef.current.dailyRecords);
+        safeCacheWrite('ghaith_challenge_subs_local_v1', masterStateRef.current.studentChallengeSubmissions);
+        safeCacheWrite('ghaith_atqini_subs_local_v1', masterStateRef.current.studentAtqiniSubmissions);
+        safeCacheWrite('ghaith_atqini_assignments_local_v1', masterStateRef.current.atqiniAssignments);
+        safeCacheWrite(SUBSCRIPTIONS_LOCAL_KEY, masterStateRef.current.studentSubscriptions);
+        safeCacheWrite(STUDENT_PLANS_LOCAL_KEY, masterStateRef.current.studentPlans);
+        if (Array.isArray(masterStateRef.current._deletedEntities?.monthlyPlans)) {
+          safeCacheWrite('ghaith_deleted_monthly_plans_v1', masterStateRef.current._deletedEntities.monthlyPlans);
+        }
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(masterStateRef.current));
+        } catch {}
       }
     } catch {}
 
@@ -2131,13 +2188,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ...(overrides?.settings || {})
       };
       const baseUsers: User[] = overrides?.users || masterStateRef.current.users || users;
-      const mergedProfiles = mergeStaffProfilesMap(
-        readLocalStaffProfiles(),
-        extractStaffProfilesFromUsers(baseUsers),
-        mergedSettingsObj.staffProfiles,
-        mergedSettingsObj.staffOperations,
-        overrides?.staffOperations
+      const mergedDeletedUsers: string[] = Array.isArray(overrides?._deletedEntities?.users)
+        ? overrides._deletedEntities.users.map(String)
+        : Array.isArray(masterStateRef.current._deletedEntities?.users)
+        ? masterStateRef.current._deletedEntities.users.map(String)
+        : [];
+      const mergedProfiles = pruneDeadStaffProfiles(
+        mergeStaffProfilesMap(
+          readLocalStaffProfiles(),
+          extractStaffProfilesFromUsers(baseUsers),
+          mergedSettingsObj.staffProfiles,
+          mergedSettingsObj.staffOperations,
+          overrides?.staffOperations
+        ),
+        baseUsers,
+        mergedDeletedUsers
       );
+      writeLocalStaffProfiles(mergedProfiles);
       const mergedDeletedChatIds = [
         ...new Set([
           ...readLocalDeletedStaffChatIds(),
@@ -2264,17 +2331,44 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (skipCloudPush) {
         return;
       }
-      
-      const executePush = () => {
-        pushStateToCloud(replaceCloudState ? { ...masterStateRef.current, _replaceState: true } : masterStateRef.current)
+
+      if (replaceCloudState || !overrides || typeof overrides !== 'object') {
+        pendingChangedKeysRef.current.add('__FULL__');
+      } else {
+        for (const k of Object.keys(overrides)) {
+          if (k === '_replaceState' || k === '_immediateSync' || k === '_skipCloudPush' || k === '_changedKeys') continue;
+          pendingChangedKeysRef.current.add(k);
+        }
+        if (overrides.staffOperations) pendingChangedKeysRef.current.add('settings');
+      }
+
+      const executePush = (attempt = 1) => {
+        const pushTimestamp = lastLocalMutationTimeRef.current;
+        const keysToSync = Array.from(pendingChangedKeysRef.current);
+        const pushPayload = replaceCloudState
+          ? { ...masterStateRef.current, _replaceState: true }
+          : { ...masterStateRef.current, _changedKeys: keysToSync };
+        pushStateToCloud(pushPayload)
           .then(() => {
-            hasPendingLocalChangesRef.current = false;
+            if (lastLocalMutationTimeRef.current === pushTimestamp) {
+              hasPendingLocalChangesRef.current = false;
+              pendingChangedKeysRef.current.clear();
+            }
             setCloudStatus('connected');
             setLastSynced(new Date());
           })
           .catch(error => {
             console.warn('Cloud save failed:', error);
-            setCloudStatus('offline');
+            const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+            setCloudStatus(isOffline ? 'offline' : 'error');
+            if (!isOffline && attempt < 2) {
+              setTimeout(() => {
+                if (lastLocalMutationTimeRef.current === pushTimestamp) {
+                  executePush(attempt + 1);
+                }
+              }, 4000);
+              return;
+            }
             // Clear pending flag after 2s so incoming cloud updates are never permanently blocked on mobile
             setTimeout(() => {
               hasPendingLocalChangesRef.current = false;
@@ -2366,7 +2460,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
     }
 
+    let isPullingCloud = false;
     const pullFreshCloudStateNow = async () => {
+      if (isPullingCloud || hasPendingLocalChangesRef.current) return;
+      isPullingCloud = true;
       try {
         const cloudData = await fetchCloudDatabaseOnce(true);
         if (cloudData && typeof cloudData === 'object') {
@@ -2377,6 +2474,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       } catch {
         // ignore transient network error during background poll
+      } finally {
+        isPullingCloud = false;
       }
     };
 
@@ -2411,11 +2510,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       void pullFreshCloudStateNow();
     };
 
-    // 3. Fast Periodic Polling (Every 4 Seconds) while the app is active/visible
+    // 3. Fallback Periodic Polling (Every 20 Seconds) while active/visible without saturating mobile connections
     const fastPollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       void pullFreshCloudStateNow();
-    }, 4000);
+    }, 20000);
 
     const handleStorageSync = (e: StorageEvent) => {
       if (

@@ -32,13 +32,32 @@ export const deepCleanForFirestore = (value: any): any => {
   }
   const cleanedObj: Record<string, any> = {};
   for (const [k, v] of Object.entries(value)) {
-    if (v === undefined) {
-      cleanedObj[k] = null;
-    } else {
-      cleanedObj[k] = deepCleanForFirestore(v);
-    }
+    if (v === undefined) continue;
+    cleanedObj[k] = deepCleanForFirestore(v);
   }
   return cleanedObj;
+};
+
+export const pruneDeadStaffProfiles = (
+  profilesMap: Record<string, any> | undefined | null,
+  usersList: any[] = [],
+  deletedUserIds: string[] = []
+): Record<string, any> => {
+  if (!profilesMap || typeof profilesMap !== 'object') return {};
+  const deletedSet = new Set(deletedUserIds.map(String));
+  const activeIds = new Set(
+    (Array.isArray(usersList) ? usersList : [])
+      .filter((u: any) => u && u.id && !deletedSet.has(String(u.id)))
+      .map((u: any) => String(u.id))
+  );
+  const pruned: Record<string, any> = {};
+  for (const [userId, cfg] of Object.entries(profilesMap)) {
+    if (!cfg || typeof cfg !== 'object') continue;
+    if (deletedSet.has(String(userId))) continue;
+    if (activeIds.size > 0 && !activeIds.has(String(userId))) continue;
+    pruned[userId] = cfg;
+  }
+  return pruned;
 };
 
 export const sanitizeStaffUserForFirestore = (raw: any): any => {

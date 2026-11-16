@@ -1,10 +1,11 @@
-import { collection, doc, getDoc, getDocFromServer, getDocs, onSnapshot, runTransaction, setDoc } from 'firebase/firestore';
+import { collection, deleteField, doc, getDoc, getDocFromServer, getDocs, onSnapshot, setDoc } from 'firebase/firestore';
 import { db, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID } from '../firebase';
 import {
   mergeArrayByKey,
   mergeDeletedEntities,
   sanitizeCloudState,
   deepCleanForFirestore,
+  pruneDeadStaffProfiles,
   sanitizeStaffUserForFirestore,
   deduplicateAtqiniSubmissions,
   deduplicateChallengeSubmissions,
@@ -132,9 +133,24 @@ export const subscribeToCloudDatabase = (
       docRef,
       { includeMetadataChanges: true },
       snapshot => {
-        if (snapshot.exists()) onData(sanitizeCloudState(snapshot.data()));
-        else onData(null);
-        onStatusChange?.('connected');
+        // Skip local pending-write echoes so optimistic UI edits don't feed stale cache back into state
+        if (snapshot.metadata.hasPendingWrites) {
+          onStatusChange?.('syncing');
+          return;
+        }
+        if (snapshot.exists()) {
+          const sanitized = sanitizeCloudState(snapshot.data());
+          if (!snapshot.metadata.fromCache) {
+            void reconcileAuthorizedStaffUsers(sanitized).then(reconciled => {
+              onData(reconciled);
+            });
+          } else {
+            onData(sanitized);
+          }
+        } else {
+          onData(null);
+        }
+        onStatusChange?.(snapshot.metadata.fromCache ? 'syncing' : 'connected');
       },
       error => {
         console.warn('Firebase sync listener error:', error);
@@ -278,11 +294,6 @@ const buildMergedCloudPayload = (remoteRaw: any, statePayload: any): Record<stri
     ...remoteData,
     ...incomingState,
     _deletedEntities: deletedEntities,
-    staffOperations: mergedStaffProfiles,
-    staffChatMessages: mergedStaffChatMessages,
-    deletedStaffChatIds: mergedDeletedChatIds,
-    ...(mergedPinnedAnnouncement ? { pinnedStaffAnnouncement: mergedPinnedAnnouncement } : {}),
-    staffAttendanceRecords: mergedStaffAttendanceRecords,
     settings: {
       ...remoteSettings,
       ...incomingSettings,
@@ -292,11 +303,18 @@ const buildMergedCloudPayload = (remoteRaw: any, statePayload: any): Record<stri
       deletedStaffChatIds: mergedDeletedChatIds,
       ...(mergedPinnedAnnouncement ? { pinnedStaffAnnouncement: mergedPinnedAnnouncement } : {}),
       staffProfiles: mergedStaffProfiles,
-      staffOperations: mergedStaffProfiles,
       staffAttendanceRecords: mergedStaffAttendanceRecords
     },
     lastSyncedAt: new Date().toISOString()
   };
+
+  // Remove redundant top-level/duplicate bloat fields from the cloud payload
+  delete finalPayload.staffOperations;
+  delete finalPayload.staffChatMessages;
+  delete finalPayload.deletedStaffChatIds;
+  delete finalPayload.pinnedStaffAnnouncement;
+  delete finalPayload.staffAttendanceRecords;
+  delete finalPayload.settings.staffOperations;
 
   const FAKE_DEMO_IDS = new Set(['u-1', 'u-2', 'u-3', 'u-4', 'u-5', 'u-leader']);
   const FAKE_DEMO_EMAILS = new Set([
@@ -346,7 +364,7 @@ const buildMergedCloudPayload = (remoteRaw: any, statePayload: any): Record<stri
       mergedItems.sort(
         (a: any, b: any) => (Date.parse(b?.timestamp || '') || 0) - (Date.parse(a?.timestamp || '') || 0)
       );
-      mergedItems = mergedItems.slice(0, 100);
+      mergedItems = mergedItems.slice(0, 60);
     } else if (collection === 'studentAtqiniSubmissions') {
       mergedItems = deduplicateAtqiniSubmissions(mergedItems);
     } else if (collection === 'studentChallengeSubmissions') {
@@ -363,13 +381,36 @@ const buildMergedCloudPayload = (remoteRaw: any, statePayload: any): Record<stri
     finalPayload.users = [];
   }
 
+  // Prune dead/deleted user keys from staffProfiles so Firestore doc never accumulates orphan profiles
+  finalPayload.settings.staffProfiles = pruneDeadStaffProfiles(
+    mergedStaffProfiles,
+    finalPayload.users,
+    deletedEntities.users || []
+  );
+
   return deepCleanForFirestore(finalPayload);
+};
+
+const withRejectingTimeout = <T,>(promise: Promise<T>, ms: number, errorCode: string): Promise<T> => {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(errorCode)), ms);
+    promise.then(
+      val => {
+        clearTimeout(timer);
+        resolve(val);
+      },
+      err => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
 };
 
 /**
  * Directly writes the sanitized staff users (and updated circles/deletedEntities) to the exact
- * Firestore document (`institution_database/master_state`) monitored by `onSnapshot`, enforcing
- * a 3.5-second timeout so the UI never hangs while guaranteeing immediate persistence.
+ * Firestore document (`institution_database/master_state`) monitored by `onSnapshot`, waiting for
+ * real server/SDK confirmation with a rejecting timeout so errors are never silently swallowed.
  */
 export const pushStaffUsersToCloudDirect = async (
   usersList: any[],
@@ -392,38 +433,90 @@ export const pushStaffUsersToCloudDirect = async (
     lastSyncedAt: new Date().toISOString()
   });
 
-  const writePromise = setDoc(docRef, payload, { merge: true });
-  await Promise.race([
-    writePromise,
-    new Promise<void>(resolve => setTimeout(resolve, 3500))
-  ]);
+  await withRejectingTimeout(setDoc(docRef, payload, { merge: true }), 12000, 'CLOUD_STAFF_WRITE_TIMEOUT');
 };
 
 /**
  * Atomically merge app state and deletion tombstones into Firestore (`institution_database/master_state`).
- * Enforces strict timeouts on both read and write so the UI never hangs in the preview environment.
+ * Reads server state first (with local cache fallback ONLY if server is unreachable) and never merges
+ * against an empty `{}` object on timeout, so slow mobile connections never overwrite newer desktop edits.
  */
 export const pushStateToCloud = async (statePayload: any): Promise<void> => {
   const docRef = doc(db, CLOUD_DOC_PATH.collection, CLOUD_DOC_PATH.id);
 
-  let remoteRaw: any = {};
+  let snap: any = null;
   try {
-    const snap = await Promise.race([
-      getDoc(docRef),
-      new Promise<null>(resolve => setTimeout(() => resolve(null), 1500))
-    ]);
-    if (snap && snap.exists()) {
-      remoteRaw = snap.data();
-    }
+    snap = await withRejectingTimeout(getDocFromServer(docRef), 5000, 'SERVER_READ_TIMEOUT');
   } catch {
-    // Proceed with incoming state if read times out or fails
+    try {
+      snap = await withRejectingTimeout(getDoc(docRef), 3000, 'CACHE_READ_TIMEOUT');
+    } catch {
+      throw new Error('CLOUD_SYNC_READ_FAILED');
+    }
   }
 
-  const cleanedPayload = buildMergedCloudPayload(remoteRaw, statePayload);
-  const writePromise = setDoc(docRef, cleanedPayload, { merge: true });
-  await Promise.race([
-    writePromise,
-    new Promise<void>(resolve => setTimeout(resolve, 2500))
-  ]);
+  const remoteRaw: any = snap && snap.exists() ? snap.data() : {};
+  const isFullReplace = Boolean(statePayload?._replaceState);
+  const changedKeys: string[] | null =
+    !isFullReplace && Array.isArray(statePayload?._changedKeys) && statePayload._changedKeys.length > 0
+      ? statePayload._changedKeys.map(String)
+      : null;
+
+  const incomingClean = { ...(statePayload || {}) };
+  delete incomingClean._changedKeys;
+
+  const cleanedPayload = buildMergedCloudPayload(remoteRaw, incomingClean);
+
+  let writePayload: Record<string, any>;
+  if (changedKeys && !changedKeys.includes('__FULL__')) {
+    writePayload = {
+      lastSyncedAt: cleanedPayload.lastSyncedAt
+    };
+    const keySet = new Set(changedKeys);
+    if (keySet.has('staffOperations')) keySet.add('settings');
+    if (keySet.has('_deletedEntities') || Object.keys(incomingClean._deletedEntities || {}).length > 0) {
+      if (cleanedPayload._deletedEntities) {
+        writePayload._deletedEntities = cleanedPayload._deletedEntities;
+      }
+    }
+    for (const k of keySet) {
+      if (k === 'staffOperations' || k === 'lastSyncedAt' || k === '_deletedEntities') continue;
+      if (k === 'settings' && cleanedPayload.settings && typeof cleanedPayload.settings === 'object') {
+        const nextSettingsPatch = { ...cleanedPayload.settings };
+        // Omit unchanged heavy data-URL images when merging settings
+        for (const imgField of ['logoUrl', 'sealImageUrl', 'leaderSignatureUrl']) {
+          if (
+            remoteRaw?.settings?.[imgField] &&
+            nextSettingsPatch[imgField] === remoteRaw.settings[imgField]
+          ) {
+            delete nextSettingsPatch[imgField];
+          }
+        }
+        if (remoteRaw?.settings && 'staffOperations' in remoteRaw.settings) {
+          nextSettingsPatch.staffOperations = deleteField();
+        }
+        writePayload.settings = nextSettingsPatch;
+      } else if (cleanedPayload[k] !== undefined) {
+        writePayload[k] = cleanedPayload[k];
+      }
+    }
+  } else {
+    writePayload = {
+      ...cleanedPayload,
+      ...(remoteRaw && 'staffOperations' in remoteRaw ? { staffOperations: deleteField() } : {}),
+      ...(remoteRaw && 'staffChatMessages' in remoteRaw ? { staffChatMessages: deleteField() } : {}),
+      ...(remoteRaw && 'deletedStaffChatIds' in remoteRaw ? { deletedStaffChatIds: deleteField() } : {}),
+      ...(remoteRaw && 'pinnedStaffAnnouncement' in remoteRaw ? { pinnedStaffAnnouncement: deleteField() } : {}),
+      ...(remoteRaw && 'staffAttendanceRecords' in remoteRaw ? { staffAttendanceRecords: deleteField() } : {}),
+      settings: {
+        ...(cleanedPayload.settings || {}),
+        ...(remoteRaw?.settings && 'staffOperations' in remoteRaw.settings
+          ? { staffOperations: deleteField() }
+          : {})
+      }
+    };
+  }
+
+  await withRejectingTimeout(setDoc(docRef, writePayload, { merge: true }), 15000, 'CLOUD_WRITE_TIMEOUT');
 };
 
