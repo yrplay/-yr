@@ -17,7 +17,9 @@ test('all-cycle financial totals include each cycle once and use the latest reco
     totalRemaining: 220,
     collectionRate: 27,
     paidCount: 0,
+    partialCount: 1,
     pendingCount: 2,
+    overdueCount: 0,
     exemptCount: 0
   });
 });
