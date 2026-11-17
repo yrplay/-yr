@@ -17,6 +17,7 @@ import {
 } from '../components/CircleIconLibrary';
 import { TrackDetailView } from './TrackDetailView';
 import { cleanTelegramUsername, triggerStudentTelegramAlert } from '../utils/telegramAlert';
+import { optimizeImageFile } from '../utils/imageOptimizer';
 
 const TRACK_EMOJIS = [
   '🪴', '🌱', '🌿', '🌴', '🌸', '📖', '🌟', '💎', '🕊️', '📜',
@@ -239,14 +240,20 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     setTrackModalOpen(true);
   };
 
-  const handleTrackLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTrackLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      setTrackForm(prev => ({ ...prev, logoUrl: ev.target?.result as string }));
-    };
-    reader.readAsDataURL(file);
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('حجم شعار المسار يجب أن يكون أقل من 2 ميجابايت', 'error');
+      e.target.value = '';
+      return;
+    }
+    try {
+      const dataUrl = await optimizeImageFile(file, 360, 360);
+      setTrackForm(prev => ({ ...prev, logoUrl: dataUrl }));
+    } catch {
+      showToast('تعذرت معالجة صورة شعار المسار', 'error');
+    }
   };
 
   const handleSaveTrack = async (e: React.FormEvent) => {
@@ -256,14 +263,18 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
       ...trackForm,
       icon: normalizeEntityIcon(trackForm.icon, '📖')
     };
-    if (editingTrack) {
-      await updateTrack(editingTrack.id, normalizedPayload);
-    } else {
-      const created = await createTrack(normalizedPayload);
-      setSelectedTrackId(created.id);
-      setGlobalSelectedTrackId(created.id);
+    try {
+      if (editingTrack) {
+        await updateTrack(editingTrack.id, normalizedPayload);
+      } else {
+        const created = await createTrack(normalizedPayload);
+        setSelectedTrackId(created.id);
+        setGlobalSelectedTrackId(created.id);
+      }
+      setTrackModalOpen(false);
+    } catch (error: any) {
+      showToast(error?.message || 'تعذر حفظ المسار. تحققي من الاتصال ثم أعيدي المحاولة.', 'error');
     }
-    setTrackModalOpen(false);
   };
 
   const handleOpenCircleModal = (circle?: Circle) => {
