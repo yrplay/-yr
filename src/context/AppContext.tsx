@@ -5361,6 +5361,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!isLocalDemoMode) {
       const syncTask = async () => {
         setCloudStatus('syncing');
+        hasPendingLocalChangesRef.current = true;
         try {
           await pushStaffUsersToCloudDirect(
             nextUsers,
@@ -5368,44 +5369,53 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             masterStateRef.current._deletedEntities,
             masterStateRef.current.settings
           );
+
+          if (updated?.email) {
+            const cleanEmail = updated.email.trim().toLowerCase();
+            await setDoc(
+              doc(db, 'authorized_staff', cleanEmail),
+              {
+                email: cleanEmail,
+                staffId: updated.id,
+                role: updated.role,
+                name: updated.name,
+                passcode: updated.passcode || '',
+                pin: updated.passcode || '',
+                ...(updated.welcomeTitle ? { welcomeTitle: updated.welcomeTitle } : {}),
+                status: 'active',
+                active: true,
+                updatedAt: nowIso
+              },
+              { merge: true }
+            );
+          }
+
+          await pushStateToCloud(masterStateRef.current);
           hasPendingLocalChangesRef.current = false;
           setCloudStatus('connected');
           setLastSynced(new Date());
-          pushStateToCloud(masterStateRef.current).catch(() => {});
         } catch (cloudErr: any) {
-          hasPendingLocalChangesRef.current = false;
-          console.warn('Firestore save notice in updateUser:', cloudErr);
+          hasPendingLocalChangesRef.current = true;
+          setCloudStatus('error');
+          const errMsg =
+            cloudErr?.message ||
+            cloudErr?.code ||
+            String(cloudErr || 'تعذر الاتصال بقاعدة البيانات');
+          console.error('Firestore save error in updateUser:', cloudErr);
+          showToast(`تعذر حفظ التعديلات في السحابة: ${errMsg}`, 'error', 8000);
+          throw cloudErr;
         }
       };
 
-      if (updated?.email) {
-        const cleanEmail = updated.email.trim().toLowerCase();
-        setDoc(
-          doc(db, 'authorized_staff', cleanEmail),
-          {
-            email: cleanEmail,
-            staffId: updated.id,
-            role: updated.role,
-            name: updated.name,
-            passcode: updated.passcode || '',
-            pin: updated.passcode || '',
-            ...(updated.welcomeTitle ? { welcomeTitle: updated.welcomeTitle } : {}),
-            status: 'active',
-            active: true,
-            updatedAt: nowIso
-          },
-          { merge: true }
-        ).catch(e => {
-          console.warn('authorized_staff update notice:', e);
-        });
-      }
-
       if (silent) {
-        void syncTask();
+        void syncTask().catch(error => {
+          console.warn('Background staff sync remains pending:', error);
+        });
       } else {
         await syncTask();
         showToast('تم حفظ التعديلات وتحديث المنصب والبيانات في السحابة بنجاح ✨');
       }
+    }
     } else {
       hasPendingLocalChangesRef.current = false;
       if (!silent) {
