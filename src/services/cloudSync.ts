@@ -1,4 +1,4 @@
-import { collection, deleteField, doc, getDoc, getDocFromServer, getDocs, onSnapshot, setDoc } from 'firebase/firestore';
+import { collection, deleteField, doc, getDoc, getDocFromServer, getDocs, onSnapshot, runTransaction, setDoc } from 'firebase/firestore';
 import { db, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID } from '../firebase';
 import {
   mergeArrayByKey,
@@ -415,7 +415,8 @@ const withRejectingTimeout = <T,>(promise: Promise<T>, ms: number, errorCode: st
 export const pushStaffUsersToCloudDirect = async (
   usersList: any[],
   circlesList?: any[],
-  deletedEntities?: any
+  deletedEntities?: any,
+  settings?: any
 ): Promise<void> => {
   const docRef = doc(db, CLOUD_DOC_PATH.collection, CLOUD_DOC_PATH.id);
   const sanitizedUsers = (Array.isArray(usersList) ? usersList : []).map(u => {
@@ -430,6 +431,7 @@ export const pushStaffUsersToCloudDirect = async (
     users: sanitizedUsers,
     ...(Array.isArray(circlesList) ? { circles: circlesList } : {}),
     ...(deletedEntities && typeof deletedEntities === 'object' ? { _deletedEntities: deletedEntities } : {}),
+    ...(settings && typeof settings === 'object' ? { settings } : {}),
     lastSyncedAt: new Date().toISOString()
   });
 
@@ -444,79 +446,70 @@ export const pushStaffUsersToCloudDirect = async (
 export const pushStateToCloud = async (statePayload: any): Promise<void> => {
   const docRef = doc(db, CLOUD_DOC_PATH.collection, CLOUD_DOC_PATH.id);
 
-  let snap: any = null;
-  try {
-    snap = await withRejectingTimeout(getDocFromServer(docRef), 5000, 'SERVER_READ_TIMEOUT');
-  } catch {
-    try {
-      snap = await withRejectingTimeout(getDoc(docRef), 3000, 'CACHE_READ_TIMEOUT');
-    } catch {
-      throw new Error('CLOUD_SYNC_READ_FAILED');
-    }
-  }
+  // Use a Firestore transaction so concurrent devices cannot overwrite a newer
+  // master_state snapshot between the read and the write.
+  await withRejectingTimeout(
+    runTransaction(db, async transaction => {
+      const snap = await transaction.get(docRef);
+      const remoteRaw: any = snap.exists() ? snap.data() : {};
+      const isFullReplace = Boolean(statePayload?._replaceState);
+      const changedKeys: string[] | null =
+        !isFullReplace && Array.isArray(statePayload?._changedKeys) && statePayload._changedKeys.length > 0
+          ? statePayload._changedKeys.map(String)
+          : null;
 
-  const remoteRaw: any = snap && snap.exists() ? snap.data() : {};
-  const isFullReplace = Boolean(statePayload?._replaceState);
-  const changedKeys: string[] | null =
-    !isFullReplace && Array.isArray(statePayload?._changedKeys) && statePayload._changedKeys.length > 0
-      ? statePayload._changedKeys.map(String)
-      : null;
+      const incomingClean = { ...(statePayload || {}) };
+      delete incomingClean._changedKeys;
+      const cleanedPayload = buildMergedCloudPayload(remoteRaw, incomingClean);
 
-  const incomingClean = { ...(statePayload || {}) };
-  delete incomingClean._changedKeys;
-
-  const cleanedPayload = buildMergedCloudPayload(remoteRaw, incomingClean);
-
-  let writePayload: Record<string, any>;
-  if (changedKeys && !changedKeys.includes('__FULL__')) {
-    writePayload = {
-      lastSyncedAt: cleanedPayload.lastSyncedAt
-    };
-    const keySet = new Set(changedKeys);
-    if (keySet.has('staffOperations')) keySet.add('settings');
-    if (keySet.has('_deletedEntities') || Object.keys(incomingClean._deletedEntities || {}).length > 0) {
-      if (cleanedPayload._deletedEntities) {
-        writePayload._deletedEntities = cleanedPayload._deletedEntities;
-      }
-    }
-    for (const k of keySet) {
-      if (k === 'staffOperations' || k === 'lastSyncedAt' || k === '_deletedEntities') continue;
-      if (k === 'settings' && cleanedPayload.settings && typeof cleanedPayload.settings === 'object') {
-        const nextSettingsPatch = { ...cleanedPayload.settings };
-        // Omit unchanged heavy data-URL images when merging settings
-        for (const imgField of ['logoUrl', 'sealImageUrl', 'leaderSignatureUrl']) {
-          if (
-            remoteRaw?.settings?.[imgField] &&
-            nextSettingsPatch[imgField] === remoteRaw.settings[imgField]
-          ) {
-            delete nextSettingsPatch[imgField];
+      let writePayload: Record<string, any>;
+      if (changedKeys && !changedKeys.includes('__FULL__')) {
+        writePayload = { lastSyncedAt: cleanedPayload.lastSyncedAt };
+        const keySet = new Set(changedKeys);
+        if (keySet.has('staffOperations')) keySet.add('settings');
+        if (keySet.has('_deletedEntities') || Object.keys(incomingClean._deletedEntities || {}).length > 0) {
+          if (cleanedPayload._deletedEntities) writePayload._deletedEntities = cleanedPayload._deletedEntities;
+        }
+        for (const k of keySet) {
+          if (k === 'staffOperations' || k === 'lastSyncedAt' || k === '_deletedEntities') continue;
+          if (k === 'settings' && cleanedPayload.settings && typeof cleanedPayload.settings === 'object') {
+            const nextSettingsPatch = { ...cleanedPayload.settings };
+            for (const imgField of ['logoUrl', 'sealImageUrl', 'leaderSignatureUrl']) {
+              if (
+                remoteRaw?.settings?.[imgField] &&
+                nextSettingsPatch[imgField] === remoteRaw.settings[imgField]
+              ) {
+                delete nextSettingsPatch[imgField];
+              }
+            }
+            if (remoteRaw?.settings && 'staffOperations' in remoteRaw.settings) {
+              nextSettingsPatch.staffOperations = deleteField();
+            }
+            writePayload.settings = nextSettingsPatch;
+          } else if (cleanedPayload[k] !== undefined) {
+            writePayload[k] = cleanedPayload[k];
           }
         }
-        if (remoteRaw?.settings && 'staffOperations' in remoteRaw.settings) {
-          nextSettingsPatch.staffOperations = deleteField();
-        }
-        writePayload.settings = nextSettingsPatch;
-      } else if (cleanedPayload[k] !== undefined) {
-        writePayload[k] = cleanedPayload[k];
+      } else {
+        writePayload = {
+          ...cleanedPayload,
+          ...(remoteRaw && 'staffOperations' in remoteRaw ? { staffOperations: deleteField() } : {}),
+          ...(remoteRaw && 'staffChatMessages' in remoteRaw ? { staffChatMessages: deleteField() } : {}),
+          ...(remoteRaw && 'deletedStaffChatIds' in remoteRaw ? { deletedStaffChatIds: deleteField() } : {}),
+          ...(remoteRaw && 'pinnedStaffAnnouncement' in remoteRaw ? { pinnedStaffAnnouncement: deleteField() } : {}),
+          ...(remoteRaw && 'staffAttendanceRecords' in remoteRaw ? { staffAttendanceRecords: deleteField() } : {}),
+          settings: {
+            ...(cleanedPayload.settings || {}),
+            ...(remoteRaw?.settings && 'staffOperations' in remoteRaw.settings
+              ? { staffOperations: deleteField() }
+              : {})
+          }
+        };
       }
-    }
-  } else {
-    writePayload = {
-      ...cleanedPayload,
-      ...(remoteRaw && 'staffOperations' in remoteRaw ? { staffOperations: deleteField() } : {}),
-      ...(remoteRaw && 'staffChatMessages' in remoteRaw ? { staffChatMessages: deleteField() } : {}),
-      ...(remoteRaw && 'deletedStaffChatIds' in remoteRaw ? { deletedStaffChatIds: deleteField() } : {}),
-      ...(remoteRaw && 'pinnedStaffAnnouncement' in remoteRaw ? { pinnedStaffAnnouncement: deleteField() } : {}),
-      ...(remoteRaw && 'staffAttendanceRecords' in remoteRaw ? { staffAttendanceRecords: deleteField() } : {}),
-      settings: {
-        ...(cleanedPayload.settings || {}),
-        ...(remoteRaw?.settings && 'staffOperations' in remoteRaw.settings
-          ? { staffOperations: deleteField() }
-          : {})
-      }
-    };
-  }
 
-  await withRejectingTimeout(setDoc(docRef, writePayload, { merge: true }), 15000, 'CLOUD_WRITE_TIMEOUT');
+      transaction.set(docRef, writePayload, { merge: true });
+    }),
+    20000,
+    'CLOUD_TRANSACTION_TIMEOUT'
+  );
 };
-
