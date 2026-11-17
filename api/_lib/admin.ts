@@ -1,6 +1,7 @@
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -44,7 +45,8 @@ export function getAdminServices() {
   const adminDb = firebaseConfig.firestoreDatabaseId
     ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
     : getFirestore(app);
-  return { adminAuth, adminDb };
+  const adminStorage = getStorage(app).bucket(firebaseConfig.storageBucket);
+  return { adminAuth, adminDb, adminStorage };
 }
 
 export async function requireAccountManager(req: VercelRequest) {
