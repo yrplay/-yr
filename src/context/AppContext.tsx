@@ -5414,7 +5414,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         await syncTask();
         showToast('تم حفظ التعديلات وتحديث المنصب والبيانات في السحابة بنجاح ✨');
       }
-    }
     } else {
       hasPendingLocalChangesRef.current = false;
       if (!silent) {
