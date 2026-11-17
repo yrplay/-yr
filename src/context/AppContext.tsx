@@ -55,6 +55,7 @@ import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { isLocalDemoMode } from '../demoMode';
+import { uploadImageDataUrl } from '../services/storage';
 
 export interface StudentScoreSummary {
   studentId: string;
@@ -2640,12 +2641,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       pointsPerCondition: 2
     };
 
+    const trackLogoUrl =
+      !isLocalDemoMode && track.logoUrl?.startsWith('data:image/')
+        ? await uploadImageDataUrl(track.logoUrl, 'track-logo')
+        : track.logoUrl;
+
     const newTrack: Track = {
       id: track.id || `t-${Date.now()}`,
       name: track.name || 'مسار جديد',
       code: track.code || `TRK-${Date.now().toString().slice(-4)}`,
       description: track.description || '',
-      logoUrl: track.logoUrl,
+      logoUrl: trackLogoUrl,
       icon: track.icon || '📖',
       isArchived: false,
       subscriptionFee: track.subscriptionFee || {
@@ -2685,7 +2691,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const updateTrack = async (id: string, track: Partial<Track>) => {
     const currentTracks = masterStateRef.current.tracks?.length ? masterStateRef.current.tracks : tracks;
     const targetTrack = currentTracks.find((t: Track) => t.id === id);
-    const next = currentTracks.map((t: Track) => t.id === id ? { ...t, ...track, updatedAt: new Date().toISOString() } : t);
+    const trackLogoUrl =
+      !isLocalDemoMode && track.logoUrl?.startsWith('data:image/')
+        ? await uploadImageDataUrl(track.logoUrl, 'track-logo')
+        : track.logoUrl;
+    const trackUpdates = trackLogoUrl !== undefined ? { ...track, logoUrl: trackLogoUrl } : track;
+    const next = currentTracks.map((t: Track) => t.id === id ? { ...t, ...trackUpdates, updatedAt: new Date().toISOString() } : t);
     masterStateRef.current.tracks = next;
     setTracks(next);
     try {
