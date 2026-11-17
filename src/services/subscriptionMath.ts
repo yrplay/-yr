@@ -7,29 +7,21 @@ export const deduplicateSubscriptionsByCycle = (
 ) => {
   if (!subscriptions || subscriptions.length === 0) return [];
 
-  if (cycleFilter === 'all') {
-    // Return the single most recently updated subscription record for this student
-    let latest: StudentSubscription | null = null;
-    let latestTime = -1;
-    subscriptions.forEach(subscription => {
-      const subscriptionTime = Date.parse(subscription.updatedAt || '') || 0;
-      if (!latest || subscriptionTime >= latestTime) {
-        latest = subscription;
-        latestTime = subscriptionTime;
-      }
-    });
-    return latest ? [latest] : [];
-  }
-
+  // The "all" view must retain the latest record for every cycle, not only
+  // the latest record across the student's entire subscription history.
   const byCycle = new Map<string, StudentSubscription>();
   subscriptions.forEach(subscription => {
     const cycle = subscription.cycleMonth || currentCycle;
-    if (cycle !== cycleFilter) return;
+    if (cycleFilter !== 'all' && cycle !== cycleFilter) return;
+
     const subscriptionTime = Date.parse(subscription.updatedAt || '') || 0;
     const existing = byCycle.get(cycle);
     const existingTime = existing ? Date.parse(existing.updatedAt || '') || 0 : -1;
-    if (!existing || subscriptionTime >= existingTime) byCycle.set(cycle, subscription);
+    if (!existing || subscriptionTime >= existingTime) {
+      byCycle.set(cycle, subscription);
+    }
   });
+
   return [...byCycle.values()];
 };
 
@@ -55,38 +47,55 @@ export const calculateSubscriptionStats = (
       currentCycle,
       cycleFilter
     );
-    const sub = studentSubscriptions[0];
-    const isExempt = Boolean(sub && (sub.status === 'exempt' || sub.paymentMethod === 'exempt'));
 
-    if (isExempt) {
-      exemptCount++;
-      // Exempt / Scholarship students have 0 remaining balance and are fee-exempt
+    if (studentSubscriptions.length === 0) {
+      totalExpected += defaultFee;
+      totalRemaining += defaultFee;
+      pendingCount++;
       return;
     }
 
-    const required = sub ? (sub.requiredAmount ?? defaultFee) : defaultFee;
-    const paid = sub ? (sub.paidAmount ?? 0) : 0;
-    const isPaid = sub?.status === 'paid' || (paid >= required && required > 0);
-    const remaining = isPaid ? 0 : Math.max(0, required - paid);
+    let hasNonExemptCycle = false;
+    let hasUnpaidCycle = false;
+    let hasPartialCycle = false;
+    let hasOverdueCycle = false;
 
-    totalExpected += required;
-    totalCollected += paid;
-    totalRemaining += remaining;
+    studentSubscriptions.forEach(sub => {
+      const isExempt = sub.status === 'exempt' || sub.paymentMethod === 'exempt';
+      if (isExempt) return;
 
-    if (isPaid) {
-      paidCount++;
-    } else if (sub?.status === 'overdue') {
-      overdueCount++;
-      pendingCount++;
-    } else if (sub?.status === 'partial' || (paid > 0 && paid < required)) {
-      partialCount++;
-      pendingCount++;
-    } else {
-      pendingCount++;
+      hasNonExemptCycle = true;
+      const required = sub.requiredAmount ?? defaultFee;
+      const paid = sub.paidAmount ?? 0;
+      const isPaid = sub.status === 'paid' || (paid >= required && required > 0);
+      const remaining = isPaid ? 0 : Math.max(0, required - paid);
+
+      totalExpected += required;
+      totalCollected += paid;
+      totalRemaining += remaining;
+
+      if (!isPaid) hasUnpaidCycle = true;
+      if (sub.status === 'overdue') hasOverdueCycle = true;
+      if (sub.status === 'partial' || (paid > 0 && paid < required)) {
+        hasPartialCycle = true;
+      }
+    });
+
+    if (!hasNonExemptCycle) {
+      exemptCount++;
+      return;
     }
+
+    if (hasUnpaidCycle) pendingCount++;
+    else paidCount++;
+    if (hasPartialCycle) partialCount++;
+    if (hasOverdueCycle) overdueCount++;
   });
 
-  const collectionRate = totalExpected > 0 ? Math.min(100, Math.round((totalCollected / totalExpected) * 100)) : 0;
+  const collectionRate = totalExpected > 0
+    ? Math.min(100, Math.round((totalCollected / totalExpected) * 100))
+    : 0;
+
   return {
     totalExpected,
     totalCollected,
