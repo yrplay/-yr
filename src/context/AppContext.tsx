@@ -5204,8 +5204,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }).catch(e => {
           console.warn('authorized_staff write notice:', e);
         });
-      }
-    } else {
+      } else {
       hasPendingLocalChangesRef.current = false;
       showToast(`تمت إضافة وحفظ ${newUser.name} بالمنصب (${newUser.title || newUser.role}) بنجاح ✅`);
     }
