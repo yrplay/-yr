@@ -4936,6 +4936,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const downloadBackup = async () => {
     try {
       const currentData = {
+        ...masterStateRef.current,
         currentUser,
         users,
         tracks,
@@ -4954,8 +4955,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         studentSubscriptions,
         gradingConfigs,
         settings,
-        auditLogs
-      };
+        auditLogs,
+        _deletedEntities: masterStateRef.current._deletedEntities || {},
+        backupVersion: 1,
+        exportedAt: new Date().toISOString()
+      } as Record<string, any>;
+      delete currentData._changedKeys;
+      delete currentData._skipCloudPush;
+      delete currentData._immediateSync;
       const jsonStr = JSON.stringify(currentData, null, 2);
       const blob = new Blob([jsonStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -4984,6 +4991,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         'studentSubscriptions', 'gradingConfigs', 'auditLogs'
       ];
       const normalizedBackup = { ...backupData, settings: backupData.settings || initialData.settings };
+      delete normalizedBackup.backupVersion;
+      delete normalizedBackup.exportedAt;
+      delete normalizedBackup._changedKeys;
+      delete normalizedBackup._skipCloudPush;
+      delete normalizedBackup._immediateSync;
       arrayFields.forEach(field => {
         if (!Array.isArray(normalizedBackup[field])) normalizedBackup[field] = [];
       });
