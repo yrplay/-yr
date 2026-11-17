@@ -431,7 +431,7 @@ export const pushStaffUsersToCloudDirect = async (
     users: sanitizedUsers,
     ...(Array.isArray(circlesList) ? { circles: circlesList } : {}),
     ...(deletedEntities && typeof deletedEntities === 'object' ? { _deletedEntities: deletedEntities } : {}),
-    ...(settings && typeof settings === 'object' ? { settings } : {}),
+    ...(settings && typeof settings === 'object' ? { settings: sanitizeCloudState({ settings }).settings } : {}),
     lastSyncedAt: new Date().toISOString()
   });
 
