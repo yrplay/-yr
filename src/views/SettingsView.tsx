@@ -13,6 +13,7 @@ import { DeveloperDeploymentPanel } from '../components/DeveloperDeploymentPanel
 import { defaultMasteryGuideConfig, hasFullAccess } from '../types';
 import { syncInstitutionLogoAsPWAAppIcon } from '../services/pwaIconSync';
 import { optimizeImageFile } from '../utils/imageOptimizer';
+import { uploadImageDataUrl } from '../services/storage';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -106,10 +107,11 @@ export const SettingsView: React.FC = () => {
     }
     try {
       const dataUrl = await optimizeImageFile(file, 360, 360);
-      setForm(prev => ({ ...prev, logoUrl: dataUrl }));
-      updateSettings({ logoUrl: dataUrl });
-      syncInstitutionLogoAsPWAAppIcon({ ...settings, ...form, logoUrl: dataUrl });
-      showToast('تم حفظ شعار المقرأة واعتماده كأيقونة لتثبيت التطبيق على الجهاز بنجاح 🖼️📲');
+      const imageUrl = await uploadImageDataUrl(dataUrl, 'institution-logo');
+      setForm(prev => ({ ...prev, logoUrl: imageUrl }));
+      await updateSettings({ logoUrl: imageUrl });
+      syncInstitutionLogoAsPWAAppIcon({ ...settings, ...form, logoUrl: imageUrl });
+      showToast('تم رفع شعار المقرأة إلى التخزين السحابي واعتماده كأيقونة للتطبيق 🖼️📲');
     } catch {
       showToast('تعذرت معالجة صورة الشعار', 'error');
     }
@@ -124,9 +126,10 @@ export const SettingsView: React.FC = () => {
     }
     try {
       const dataUrl = await optimizeImageFile(file, 300, 300);
-      setForm(prev => ({ ...prev, sealImageUrl: dataUrl }));
-      updateSettings({ sealImageUrl: dataUrl });
-      showToast('تم حفظ صورة الختم المخصص بنجاح 💮');
+      const imageUrl = await uploadImageDataUrl(dataUrl, 'institution-seal');
+      setForm(prev => ({ ...prev, sealImageUrl: imageUrl }));
+      await updateSettings({ sealImageUrl: imageUrl });
+      showToast('تم رفع صورة الختم إلى التخزين السحابي بنجاح 💮');
     } catch {
       showToast('تعذرت معالجة صورة الختم', 'error');
     }
@@ -141,9 +144,10 @@ export const SettingsView: React.FC = () => {
     }
     try {
       const dataUrl = await optimizeImageFile(file, 400, 200);
-      setForm(prev => ({ ...prev, leaderSignatureUrl: dataUrl }));
-      updateSettings({ leaderSignatureUrl: dataUrl });
-      showToast('تم حفظ توقيع قائدة المقرأة بنجاح ✍️');
+      const imageUrl = await uploadImageDataUrl(dataUrl, 'leader-signature');
+      setForm(prev => ({ ...prev, leaderSignatureUrl: imageUrl }));
+      await updateSettings({ leaderSignatureUrl: imageUrl });
+      showToast('تم رفع توقيع قائدة المقرأة إلى التخزين السحابي بنجاح ✍️');
     } catch {
       showToast('تعذرت معالجة صورة التوقيع', 'error');
     }
