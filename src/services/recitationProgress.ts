@@ -20,7 +20,10 @@ export function summarizeDailyPageProgress(records: readonly DailyRecord[]): Dai
     const majorOutcome = record.majorOutcome;
 
     const newPages =
-      newOutcome === 'redo' || newOutcome === 'excused' || record.isRedoSession
+      newOutcome === 'redo' ||
+      newOutcome === 'excused' ||
+      record.isRedoSession ||
+      record.newMemorizationWithConditions === false
         ? 0
         : nonNegativeNumber(record.newMemorizationPages);
 
