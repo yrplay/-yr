@@ -778,9 +778,37 @@ export const StaffAttendanceTasksView: React.FC = () => {
     const isSyncingNow = isManualSyncing || cloudStatus === 'syncing';
     return (
       <div className="inline-flex items-center gap-1.5 flex-wrap">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF6F3] text-[#7B3F30] border border-[#E5C3B3] text-xs font-bold">
-          <CheckCircle2 className="w-3.5 h-3.5 text-[#9A5643] shrink-0" />
-          <span>محدّث سحابياً</span>
+        <span
+          role="status"
+          aria-live="polite"
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold ${
+            cloudStatus === 'connected'
+              ? 'bg-[#EBF3EE] text-[#2D5A43] border-[#C5DEC9]'
+              : cloudStatus === 'syncing'
+              ? 'bg-[#FFF8E8] text-[#8A5A12] border-[#EAD7A3]'
+              : cloudStatus === 'error' || cloudStatus === 'offline'
+              ? 'bg-[#FCEDEC] text-[#9B2C2C] border-[#E7B9B6]'
+              : 'bg-[#FAF6F3] text-[#7B3F30] border-[#E5C3B3]'
+          }`}
+        >
+          {cloudStatus === 'connected' ? (
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+          ) : cloudStatus === 'syncing' ? (
+            <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin" />
+          ) : (
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          )}
+          <span>
+            {cloudStatus === 'connected'
+              ? 'متصل ومحدّث سحابياً'
+              : cloudStatus === 'syncing'
+              ? 'جارٍ حفظ التغييرات سحابياً'
+              : cloudStatus === 'offline'
+              ? 'غير متصل — التغييرات محلية'
+              : cloudStatus === 'error'
+              ? 'فشل الحفظ السحابي'
+              : 'حالة المزامنة غير معروفة'}
+          </span>
         </span>
         <button
           type="button"
