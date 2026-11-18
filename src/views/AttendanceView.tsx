@@ -5,11 +5,11 @@ import {
   CheckSquare, Calendar, Users, Clock, CheckCircle2, XCircle,
   AlertCircle, AlertTriangle, Star, Sparkles, Filter, Save, ChevronLeft, ChevronRight, Trash2,
   Download, Award, X, Camera, Palette, Image as ImageIcon, Type, Plus, Minus, RotateCcw, Archive,
-  ClipboardCheck, Zap, Send
+  ClipboardCheck, Zap, Send, Grid3X3, Square, MinusSquare, Frame, ImagePlus, UserPlus, SlidersHorizontal
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
-import { AttendanceRecord, isStudentEffectivelyArchived } from '../types';
-import { HijriDateNavigationBar, formatHijriDate, formatHijriDateTime, getHijriParts, getTodayISO } from '../utils/hijriDate';
+import { AttendanceRecord, isStudentEffectivelyArchived, isPlanHistoricalOrArchived } from '../types';
+import { HijriDateNavigationBar, formatHijriDate, formatHijriDateTime, getHijriParts, getStudyWeekInfo, getTodayISO } from '../utils/hijriDate';
 import { triggerStudentTelegramAlert } from '../utils/telegramAlert';
 
 interface HonorsBoardStudentItem {
@@ -20,7 +20,7 @@ interface HonorsBoardStudentItem {
 
 export const AttendanceView: React.FC = () => {
   const {
-    students, circles, tracks, attendanceRecords, dailyRecords, studentChallengeSubmissions,
+    students, circles, tracks, monthlyPlans, attendanceRecords, dailyRecords, studentChallengeSubmissions,
     saveAttendance, saveBulkAttendance,
     clearStudentDayAttendance,
     archiveStudent, restoreStudent,
@@ -68,41 +68,38 @@ export const AttendanceView: React.FC = () => {
   );
 
   const isSelectedDateThursday = React.useMemo(() => {
-    if (!selectedDate) return false;
-    const d = new Date(`${selectedDate}T12:00:00`);
-    return d.getDay() === 4;
+    const info = getStudyWeekInfo(selectedDate || getTodayISO());
+    return info.weekdayIndex === 4;
   }, [selectedDate]);
 
-  // Compute Sunday–Thursday ISO dates for the selected week
-  const selectedWeekDaysISO = React.useMemo(() => {
-    const cleanBase = selectedDate || getTodayISO();
-    const parts = cleanBase.split('-').map(Number);
-    const d = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0) : new Date();
-    if (Number.isNaN(d.getTime())) return [cleanBase];
-    const dayOfWeek = d.getDay(); // 0=Sun ... 6=Sat
-    const sunday = new Date(d);
-    sunday.setDate(d.getDate() - dayOfWeek);
-
-    const days: string[] = [];
-    for (let i = 0; i <= 4; i++) {
-      const cur = new Date(sunday);
-      cur.setDate(sunday.getDate() + i);
-      const y = cur.getFullYear();
-      const m = String(cur.getMonth() + 1).padStart(2, '0');
-      const dayNum = String(cur.getDate()).padStart(2, '0');
-      days.push(`${y}-${m}-${dayNum}`);
+  // Active Monthly Plan for the selected circle/track (preferring latest non-historical active plan)
+  const activeMonthlyPlan = React.useMemo(() => {
+    const all = monthlyPlans || [];
+    const nonHistorical = all.filter(p => !isPlanHistoricalOrArchived(p, all));
+    const pool = nonHistorical.length > 0 ? nonHistorical : all.filter(p => p.status === 'active');
+    if (activeCircle?.trackId) {
+      const byTrack = [...pool].reverse().find(p => p.trackId === activeCircle.trackId);
+      if (byTrack) return byTrack;
     }
-    return days;
-  }, [selectedDate]);
+    return [...pool].reverse()[0] || all[all.length - 1];
+  }, [monthlyPlans, activeCircle?.trackId]);
+
+  // Shared Sunday–Thursday Study Week Info
+  const selectedStudyWeekInfo = React.useMemo(() => {
+    return getStudyWeekInfo(selectedDate || getTodayISO(), {
+      planStartDateHijri: activeMonthlyPlan?.startDateHijri,
+      planHijriMonth: activeMonthlyPlan?.hijriMonth,
+      isDefaultSeedPlan: activeMonthlyPlan?.id === 'mp-1'
+    });
+  }, [selectedDate, activeMonthlyPlan]);
+
+  // Sunday–Thursday ISO dates for the selected week
+  const selectedWeekDaysISO = selectedStudyWeekInfo.weekDaysISO;
 
   const selectedHijriParts = React.useMemo(() => getHijriParts(selectedDate || getTodayISO()), [selectedDate]);
 
   // Formatted Hijri Week & Month header for the Weekly Honors Board
-  const hijriWeekHeader = React.useMemo(() => {
-    const weekNames = ['الأسبوع الأول', 'الأسبوع الثاني', 'الأسبوع الثالث', 'الأسبوع الرابع'];
-    const weekName = weekNames[(selectedHijriParts.weekOfMonth || 1) - 1] || 'الأسبوع الأول';
-    return `${weekName} - ${selectedHijriParts.monthName} ${selectedHijriParts.year} هـ`;
-  }, [selectedHijriParts]);
+  const hijriWeekHeader = selectedStudyWeekInfo.weekLabelArabic;
 
   // Strict weekly absence counter (Sunday through Thursday): counts both excused and unexcused absences
   const getStudentWeeklyAbsencesForDates = (studentId: string, weekDays: string[]): number => {
@@ -132,13 +129,12 @@ export const AttendanceView: React.FC = () => {
 
   // Compute cumulative stars up to the selected week of the month (Week 1 -> 1 star, Week 2 -> 2 stars, Week 3 -> 3 stars, Week 4 -> 4 stars)
   const getStudentCumulativeMonthStars = (studentId: string): number => {
-    const targetWeekNumber = Math.min(4, Math.max(1, selectedHijriParts.weekOfMonth || 1));
-    const cleanBase = selectedDate || getTodayISO();
-    const parts = cleanBase.split('-').map(Number);
-    const d = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0) : new Date();
-    if (Number.isNaN(d.getTime())) return targetWeekNumber;
-    const currentSunday = new Date(d);
-    currentSunday.setDate(d.getDate() - d.getDay());
+    const targetWeekNumber = Math.min(4, Math.max(1, selectedStudyWeekInfo.weekNumber || 1));
+    const weekSundayIso = selectedWeekDaysISO[0] || getTodayISO();
+    const parts = weekSundayIso.split('-').map(Number);
+    const currentSunday = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0) : new Date();
+    if (Number.isNaN(currentSunday.getTime())) return targetWeekNumber;
+    currentSunday.setHours(12, 0, 0, 0);
 
     let earnedStars = 0;
     for (let w = 0; w < targetWeekNumber; w++) {
@@ -226,6 +222,12 @@ export const AttendanceView: React.FC = () => {
   });
   const [showOuterBorder, setShowOuterBorder] = useState<boolean>(true);
   const [showHeaderBox, setShowHeaderBox] = useState<boolean>(true);
+  const [showHeaderBorder, setShowHeaderBorder] = useState<boolean>(true);
+  const [boardHeaderBorderColor, setBoardHeaderBorderColor] = useState<string>('#C9A24D');
+  const [boardStudentCardBorderColor, setBoardStudentCardBorderColor] = useState<string>('#C9A24D');
+  const [boardStudentCardBgColor, setBoardStudentCardBgColor] = useState<string>('#FFFFFF');
+  const [boardTrackPillBgColor, setBoardTrackPillBgColor] = useState<string>('#FFFFFF');
+  const [boardTrackPillBorderColor, setBoardTrackPillBorderColor] = useState<string>('#C9A24D');
   const [headerWidthPercent, setHeaderWidthPercent] = useState<number>(85);
   const [headerPaddingY, setHeaderPaddingY] = useState<number>(12);
   const [canvasExtraHeight, setCanvasExtraHeight] = useState<number>(0);
@@ -277,8 +279,8 @@ export const AttendanceView: React.FC = () => {
   const [selectedCanvasElement, setSelectedCanvasElement] = useState<CanvasElementKey | null>(null);
   const [draggingElement, setDraggingElement] = useState<CanvasElementKey | null>(null);
 
-  const [showBgColorMenu, setShowBgColorMenu] = useState<boolean>(false);
-  const [showTextColorMenu, setShowTextColorMenu] = useState<boolean>(false);
+  const [showColorsPopover, setShowColorsPopover] = useState<boolean>(false);
+  const [showAlignmentGrid, setShowAlignmentGrid] = useState<boolean>(false);
   const [showLayoutSliders, setShowLayoutSliders] = useState<boolean>(false);
 
   const BG_COLOR_PRESETS = [
@@ -516,7 +518,7 @@ export const AttendanceView: React.FC = () => {
       name: st.name,
       stars: getStudentCumulativeMonthStars(st.id)
     }));
-  }, [weeklyHonorStudents, selectedHijriParts.weekOfMonth, selectedDate, attendanceRecords, dailyRecords]);
+  }, [weeklyHonorStudents, selectedStudyWeekInfo.weekNumber, selectedWeekDaysISO, attendanceRecords, dailyRecords]);
 
   const autoHonorSignature = React.useMemo(
     () => autoHonorItems.map(item => `${item.id}:${item.name}:${item.stars}`).join('|'),
@@ -537,8 +539,8 @@ export const AttendanceView: React.FC = () => {
   }, [activeCircle?.id, activeCircle?.name, activeCircle?.teacherName, activeTrack?.name]);
 
   useEffect(() => {
-    setBoardWeekDateLabel(prev => (prev === hijriWeekHeader ? prev : hijriWeekHeader));
-  }, [hijriWeekHeader]);
+    setBoardWeekDateLabel(hijriWeekHeader);
+  }, [hijriWeekHeader, selectedDate, showHonorsBoardModal]);
 
   useEffect(() => {
     if (lastSyncedHonorSignatureRef.current !== autoHonorSignature) {
@@ -562,7 +564,7 @@ export const AttendanceView: React.FC = () => {
   };
 
   const handleAddBoardStudent = () => {
-    const defaultStars = Math.min(4, Math.max(1, selectedHijriParts.weekOfMonth || 1));
+    const defaultStars = Math.min(4, Math.max(1, selectedStudyWeekInfo.weekNumber || 1));
     const newId = `custom-honor-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     setBoardStudentItems(prev => [
       ...prev,
@@ -710,13 +712,16 @@ export const AttendanceView: React.FC = () => {
       ) && ((sub.earlyPrepPointsEarned ?? 0) > 0 || !!sub.earlyAchievementCompleted)
     );
 
-    let syncSource = existing?.recordedBy || '';
+    let syncSource = (existing?.recordedBy || '')
+      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '')
+      .replace('تلقائي • سجل التسميع', 'تلقائي - سجل التسميع')
+      .trim();
     if (isSelectedDateThursday && hasChallengeActivity) {
-      syncSource = 'تلقائي • تحديات الخميس 🏆';
+      syncSource = 'تلقائي - تحديات الخميس';
     } else if (hasDailyRecitation) {
-      syncSource = 'تلقائي • سجل التسميع 📖';
+      syncSource = 'تلقائي - سجل التسميع';
     } else if (existing?.earlyPrepCardSent) {
-      syncSource = 'تلقائي • التحضير المبكر ⚡';
+      syncSource = 'تلقائي - التحضير المبكر';
     }
 
     if (existing) {
@@ -724,7 +729,7 @@ export const AttendanceView: React.FC = () => {
         ...existing,
         status: existing.status === 'unrecorded' && (hasDailyRecitation || hasChallengeActivity) ? 'present' : existing.status,
         earlyPrepCardSent: !!existing.earlyPrepCardSent,
-        syncSource: syncSource || existing.recordedBy || 'متزامن تلقائياً'
+        syncSource: syncSource || 'متزامن تلقائياً'
       };
     }
 
@@ -923,9 +928,11 @@ export const AttendanceView: React.FC = () => {
         ctx.beginPath();
         ctx.roundRect(bannerX, headerY, bannerW, bannerH, 26);
         ctx.fill();
-        ctx.strokeStyle = boardAccentColor;
-        ctx.lineWidth = 2.5;
-        ctx.stroke();
+        if (showHeaderBorder) {
+          ctx.strokeStyle = boardHeaderBorderColor;
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+        }
 
         ctx.fillStyle = headerTextColor;
         ctx.font = `bold ${Math.round(23 * s)}px "${fontName}", sans-serif`;
@@ -951,10 +958,31 @@ export const AttendanceView: React.FC = () => {
       const s = scale * t.scale;
       const centerX = width / 2 + t.x * ratio;
       const badgeY = (baseBadgeTop + t.y) * ratio;
+      const pillText = `${boardTrackCircleBadge}  •  ${boardWeekDateLabel}`;
+
+      ctx.font = `bold ${Math.round(23 * s)}px "${fontName}", sans-serif`;
+      const pillTextW = ctx.measureText(pillText).width;
+      const pillW = Math.round(pillTextW + 52 * t.scale);
+      const pillH = Math.round(40 * t.scale);
+      const pillX = Math.round(centerX - pillW / 2);
+      const pillY = Math.round(badgeY - 4 * t.scale);
+
+      if (boardTrackPillBgColor && boardTrackPillBgColor !== 'transparent') {
+        ctx.fillStyle = boardTrackPillBgColor;
+        ctx.beginPath();
+        ctx.roundRect(pillX, pillY, pillW, pillH, Math.round(pillH / 2));
+        ctx.fill();
+      }
+      if (boardTrackPillBorderColor && boardTrackPillBorderColor !== 'transparent') {
+        ctx.strokeStyle = boardTrackPillBorderColor;
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.roundRect(pillX, pillY, pillW, pillH, Math.round(pillH / 2));
+        ctx.stroke();
+      }
 
       ctx.fillStyle = subheadDateTextColor;
-      ctx.font = `bold ${Math.round(23 * s)}px "${fontName}", sans-serif`;
-      ctx.fillText(`${boardTrackCircleBadge}  •  ${boardWeekDateLabel}`, centerX, badgeY + 24);
+      ctx.fillText(pillText, centerX, badgeY + 24);
 
       ctx.font = `bold ${Math.round(28 * s)}px "${fontName}", sans-serif`;
       ctx.fillText(boardSubtitle, centerX, badgeY + 68);
@@ -984,12 +1012,14 @@ export const AttendanceView: React.FC = () => {
         const x = Math.round(slotCenterX - cardW / 2);
         const y = gridStartY + row * cardRowHeight;
 
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-        ctx.strokeStyle = boardAccentColor;
+        ctx.fillStyle = boardStudentCardBgColor === 'transparent' ? 'rgba(255, 255, 255, 0)' : boardStudentCardBgColor;
+        ctx.strokeStyle = boardStudentCardBorderColor;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.roundRect(x, y, cardW, cardH, 16);
-        ctx.fill();
+        if (boardStudentCardBgColor !== 'transparent') {
+          ctx.fill();
+        }
         ctx.stroke();
 
         ctx.fillStyle = studentNameTextColor;
@@ -1059,7 +1089,10 @@ export const AttendanceView: React.FC = () => {
             cacheBust: true,
             backgroundColor: boardBgColor,
             filter: (node: Node) => {
-              if (node instanceof HTMLElement && node.dataset?.exportIgnore === 'true') {
+              if (
+                node instanceof HTMLElement &&
+                (node.dataset?.exportIgnore === 'true' || node.dataset?.html2canvasIgnore === 'true')
+              ) {
                 return false;
               }
               return true;
@@ -1129,38 +1162,43 @@ export const AttendanceView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 flex-nowrap shrink-0">
           <button
             type="button"
             onClick={() => setShowHonorsBoardModal(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer"
+            title="لوحة متألقات الأسبوع"
+            aria-label="لوحة متألقات الأسبوع"
+            className="relative w-10 h-10 bg-theme-primary hover:bg-theme-primary-hover text-white border border-theme-primary rounded-xl flex items-center justify-center shadow-xs transition active:scale-95 cursor-pointer shrink-0"
           >
-            <Star className="w-3.5 h-3.5 fill-white text-white" />
-            <span>لوحة متألقات الأسبوع (صورة للواتساب)</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-white/25 text-[10px]">{weeklyStarQualifiedCount}</span>
+            <Award className="w-4 h-4 shrink-0" />
+            <span className="absolute -top-1.5 -left-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-white text-theme-primary border border-theme-primary/30 text-[10px] font-bold font-mono flex items-center justify-center shadow-2xs">
+              {weeklyStarQualifiedCount}
+            </span>
           </button>
           <button
             type="button"
             onClick={handleBulkPresent}
-            className="flex items-center gap-1.5 px-3 py-2 bg-[#EBF3EE] hover:bg-[#DCEADA] text-[#2D5A43] rounded-xl text-xs font-bold transition cursor-pointer"
+            title="اعتماد حضور الجميع"
+            aria-label="اعتماد حضور الجميع"
+            className="w-10 h-10 bg-theme-primary hover:bg-theme-primary-hover text-white border border-theme-primary rounded-xl flex items-center justify-center shadow-xs transition active:scale-95 cursor-pointer shrink-0"
           >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>اعتماد حضور الجميع</span>
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
           </button>
           <button
             type="button"
             onClick={handleBulkEarlyPrep}
-            className="flex items-center gap-1.5 px-3 py-2 bg-[#FAF6E8] hover:bg-[#F2ECD0] text-amber-900 rounded-xl text-xs font-bold transition cursor-pointer"
+            title="تحضير مبكر للجميع"
+            aria-label="تحضير مبكر للجميع"
+            className="w-10 h-10 bg-theme-primary hover:bg-theme-primary-hover text-white border border-theme-primary rounded-xl flex items-center justify-center shadow-xs transition active:scale-95 cursor-pointer shrink-0"
           >
-            <Zap className="w-3.5 h-3.5 text-[#9A5643]" />
-            <span>تحضير مبكر للجميع</span>
+            <Zap className="w-4 h-4 shrink-0" />
           </button>
         </div>
       </div>
 
       {/* Circle & Date Bar */}
       <div className="bg-white p-4 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           
           {/* Circle Selector */}
           <div>
@@ -1187,17 +1225,6 @@ export const AttendanceView: React.FC = () => {
             />
           </div>
 
-          {/* Automation Mode Indicator */}
-          <div className="p-2.5 rounded-xl bg-[#FCFAF8] border border-[#EFE8E2] text-xs flex flex-col justify-center">
-            <span className="font-bold text-stone-700 flex items-center gap-1.5">
-              <Star className="w-3.5 h-3.5 text-[#9A5643]" />
-              <span>معيار متألقات الأسبوع ({hijriWeekHeader}):</span>
-            </span>
-            <span className="text-[11px] text-stone-500 block mt-0.5">
-              تُؤهَّل الطالبة للقب «متألقة الأسبوع» تلقائياً بشرط واحد فقط: <strong className="text-emerald-700">صفر غياب (بعذر أو بدون عذر)</strong> طوال الأسبوع
-            </span>
-          </div>
-
         </div>
 
         {/* Interactive Filter & Metrics Strip */}
@@ -1206,60 +1233,92 @@ export const AttendanceView: React.FC = () => {
             <button
               type="button"
               onClick={() => setStatusFilter('all')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+              title="كافة الطالبات"
+              aria-label="كافة الطالبات"
+              className={`h-9 px-3 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 border ${
                 statusFilter === 'all'
-                  ? 'bg-[#8E5364] text-white shadow-2xs'
-                  : 'bg-[#FAF6F2] text-stone-600 hover:bg-stone-200/70'
+                  ? 'bg-theme-primary text-white border-theme-primary shadow-2xs'
+                  : 'bg-[#FAF6F2] text-theme-primary hover:bg-[#F2ECE6] border-[#E2D5CC]'
               }`}
             >
-              الكل ({circleStudents.length})
+              <span>الكل</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono leading-none ${
+                statusFilter === 'all' ? 'bg-white/20 text-white' : 'bg-white text-theme-primary'
+              }`}>
+                {circleStudents.length}
+              </span>
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter('present')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1 ${
+              title="الحاضرات"
+              aria-label="الحاضرات"
+              className={`h-9 px-2.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 border active:scale-95 ${
                 statusFilter === 'present'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200/60'
+                  ? 'bg-theme-primary text-white border-theme-primary shadow-2xs'
+                  : 'bg-[#FAF6F2] text-theme-primary hover:bg-[#F2ECE6] border-[#E2D5CC]'
               }`}
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>الحاضرات ({presentCount})</span>
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono leading-none ${
+                statusFilter === 'present' ? 'bg-white/20 text-white' : 'bg-white text-theme-primary'
+              }`}>
+                {presentCount}
+              </span>
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter('early_prep')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1 ${
+              title="التحضير المبكر"
+              aria-label="التحضير المبكر"
+              className={`h-9 px-2.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 border active:scale-95 ${
                 statusFilter === 'early_prep'
-                  ? 'bg-amber-600 text-white shadow-2xs'
-                  : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200/60'
+                  ? 'bg-theme-primary text-white border-theme-primary shadow-2xs'
+                  : 'bg-[#FAF6F2] text-theme-primary hover:bg-[#F2ECE6] border-[#E2D5CC]'
               }`}
             >
-              <Zap className="w-3.5 h-3.5" />
-              <span>التحضير المبكر ({earlyPrepCount})</span>
+              <Zap className="w-4 h-4 shrink-0" />
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono leading-none ${
+                statusFilter === 'early_prep' ? 'bg-white/20 text-white' : 'bg-white text-theme-primary'
+              }`}>
+                {earlyPrepCount}
+              </span>
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter('absent')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+              title="الغياب والأعذار"
+              aria-label="الغياب والأعذار"
+              className={`h-9 px-2.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 border active:scale-95 ${
                 statusFilter === 'absent'
-                  ? 'bg-[#9A5643] text-white shadow-2xs'
-                  : 'bg-[#FDF6F2] text-[#9A5643] hover:bg-[#F7E8DF] border border-[#E5C3B3]'
+                  ? 'bg-theme-primary text-white border-theme-primary shadow-2xs'
+                  : 'bg-[#FAF6F2] text-theme-primary hover:bg-[#F2ECE6] border-[#E2D5CC]'
               }`}
             >
-              الغياب والأعذار ({absentTotalCount})
+              <XCircle className="w-4 h-4 shrink-0" />
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono leading-none ${
+                statusFilter === 'absent' ? 'bg-white/20 text-white' : 'bg-white text-theme-primary'
+              }`}>
+                {absentTotalCount}
+              </span>
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter('archived')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 ${
+              title="الأرشيف / المؤرشفات"
+              aria-label="الأرشيف / المؤرشفات"
+              className={`h-9 px-2.5 rounded-xl text-xs font-bold transition cursor-pointer inline-flex items-center justify-center gap-1.5 border active:scale-95 ${
                 statusFilter === 'archived'
-                  ? 'bg-[#7B3F30] text-white shadow-2xs'
-                  : 'bg-[#F6EFEA] text-[#7B3F30] hover:bg-[#EDE0D6] border border-[#DFCEBF]'
+                  ? 'bg-theme-primary text-white border-theme-primary shadow-2xs'
+                  : 'bg-[#FAF6F2] text-theme-primary hover:bg-[#F2ECE6] border-[#E2D5CC]'
               }`}
             >
-              <Archive className="w-3.5 h-3.5" />
-              <span>الأرشيف / المؤرشفات ({archivedCircleStudents.length})</span>
+              <Archive className="w-4 h-4 shrink-0" />
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono leading-none ${
+                statusFilter === 'archived' ? 'bg-white/20 text-white' : 'bg-white text-theme-primary'
+              }`}>
+                {archivedCircleStudents.length}
+              </span>
             </button>
           </div>
 
@@ -1854,126 +1913,144 @@ export const AttendanceView: React.FC = () => {
           />
 
           <div className="w-full max-w-2xl my-auto space-y-3">
-            {/* Studio Floating Control Toolbar (شريط أدوات التصميم والتحكم البصري) */}
-            <div className="bg-white/95 backdrop-blur-md p-3.5 rounded-2xl border border-amber-200/80 shadow-xl space-y-2.5">
-              {/* Top Row: Studio Title + Export PNG & Close */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-stone-100">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">✋</span>
-                  <div>
-                    <h3 className="text-xs sm:text-sm font-bold text-stone-900">
-                      استوديو لوحة الشرف التفاعلي (سحب وإفلات حر ✋)
-                    </h3>
-                    <p className="text-[10px] text-stone-500">
-                      اسحبي أي عنصر بالماوس أو اللمس لتحريكه بحرية في أي مكان • وانقري على أي نص لتعديله أو تكبيره
-                    </p>
-                  </div>
-                </div>
+            {/* Studio Floating Control Toolbar (شريط أدوات التصميم والتحكم البصري المدمج) */}
+            <div className="bg-white/95 backdrop-blur-md p-3 rounded-2xl border border-[#E2D5CC] shadow-xl space-y-2.5">
+              {/* Top Row: Clean Studio Title + Compact Export PNG & Close */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-stone-100">
+                <h3 className="text-xs sm:text-sm font-bold text-stone-900">
+                  استوديو لوحة الشرف
+                </h3>
 
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={handleDownloadHonorsPng}
                     disabled={isExportingPng}
-                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#2D5A43] to-emerald-700 hover:from-[#234735] hover:to-emerald-800 text-white text-xs font-bold shadow-md transition active:scale-95 cursor-pointer inline-flex items-center gap-1.5"
+                    title="حفظ ومشاركة كصورة PNG"
+                    aria-label="حفظ ومشاركة كصورة PNG"
+                    className="h-9 px-3 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer inline-flex items-center gap-1.5"
                   >
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>{isExportingPng ? 'جاري التصدير...' : '📸 حفظ ومشاركة كصورة PNG'}</span>
+                    <Camera className="w-4 h-4" />
+                    <span>{isExportingPng ? 'جاري التصدير...' : 'حفظ PNG'}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowHonorsBoardModal(false)}
-                    className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-600 transition cursor-pointer"
+                    className="w-9 h-9 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-theme-primary border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer"
                     title="إغلاق"
+                    aria-label="إغلاق"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
-              {/* Second Row: Visual Controls (Background Color, Text Colors, Logo, Custom Bg, Border Toggle, Header Box Toggle, Font, A+/A-, Add Student) */}
+              {/* Compact Icon-Only Bar + Font, Zoom, & Star Presets */}
               <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                {/* [ 🎨 لون الخلفية ] */}
+                {/* a) Single "الألوان" (Colors) Popover Button */}
                 <button
                   type="button"
                   onClick={() => {
-                    setShowBgColorMenu(prev => !prev);
-                    setShowTextColorMenu(false);
+                    setShowColorsPopover(prev => !prev);
+                    setShowLayoutSliders(false);
                   }}
-                  className={`px-2.5 py-1.5 rounded-xl font-bold inline-flex items-center gap-1.5 border transition cursor-pointer ${
-                    showBgColorMenu
-                      ? 'bg-[#2D5A43] text-white border-[#2D5A43] shadow-2xs'
-                      : 'bg-[#FAF6F2] hover:bg-emerald-50 text-stone-800 border-stone-200'
+                  title="الألوان"
+                  aria-label="الألوان"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                    showColorsPopover
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
                   }`}
                 >
-                  <span
-                    style={{ backgroundColor: boardBgColor }}
-                    className="w-3.5 h-3.5 rounded-full border border-stone-400 inline-block"
-                  />
-                  <span>🎨 لون الخلفية</span>
+                  <Palette className="w-4 h-4" />
                 </button>
 
-                {/* [ 🎨 ألوان النصوص ] */}
+                {/* b) Compact Icon-Only Visibility & Layout Toggles */}
+                {/* Alignment Grid Toggle */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowTextColorMenu(prev => !prev);
-                    setShowBgColorMenu(false);
-                  }}
-                  className={`px-2.5 py-1.5 rounded-xl font-bold inline-flex items-center gap-1.5 border transition cursor-pointer ${
-                    showTextColorMenu
-                      ? 'bg-amber-600 text-white border-amber-700 shadow-2xs'
-                      : 'bg-[#FAF6F2] hover:bg-amber-50 text-stone-800 border-stone-200'
+                  onClick={() => setShowAlignmentGrid(prev => !prev)}
+                  title="شبكة المحاذاة"
+                  aria-label="شبكة المحاذاة"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                    showAlignmentGrid
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
                   }`}
                 >
-                  <Palette className="w-3.5 h-3.5" />
-                  <span>🎨 ألوان النصوص</span>
+                  <Grid3X3 className="w-4 h-4" />
                 </button>
 
-                {/* [ إظهار / إخفاء المستطيل العلوي ] */}
+                {/* Toggle Top Rectangle */}
                 <button
                   type="button"
                   onClick={() => setShowHeaderBox(prev => !prev)}
-                  className={`px-2.5 py-1.5 rounded-xl font-bold inline-flex items-center gap-1.5 border transition cursor-pointer ${
+                  title="إخفاء/إظهار المستطيل العلوي"
+                  aria-label="إخفاء/إظهار المستطيل العلوي"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
                     showHeaderBox
-                      ? 'bg-[#EBF3EE] text-[#2D5A43] border-emerald-200'
-                      : 'bg-stone-100 text-stone-600 border-stone-200'
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
                   }`}
                 >
-                  <span>{showHeaderBox ? '▭ إخفاء المستطيل العلوي' : '▭ إظهار المستطيل العلوي'}</span>
+                  <Square className="w-4 h-4" />
                 </button>
 
-                {/* [ 🔲 إظهار / إخفاء الإطار الخارجي ] */}
+                {/* Toggle Top Rectangle Border */}
+                <button
+                  type="button"
+                  onClick={() => setShowHeaderBorder(prev => !prev)}
+                  title="إخفاء/إظهار حدود المستطيل"
+                  aria-label="إخفاء/إظهار حدود المستطيل"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                    showHeaderBorder
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
+                  }`}
+                >
+                  <MinusSquare className="w-4 h-4" />
+                </button>
+
+                {/* Toggle Outer Frame */}
                 <button
                   type="button"
                   onClick={() => setShowOuterBorder(prev => !prev)}
-                  className={`px-2.5 py-1.5 rounded-xl font-bold inline-flex items-center gap-1.5 border transition cursor-pointer ${
+                  title="إخفاء/إظهار الإطار الخارجي"
+                  aria-label="إخفاء/إظهار الإطار الخارجي"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
                     showOuterBorder
-                      ? 'bg-amber-50 text-amber-900 border-amber-200'
-                      : 'bg-stone-100 text-stone-600 border-stone-200'
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
                   }`}
                 >
-                  <span>🔲 {showOuterBorder ? 'إخفاء الإطار الخارجي' : 'إظهار الإطار الخارجي'}</span>
+                  <Frame className="w-4 h-4" />
                 </button>
 
-                {/* [ 🖼️ رفع شعار المقرأة ] */}
+                {/* c) Compact Icon-Only Media, Elements & Adjustments */}
+                {/* Upload Logo */}
                 <button
                   type="button"
                   onClick={() => logoInputRef.current?.click()}
-                  className="px-2.5 py-1.5 rounded-xl bg-[#FAF6F2] hover:bg-emerald-50 text-stone-700 hover:text-emerald-900 font-bold inline-flex items-center gap-1.5 border border-stone-200 transition cursor-pointer"
+                  title="شعار المقرأة"
+                  aria-label="شعار المقرأة"
+                  className="w-9 h-9 rounded-xl bg-[#FAF6F2] text-theme-primary border border-[#E2D5CC] hover:bg-[#F2ECE6] flex items-center justify-center transition cursor-pointer"
                 >
-                  <ImageIcon className="w-3.5 h-3.5" />
-                  <span>🖼️ رفع شعار المقرأة</span>
+                  <ImagePlus className="w-4 h-4" />
                 </button>
 
-                {/* [ 🌄 رفع خلفية مخصصة ] */}
+                {/* Upload Custom Background */}
                 <button
                   type="button"
                   onClick={() => bgInputRef.current?.click()}
-                  className="px-2.5 py-1.5 rounded-xl bg-[#FAF6F2] hover:bg-amber-50 text-stone-700 hover:text-amber-900 font-bold inline-flex items-center gap-1.5 border border-stone-200 transition cursor-pointer"
+                  title="خلفية مخصصة"
+                  aria-label="خلفية مخصصة"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                    boardCustomBgUrl
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
+                  }`}
                 >
-                  <ImageIcon className="w-3.5 h-3.5" />
-                  <span>🌄 رفع خلفية مخصصة</span>
+                  <ImageIcon className="w-4 h-4" />
                 </button>
                 {boardCustomBgUrl && (
                   <button
@@ -1990,343 +2067,510 @@ export const AttendanceView: React.FC = () => {
                       }
                       setBoardCustomBgUrl('');
                     }}
-                    className="px-2 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold cursor-pointer"
+                    className="w-9 h-9 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 flex items-center justify-center transition cursor-pointer"
                     title="إلغاء الخلفية المخصصة"
+                    aria-label="إلغاء الخلفية المخصصة"
                   >
-                    إلغاء الخلفية ✕
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 )}
 
-                {/* [ 🔤 نوع الخط ] */}
-                <div className="inline-flex items-center gap-1 bg-[#FAF6F2] px-2 py-1 rounded-xl border border-stone-200">
-                  <Type className="w-3.5 h-3.5 text-stone-500" />
-                  <select
-                    value={boardFontFamily}
-                    onChange={e => setBoardFontFamily(e.target.value as any)}
-                    className="bg-transparent text-xs font-bold text-stone-800 focus:outline-hidden cursor-pointer"
-                    title="نوع الخط العربي"
-                  >
-                    <option value="Thmanyah Sans">خط ثمانية (Thmanyah)</option>
-                    <option value="Cairo">خط القاهرة (Cairo)</option>
-                    <option value="Tajawal">خط تجوال (Tajawal)</option>
-                    <option value="Amiri">خط أميري (Amiri)</option>
-                    <option value="Readex Pro">خط Readex Pro</option>
-                  </select>
-                </div>
-
-                {/* [ A+ / A- ] */}
-                <div className="inline-flex items-center bg-[#FAF6F2] rounded-xl border border-stone-200 overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setBoardFontScale(prev => Math.min(1.35, Number((prev + 0.06).toFixed(2))))}
-                    className="px-2.5 py-1.5 hover:bg-stone-200/70 font-bold text-stone-800 cursor-pointer"
-                    title="تكبير حجم النص العام"
-                  >
-                    A+
-                  </button>
-                  <span className="text-[10px] font-mono text-stone-500 px-1.5 border-x border-stone-200">
-                    {Math.round(boardFontScale * 100)}%
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setBoardFontScale(prev => Math.max(0.8, Number((prev - 0.06).toFixed(2))))}
-                    className="px-2.5 py-1.5 hover:bg-stone-200/70 font-bold text-stone-800 cursor-pointer"
-                    title="تصغير حجم النص العام"
-                  >
-                    A-
-                  </button>
-                </div>
-
-                {/* [ ➕ إضافة طالبة ] */}
+                {/* Add Student */}
                 <button
                   type="button"
                   onClick={handleAddBoardStudent}
-                  className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold inline-flex items-center gap-1 transition cursor-pointer"
+                  title="إضافة طالبة"
+                  aria-label="إضافة طالبة"
+                  className="w-9 h-9 rounded-xl bg-[#FAF6F2] text-theme-primary border border-[#E2D5CC] hover:bg-[#F2ECE6] flex items-center justify-center transition cursor-pointer"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>➕ إضافة طالبة</span>
+                  <UserPlus className="w-4 h-4" />
                 </button>
 
-                {/* Quick Stars Preset for Month Week (1..4) */}
-                <div className="inline-flex items-center gap-1 bg-amber-50/80 px-2 py-1 rounded-xl border border-amber-200">
-                  <span className="text-[10px] font-bold text-amber-900">تراكم النجوم:</span>
-                  {[1, 2, 3, 4].map(n => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => handleSetAllStudentsStars(n)}
-                      className="px-1.5 py-0.5 rounded-lg bg-white hover:bg-amber-500 hover:text-white text-amber-900 border border-amber-200 text-[10px] font-bold transition cursor-pointer"
-                      title={`تعيين ${n} نجوم لجميع الطالبات (الأسبوع ${n})`}
-                    >
-                      {n}🌟
-                    </button>
-                  ))}
-                </div>
-
-                {/* Toggle Dimensions Sliders Bar */}
+                {/* Dimensions Sliders */}
                 <button
                   type="button"
-                  onClick={() => setShowLayoutSliders(prev => !prev)}
-                  className="px-2.5 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-[11px] transition cursor-pointer"
+                  onClick={() => {
+                    setShowLayoutSliders(prev => !prev);
+                    setShowColorsPopover(false);
+                  }}
+                  title="أبعاد المستطيل والشعار"
+                  aria-label="أبعاد المستطيل والشعار"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                    showLayoutSliders
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
+                  }`}
                 >
-                  {showLayoutSliders ? '📐 إخفاء أبعاد المستطيل والشعار' : '📐 أبعاد المستطيل والشعار'}
+                  <SlidersHorizontal className="w-4 h-4" />
                 </button>
 
-                {/* Reset All Dragged Positions & Studio List */}
+                {/* Reset Positions */}
                 <button
                   type="button"
                   onClick={() => {
                     resetStudioStudentsFromAuto();
                     resetAllElementTransforms();
                   }}
-                  className="px-2 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-[11px] inline-flex items-center gap-1 transition cursor-pointer"
-                  title="إعادة ضبط مواضع العناصر التلقائية"
+                  title="إعادة ضبط المواضع"
+                  aria-label="إعادة ضبط المواضع"
+                  className="w-9 h-9 rounded-xl bg-[#FAF6F2] text-theme-primary border border-[#E2D5CC] hover:bg-[#F2ECE6] flex items-center justify-center transition cursor-pointer"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>إعادة ضبط المواضع</span>
+                  <RotateCcw className="w-4 h-4" />
                 </button>
+
+                {/* d) Compact Font Selector, -A/100%/+A Zoom, and ★ 1 2 3 4 Star Selector */}
+                <div className="h-9 inline-flex items-center gap-1 bg-[#FAF6F2] px-2.5 rounded-xl border border-[#E2D5CC]">
+                  <Type className="w-3.5 h-3.5 text-theme-primary" />
+                  <select
+                    value={boardFontFamily}
+                    onChange={e => setBoardFontFamily(e.target.value as any)}
+                    className="bg-transparent text-xs font-bold text-stone-800 focus:outline-hidden cursor-pointer"
+                    title="نوع الخط"
+                    aria-label="نوع الخط"
+                  >
+                    <option value="Thmanyah Sans">ثمانية</option>
+                    <option value="Cairo">القاهرة</option>
+                    <option value="Tajawal">تجوال</option>
+                    <option value="Amiri">أميري</option>
+                    <option value="Readex Pro">Readex</option>
+                  </select>
+                </div>
+
+                {/* -A / 100% / +A */}
+                <div className="h-9 inline-flex items-center bg-[#FAF6F2] rounded-xl border border-[#E2D5CC] overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setBoardFontScale(prev => Math.min(1.35, Number((prev + 0.06).toFixed(2))))}
+                    className="px-2 h-full hover:bg-[#F2ECE6] font-bold text-theme-primary cursor-pointer"
+                    title="تكبير النص"
+                    aria-label="تكبير النص"
+                  >
+                    +A
+                  </button>
+                  <span className="text-[10px] font-mono text-stone-600 px-1.5 border-x border-[#E2D5CC]">
+                    {Math.round(boardFontScale * 100)}%
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setBoardFontScale(prev => Math.max(0.8, Number((prev - 0.06).toFixed(2))))}
+                    className="px-2 h-full hover:bg-[#F2ECE6] font-bold text-theme-primary cursor-pointer"
+                    title="تصغير النص"
+                    aria-label="تصغير النص"
+                  >
+                    -A
+                  </button>
+                </div>
+
+                {/* Compact Star-Count Selector (★ 1 2 3 4) */}
+                <div
+                  className="h-9 inline-flex items-center gap-1 bg-[#FAF6F2] px-2 rounded-xl border border-[#E2D5CC]"
+                  title="عدد النجوم"
+                >
+                  <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                  {[1, 2, 3, 4].map(n => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => handleSetAllStudentsStars(n)}
+                      className="w-6 h-6 rounded-lg bg-white hover:bg-theme-primary hover:text-white text-theme-primary border border-[#E2D5CC] text-[11px] font-bold transition cursor-pointer flex items-center justify-center"
+                      title={`${n} نجوم`}
+                      aria-label={`${n} نجوم`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* Dedicated [ 🎨 لون الخلفية ] Popover Menu (Solid Background Color + Image Tint Overlay & Opacity) */}
-              {showBgColorMenu && (
-                <div className="pt-2.5 border-t border-stone-100 bg-[#FCFAF8] p-3 rounded-xl space-y-3 animate-in fade-in text-[11px]">
-                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-stone-200/70">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-stone-800">🎨 لون خلفية اللوحة الأساسي:</span>
-                      <input
-                        type="color"
-                        value={boardBgColor}
-                        onChange={e => setBoardBgColor(e.target.value)}
-                        className="w-7 h-7 rounded-lg border border-stone-300 cursor-pointer"
-                      />
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {BG_COLOR_PRESETS.map(p => (
-                        <button
-                          key={p.label}
-                          type="button"
-                          onClick={() => setBoardBgColor(p.color)}
-                          style={{ backgroundColor: p.color }}
-                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border shadow-2xs transition cursor-pointer ${
-                            p.color === '#1B3B2B' || p.color === '#17253B'
-                              ? 'text-white border-white/30'
-                              : 'text-stone-800 border-stone-300'
-                          }`}
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Background Tint / Overlay Controls (Especially helpful over custom background images) */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                    <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-stone-200">
-                      <span className="font-bold text-stone-700">لون طبقة التظليل (Overlay Tint):</span>
-                      <div className="flex items-center gap-1.5">
-                        {['#FFFFFF', '#FAF4E8', '#1B3B2B', '#17253B', '#000000'].map(c => (
-                          <button
-                            key={c}
-                            type="button"
-                            onClick={() => setBoardBgTintColor(c)}
-                            style={{ backgroundColor: c }}
-                            className="w-4 h-4 rounded-full border border-stone-300 cursor-pointer"
-                            title={c}
+              {/* Unified "الألوان" (Colors) Floating Popover Card containing all 8 color pickers with ultra-short 1–2 word labels */}
+              {showColorsPopover && (
+                <div className="pt-2.5 border-t border-stone-100 bg-[#FCFAF8] p-3 rounded-xl space-y-2.5 animate-in fade-in text-[11px]">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {/* 1. الخلفية */}
+                    <div className="flex flex-col gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="font-bold text-stone-800">الخلفية</span>
+                        <div className="flex items-center gap-1">
+                          {BG_COLOR_PRESETS.map(p => (
+                            <button
+                              key={p.label}
+                              type="button"
+                              onClick={() => setBoardBgColor(p.color)}
+                              style={{ backgroundColor: p.color }}
+                              title={p.label}
+                              aria-label={p.label}
+                              className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                                boardBgColor.toLowerCase() === p.color.toLowerCase()
+                                  ? 'ring-2 ring-offset-1 ring-theme-primary border-white scale-110'
+                                  : 'border-stone-300 hover:scale-105'
+                              }`}
+                            />
+                          ))}
+                          <input
+                            type="color"
+                            value={boardBgColor}
+                            onChange={e => setBoardBgColor(e.target.value)}
+                            title="الخلفية"
+                            aria-label="الخلفية"
+                            className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
                           />
-                        ))}
+                        </div>
+                      </div>
+                      {/* Compact Overlay Tint Row inside الخلفية */}
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-100 text-[10px]">
+                        <span className="text-stone-500 font-bold">تظليل: {boardBgTintOpacity}%</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={boardBgTintOpacity}
+                          onChange={e => setBoardBgTintOpacity(Number(e.target.value))}
+                          className="w-24 accent-theme-primary cursor-pointer"
+                        />
                         <input
                           type="color"
                           value={boardBgTintColor}
                           onChange={e => setBoardBgTintColor(e.target.value)}
-                          className="w-6 h-6 rounded-md border border-stone-300 cursor-pointer"
+                          title="لون التظليل"
+                          aria-label="لون التظليل"
+                          className="w-4 h-4 rounded border border-stone-300 cursor-pointer bg-transparent"
                         />
                       </div>
                     </div>
 
-                    <label className="flex flex-col gap-1 font-bold text-stone-700 bg-white p-2 rounded-xl border border-stone-200">
-                      <div className="flex justify-between">
-                        <span>درجة شفافية التظليل فوق الخلفية:</span>
-                        <span className="text-emerald-800 font-mono">{boardBgTintOpacity}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={boardBgTintOpacity}
-                        onChange={e => setBoardBgTintOpacity(Number(e.target.value))}
-                        className="accent-[#2D5A43] cursor-pointer"
-                      />
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {/* Dedicated [ 🎨 ألوان النصوص ] Popover Menu */}
-              {showTextColorMenu && (
-                <div className="pt-2.5 border-t border-stone-100 bg-[#FCFAF8] p-3 rounded-xl space-y-3 animate-in fade-in">
-                  {/* Top Strip: Quick Preset Swatches (ذهبي، كحلي، زيتي، عنابي، أسود ملكي) */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-stone-200/70">
-                    <span className="text-[11px] font-bold text-stone-700">
-                      🎨 قوالب ألوان النصوص الجاهزة:
-                    </span>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {TEXT_COLOR_SWATCHES.map(preset => (
-                        <button
-                          key={preset.label}
-                          type="button"
-                          onClick={() => {
-                            setHeaderTextColor(showHeaderBox ? preset.headerText : preset.color);
-                            setSubheadDateTextColor(preset.color);
-                            setStudentNameTextColor(preset.color);
-                            setClosingDuaTextColor(preset.color);
-                            setSignatureTextColor(preset.color);
-                          }}
-                          style={{ backgroundColor: preset.color }}
-                          className="px-2.5 py-1 rounded-lg text-white text-[10px] font-bold shadow-2xs hover:opacity-90 transition cursor-pointer inline-flex items-center gap-1"
-                        >
-                          <span className="w-2 h-2 rounded-full bg-white/80 inline-block" />
-                          <span>{preset.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 5 Individual Text Color Pickers + Swatch Dots */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-[11px]">
-                    {/* 1. لون عنوان اللوحة والمستطيل */}
-                    <div className="flex items-center justify-between gap-2 bg-white p-2 rounded-xl border border-stone-200">
-                      <span className="font-bold text-stone-700">لون عنوان اللوحة والمستطيل:</span>
+                    {/* 2. المستطيل */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">المستطيل</span>
                       <div className="flex items-center gap-1">
-                        {['#FFFFFF', '#F6D88C', '#B8860B', '#1E3A5F', '#2D5A43', '#7A283B', '#141413'].map(c => (
+                        {[
+                          { color: '#9A5643', label: 'بني دافئ' },
+                          { color: '#2D5A43', label: 'أخضر زيتي' },
+                          { color: '#B8860B', label: 'ذهبي' },
+                          { color: '#7A283B', label: 'عنابي' },
+                          { color: '#1E293B', label: 'كحلي' }
+                        ].map(swatch => (
+                          <button
+                            key={swatch.color}
+                            type="button"
+                            onClick={() => setBoardHeaderBgColor(swatch.color)}
+                            style={{ backgroundColor: swatch.color }}
+                            title={swatch.label}
+                            aria-label={swatch.label}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              boardHeaderBgColor.toLowerCase() === swatch.color.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-white scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                          />
+                        ))}
+                        <input
+                          type="color"
+                          value={boardHeaderBgColor}
+                          onChange={e => setBoardHeaderBgColor(e.target.value)}
+                          title="المستطيل"
+                          aria-label="المستطيل"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 3. حدود المستطيل */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">حدود المستطيل</span>
+                      <div className="flex items-center gap-1">
+                        {[
+                          { color: '#C9A24D', label: 'ذهبي' },
+                          { color: '#FFFFFF', label: 'أبيض' },
+                          { color: '#9A5643', label: 'بني دافئ' },
+                          { color: '#2D5A43', label: 'أخضر زيتي' },
+                          { color: '#1E293B', label: 'كحلي' }
+                        ].map(swatch => (
+                          <button
+                            key={swatch.color}
+                            type="button"
+                            onClick={() => {
+                              setBoardHeaderBorderColor(swatch.color);
+                              setShowHeaderBorder(true);
+                            }}
+                            style={{ backgroundColor: swatch.color }}
+                            title={swatch.label}
+                            aria-label={swatch.label}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              showHeaderBorder && boardHeaderBorderColor.toLowerCase() === swatch.color.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                          />
+                        ))}
+                        <input
+                          type="color"
+                          value={boardHeaderBorderColor}
+                          onChange={e => {
+                            setBoardHeaderBorderColor(e.target.value);
+                            setShowHeaderBorder(true);
+                          }}
+                          title="حدود المستطيل"
+                          aria-label="حدود المستطيل"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 4. بطاقة الطالبة */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">بطاقة الطالبة</span>
+                      <div className="flex items-center gap-1">
+                        {[
+                          { color: '#FAF6F2', label: 'كريمي' },
+                          { color: '#FFFFFF', label: 'أبيض' },
+                          { color: '#FDF7E7', label: 'بيج ذهبي' },
+                          { color: '#EFF6F1', label: 'زيتي فاتح' },
+                          { color: '#FDF2F5', label: 'وردي فاتح' },
+                          { color: '#F5EBE6', label: 'بني فاتح' }
+                        ].map(swatch => (
+                          <button
+                            key={swatch.color}
+                            type="button"
+                            onClick={() => setBoardStudentCardBgColor(swatch.color)}
+                            style={{ backgroundColor: swatch.color }}
+                            title={swatch.label}
+                            aria-label={swatch.label}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              boardStudentCardBgColor.toLowerCase() === swatch.color.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                          />
+                        ))}
+                        <input
+                          type="color"
+                          value={boardStudentCardBgColor.startsWith('#') ? boardStudentCardBgColor : '#FFFFFF'}
+                          onChange={e => setBoardStudentCardBgColor(e.target.value)}
+                          title="بطاقة الطالبة"
+                          aria-label="بطاقة الطالبة"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 5. إطار الطالبة */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">إطار الطالبة</span>
+                      <div className="flex items-center gap-1">
+                        {[
+                          { color: '#C9A24D', label: 'ذهبي' },
+                          { color: '#9A5643', label: 'بني دافئ' },
+                          { color: '#D47A8F', label: 'وردي' },
+                          { color: '#2D5A43', label: 'أخضر زيتي' },
+                          { color: '#1E293B', label: 'كحلي' },
+                          { color: '#FFFFFF', label: 'أبيض' }
+                        ].map(swatch => (
+                          <button
+                            key={swatch.color}
+                            type="button"
+                            onClick={() => setBoardStudentCardBorderColor(swatch.color)}
+                            style={{ backgroundColor: swatch.color }}
+                            title={swatch.label}
+                            aria-label={swatch.label}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              boardStudentCardBorderColor.toLowerCase() === swatch.color.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                          />
+                        ))}
+                        <input
+                          type="color"
+                          value={boardStudentCardBorderColor}
+                          onChange={e => setBoardStudentCardBorderColor(e.target.value)}
+                          title="إطار الطالبة"
+                          aria-label="إطار الطالبة"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 6. شريط الحلقة */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">شريط الحلقة</span>
+                      <div className="flex items-center gap-1">
+                        {[
+                          { color: '#FAF6F2', label: 'كريمي' },
+                          { color: '#FFFFFF', label: 'أبيض' },
+                          { color: '#FDF7E7', label: 'ذهبي فاتح' },
+                          { color: '#9A5643', label: 'بني دافئ' },
+                          { color: '#2D5A43', label: 'أخضر زيتي' },
+                          { color: '#1E293B', label: 'كحلي' }
+                        ].map(swatch => (
+                          <button
+                            key={swatch.color}
+                            type="button"
+                            onClick={() => setBoardTrackPillBgColor(swatch.color)}
+                            style={{ backgroundColor: swatch.color }}
+                            title={swatch.label}
+                            aria-label={swatch.label}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              boardTrackPillBgColor.toLowerCase() === swatch.color.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                          />
+                        ))}
+                        <input
+                          type="color"
+                          value={boardTrackPillBgColor.startsWith('#') ? boardTrackPillBgColor : '#FFFFFF'}
+                          onChange={e => setBoardTrackPillBgColor(e.target.value)}
+                          title="شريط الحلقة"
+                          aria-label="شريط الحلقة"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 7. حدود الشريط */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">حدود الشريط</span>
+                      <div className="flex items-center gap-1">
+                        {[
+                          { color: '#C9A24D', label: 'ذهبي' },
+                          { color: '#9A5643', label: 'بني دافئ' },
+                          { color: '#2D5A43', label: 'أخضر زيتي' },
+                          { color: '#1E293B', label: 'كحلي' },
+                          { color: '#FFFFFF', label: 'أبيض' },
+                          { color: 'transparent', label: 'بدون حدود' }
+                        ].map(swatch => (
+                          <button
+                            key={swatch.color}
+                            type="button"
+                            onClick={() => setBoardTrackPillBorderColor(swatch.color)}
+                            style={{
+                              backgroundColor: swatch.color === 'transparent' ? '#FFFFFF' : swatch.color
+                            }}
+                            title={swatch.label}
+                            aria-label={swatch.label}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer flex items-center justify-center ${
+                              boardTrackPillBorderColor.toLowerCase() === swatch.color.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                          >
+                            {swatch.color === 'transparent' && (
+                              <span className="text-[9px] text-rose-600 font-bold leading-none">✕</span>
+                            )}
+                          </button>
+                        ))}
+                        <input
+                          type="color"
+                          value={boardTrackPillBorderColor.startsWith('#') ? boardTrackPillBorderColor : '#C9A24D'}
+                          onChange={e => setBoardTrackPillBorderColor(e.target.value)}
+                          title="حدود الشريط"
+                          aria-label="حدود الشريط"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* الإطار الخارجي */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">الإطار الخارجي</span>
+                      <div className="flex items-center gap-1">
+                        {['#C9A24D', '#9A5643', '#2D5A43', '#1E293B', '#FFFFFF'].map(c => (
                           <button
                             key={c}
                             type="button"
-                            onClick={() => setHeaderTextColor(c)}
+                            onClick={() => setBoardAccentColor(c)}
                             style={{ backgroundColor: c }}
-                            className="w-3.5 h-3.5 rounded-full border border-stone-300 cursor-pointer"
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              boardAccentColor.toLowerCase() === c.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
                             title={c}
                           />
                         ))}
                         <input
                           type="color"
-                          value={headerTextColor}
-                          onChange={e => setHeaderTextColor(e.target.value)}
-                          className="w-6 h-6 rounded-md border border-stone-300 cursor-pointer"
+                          value={boardAccentColor}
+                          onChange={e => setBoardAccentColor(e.target.value)}
+                          title="الإطار الخارجي"
+                          aria-label="الإطار الخارجي"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
                         />
                       </div>
                     </div>
+                  </div>
 
-                    {/* 2. لون المسار والتاريخ */}
-                    <div className="flex items-center justify-between gap-2 bg-white p-2 rounded-xl border border-stone-200">
-                      <span className="font-bold text-stone-700">لون المسار والتاريخ:</span>
-                      <div className="flex items-center gap-1">
-                        {TEXT_COLOR_SWATCHES.map(s => (
+                  {/* 8. النصوص (Presets + Individual Pickers with short labels) */}
+                  <div className="bg-white p-2.5 rounded-xl border border-stone-200 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1.5 border-b border-stone-100">
+                      <span className="font-bold text-stone-800">النصوص</span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {TEXT_COLOR_SWATCHES.map(preset => (
                           <button
-                            key={s.label}
+                            key={preset.label}
                             type="button"
-                            onClick={() => setSubheadDateTextColor(s.color)}
-                            style={{ backgroundColor: s.color }}
-                            className="w-3.5 h-3.5 rounded-full border border-stone-300 cursor-pointer"
-                            title={s.label}
-                          />
+                            onClick={() => {
+                              setHeaderTextColor(showHeaderBox ? preset.headerText : preset.color);
+                              setSubheadDateTextColor(preset.color);
+                              setStudentNameTextColor(preset.color);
+                              setClosingDuaTextColor(preset.color);
+                              setSignatureTextColor(preset.color);
+                            }}
+                            style={{ backgroundColor: preset.color }}
+                            className="px-2 py-0.5 rounded-md text-white text-[10px] font-bold shadow-2xs hover:opacity-90 transition cursor-pointer"
+                          >
+                            {preset.label}
+                          </button>
                         ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 text-[10px]">
+                      <label className="flex items-center justify-between gap-1 bg-[#FAF6F2] px-2 py-1 rounded-lg border border-stone-200/80 cursor-pointer">
+                        <span className="font-bold text-stone-700">العنوان</span>
+                        <input
+                          type="color"
+                          value={headerTextColor}
+                          onChange={e => setHeaderTextColor(e.target.value)}
+                          className="w-4 h-4 rounded border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-1 bg-[#FAF6F2] px-2 py-1 rounded-lg border border-stone-200/80 cursor-pointer">
+                        <span className="font-bold text-stone-700">الحلقة</span>
                         <input
                           type="color"
                           value={subheadDateTextColor}
                           onChange={e => setSubheadDateTextColor(e.target.value)}
-                          className="w-6 h-6 rounded-md border border-stone-300 cursor-pointer"
+                          className="w-4 h-4 rounded border border-stone-300 cursor-pointer bg-transparent"
                         />
-                      </div>
-                    </div>
-
-                    {/* 3. لون أسماء الطالبات */}
-                    <div className="flex items-center justify-between gap-2 bg-white p-2 rounded-xl border border-stone-200">
-                      <span className="font-bold text-stone-700">لون أسماء الطالبات:</span>
-                      <div className="flex items-center gap-1">
-                        {TEXT_COLOR_SWATCHES.map(s => (
-                          <button
-                            key={s.label}
-                            type="button"
-                            onClick={() => setStudentNameTextColor(s.color)}
-                            style={{ backgroundColor: s.color }}
-                            className="w-3.5 h-3.5 rounded-full border border-stone-300 cursor-pointer"
-                            title={s.label}
-                          />
-                        ))}
+                      </label>
+                      <label className="flex items-center justify-between gap-1 bg-[#FAF6F2] px-2 py-1 rounded-lg border border-stone-200/80 cursor-pointer">
+                        <span className="font-bold text-stone-700">الطالبات</span>
                         <input
                           type="color"
                           value={studentNameTextColor}
                           onChange={e => setStudentNameTextColor(e.target.value)}
-                          className="w-6 h-6 rounded-md border border-stone-300 cursor-pointer"
+                          className="w-4 h-4 rounded border border-stone-300 cursor-pointer bg-transparent"
                         />
-                      </div>
-                    </div>
-
-                    {/* 4. لون عبارة الدعاء والتهنئة */}
-                    <div className="flex items-center justify-between gap-2 bg-white p-2 rounded-xl border border-stone-200">
-                      <span className="font-bold text-stone-700">لون عبارة الدعاء والتهنئة:</span>
-                      <div className="flex items-center gap-1">
-                        {TEXT_COLOR_SWATCHES.map(s => (
-                          <button
-                            key={s.label}
-                            type="button"
-                            onClick={() => setClosingDuaTextColor(s.color)}
-                            style={{ backgroundColor: s.color }}
-                            className="w-3.5 h-3.5 rounded-full border border-stone-300 cursor-pointer"
-                            title={s.label}
-                          />
-                        ))}
+                      </label>
+                      <label className="flex items-center justify-between gap-1 bg-[#FAF6F2] px-2 py-1 rounded-lg border border-stone-200/80 cursor-pointer">
+                        <span className="font-bold text-stone-700">الدعاء</span>
                         <input
                           type="color"
                           value={closingDuaTextColor}
                           onChange={e => setClosingDuaTextColor(e.target.value)}
-                          className="w-6 h-6 rounded-md border border-stone-300 cursor-pointer"
+                          className="w-4 h-4 rounded border border-stone-300 cursor-pointer bg-transparent"
                         />
-                      </div>
-                    </div>
-
-                    {/* 5. لون نصوص التوقيع */}
-                    <div className="flex items-center justify-between gap-2 bg-white p-2 rounded-xl border border-stone-200">
-                      <span className="font-bold text-stone-700">لون نصوص التوقيع:</span>
-                      <div className="flex items-center gap-1">
-                        {TEXT_COLOR_SWATCHES.map(s => (
-                          <button
-                            key={s.label}
-                            type="button"
-                            onClick={() => setSignatureTextColor(s.color)}
-                            style={{ backgroundColor: s.color }}
-                            className="w-3.5 h-3.5 rounded-full border border-stone-300 cursor-pointer"
-                            title={s.label}
-                          />
-                        ))}
+                      </label>
+                      <label className="flex items-center justify-between gap-1 bg-[#FAF6F2] px-2 py-1 rounded-lg border border-stone-200/80 cursor-pointer">
+                        <span className="font-bold text-stone-700">التوقيع</span>
                         <input
                           type="color"
                           value={signatureTextColor}
                           onChange={e => setSignatureTextColor(e.target.value)}
-                          className="w-6 h-6 rounded-md border border-stone-300 cursor-pointer"
+                          className="w-4 h-4 rounded border border-stone-300 cursor-pointer bg-transparent"
                         />
-                      </div>
-                    </div>
-
-                    {/* 6. لون خلفية المستطيل والإطار */}
-                    <div className="flex items-center justify-between gap-2 bg-white p-2 rounded-xl border border-stone-200">
-                      <span className="font-bold text-stone-700">لون المستطيل والإطار:</span>
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="color"
-                          value={boardHeaderBgColor}
-                          onChange={e => setBoardHeaderBgColor(e.target.value)}
-                          className="w-6 h-6 rounded-md border border-stone-300 cursor-pointer"
-                          title="لون خلفية المستطيل العلوي"
-                        />
-                        <input
-                          type="color"
-                          value={boardAccentColor}
-                          onChange={e => setBoardAccentColor(e.target.value)}
-                          className="w-6 h-6 rounded-md border border-stone-300 cursor-pointer"
-                          title="لون الإطار والحدود"
-                        />
-                      </div>
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -2334,10 +2578,10 @@ export const AttendanceView: React.FC = () => {
 
               {/* Optional Sliders for Header Box Dimensions, Logo Size, & Canvas Height */}
               {showLayoutSliders && (
-                <div className="pt-2 border-t border-stone-100 bg-[#FCFAF8] p-2.5 rounded-xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-[11px]">
+                <div className="pt-2 border-t border-stone-100 bg-[#FCFAF8] p-2.5 rounded-xl grid grid-cols-2 lg:grid-cols-4 gap-2 text-[11px]">
                   <label className="flex flex-col gap-1 font-bold text-stone-700 bg-white p-2 rounded-lg border border-stone-200/70">
                     <div className="flex justify-between">
-                      <span>عرض المستطيل العلوي:</span>
+                      <span>عرض المستطيل</span>
                       <span className="text-amber-800 font-mono">{headerWidthPercent}%</span>
                     </div>
                     <input
@@ -2347,13 +2591,13 @@ export const AttendanceView: React.FC = () => {
                       value={headerWidthPercent}
                       onChange={e => setHeaderWidthPercent(Number(e.target.value))}
                       disabled={!showHeaderBox}
-                      className="accent-[#2D5A43] cursor-pointer disabled:opacity-40"
+                      className="accent-theme-primary cursor-pointer disabled:opacity-40"
                     />
                   </label>
 
                   <label className="flex flex-col gap-1 font-bold text-stone-700 bg-white p-2 rounded-lg border border-stone-200/70">
                     <div className="flex justify-between">
-                      <span>ارتفاع المستطيل العلوي:</span>
+                      <span>ارتفاع المستطيل</span>
                       <span className="text-amber-800 font-mono">{headerPaddingY}px</span>
                     </div>
                     <input
@@ -2363,13 +2607,13 @@ export const AttendanceView: React.FC = () => {
                       value={headerPaddingY}
                       onChange={e => setHeaderPaddingY(Number(e.target.value))}
                       disabled={!showHeaderBox}
-                      className="accent-[#2D5A43] cursor-pointer disabled:opacity-40"
+                      className="accent-theme-primary cursor-pointer disabled:opacity-40"
                     />
                   </label>
 
                   <label className="flex flex-col gap-1 font-bold text-stone-700 bg-white p-2 rounded-lg border border-stone-200/70">
                     <div className="flex justify-between">
-                      <span>حجم الشعار الأساسي:</span>
+                      <span>حجم الشعار</span>
                       <span className="text-amber-800 font-mono">{boardLogoSize}px</span>
                     </div>
                     <input
@@ -2378,13 +2622,13 @@ export const AttendanceView: React.FC = () => {
                       max={140}
                       value={boardLogoSize}
                       onChange={e => setBoardLogoSize(Number(e.target.value))}
-                      className="accent-[#2D5A43] cursor-pointer"
+                      className="accent-theme-primary cursor-pointer"
                     />
                   </label>
 
                   <label className="flex flex-col gap-1 font-bold text-stone-700 bg-white p-2 rounded-lg border border-stone-200/70">
                     <div className="flex justify-between">
-                      <span>مساحة إضافية للوحة:</span>
+                      <span>طول اللوحة</span>
                       <span className="text-emerald-800 font-mono" dir="ltr">+{canvasExtraHeight}px</span>
                     </div>
                     <input
@@ -2393,7 +2637,7 @@ export const AttendanceView: React.FC = () => {
                       max={220}
                       value={canvasExtraHeight}
                       onChange={e => setCanvasExtraHeight(Number(e.target.value))}
-                      className="accent-[#2D5A43] cursor-pointer"
+                      className="accent-theme-primary cursor-pointer"
                     />
                   </label>
                 </div>
@@ -2450,6 +2694,25 @@ export const AttendanceView: React.FC = () => {
                   }}
                   className="pointer-events-none absolute inset-3 sm:inset-4 rounded-[24px] z-0"
                 />
+              )}
+
+              {/* Non-Interactive Alignment Grid Overlay (شبكة المحاذاة — Excluded from PNG export) */}
+              {showAlignmentGrid && !isExportingPng && (
+                <div
+                  data-export-ignore="true"
+                  data-html2canvas-ignore="true"
+                  className="pointer-events-none absolute inset-0 z-25 overflow-hidden"
+                >
+                  {/* Symmetrical Quarter / Zone Guide Lines (25% & 75%) */}
+                  <div className="absolute inset-y-0 left-1/4 border-l border-dashed border-[#9A5643]/30" />
+                  <div className="absolute inset-y-0 left-3/4 border-l border-dashed border-[#9A5643]/30" />
+                  <div className="absolute inset-x-0 top-1/4 border-t border-dashed border-[#9A5643]/30" />
+                  <div className="absolute inset-x-0 top-3/4 border-t border-dashed border-[#9A5643]/30" />
+
+                  {/* Prominent Dashed Center Axes (50% Vertical & 50% Horizontal) */}
+                  <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 border-l-2 border-dashed border-[#9A5643]/65" />
+                  <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-[#9A5643]/65" />
+                </div>
               )}
 
               {/* 1. DRAGGABLE LOGO (الشعار) */}
@@ -2594,9 +2857,9 @@ export const AttendanceView: React.FC = () => {
                           paddingLeft: '20px',
                           paddingRight: '20px',
                           backgroundColor: boardHeaderBgColor,
-                          borderColor: boardAccentColor,
-                          borderWidth: '2px',
-                          borderStyle: 'solid'
+                          borderColor: showHeaderBorder ? boardHeaderBorderColor : 'transparent',
+                          borderWidth: showHeaderBorder ? '2px' : '0px',
+                          borderStyle: showHeaderBorder ? 'solid' : 'none'
                         }
                       : {
                           paddingTop: '4px',
@@ -2701,10 +2964,13 @@ export const AttendanceView: React.FC = () => {
                   <div
                     style={{
                       fontSize: `${Math.round(12 * boardFontScale)}px`,
-                      borderColor: `${boardAccentColor}99`,
+                      backgroundColor: boardTrackPillBgColor,
+                      borderColor: boardTrackPillBorderColor,
+                      borderWidth: boardTrackPillBorderColor === 'transparent' ? '0px' : '1px',
+                      borderStyle: boardTrackPillBorderColor === 'transparent' ? 'none' : 'solid',
                       color: subheadDateTextColor
                     }}
-                    className="inline-flex flex-wrap items-center justify-center gap-2 px-4 py-1 rounded-full bg-white/85 border font-bold shadow-2xs"
+                    className="inline-flex flex-wrap items-center justify-center gap-2 px-4 py-1 rounded-full font-bold shadow-2xs"
                   >
                     <span
                       contentEditable
@@ -2814,8 +3080,11 @@ export const AttendanceView: React.FC = () => {
                     {boardStudentItems.map(st => (
                       <div
                         key={st.id}
-                        style={{ borderColor: boardAccentColor }}
-                        className="group/card relative w-fit inline-flex flex-col items-center justify-center py-1.5 px-4 rounded-xl bg-white/95 border shadow-2xs transition hover:shadow-md"
+                        style={{
+                          backgroundColor: boardStudentCardBgColor,
+                          borderColor: boardStudentCardBorderColor
+                        }}
+                        className="group/card relative w-fit inline-flex flex-col items-center justify-center py-1.5 px-4 rounded-xl border shadow-2xs transition hover:shadow-md"
                       >
                         <button
                           type="button"

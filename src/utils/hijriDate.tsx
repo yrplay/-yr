@@ -41,25 +41,264 @@ export const parseHijriJoinDate = (input?: string): { year: number; month: numbe
   return { year: 1448, month: 1, day: 1 };
 };
 
+const resolveHijriYmdToGregorianDate = (hYear: number, hMonth: number, hDay: number): Date => {
+  const numFmt = new Intl.DateTimeFormat('en-u-ca-islamic-umalqura-nu-latn', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric'
+  });
+  // Estimate Gregorian date from Hijri (year, month, day) and refine within ±45 days
+  const approxDays = (hYear - 1448) * 354.367 + (hMonth - 6) * 29.53 + (hDay - 8);
+  const base = new Date(2026, 10, 18, 12, 0, 0);
+  base.setDate(base.getDate() + Math.round(approxDays));
+  base.setHours(12, 0, 0, 0);
+
+  for (let offset = -45; offset <= 45; offset++) {
+    const cand = new Date(base);
+    cand.setDate(base.getDate() + offset);
+    cand.setHours(12, 0, 0, 0);
+    const parts = numFmt.formatToParts(cand);
+    const cy = Number(parts.find(p => p.type === 'year')?.value || 0);
+    const cm = Number(parts.find(p => p.type === 'month')?.value || 0);
+    const cd = Number(parts.find(p => p.type === 'day')?.value || 0);
+    if (cy === hYear && cm === hMonth && cd === hDay) {
+      return cand;
+    }
+  }
+  return base;
+};
+
 const parseDateInput = (input?: string | Date | number): Date | null => {
   if (!input) return null;
   if (input instanceof Date) {
-    return isNaN(input.getTime()) ? null : input;
+    if (isNaN(input.getTime())) return null;
+    const copy = new Date(input);
+    copy.setHours(12, 0, 0, 0);
+    return copy;
   }
   if (typeof input === 'number') {
     const d = new Date(input);
-    return isNaN(d.getTime()) ? null : d;
+    if (isNaN(d.getTime())) return null;
+    d.setHours(12, 0, 0, 0);
+    return d;
   }
-  const str = String(input).trim();
+  const str = String(input)
+    .trim()
+    .replace(/[٠-٩]/g, ch => String(ch.charCodeAt(0) - 0x0660));
   if (!str) return null;
-  // Handle YYYY-MM-DD safely in local noon to avoid timezone date shifts
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-    const [y, m, d] = str.split('-').map(Number);
+
+  // Handle YYYY-MM-DD safely in local noon; if year is 1400..1500 (Hijri), convert via Umm al-Qura
+  const ymdMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (ymdMatch) {
+    const y = Number(ymdMatch[1]);
+    const m = Number(ymdMatch[2]);
+    const d = Number(ymdMatch[3]);
+    if (y >= 1350 && y <= 1550) {
+      return resolveHijriYmdToGregorianDate(y, m, d);
+    }
     const dt = new Date(y, m - 1, d, 12, 0, 0);
     return isNaN(dt.getTime()) ? null : dt;
   }
   const dt = new Date(str);
-  return isNaN(dt.getTime()) ? null : dt;
+  if (isNaN(dt.getTime())) return null;
+  dt.setHours(12, 0, 0, 0);
+  return dt;
+};
+
+export const STUDY_WEEK_NAMES = [
+  'الأسبوع الأول',
+  'الأسبوع الثاني',
+  'الأسبوع الثالث',
+  'الأسبوع الرابع',
+  'الأسبوع الخامس'
+] as const;
+
+export interface StudyWeekInfo {
+  weekdayIndex: number;
+  weekStartSunday: Date;
+  weekEndThursday: Date;
+  weekStartSundayISO: string;
+  weekEndThursdayISO: string;
+  weekDaysISO: string[];
+  weekNumber: number;
+  weekName: string;
+  hijriMonthName: string;
+  hijriYear: number;
+  weekLabelArabic: string;
+}
+
+const formatLocalDateISO = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dayNum = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dayNum}`;
+};
+
+/**
+ * Shared helper that anchors every study week strictly to the Sunday–Thursday cycle (الأحد إلى الخميس).
+ * Every day from Sunday through Thursday (plus Friday/Saturday before the next Sunday) shares the exact same
+ * weekStartSunday, weekEndThursday, weekDaysISO, weekNumber, and weekLabelArabic.
+ */
+export const getStudyWeekInfo = (
+  input?: string | Date | number,
+  options?: {
+    planStartDateHijri?: string;
+    planHijriMonth?: string;
+    isDefaultSeedPlan?: boolean;
+  }
+): StudyWeekInfo => {
+  const date = parseDateInput(input) || new Date();
+  date.setHours(12, 0, 0, 0);
+
+  const weekdayIndex = date.getDay(); // 0 = الأحد ... 6 = السبت
+  const weekStartSunday = new Date(date);
+  weekStartSunday.setDate(date.getDate() - weekdayIndex);
+  weekStartSunday.setHours(12, 0, 0, 0);
+
+  const weekEndThursday = new Date(weekStartSunday);
+  weekEndThursday.setDate(weekStartSunday.getDate() + 4);
+  weekEndThursday.setHours(12, 0, 0, 0);
+
+  const weekDaysISO: string[] = [];
+  for (let i = 0; i <= 4; i++) {
+    const cur = new Date(weekStartSunday);
+    cur.setDate(weekStartSunday.getDate() + i);
+    cur.setHours(12, 0, 0, 0);
+    weekDaysISO.push(formatLocalDateISO(cur));
+  }
+
+  const numFmt = new Intl.DateTimeFormat('en-u-ca-islamic-umalqura-nu-latn', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric'
+  });
+
+  const getRawHijri = (d: Date) => {
+    const p = numFmt.formatToParts(d);
+    return {
+      year: Number(p.find(x => x.type === 'year')?.value || 1448),
+      month: Number(p.find(x => x.type === 'month')?.value || 1),
+      day: Number(p.find(x => x.type === 'day')?.value || 1)
+    };
+  };
+
+  const sunHijri = getRawHijri(weekStartSunday);
+  const sunMonthName = new Intl.DateTimeFormat(HIJRI_LOCALE, { month: 'long' }).format(weekStartSunday);
+
+  // Find the first Sunday of weekStartSunday's Hijri month by stepping back 7 days at a time
+  let monthWeek1Sunday = new Date(weekStartSunday);
+  for (let step = 0; step < 5; step++) {
+    const prevSunday = new Date(monthWeek1Sunday);
+    prevSunday.setDate(monthWeek1Sunday.getDate() - 7);
+    prevSunday.setHours(12, 0, 0, 0);
+    const prevH = getRawHijri(prevSunday);
+    if (prevH.month === sunHijri.month && prevH.year === sunHijri.year) {
+      monthWeek1Sunday = prevSunday;
+    } else {
+      break;
+    }
+  }
+
+  let anchorWeek1Sunday = monthWeek1Sunday;
+
+  // Check if an active Monthly Plan start date ("بداية الخطة") anchors Week 1
+  const rawPlanStart = options?.planStartDateHijri?.trim();
+  if (rawPlanStart) {
+    const normalized = rawPlanStart.replace(/[٠-٩]/g, ch => String(ch.charCodeAt(0) - 0x0660));
+    let resolvedPlanDate: Date | null = null;
+
+    if (/^(19|20)\d{2}-\d{1,2}-\d{1,2}$/.test(normalized)) {
+      resolvedPlanDate = parseDateInput(normalized);
+    } else {
+      let targetMonth = 0;
+      let targetDay = 0;
+      const directHijri = normalized.match(/^(14\d{2})-(\d{1,2})-(\d{1,2})$/);
+      if (directHijri) {
+        targetMonth = Number(directHijri[2]);
+        targetDay = Number(directHijri[3]);
+      } else {
+        const dayMatch = normalized.match(/(\d{1,2})/);
+        if (dayMatch) targetDay = Number(dayMatch[1]);
+        const monthAliases: Array<{ idx: number; name: string }> = [
+          ...HIJRI_MONTHS.map((m, idx) => ({ idx: idx + 1, name: m })),
+          { idx: 1, name: 'محرم' },
+          { idx: 4, name: 'ربيع الثاني' },
+          { idx: 6, name: 'جمادى الثانية' },
+          { idx: 6, name: 'جمادى الاخرة' },
+          { idx: 5, name: 'جمادى الاولى' }
+        ];
+        for (const entry of monthAliases) {
+          if (normalized.includes(entry.name)) {
+            targetMonth = entry.idx;
+            break;
+          }
+        }
+      }
+
+      if (targetMonth >= 1 && targetMonth <= 12 && targetDay >= 1 && targetDay <= 30) {
+        const isUnrelatedDefaultSeed =
+          options?.isDefaultSeedPlan &&
+          targetMonth === 4 &&
+          targetDay === 30 &&
+          sunHijri.month !== 4 &&
+          sunHijri.month !== 5;
+
+        if (!isUnrelatedDefaultSeed) {
+          for (let offset = -35; offset <= 7; offset++) {
+            const cand = new Date(weekStartSunday);
+            cand.setDate(weekStartSunday.getDate() + offset);
+            cand.setHours(12, 0, 0, 0);
+            const ch = getRawHijri(cand);
+            if (ch.month === targetMonth && ch.day === targetDay) {
+              resolvedPlanDate = cand;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (resolvedPlanDate) {
+      const planWeek1Sunday = new Date(resolvedPlanDate);
+      if (resolvedPlanDate.getDay() <= 4) {
+        planWeek1Sunday.setDate(resolvedPlanDate.getDate() - resolvedPlanDate.getDay());
+      } else {
+        planWeek1Sunday.setDate(resolvedPlanDate.getDate() + (7 - resolvedPlanDate.getDay()));
+      }
+      planWeek1Sunday.setHours(12, 0, 0, 0);
+
+      const diffWeeksFromPlan = Math.round(
+        (weekStartSunday.getTime() - planWeek1Sunday.getTime()) / (7 * 24 * 60 * 60 * 1000)
+      );
+      if (diffWeeksFromPlan >= 0 && diffWeeksFromPlan <= 4) {
+        anchorWeek1Sunday = planWeek1Sunday;
+      }
+    }
+  }
+
+  const weekNumber = Math.max(
+    1,
+    Math.min(
+      5,
+      Math.round((weekStartSunday.getTime() - anchorWeek1Sunday.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1
+    )
+  );
+  const weekName = STUDY_WEEK_NAMES[weekNumber - 1] || 'الأسبوع الأول';
+  const weekLabelArabic = `${weekName} - ${sunMonthName} ${sunHijri.year} هـ`;
+
+  return {
+    weekdayIndex,
+    weekStartSunday,
+    weekEndThursday,
+    weekStartSundayISO: formatLocalDateISO(weekStartSunday),
+    weekEndThursdayISO: formatLocalDateISO(weekEndThursday),
+    weekDaysISO,
+    weekNumber,
+    weekName,
+    hijriMonthName: sunMonthName,
+    hijriYear: sunHijri.year,
+    weekLabelArabic
+  };
 };
 
 /**
@@ -166,9 +405,10 @@ export const getHijriParts = (input?: string | Date | number): {
 
     const monthKey = `${year}-${String(month).padStart(2, '0')}`;
     const monthLabel = `${monthName} ${yearAr}`;
-    const weekOfMonth = Math.min(4, Math.floor((day - 1) / 7) + 1);
-    const weekNames = ['الأسبوع الأول', 'الأسبوع الثاني', 'الأسبوع الثالث', 'الأسبوع الرابع'];
-    const weekLabel = `${weekNames[weekOfMonth - 1]} من ${monthName}`;
+
+    const studyWeek = getStudyWeekInfo(date);
+    const weekOfMonth = studyWeek.weekNumber;
+    const weekLabel = `${studyWeek.weekName} من ${studyWeek.hijriMonthName}`;
 
     return {
       year,
