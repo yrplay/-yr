@@ -144,11 +144,20 @@ export async function deliverNativeOrPwaNotification(options: {
     playGentleNotificationChime();
   }
 
-  const iconUrl = '/pwa-192x192.png';
+  let customIconUrl = '';
+  try {
+    const cachedRaw = localStorage.getItem('ghaith_pwa_icon_cache_v2');
+    if (cachedRaw) {
+      const parsed = JSON.parse(cachedRaw);
+      if (parsed?.icon192) customIconUrl = parsed.icon192;
+    }
+  } catch {
+    // Ignore storage read errors
+  }
+
   const swNotificationOptions: NotificationOptions & { vibrate?: number[] } = {
     body: options.body,
-    icon: iconUrl,
-    badge: iconUrl,
+    ...(customIconUrl ? { icon: customIconUrl, badge: customIconUrl } : {}),
     tag: options.tag || `ghaith-alert-${Date.now()}`,
     dir: 'rtl',
     lang: 'ar',

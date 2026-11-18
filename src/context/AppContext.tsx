@@ -1698,11 +1698,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           deletedStaffChatIds: mergedDeletedChatIds,
           ...(mergedPinnedAnnouncement ? { pinnedStaffAnnouncement: mergedPinnedAnnouncement } : {}),
           staffProfiles: mergedStaffProfiles,
-          staffOperations: mergedStaffProfiles,
           staffAttendanceRecords: mergedStaffAttendance
         };
+        delete (nextSettings as any).staffOperations;
         masterStateRef.current.settings = nextSettings;
-        masterStateRef.current.staffOperations = mergedStaffProfiles;
+        delete masterStateRef.current.staffOperations;
         setSettings(nextSettings);
 
         const deletedUserIds = new Set(
@@ -2123,11 +2123,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         deletedStaffChatIds: mergedDeletedChatIds,
         ...(mergedPinnedAnnouncement ? { pinnedStaffAnnouncement: mergedPinnedAnnouncement } : {}),
         staffProfiles: mergedStaffProfiles,
-        staffOperations: mergedStaffProfiles,
         staffAttendanceRecords: mergedStaffAttendance
       };
+      delete (mergedSettings as any).staffOperations;
       masterStateRef.current.settings = mergedSettings;
-      masterStateRef.current.staffOperations = mergedStaffProfiles;
+      delete masterStateRef.current.staffOperations;
       setSettings(mergedSettings);
     }
 
@@ -2543,11 +2543,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           staffChatMessages: mergedChat,
           deletedStaffChatIds: mergedDeleted,
           staffProfiles: mergedProfiles,
-          staffOperations: mergedProfiles,
           ...(localPin ? { pinnedStaffAnnouncement: localPin } : {})
         };
+        delete (nextSettings as any).staffOperations;
         masterStateRef.current.settings = nextSettings;
-        masterStateRef.current.staffOperations = mergedProfiles;
+        delete masterStateRef.current.staffOperations;
         setSettings(nextSettings);
       }
     };

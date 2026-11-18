@@ -720,22 +720,22 @@ export const SettingsView: React.FC = () => {
                     className="w-full h-full object-contain"
                   />
                 ) : (
-                  <img
-                    src="/pwa-192x192.png"
-                    alt="الشعار الافتراضي"
-                    className="w-full h-full object-contain"
-                  />
+                  <span className="text-theme-primary font-quran font-bold text-lg">غيث الغيم</span>
                 )}
               </div>
 
               {/* معاينة شكل أيقونة التطبيق على شاشة الجوال */}
               <div className="flex flex-col items-center gap-1 px-3 py-2 rounded-2xl bg-stone-100/80 border border-stone-200/80">
                 <div className="w-14 h-14 rounded-[18px] bg-white border border-stone-200 shadow-sm flex items-center justify-center p-1.5 overflow-hidden">
-                  <img
-                    src={form.logoUrl || '/pwa-192x192.png'}
-                    alt="أيقونة التطبيق"
-                    className="w-full h-full object-contain"
-                  />
+                  {form.logoUrl ? (
+                    <img
+                      src={form.logoUrl}
+                      alt="أيقونة التطبيق"
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <span className="text-theme-primary font-quran font-bold text-xs">غيث</span>
+                  )}
                 </div>
                 <span className="text-[10px] font-bold text-stone-700 max-w-[76px] truncate">
                   {(form.name || 'غيث الغيم').replace(/^مقرأة\s+/, '')}
@@ -764,7 +764,7 @@ export const SettingsView: React.FC = () => {
                       setForm(prev => ({ ...prev, logoUrl: '' }));
                       updateSettings({ logoUrl: '' });
                       syncInstitutionLogoAsPWAAppIcon({ ...settings, ...form, logoUrl: '' });
-                      showToast('تمت إزالة الشعار المرفوع والعودة للشعار الافتراضي');
+                      showToast('تمت إزالة الشعار المرفوع بنجاح');
                     }}
                     className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
                   >
@@ -957,7 +957,11 @@ export const SettingsView: React.FC = () => {
                 {form.leaderSignatureUrl && (
                   <button
                     type="button"
-                    onClick={() => setForm(prev => ({ ...prev, leaderSignatureUrl: '' }))}
+                    onClick={() => {
+                      setForm(prev => ({ ...prev, leaderSignatureUrl: '' }));
+                      updateSettings({ leaderSignatureUrl: '' });
+                      showToast('تم حذف توقيع القائدة بنجاح 🗑️');
+                    }}
                     className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />

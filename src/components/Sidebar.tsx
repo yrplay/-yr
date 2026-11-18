@@ -115,14 +115,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex items-center justify-between p-4 border-b border-[#EBE3DC]">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-white border border-[#E0D0D4] flex items-center justify-center shadow-xs p-1 overflow-hidden shrink-0">
-              <img
-                src={settings?.logoUrl || '/pwa-192x192.png'}
-                alt={settings?.name || 'مقرأة غيث الغيم'}
-                className="w-full h-full object-contain"
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).src = '/pwa-192x192.png';
-                }}
-              />
+              {settings?.logoUrl ? (
+                <img
+                  src={settings.logoUrl}
+                  alt={settings?.name || 'مقرأة غيث الغيم'}
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <span className="text-theme-primary font-quran font-bold text-xs">غيث</span>
+              )}
             </div>
             <div className="min-w-0">
               <span className="font-bold text-stone-800 font-quran text-sm block leading-tight truncate">

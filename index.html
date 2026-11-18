@@ -55,27 +55,32 @@
     <meta name="twitter:card" content="summary_large_image" />
 
     <!-- PWA & Mobile Web App Meta -->
-    <meta name="theme-color" content="#8E5364" />
+    <meta name="theme-color" content="#78350F" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="غيث الغيم" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
-    <link rel="shortcut icon" href="/favicon.ico" />
     <script>
       (function() {
         try {
-          var raw = localStorage.getItem('ghaith_pwa_icon_cache_v1');
+          localStorage.removeItem('ghaith_pwa_icon_cache_v1');
+          var raw = localStorage.getItem('ghaith_pwa_icon_cache_v2');
           if (!raw) return;
           var cached = JSON.parse(raw);
-          if (!cached || !cached.icon180 || !cached.icon192 || !cached.icon512) return;
-          var appleIcon = document.querySelector("link[rel='apple-touch-icon']");
-          if (appleIcon) appleIcon.href = cached.icon180;
-          var favIcon = document.querySelector("link[rel='icon']");
-          if (favIcon) favIcon.href = cached.icon192;
-          var shortIcon = document.querySelector("link[rel='shortcut icon']");
-          if (shortIcon) shortIcon.href = cached.icon192;
+          if (!cached || !cached.logoUrl || !cached.icon180 || !cached.icon192) return;
+          var ensureLink = function(rel, sizes, href) {
+            var link = document.querySelector("link[rel='" + rel + "']");
+            if (!link) {
+              link = document.createElement('link');
+              link.rel = rel;
+              if (sizes) link.sizes = sizes;
+              document.head.appendChild(link);
+            }
+            link.href = href;
+          };
+          ensureLink('apple-touch-icon', '180x180', cached.icon180);
+          ensureLink('icon', '192x192', cached.icon192);
+          ensureLink('shortcut icon', '', cached.icon192);
         } catch (e) {}
       })();
     </script>

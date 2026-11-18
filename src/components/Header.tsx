@@ -124,11 +124,15 @@ export const Header: React.FC<HeaderProps> = ({
             className="flex items-center gap-2 text-right p-1 -m-1 rounded-2xl hover:bg-[#722F37]/5 active:scale-98 transition group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#722F37]/30 shrink-0"
           >
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl sm:rounded-2xl bg-white border border-[#E0D0D4] flex items-center justify-center p-1 shadow-xs overflow-hidden group-hover:border-[#722F37]/50 group-hover:shadow-sm transition shrink-0">
-              <img
-                src={settings?.logoUrl || '/pwa-192x192.png'}
-                alt="شعار المقرأة"
-                className="w-full h-full object-contain group-hover:scale-105 transition duration-200"
-              />
+              {settings?.logoUrl ? (
+                <img
+                  src={settings.logoUrl}
+                  alt="شعار المقرأة"
+                  className="w-full h-full object-contain group-hover:scale-105 transition duration-200"
+                />
+              ) : (
+                <span className="text-theme-primary font-quran font-bold text-xs">غيث</span>
+              )}
             </div>
             <div className="hidden xs:block sm:block">
               <h1 className="text-xs sm:text-base font-bold font-quran text-stone-900 leading-tight group-hover:text-[#722F37] transition truncate max-w-[95px] sm:max-w-none">

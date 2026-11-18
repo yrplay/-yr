@@ -13,37 +13,17 @@ export default defineConfig(() => {
         registerType: 'autoUpdate',
         // The app registers /sw.js manually in src/main.tsx to control update timing.
         injectRegister: null,
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
         manifest: {
           id: '/',
           name: 'مقرأة غيث الغيم',
           short_name: 'غيث الغيم',
           description: 'منصة الإدارة والتمكين القرآني المتكاملة وحلقات الحفظ المتقن',
-          theme_color: '#8E5364',
+          theme_color: '#78350F',
           background_color: '#FAF5F2',
           display: 'standalone',
           start_url: '/',
           scope: '/',
-          icons: [
-            {
-              src: '/pwa-192x192.png',
-              sizes: '192x192',
-              type: 'image/png',
-              purpose: 'any',
-            },
-            {
-              src: '/pwa-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'any',
-            },
-            {
-              src: '/pwa-maskable-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'maskable',
-            },
-          ],
+          icons: [],
         },
         workbox: {
           skipWaiting: true,

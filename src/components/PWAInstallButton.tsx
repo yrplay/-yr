@@ -66,7 +66,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ variant = 'h
               {settings.logoUrl ? (
                 <img src={settings.logoUrl} alt="شعار المقرأة" className="w-full h-full object-contain" />
               ) : (
-                <img src="/pwa-192x192.png" alt="شعار المقرأة" className="w-full h-full object-contain" />
+                <span className="text-theme-primary font-quran font-bold text-xs">غيث</span>
               )}
             </div>
             <div>
@@ -92,7 +92,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ variant = 'h
               {settings.logoUrl ? (
                 <img src={settings.logoUrl} alt="شعار" className="w-full h-full object-contain" />
               ) : (
-                <img src="/pwa-192x192.png" alt="شعار" className="w-full h-full object-contain" />
+                <span className="text-theme-primary font-quran font-bold text-sm">غيث</span>
               )}
             </div>
             <div>
@@ -125,7 +125,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ variant = 'h
                   {settings.logoUrl ? (
                     <img src={settings.logoUrl} alt="شعار" className="w-full h-full object-contain" />
                   ) : (
-                    <img src="/pwa-192x192.png" alt="شعار" className="w-full h-full object-contain" />
+                    <span className="text-theme-primary font-quran font-bold text-xs">غيث</span>
                   )}
                 </div>
                 <div>
