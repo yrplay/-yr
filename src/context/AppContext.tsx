@@ -5430,10 +5430,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       };
 
+      // Await the staff-user write even for silent profile updates. Callers such as
+      // saveStaffProfileFields immediately persist the matching settings snapshot next;
+      // allowing this write to run in the background creates competing whole-document
+      // writes on mobile connections and can leave the desktop with stale task data.
       if (silent) {
-        void syncTask().catch(error => {
-          console.warn('Background staff sync remains pending:', error);
-        });
+        await syncTask();
       } else {
         await syncTask();
         showToast('تم حفظ التعديلات وتحديث المنصب والبيانات في السحابة بنجاح ✨');
