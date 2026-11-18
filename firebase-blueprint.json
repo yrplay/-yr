@@ -27,6 +27,22 @@
         "_deletedEntities": { "type": "object" }
       }
     },
+    "InstitutionDatabaseShard": {
+      "title": "InstitutionDatabaseShard",
+      "description": "Sharded collection storage inside institution_database (shard_daily_0..3, shard_attendance_0..1, shard_submissions, shard_subscriptions_logs).",
+      "type": "object",
+      "properties": {
+        "users": { "type": "array" },
+        "shardType": { "type": "string" },
+        "bucket": { "type": "number" },
+        "items": { "type": "array" },
+        "studentAtqiniSubmissions": { "type": "array" },
+        "studentChallengeSubmissions": { "type": "array" },
+        "studentSubscriptions": { "type": "array" },
+        "auditLogs": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      }
+    },
     "AuthorizedStaff": {
       "title": "AuthorizedStaff",
       "description": "Authorized staff credentials and access profiles created by the administration.",
@@ -60,7 +76,7 @@
   "firestore": {
     "/institution_database/{docId}": {
       "schema": "InstitutionDatabase",
-      "description": "Real-time master state storage for the entire Quranic institution."
+      "description": "Real-time core and sharded state storage for the entire Quranic institution."
     },
     "/authorized_staff/{email}": {
       "schema": "AuthorizedStaff",

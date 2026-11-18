@@ -8,33 +8,55 @@ export const UpdateNotification: React.FC = () => {
 
   useEffect(() => {
     let mounted = true;
+    let activeReg: ServiceWorkerRegistration | null = null;
 
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      import('virtual:pwa-register')
-        .then(({ registerSW }) => {
-          if (!mounted) return;
-          const updateSW = registerSW({
-            onNeedRefresh() {
-              if (mounted) {
-                setNeedRefresh(true);
-                setUpdateFunction(() => () => updateSW(true));
-              }
-            },
-            onOfflineReady() {
-              if (mounted) {
-                setOfflineReady(true);
-                setTimeout(() => setOfflineReady(false), 5000);
-              }
-            },
+      const bindRegistration = (reg: ServiceWorkerRegistration | undefined) => {
+        if (!reg || !mounted) return;
+        activeReg = reg;
+        if (reg.waiting && navigator.serviceWorker.controller) {
+          setNeedRefresh(true);
+          setUpdateFunction(() => () => {
+            reg.waiting?.postMessage({ type: 'SKIP_WAITING' });
+            setTimeout(() => window.location.reload(), 400);
           });
-        })
-        .catch(() => {
-          if (navigator.serviceWorker.controller) {
-            navigator.serviceWorker.addEventListener('controllerchange', () => {
-              if (mounted) setNeedRefresh(true);
-            });
-          }
+        }
+        reg.addEventListener('updatefound', () => {
+          const installing = reg.installing;
+          if (!installing) return;
+          installing.addEventListener('statechange', () => {
+            if (installing.state === 'installed' && navigator.serviceWorker.controller && mounted) {
+              setNeedRefresh(true);
+              setUpdateFunction(() => () => {
+                (reg.waiting || installing).postMessage({ type: 'SKIP_WAITING' });
+                setTimeout(() => window.location.reload(), 400);
+              });
+            }
+          });
         });
+      };
+
+      navigator.serviceWorker
+        .getRegistration('/')
+        .then(bindRegistration)
+        .catch(() => {});
+
+      const handleUpdateEvent = () => {
+        if (!mounted) return;
+        setNeedRefresh(true);
+        if (activeReg?.waiting) {
+          setUpdateFunction(() => () => {
+            activeReg?.waiting?.postMessage({ type: 'SKIP_WAITING' });
+            setTimeout(() => window.location.reload(), 400);
+          });
+        }
+      };
+
+      window.addEventListener('ghaith-sw-update-available', handleUpdateEvent);
+      return () => {
+        mounted = false;
+        window.removeEventListener('ghaith-sw-update-available', handleUpdateEvent);
+      };
     }
 
     return () => {

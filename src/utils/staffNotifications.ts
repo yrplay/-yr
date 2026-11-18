@@ -43,7 +43,7 @@ export async function ensureServiceWorkerRegistered(): Promise<ServiceWorkerRegi
     if (existing) {
       return existing;
     }
-    return await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    return await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
   } catch {
     return null;
   }

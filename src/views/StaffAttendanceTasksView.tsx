@@ -453,8 +453,7 @@ export const StaffAttendanceTasksView: React.FC = () => {
 
     await updateSettings(
       {
-        staffProfiles: updatedProfilesMap,
-        staffOperations: updatedProfilesMap
+        staffProfiles: updatedProfilesMap
       },
       true
     );

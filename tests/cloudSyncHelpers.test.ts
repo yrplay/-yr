@@ -5,7 +5,11 @@ import {
   mergeDeletedEntities,
   sanitizeCloudState,
   deduplicateAtqiniSubmissions,
-  deduplicateChallengeSubmissions
+  deduplicateChallengeSubmissions,
+  getDailyRecordShardId,
+  getAttendanceRecordShardId,
+  assembleShardedCloudState,
+  pruneDeadStaffProfiles
 } from '../src/services/cloudSyncHelpers';
 
 test('cloud merge uses newer records and tombstones prevent deleted records returning', () => {
@@ -93,3 +97,66 @@ test('legacy leader passcodes are removed from settings while user records remai
   assert.deepEqual(sanitized.settings, { currency: 'SAR' });
   assert.equal(source.users[0].passcode, 'secret');
 });
+
+test('shard routing is deterministic per student and assembleShardedCloudState merges shard + legacy data cleanly', () => {
+  const shardA = getDailyRecordShardId({ id: 'dr_1', studentId: 's-42', date: '2026-11-01' });
+  const shardB = getDailyRecordShardId({ id: 'dr_2', studentId: 's-42', date: '2026-11-02' });
+  assert.equal(shardA, shardB);
+  assert.match(shardA, /^shard_daily_[0-3]$/);
+
+  const attShard = getAttendanceRecordShardId({ id: 'att_1', studentId: 's-42', date: '2026-11-01' });
+  assert.match(attShard, /^shard_attendance_[0-1]$/);
+
+  const assembled = assembleShardedCloudState(
+    {
+      users: [{ id: 'u-1', name: 'Teacher' }],
+      dailyRecords: [{ id: 'dr_1', studentId: 's-1', date: '2026-11-01', actualNewPages: 1, updatedAt: '2026-11-01T10:00:00.000Z' }],
+      _deletedEntities: { dailyRecords: ['dr_deleted'] }
+    },
+    {
+      shard_daily_0: {
+        items: [
+          { id: 'dr_1', studentId: 's-1', date: '2026-11-01', actualNewPages: 2, updatedAt: '2026-11-02T10:00:00.000Z' },
+          { id: 'dr_deleted', studentId: 's-2', date: '2026-11-01', actualNewPages: 1 }
+        ]
+      },
+      shard_attendance_0: {
+        items: [{ id: 'att_1', studentId: 's-1', date: '2026-11-01', status: 'present' }]
+      },
+      shard_submissions: {
+        studentAtqiniSubmissions: [{ id: 'atqs_1', assignmentId: 'a1', studentId: 's-1' }],
+        studentChallengeSubmissions: [{ id: 'cs_1', challengeId: 'c1', studentId: 's-1' }]
+      },
+      shard_subscriptions_logs: {
+        studentSubscriptions: [{ id: 'sub_1', studentId: 's-1', paidAmount: 100 }],
+        auditLogs: [
+          { id: 'log_old', timestamp: '2026-11-01T00:00:00.000Z' },
+          { id: 'log_new', timestamp: '2026-11-05T00:00:00.000Z' }
+        ]
+      }
+    }
+  );
+
+  assert.ok(assembled);
+  assert.equal(assembled.dailyRecords.length, 1);
+  assert.equal(assembled.dailyRecords[0].actualNewPages, 2);
+  assert.equal(assembled.attendanceRecords.length, 1);
+  assert.equal(assembled.studentAtqiniSubmissions.length, 1);
+  assert.equal(assembled.studentChallengeSubmissions.length, 1);
+  assert.equal(assembled.studentSubscriptions.length, 1);
+  assert.equal(assembled.auditLogs[0].id, 'log_new');
+});
+
+test('pruneDeadStaffProfiles retains only active non-deleted users', () => {
+  const pruned = pruneDeadStaffProfiles(
+    {
+      'u-active': { workingHours: '4-6' },
+      'u-deleted': { workingHours: '1-2' },
+      'u-ghost': { workingHours: '2-3' }
+    },
+    [{ id: 'u-active' }],
+    ['u-deleted']
+  );
+  assert.deepEqual(pruned, { 'u-active': { workingHours: '4-6' } });
+});
+

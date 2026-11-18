@@ -346,4 +346,138 @@ export const deduplicateDailyRecords = <T extends Record<string, any>>(list: T[]
   return Array.from(map.values());
 };
 
+export const DAILY_SHARD_COUNT = 4;
+export const ATTENDANCE_SHARD_COUNT = 2;
+export const SHARD_SUBMISSIONS_DOC_ID = 'shard_submissions';
+export const SHARD_SUBSCRIPTIONS_LOGS_DOC_ID = 'shard_subscriptions_logs';
 
+export const DAILY_SHARD_DOC_IDS = Array.from(
+  { length: DAILY_SHARD_COUNT },
+  (_, i) => `shard_daily_${i}`
+);
+
+export const ATTENDANCE_SHARD_DOC_IDS = Array.from(
+  { length: ATTENDANCE_SHARD_COUNT },
+  (_, i) => `shard_attendance_${i}`
+);
+
+export const ALL_SHARD_DOC_IDS = [
+  ...DAILY_SHARD_DOC_IDS,
+  ...ATTENDANCE_SHARD_DOC_IDS,
+  SHARD_SUBMISSIONS_DOC_ID,
+  SHARD_SUBSCRIPTIONS_LOGS_DOC_ID
+];
+
+export const SHARDED_COLLECTION_KEYS = new Set([
+  'dailyRecords',
+  'attendanceRecords',
+  'studentAtqiniSubmissions',
+  'studentChallengeSubmissions',
+  'studentSubscriptions',
+  'auditLogs'
+]);
+
+/**
+ * Deterministic FNV-1a bucket hash so each student's records consistently
+ * map to the same shard document across all devices.
+ */
+export const getShardBucketIndex = (key: string, bucketCount: number): number => {
+  const safeCount = Math.max(1, bucketCount);
+  const str = String(key || '');
+  let hash = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % safeCount;
+};
+
+export const getDailyRecordShardId = (record: any): string => {
+  const key = String(record?.studentId || record?.id || '');
+  return `shard_daily_${getShardBucketIndex(key, DAILY_SHARD_COUNT)}`;
+};
+
+export const getAttendanceRecordShardId = (record: any): string => {
+  const key = String(record?.studentId || record?.id || '');
+  return `shard_attendance_${getShardBucketIndex(key, ATTENDANCE_SHARD_COUNT)}`;
+};
+
+/**
+ * Assembles the full application state from `master_state` plus all shard docs,
+ * safely merging any unsharded legacy arrays still present inside `master_state`.
+ */
+export const assembleShardedCloudState = (
+  masterRaw: Record<string, any> | null | undefined,
+  shardsById: Record<string, Record<string, any> | null | undefined>
+): Record<string, any> | null => {
+  if (!masterRaw || typeof masterRaw !== 'object') return null;
+
+  const base = sanitizeCloudState(masterRaw);
+  const deletedEntities: DeletedEntities = base._deletedEntities || {};
+
+  const filterNotDeleted = (items: any[], collectionName: string, keyField = 'id') => {
+    const deletedSet = new Set(
+      Array.isArray(deletedEntities[collectionName])
+        ? deletedEntities[collectionName].map(String)
+        : []
+    );
+    if (deletedSet.size === 0) return items;
+    return items.filter(item => item && item[keyField] !== undefined && !deletedSet.has(String(item[keyField])));
+  };
+
+  // 1. Daily Records
+  const dailyShardItems = DAILY_SHARD_DOC_IDS.flatMap(id =>
+    Array.isArray(shardsById?.[id]?.items) ? shardsById[id]!.items : []
+  );
+  const combinedDaily = deduplicateDailyRecords([
+    ...(Array.isArray(base.dailyRecords) ? base.dailyRecords : []),
+    ...dailyShardItems
+  ]);
+  base.dailyRecords = filterNotDeleted(combinedDaily, 'dailyRecords');
+
+  // 2. Attendance Records
+  const attendanceShardItems = ATTENDANCE_SHARD_DOC_IDS.flatMap(id =>
+    Array.isArray(shardsById?.[id]?.items) ? shardsById[id]!.items : []
+  );
+  const combinedAttendance = deduplicateAttendanceRecords([
+    ...(Array.isArray(base.attendanceRecords) ? base.attendanceRecords : []),
+    ...attendanceShardItems
+  ]);
+  base.attendanceRecords = filterNotDeleted(combinedAttendance, 'attendanceRecords');
+
+  // 3. Submissions (Atqini + Challenges)
+  const submissionsShard = shardsById?.[SHARD_SUBMISSIONS_DOC_ID] || {};
+  const combinedAtqini = deduplicateAtqiniSubmissions([
+    ...(Array.isArray(base.studentAtqiniSubmissions) ? base.studentAtqiniSubmissions : []),
+    ...(Array.isArray(submissionsShard.studentAtqiniSubmissions) ? submissionsShard.studentAtqiniSubmissions : [])
+  ]);
+  base.studentAtqiniSubmissions = filterNotDeleted(combinedAtqini, 'studentAtqiniSubmissions');
+
+  const combinedChallenges = deduplicateChallengeSubmissions([
+    ...(Array.isArray(base.studentChallengeSubmissions) ? base.studentChallengeSubmissions : []),
+    ...(Array.isArray(submissionsShard.studentChallengeSubmissions) ? submissionsShard.studentChallengeSubmissions : [])
+  ]);
+  base.studentChallengeSubmissions = filterNotDeleted(combinedChallenges, 'studentChallengeSubmissions');
+
+  // 4. Subscriptions & Audit Logs
+  const subsLogsShard = shardsById?.[SHARD_SUBSCRIPTIONS_LOGS_DOC_ID] || {};
+  base.studentSubscriptions = mergeArrayByKey(
+    Array.isArray(base.studentSubscriptions) ? base.studentSubscriptions : [],
+    Array.isArray(subsLogsShard.studentSubscriptions) ? subsLogsShard.studentSubscriptions : [],
+    'id',
+    deletedEntities.studentSubscriptions || []
+  );
+
+  const mergedLogs = mergeArrayByKey(
+    Array.isArray(base.auditLogs) ? base.auditLogs : [],
+    Array.isArray(subsLogsShard.auditLogs) ? subsLogsShard.auditLogs : [],
+    'id',
+    deletedEntities.auditLogs || []
+  );
+  mergedLogs.sort(
+    (a: any, b: any) => (Date.parse(b?.timestamp || '') || 0) - (Date.parse(a?.timestamp || '') || 0)
+  );
+  base.auditLogs = mergedLogs.slice(0, 60);
+
+  return base;
+};

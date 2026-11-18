@@ -2226,7 +2226,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
 
       mergedSettingsObj.staffProfiles = mergedProfiles;
-      mergedSettingsObj.staffOperations = mergedProfiles;
+      delete (mergedSettingsObj as any).staffOperations;
       mergedSettingsObj.staffChatMessages = mergedChatMessages;
       mergedSettingsObj.deletedStaffChatIds = mergedDeletedChatIds;
       if (mergedPin) {
@@ -2272,13 +2272,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         auditLogs: sanitizeAndSortAuditLogs(overrides?.auditLogs || masterStateRef.current.auditLogs || auditLogs),
         ...overrides,
         users: syncedUsersList,
-        settings: mergedSettingsObj,
-        staffOperations: mergedProfiles,
-        staffChatMessages: mergedChatMessages,
-        deletedStaffChatIds: mergedDeletedChatIds,
-        ...(mergedPin ? { pinnedStaffAnnouncement: mergedPin } : {}),
-        staffAttendanceRecords: mergedAttendanceMap
+        settings: mergedSettingsObj
       };
+      delete (rawPayload as any).staffOperations;
+      delete (rawPayload as any).staffChatMessages;
+      delete (rawPayload as any).deletedStaffChatIds;
+      delete (rawPayload as any).pinnedStaffAnnouncement;
+      delete (rawPayload as any).staffAttendanceRecords;
       delete rawPayload._replaceState;
       delete rawPayload._immediateSync;
       delete rawPayload._skipCloudPush;
@@ -2859,14 +2859,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!isLocalDemoMode) {
       setCloudStatus('syncing');
       try {
-        await pushStateToCloud(masterStateRef.current);
+        await pushStateToCloud({
+          ...masterStateRef.current,
+          _changedKeys: ['circles', 'users', '_deletedEntities', 'auditLogs']
+        });
         hasPendingLocalChangesRef.current = false;
         setCloudStatus('connected');
         setLastSynced(new Date());
       } catch (err) {
         console.warn('Direct Firestore sync on createCircle notice:', err);
         setCloudStatus('error');
+        setTimeout(() => {
+          hasPendingLocalChangesRef.current = false;
+        }, 2000);
       }
+    } else {
+      hasPendingLocalChangesRef.current = false;
     }
     showToast(`تمت إضافة الحلقة "${newCircle.name}" بنجاح`);
     return newCircle;
@@ -2937,14 +2945,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!isLocalDemoMode) {
       setCloudStatus('syncing');
       try {
-        await pushStateToCloud(masterStateRef.current);
+        await pushStateToCloud({
+          ...masterStateRef.current,
+          _changedKeys: ['circles', 'users', 'auditLogs']
+        });
         hasPendingLocalChangesRef.current = false;
         setCloudStatus('connected');
         setLastSynced(new Date());
       } catch (err) {
         console.warn('Direct Firestore sync on updateCircle notice:', err);
         setCloudStatus('error');
+        setTimeout(() => {
+          hasPendingLocalChangesRef.current = false;
+        }, 2000);
       }
+    } else {
+      hasPendingLocalChangesRef.current = false;
     }
     showToast('تم تحديث بيانات الحلقة بنجاح');
   };
@@ -4899,9 +4915,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         mergeStaffProfilesMap(newSettings.staffProfiles, newSettings.staffOperations)
       );
       next.staffProfiles = mergedOps;
-      next.staffOperations = mergedOps;
-      masterStateRef.current.staffOperations = mergedOps;
     }
+    delete (next as any).staffOperations;
     masterStateRef.current.settings = next;
     setSettings(next);
     if (!silent) {
@@ -4919,7 +4934,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const nextLogs = appendAuditEntry('update', 'settings', summary, 'settings-main');
       persistState({
         settings: next,
-        ...(next.staffOperations ? { staffOperations: next.staffOperations } : {}),
         auditLogs: nextLogs,
         _immediateSync: true
       });
@@ -4927,7 +4941,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } else {
       persistState({
         settings: next,
-        ...(next.staffOperations ? { staffOperations: next.staffOperations } : {}),
         _immediateSync: true
       });
     }
@@ -5196,8 +5209,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         hasPendingLocalChangesRef.current = false;
         setCloudStatus('connected');
         setLastSynced(new Date());
-        // Also synchronize full merged state in the background without blocking UI
-        pushStateToCloud(masterStateRef.current).catch(() => {});
+        // Synchronize auditLogs shard cleanly in the background without pushing heavy shards unnecessarily
+        pushStateToCloud({
+          ...masterStateRef.current,
+          _changedKeys: ['auditLogs']
+        }).catch(() => {});
         showToast(`تمت إضافة وحفظ ${newUser.name} بالمنصب (${newUser.title || newUser.role}) في السحابة بنجاح ✅`);
       } catch (cloudErr: any) {
         hasPendingLocalChangesRef.current = false;
@@ -5413,13 +5429,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             );
           }
 
-          await pushStateToCloud(masterStateRef.current);
+          if (!silent) {
+            await pushStateToCloud({
+              ...masterStateRef.current,
+              _changedKeys: ['auditLogs']
+            });
+          }
           hasPendingLocalChangesRef.current = false;
           setCloudStatus('connected');
           setLastSynced(new Date());
         } catch (cloudErr: any) {
-          hasPendingLocalChangesRef.current = true;
           setCloudStatus('error');
+          setTimeout(() => {
+            hasPendingLocalChangesRef.current = false;
+          }, 2000);
           const errMsg =
             cloudErr?.message ||
             cloudErr?.code ||

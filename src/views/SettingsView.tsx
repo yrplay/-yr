@@ -100,56 +100,68 @@ export const SettingsView: React.FC = () => {
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     if (file.size > 3 * 1024 * 1024) {
       showToast('حجم الشعار يجب أن يكون أقل من 3 ميجابايت', 'error');
       return;
     }
     try {
+      setUploadError(null);
       const dataUrl = await optimizeImageFile(file, 360, 360);
       const imageUrl = await uploadImageDataUrl(dataUrl, 'institution-logo');
       setForm(prev => ({ ...prev, logoUrl: imageUrl }));
       await updateSettings({ logoUrl: imageUrl });
       syncInstitutionLogoAsPWAAppIcon({ ...settings, ...form, logoUrl: imageUrl });
-      showToast('تم رفع شعار المقرأة إلى التخزين السحابي واعتماده كأيقونة للتطبيق 🖼️📲');
-    } catch {
-      showToast('تعذرت معالجة صورة الشعار', 'error');
+      showToast('تم حفظ شعار المقرأة ومزامنته سحابياً واعتماده كأيقونة للتطبيق 🖼️📲');
+    } catch (err: any) {
+      const msg = err?.message || 'تعذرت معالجة صورة الشعار';
+      setUploadError(msg);
+      showToast(msg, 'error');
     }
   };
 
   const handleSealImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) {
       showToast('حجم صورة الختم يجب أن يكون أقل من 2 ميجابايت', 'error');
       return;
     }
     try {
+      setUploadError(null);
       const dataUrl = await optimizeImageFile(file, 300, 300);
       const imageUrl = await uploadImageDataUrl(dataUrl, 'institution-seal');
       setForm(prev => ({ ...prev, sealImageUrl: imageUrl }));
       await updateSettings({ sealImageUrl: imageUrl });
-      showToast('تم رفع صورة الختم إلى التخزين السحابي بنجاح 💮');
-    } catch {
-      showToast('تعذرت معالجة صورة الختم', 'error');
+      showToast('تم حفظ صورة الختم ومزامنتها سحابياً بنجاح 💮');
+    } catch (err: any) {
+      const msg = err?.message || 'تعذرت معالجة صورة الختم';
+      setUploadError(msg);
+      showToast(msg, 'error');
     }
   };
 
   const handleLeaderSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) {
       showToast('حجم صورة التوقيع يجب أن يكون أقل من 2 ميجابايت', 'error');
       return;
     }
     try {
+      setUploadError(null);
       const dataUrl = await optimizeImageFile(file, 400, 200);
       const imageUrl = await uploadImageDataUrl(dataUrl, 'leader-signature');
       setForm(prev => ({ ...prev, leaderSignatureUrl: imageUrl }));
       await updateSettings({ leaderSignatureUrl: imageUrl });
-      showToast('تم رفع توقيع قائدة المقرأة إلى التخزين السحابي بنجاح ✍️');
-    } catch {
-      showToast('تعذرت معالجة صورة التوقيع', 'error');
+      showToast('تم حفظ توقيع قائدة المقرأة ومزامنته سحابياً بنجاح ✍️');
+    } catch (err: any) {
+      const msg = err?.message || 'تعذرت معالجة صورة التوقيع';
+      setUploadError(msg);
+      showToast(msg, 'error');
     }
   };
 
