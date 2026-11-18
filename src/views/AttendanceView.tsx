@@ -628,56 +628,63 @@ export const AttendanceView: React.FC = () => {
     });
   };
 
-  const handleUploadLogo = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-
-    // 1. Instant zero-lag preview via URL.createObjectURL
-    if (logoObjectUrlRef.current) {
-      URL.revokeObjectURL(logoObjectUrlRef.current);
-    }
-    const objectUrl = URL.createObjectURL(file);
-    logoObjectUrlRef.current = objectUrl;
-    setBoardLogoUrl(objectUrl);
-    showToast?.('تم رفع شعار المقرأة وإضافته أعلى اللوحة فوراً 🖼️');
-
-    // 2. Asynchronous offscreen downscale (max 512x512) for safe localStorage persistence
-    downscaleImageUrlForStorage(objectUrl, 512, 512, 0.8, true).then(compressed => {
-      if (compressed) {
-        try {
-          localStorage.setItem('ghaith_honors_custom_logo_v1', compressed);
-        } catch {
-          // Ignore quota errors silently — objectUrl preview remains active in memory
-        }
-      }
+  const readFileAsDataUrl = (file: File): Promise<string> => {
+    return new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
     });
   };
 
-  const handleUploadBackground = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
 
-    // 1. Instant zero-lag preview via URL.createObjectURL (no 10MB+ raw base64 in React state)
+    if (logoObjectUrlRef.current) {
+      URL.revokeObjectURL(logoObjectUrlRef.current);
+      logoObjectUrlRef.current = null;
+    }
+
+    const rawDataUrl = await readFileAsDataUrl(file);
+    if (!rawDataUrl) return;
+
+    const compressed = await downscaleImageUrlForStorage(rawDataUrl, 600, 600, 0.9, true);
+    const finalDataUrl = compressed || rawDataUrl;
+
+    setBoardLogoUrl(finalDataUrl);
+    try {
+      localStorage.setItem('ghaith_honors_custom_logo_v1', finalDataUrl);
+    } catch {
+      // Ignore quota errors silently — Base64 dataUrl remains active in state
+    }
+    showToast?.('تم رفع شعار المقرأة وإضافته أعلى اللوحة فوراً 🖼️');
+  };
+
+  const handleUploadBackground = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
     if (bgObjectUrlRef.current) {
       URL.revokeObjectURL(bgObjectUrlRef.current);
+      bgObjectUrlRef.current = null;
     }
-    const objectUrl = URL.createObjectURL(file);
-    bgObjectUrlRef.current = objectUrl;
-    setBoardCustomBgUrl(objectUrl);
-    showToast?.('تم تطبيق الخلفية المخصصة بوضوح كامل ١٠٠٪ وبدون أي بطء 🌄');
 
-    // 2. Asynchronous offscreen canvas downscaler (max 1920x1080 at 0.75 JPEG quality) for localStorage
-    downscaleImageUrlForStorage(objectUrl, 1920, 1080, 0.75, false).then(compressed => {
-      if (compressed) {
-        try {
-          localStorage.setItem('ghaith_honors_custom_bg_v1', compressed);
-        } catch {
-          // Ignore quota errors silently — objectUrl preview remains active in memory
-        }
-      }
-    });
+    const rawDataUrl = await readFileAsDataUrl(file);
+    if (!rawDataUrl) return;
+
+    const compressed = await downscaleImageUrlForStorage(rawDataUrl, 1920, 1080, 0.85, false);
+    const finalDataUrl = compressed || rawDataUrl;
+
+    setBoardCustomBgUrl(finalDataUrl);
+    try {
+      localStorage.setItem('ghaith_honors_custom_bg_v1', finalDataUrl);
+    } catch {
+      // Ignore quota errors silently — Base64 dataUrl remains active in state
+    }
+    showToast?.('تم تطبيق الخلفية المخصصة بوضوح كامل ١٠٠٪ وبدون أي بطء 🌄');
   };
 
   // Get or compute record for a student on selectedDate (including passive real-time derivation if not yet persisted)
@@ -851,11 +858,11 @@ export const AttendanceView: React.FC = () => {
   const baseLogoTop = 20;
   const baseBannerTop = hasLogoOnBoard ? 98 : 26;
   const baseBadgeTop = hasLogoOnBoard ? 196 : 124;
-  const baseStudentsTop = hasLogoOnBoard ? 286 : 214;
+  const baseStudentsTop = hasLogoOnBoard ? 298 : 226;
   const studentsBlockHeight = Math.max(66, studentRowsCount * 62);
   const baseDuaTop = baseStudentsTop + studentsBlockHeight + 24;
   const baseSigTop = baseDuaTop + 42;
-  const computedCanvasHeight = Math.max(480, baseSigTop + 82 + canvasExtraHeight);
+  const computedCanvasHeight = Math.max(492, baseSigTop + 82 + canvasExtraHeight);
 
   // High-resolution Canvas fallback generator (1080px Retina) respecting all Freehand Drag-and-Drop coordinates
   const generateHonorsBoardCanvasDataUrl = async (): Promise<string> => {
@@ -872,13 +879,20 @@ export const AttendanceView: React.FC = () => {
     const scale = boardFontScale;
     const fontName = boardFontFamily;
 
-    // 1. Solid Background Color + Optional Custom Image + Optional Tint Overlay
+    // 1. Solid Background Color + Optional Custom Image (object-fit: cover) + Optional Tint Overlay
     ctx.fillStyle = boardBgColor;
     ctx.fillRect(0, 0, width, height);
 
     const bgImg = await loadImageElement(boardCustomBgUrl);
     if (bgImg) {
-      ctx.drawImage(bgImg, 0, 0, width, height);
+      const imgW = bgImg.naturalWidth || bgImg.width || width;
+      const imgH = bgImg.naturalHeight || bgImg.height || height;
+      const coverScale = Math.max(width / imgW, height / imgH);
+      const drawW = imgW * coverScale;
+      const drawH = imgH * coverScale;
+      const drawX = (width - drawW) / 2;
+      const drawY = (height - drawH) / 2;
+      ctx.drawImage(bgImg, drawX, drawY, drawW, drawH);
     }
 
     if (boardBgTintOpacity > 0) {
@@ -960,12 +974,12 @@ export const AttendanceView: React.FC = () => {
       const badgeY = (baseBadgeTop + t.y) * ratio;
       const pillText = `${boardTrackCircleBadge}  •  ${boardWeekDateLabel}`;
 
-      ctx.font = `bold ${Math.round(23 * s)}px "${fontName}", sans-serif`;
+      ctx.font = `bold ${Math.round(22 * s)}px "${fontName}", sans-serif`;
       const pillTextW = ctx.measureText(pillText).width;
-      const pillW = Math.round(pillTextW + 52 * t.scale);
-      const pillH = Math.round(40 * t.scale);
+      const pillW = Math.round(pillTextW + 76 * t.scale);
+      const pillH = Math.round(44 * t.scale);
       const pillX = Math.round(centerX - pillW / 2);
-      const pillY = Math.round(badgeY - 4 * t.scale);
+      const pillY = Math.round(badgeY - 6 * t.scale);
 
       if (boardTrackPillBgColor && boardTrackPillBgColor !== 'transparent') {
         ctx.fillStyle = boardTrackPillBgColor;
@@ -975,20 +989,20 @@ export const AttendanceView: React.FC = () => {
       }
       if (boardTrackPillBorderColor && boardTrackPillBorderColor !== 'transparent') {
         ctx.strokeStyle = boardTrackPillBorderColor;
-        ctx.lineWidth = 1.8;
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
         ctx.roundRect(pillX, pillY, pillW, pillH, Math.round(pillH / 2));
         ctx.stroke();
       }
 
       ctx.fillStyle = subheadDateTextColor;
-      ctx.fillText(pillText, centerX, badgeY + 24);
+      ctx.fillText(pillText, centerX, badgeY + Math.round(24 * t.scale));
 
       ctx.font = `bold ${Math.round(28 * s)}px "${fontName}", sans-serif`;
-      ctx.fillText(boardSubtitle, centerX, badgeY + 68);
+      ctx.fillText(boardSubtitle, centerX, badgeY + Math.round(82 * t.scale));
 
       ctx.font = `bold ${Math.round(20 * s)}px "${fontName}", sans-serif`;
-      ctx.fillText(boardDescription, centerX, badgeY + 104);
+      ctx.fillText(boardDescription, centerX, badgeY + Math.round(120 * t.scale));
     }
 
     // 6. Compact Student Name Cards Grid
@@ -1081,25 +1095,70 @@ export const AttendanceView: React.FC = () => {
     setSelectedCanvasElement(null);
     setIsExportingPng(true);
     try {
-      let dataUrl = '';
-      if (honorsBoardRef.current) {
+      // Wait for React state flush (hiding alignment grid & selection rings) + fonts & image decode
+      await new Promise<void>(resolve =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      );
+      if (typeof document !== 'undefined' && 'fonts' in document) {
         try {
-          dataUrl = await toPng(honorsBoardRef.current, {
-            pixelRatio: 3,
-            cacheBust: true,
-            backgroundColor: boardBgColor,
-            filter: (node: Node) => {
-              if (
-                node instanceof HTMLElement &&
-                (node.dataset?.exportIgnore === 'true' || node.dataset?.html2canvasIgnore === 'true')
-              ) {
-                return false;
-              }
-              return true;
-            }
-          });
+          await document.fonts.ready;
         } catch {
-          dataUrl = await generateHonorsBoardCanvasDataUrl();
+          // ignore
+        }
+      }
+
+      let dataUrl = '';
+      const boardEl = honorsBoardRef.current;
+      if (boardEl) {
+        // Ensure all <img> elements inside the board (custom background & logo) are decoded
+        const imgs = Array.from(boardEl.querySelectorAll('img'));
+        await Promise.all(
+          imgs.map(img => (typeof img.decode === 'function' ? img.decode().catch(() => {}) : Promise.resolve()))
+        );
+
+        const rect = boardEl.getBoundingClientRect();
+        const exactWidth = Math.round(rect.width) || boardEl.offsetWidth || 640;
+        const exactHeight = Math.round(rect.height) || boardEl.offsetHeight || computedCanvasHeight;
+
+        const exportOptions = {
+          pixelRatio: 3,
+          cacheBust: false,
+          width: exactWidth,
+          height: exactHeight,
+          backgroundColor: boardBgColor,
+          style: {
+            width: `${exactWidth}px`,
+            minWidth: `${exactWidth}px`,
+            maxWidth: `${exactWidth}px`,
+            height: `${exactHeight}px`,
+            minHeight: `${exactHeight}px`,
+            maxHeight: `${exactHeight}px`,
+            margin: '0',
+            boxSizing: 'border-box',
+            backgroundColor: boardBgColor,
+            borderColor: showOuterBorder ? boardAccentColor : 'transparent',
+            borderWidth: showOuterBorder ? '4px' : '0px',
+            borderStyle: showOuterBorder ? 'solid' : 'none'
+          },
+          filter: (node: Node) => {
+            if (
+              node instanceof HTMLElement &&
+              (node.dataset?.exportIgnore === 'true' || node.dataset?.html2canvasIgnore === 'true')
+            ) {
+              return false;
+            }
+            return true;
+          }
+        };
+
+        try {
+          dataUrl = await toPng(boardEl, exportOptions);
+        } catch {
+          try {
+            dataUrl = await toPng(boardEl, { ...exportOptions, skipFonts: true });
+          } catch {
+            dataUrl = await generateHonorsBoardCanvasDataUrl();
+          }
         }
       } else {
         dataUrl = await generateHonorsBoardCanvasDataUrl();
@@ -2665,22 +2724,38 @@ export const AttendanceView: React.FC = () => {
                 borderWidth: showOuterBorder ? '4px' : '0px',
                 borderStyle: showOuterBorder ? 'solid' : 'none',
                 color: studentNameTextColor,
-                backgroundColor: boardBgColor,
-                backgroundImage: boardCustomBgUrl ? `url(${boardCustomBgUrl})` : 'none',
-                backgroundSize: 'cover',
-                backgroundPosition: 'center'
+                backgroundColor: boardBgColor
               }}
               className="relative overflow-hidden rounded-[32px] shadow-2xl text-center select-none"
               dir="rtl"
             >
+              {/* Custom Uploaded Background Image Layer (Actual <img> for 100% reliable PNG export) */}
+              {boardCustomBgUrl && (
+                <img
+                  src={boardCustomBgUrl}
+                  alt=""
+                  draggable={false}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    zIndex: 0,
+                    pointerEvents: 'none'
+                  }}
+                />
+              )}
+
               {/* Adjustable Background Tint / Overlay Layer */}
               {boardBgTintOpacity > 0 && (
                 <div
                   style={{
                     backgroundColor: boardBgTintColor,
-                    opacity: boardBgTintOpacity / 100
+                    opacity: boardBgTintOpacity / 100,
+                    zIndex: 1
                   }}
-                  className="pointer-events-none absolute inset-0 z-0"
+                  className="pointer-events-none absolute inset-0"
                 />
               )}
 
@@ -2690,9 +2765,10 @@ export const AttendanceView: React.FC = () => {
                   style={{
                     borderColor: `${boardAccentColor}80`,
                     borderWidth: '1.5px',
-                    borderStyle: 'solid'
+                    borderStyle: 'solid',
+                    zIndex: 2
                   }}
-                  className="pointer-events-none absolute inset-3 sm:inset-4 rounded-[24px] z-0"
+                  className="pointer-events-none absolute inset-3 sm:inset-4 rounded-[24px]"
                 />
               )}
 
@@ -2926,12 +3002,12 @@ export const AttendanceView: React.FC = () => {
                   position: 'absolute',
                   top: `${baseBadgeTop + elementTransforms.badge.y}px`,
                   left: `calc(50% + ${elementTransforms.badge.x}px)`,
-                  width: '90%',
+                  width: '96%',
                   transform: `translateX(-50%) scale(${elementTransforms.badge.scale})`,
                   cursor: draggingElement === 'badge' ? 'grabbing' : 'grab',
                   zIndex: selectedCanvasElement === 'badge' ? 30 : 13
                 }}
-                className={`group p-1 rounded-2xl space-y-1 transition-shadow ${
+                className={`group p-1.5 rounded-2xl flex flex-col items-center gap-3 transition-shadow ${
                   selectedCanvasElement === 'badge'
                     ? 'ring-2 ring-amber-500/80 bg-amber-50/15'
                     : 'hover:ring-1 hover:ring-amber-400/60'
@@ -2960,46 +3036,58 @@ export const AttendanceView: React.FC = () => {
                   </button>
                 </div>
 
-                <div className="flex justify-center">
+                <div className="flex justify-center w-full">
                   <div
                     style={{
                       fontSize: `${Math.round(12 * boardFontScale)}px`,
                       backgroundColor: boardTrackPillBgColor,
                       borderColor: boardTrackPillBorderColor,
-                      borderWidth: boardTrackPillBorderColor === 'transparent' ? '0px' : '1px',
+                      borderWidth: boardTrackPillBorderColor === 'transparent' ? '0px' : '1.5px',
                       borderStyle: boardTrackPillBorderColor === 'transparent' ? 'none' : 'solid',
-                      color: subheadDateTextColor
+                      color: subheadDateTextColor,
+                      whiteSpace: 'nowrap',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      paddingLeft: '22px',
+                      paddingRight: '22px',
+                      paddingTop: '6px',
+                      paddingBottom: '6px',
+                      lineHeight: 1.4
                     }}
-                    className="inline-flex flex-wrap items-center justify-center gap-2 px-4 py-1 rounded-full font-bold shadow-2xs"
+                    className="inline-flex flex-nowrap items-center justify-center gap-2 rounded-full font-bold shadow-2xs whitespace-nowrap"
                   >
                     <span
                       contentEditable
                       suppressContentEditableWarning
                       onBlur={e => setBoardTrackCircleBadge(e.currentTarget.textContent || '')}
-                      className="outline-hidden hover:bg-amber-50 rounded-md px-1 cursor-text"
+                      style={{ whiteSpace: 'nowrap' }}
+                      className="outline-hidden hover:bg-amber-50/50 rounded-md px-1 cursor-text whitespace-nowrap"
                     >
                       {boardTrackCircleBadge}
                     </span>
-                    <span style={{ color: boardAccentColor }}>•</span>
+                    <span style={{ color: boardAccentColor, whiteSpace: 'nowrap' }}>•</span>
                     <span
                       contentEditable
                       suppressContentEditableWarning
                       onBlur={e => setBoardWeekDateLabel(e.currentTarget.textContent || '')}
-                      className="outline-hidden hover:bg-amber-50 rounded-md px-1 cursor-text"
+                      style={{ whiteSpace: 'nowrap' }}
+                      className="outline-hidden hover:bg-amber-50/50 rounded-md px-1 cursor-text whitespace-nowrap"
                     >
                       {boardWeekDateLabel}
                     </span>
                   </div>
                 </div>
 
-                <div className="space-y-0.5">
+                <div className="flex flex-col items-center gap-1 mt-0.5">
                   <p
                     contentEditable
                     suppressContentEditableWarning
                     onBlur={e => setBoardSubtitle(e.currentTarget.textContent || '')}
                     style={{
                       fontSize: `${Math.round(15 * boardFontScale)}px`,
-                      color: subheadDateTextColor
+                      color: subheadDateTextColor,
+                      lineHeight: 1.5
                     }}
                     className="font-bold outline-hidden hover:bg-amber-100/50 rounded-lg px-2 py-0.5 inline-block cursor-text"
                   >
@@ -3012,7 +3100,8 @@ export const AttendanceView: React.FC = () => {
                       onBlur={e => setBoardDescription(e.currentTarget.textContent || '')}
                       style={{
                         fontSize: `${Math.round(11.5 * boardFontScale)}px`,
-                        color: subheadDateTextColor
+                        color: subheadDateTextColor,
+                        lineHeight: 1.45
                       }}
                       className="font-bold opacity-90 outline-hidden hover:bg-amber-100/50 rounded-lg px-2 py-0.5 inline-block cursor-text"
                     >
