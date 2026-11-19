@@ -5,7 +5,7 @@ import {
   CheckSquare, Calendar, Users, Clock, CheckCircle2, XCircle,
   AlertCircle, AlertTriangle, Star, Sparkles, Filter, Save, ChevronLeft, ChevronRight, Trash2,
   Download, Award, X, Camera, Palette, Image as ImageIcon, Type, Plus, Minus, RotateCcw, Archive,
-  ClipboardCheck, Zap, Send, Grid3X3, Square, MinusSquare, Frame, ImagePlus, UserPlus, SlidersHorizontal, Trophy
+  ClipboardCheck, Zap, Send, Grid3X3, Square, MinusSquare, Frame, ImagePlus, UserPlus, SlidersHorizontal, Trophy, ListOrdered
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { AttendanceRecord, isStudentEffectivelyArchived, isPlanHistoricalOrArchived } from '../types';
@@ -41,11 +41,115 @@ export const AttendanceView: React.FC = () => {
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const bgInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Group / Circle Competition Leaderboard ("منافسة المجموعات")
+  // Group / Circle Competition Leaderboard Studio ("استوديو منافسة المجموعات والحلقات")
   const [showGroupCompetitionModal, setShowGroupCompetitionModal] = useState(false);
   const [competitionPeriod, setCompetitionPeriod] = useState<'week' | 'month'>('week');
   const [isExportingCompetitionPng, setIsExportingCompetitionPng] = useState(false);
   const competitionWinnerCardRef = useRef<HTMLDivElement | null>(null);
+  const compLogoInputRef = useRef<HTMLInputElement | null>(null);
+  const compBgInputRef = useRef<HTMLInputElement | null>(null);
+  const compActiveDragCleanupRef = useRef<(() => void) | null>(null);
+
+  // Competition Studio Customization State
+  const [compShowOtherGroups, setCompShowOtherGroups] = useState<boolean>(true);
+  const [compShowColorsPopover, setCompShowColorsPopover] = useState<boolean>(false);
+  const [compShowSliders, setCompShowSliders] = useState<boolean>(false);
+  const [compShowAlignmentGrid, setCompShowAlignmentGrid] = useState<boolean>(false);
+  const [compShowOuterBorder, setCompShowOuterBorder] = useState<boolean>(true);
+  const [compShowHeaderBox, setCompShowHeaderBox] = useState<boolean>(true);
+  const [compShowHeaderBorder, setCompShowHeaderBorder] = useState<boolean>(true);
+  const [compShowPillBorder, setCompShowPillBorder] = useState<boolean>(true);
+  const [compShowStatsCardBorder, setCompShowStatsCardBorder] = useState<boolean>(true);
+  const [compShowOtherGroupsBorder, setCompShowOtherGroupsBorder] = useState<boolean>(true);
+
+  const [compLogoUrl, setCompLogoUrl] = useState<string>(() => settings?.logoUrl || '');
+  const [compLogoSize, setCompLogoSize] = useState<number>(64);
+  // Stored ONLY in local component state (lightweight compressed Base64 data:image/jpeg)
+  const [compCustomBgUrl, setCompCustomBgUrl] = useState<string>('');
+
+  // Competition Card Colors
+  const [compBgColor, setCompBgColor] = useState<string>('#FFFDF8');
+  const [compBgTintColor, setCompBgTintColor] = useState<string>('#FFFFFF');
+  const [compBgTintOpacity, setCompBgTintOpacity] = useState<number>(0);
+  const [compOuterBorderColor, setCompOuterBorderColor] = useState<string>('#C9A24D');
+  const [compHeaderBgColor, setCompHeaderBgColor] = useState<string>('#9A5643');
+  const [compHeaderBorderColor, setCompHeaderBorderColor] = useState<string>('#C9A24D');
+  const [compPillBgColor, setCompPillBgColor] = useState<string>('#FBF7EE');
+  const [compPillBorderColor, setCompPillBorderColor] = useState<string>('#C9A24D');
+  const [compStatsCardBgColor, setCompStatsCardBgColor] = useState<string>('#FFFBEB');
+  const [compStatsCardBorderColor, setCompStatsCardBorderColor] = useState<string>('#C9A24D');
+  const [compOtherGroupsBgColor, setCompOtherGroupsBgColor] = useState<string>('#FFFBEB');
+  const [compOtherGroupsBorderColor, setCompOtherGroupsBorderColor] = useState<string>('#C9A24D');
+
+  // Competition Card Text Colors
+  const [compTitleTextColor, setCompTitleTextColor] = useState<string>('#FFFFFF');
+  const [compPillTextColor, setCompPillTextColor] = useState<string>('#78350F');
+  const [compWinnerTextColor, setCompWinnerTextColor] = useState<string>('#1C1917');
+  const [compStatsTextColor, setCompStatsTextColor] = useState<string>('#78350F');
+  const [compOtherGroupsTextColor, setCompOtherGroupsTextColor] = useState<string>('#292524');
+  const [compDuaTextColor, setCompDuaTextColor] = useState<string>('#57534E');
+  const [compSignatureTextColor, setCompSignatureTextColor] = useState<string>('#292524');
+
+  // Competition Card Typography & Editable Texts
+  const [compFontFamily, setCompFontFamily] = useState<'Thmanyah Sans' | 'Cairo' | 'Tajawal' | 'Amiri' | 'Readex Pro'>('Thmanyah Sans');
+  const [compFontScale, setCompFontScale] = useState<number>(1);
+  const [compAcademySubtitle, setCompAcademySubtitle] = useState<string>(
+    settings?.name || 'مقرأة غيث الغيم لتعليم القرآن الكريم'
+  );
+  const [compMainTitle, setCompMainTitle] = useState<string>(
+    'تتويج المجموعة الفائزة في منافسة الحلقات'
+  );
+  const [compRankPillCustomText, setCompRankPillCustomText] = useState<string>('');
+  const [compOtherGroupsSectionTitle, setCompOtherGroupsSectionTitle] = useState<string>(
+    'ترتيب وإحصائيات بقية المجموعات المتنافسة'
+  );
+  const [compClosingDua, setCompClosingDua] = useState<string>(
+    'بارك الله في جهود معلمات الحلقات وطالباتهنّ وزادهنّ همّةً وتألقاً'
+  );
+
+  // Bottom Opposite Signatures State ("قائدة المقرأة" on Right, "المشرفة" on Left)
+  const [compLeaderLabel, setCompLeaderLabel] = useState<string>('قائدة المقرأة:');
+  const [compLeaderName, setCompLeaderName] = useState<string>(
+    `أ. ${settings?.leaderName || 'ريفة المنصوري'}`
+  );
+  const [compSupervisorLabel, setCompSupervisorLabel] = useState<string>('المشرفة:');
+  const [compSupervisorName, setCompSupervisorName] = useState<string>('أ. مشرفة الحلقة');
+  const [compSignatureFontSize, setCompSignatureFontSize] = useState<number>(11.5);
+
+  // Free Drag-and-Drop Offsets for all 9 Competition Canvas Elements
+  type CompCanvasElementKey =
+    | 'logo'
+    | 'banner'
+    | 'pill'
+    | 'winner'
+    | 'stats'
+    | 'otherGroups'
+    | 'dua'
+    | 'leaderSig'
+    | 'supervisorSig';
+
+  interface CompOffset {
+    x: number;
+    y: number;
+  }
+
+  const DEFAULT_COMP_OFFSETS: Record<CompCanvasElementKey, CompOffset> = {
+    logo: { x: 0, y: 0 },
+    banner: { x: 0, y: 0 },
+    pill: { x: 0, y: 0 },
+    winner: { x: 0, y: 0 },
+    stats: { x: 0, y: 0 },
+    otherGroups: { x: 0, y: 0 },
+    dua: { x: 0, y: 0 },
+    leaderSig: { x: 0, y: 0 },
+    supervisorSig: { x: 0, y: 0 }
+  };
+
+  const [compElementOffsets, setCompElementOffsets] = useState<Record<CompCanvasElementKey, CompOffset>>(
+    DEFAULT_COMP_OFFSETS
+  );
+  const [compDraggingElement, setCompDraggingElement] = useState<CompCanvasElementKey | null>(null);
+  const [compSelectedElement, setCompSelectedElement] = useState<CompCanvasElementKey | null>(null);
 
   React.useEffect(() => {
     if (availableCircles.length > 0 && !availableCircles.some(c => c.id === selectedCircleId)) {
@@ -1378,23 +1482,271 @@ export const AttendanceView: React.FC = () => {
     });
   }, [availableCircles, circles, tracks, students, competitionDaysISO, selectedDate, attendanceRecords, dailyRecords]);
 
+  // Offscreen <canvas> image resizer & compressor (maxWidth 1400px, quality 0.85) stored ONLY in local component state
+  const compressCompetitionImageFile = (
+    file: File,
+    maxWidth = 1400,
+    quality = 0.85,
+    preserveAlpha = false
+  ): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.onload = () => {
+        const rawDataUrl = typeof reader.result === 'string' ? reader.result : '';
+        if (!rawDataUrl) {
+          reject(new Error('Empty file result'));
+          return;
+        }
+        const img = new window.Image();
+        img.onerror = () => resolve(rawDataUrl);
+        img.onload = () => {
+          try {
+            let targetW = img.naturalWidth || img.width || 800;
+            let targetH = img.naturalHeight || img.height || 800;
+            if (targetW > maxWidth) {
+              const ratio = maxWidth / targetW;
+              targetW = maxWidth;
+              targetH = Math.max(1, Math.round(targetH * ratio));
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = targetW;
+            canvas.height = targetH;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve(rawDataUrl);
+              return;
+            }
+            if (!preserveAlpha) {
+              ctx.fillStyle = '#FFFFFF';
+              ctx.fillRect(0, 0, targetW, targetH);
+            }
+            ctx.drawImage(img, 0, 0, targetW, targetH);
+            const mime = preserveAlpha ? 'image/png' : 'image/jpeg';
+            const compressed = canvas.toDataURL(mime, quality);
+            resolve(compressed || rawDataUrl);
+          } catch {
+            resolve(rawDataUrl);
+          }
+        };
+        img.src = rawDataUrl;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleUploadCompetitionLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressedLogo = await compressCompetitionImageFile(file, 500, 0.9, true);
+      setCompLogoUrl(compressedLogo);
+    } catch {
+      showToast?.('تعذر تحميل صورة الشعار', 'error');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleUploadCompetitionBg = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressedBg = await compressCompetitionImageFile(file, 1400, 0.85, false);
+      setCompCustomBgUrl(compressedBg);
+      showToast?.('تم تطبيق الخلفية المخصصة بنجاح');
+    } catch {
+      showToast?.('تعذر تحميل صورة الخلفية', 'error');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  // Free Drag-and-Drop Pointer Handler for Competition Studio Canvas Elements
+  const handleStartDragCompElement = (
+    key: CompCanvasElementKey,
+    e: React.PointerEvent<HTMLElement>
+  ) => {
+    const target = e.target as HTMLElement;
+    if (
+      target.closest('[data-no-drag="true"]') ||
+      target.closest('button') ||
+      target.closest('input') ||
+      (target.isContentEditable && document.activeElement === target)
+    ) {
+      return;
+    }
+
+    e.stopPropagation();
+    setCompSelectedElement(key);
+    setCompDraggingElement(key);
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const initialOffset = compElementOffsets[key] || { x: 0, y: 0 };
+
+    if (compActiveDragCleanupRef.current) {
+      compActiveDragCleanupRef.current();
+      compActiveDragCleanupRef.current = null;
+    }
+
+    const onPointerMove = (moveEv: PointerEvent) => {
+      moveEv.preventDefault();
+      const dx = moveEv.clientX - startX;
+      const dy = moveEv.clientY - startY;
+      setCompElementOffsets(prev => ({
+        ...prev,
+        [key]: {
+          x: Math.round(initialOffset.x + dx),
+          y: Math.round(initialOffset.y + dy)
+        }
+      }));
+    };
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+      setCompDraggingElement(null);
+      compActiveDragCleanupRef.current = null;
+    };
+
+    const onPointerUp = () => {
+      cleanup();
+    };
+
+    compActiveDragCleanupRef.current = cleanup;
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+  };
+
+  const handleResetCompetitionPositions = () => {
+    setCompElementOffsets(DEFAULT_COMP_OFFSETS);
+    setCompSelectedElement(null);
+    showToast?.('تمت إعادة ضبط مواضع جميع العناصر في البطاقة');
+  };
+
+  const handleResetCompetitionStudio = () => {
+    setCompElementOffsets(DEFAULT_COMP_OFFSETS);
+    setCompSelectedElement(null);
+    setCompShowOtherGroups(true);
+    setCompShowOuterBorder(true);
+    setCompShowHeaderBox(true);
+    setCompShowHeaderBorder(true);
+    setCompShowPillBorder(true);
+    setCompShowStatsCardBorder(true);
+    setCompShowOtherGroupsBorder(true);
+    setCompShowAlignmentGrid(false);
+    setCompLogoSize(64);
+    setCompCustomBgUrl('');
+    setCompBgColor('#FFFDF8');
+    setCompBgTintColor('#FFFFFF');
+    setCompBgTintOpacity(0);
+    setCompOuterBorderColor('#C9A24D');
+    setCompHeaderBgColor('#9A5643');
+    setCompHeaderBorderColor('#C9A24D');
+    setCompPillBgColor('#FBF7EE');
+    setCompPillBorderColor('#C9A24D');
+    setCompStatsCardBgColor('#FFFBEB');
+    setCompStatsCardBorderColor('#C9A24D');
+    setCompOtherGroupsBgColor('#FFFBEB');
+    setCompOtherGroupsBorderColor('#C9A24D');
+    setCompTitleTextColor('#FFFFFF');
+    setCompPillTextColor('#78350F');
+    setCompWinnerTextColor('#1C1917');
+    setCompStatsTextColor('#78350F');
+    setCompOtherGroupsTextColor('#292524');
+    setCompDuaTextColor('#57534E');
+    setCompSignatureTextColor('#292524');
+    setCompFontFamily('Thmanyah Sans');
+    setCompFontScale(1);
+    setCompSignatureFontSize(11.5);
+    setCompAcademySubtitle(settings?.name || 'مقرأة غيث الغيم لتعليم القرآن الكريم');
+    setCompMainTitle('تتويج المجموعة الفائزة في منافسة الحلقات');
+    setCompRankPillCustomText('');
+    setCompOtherGroupsSectionTitle('ترتيب وإحصائيات بقية المجموعات المتنافسة');
+    setCompClosingDua('بارك الله في جهود معلمات الحلقات وطالباتهنّ وزادهنّ همّةً وتألقاً');
+    setCompLeaderLabel('قائدة المقرأة:');
+    setCompLeaderName(`أ. ${settings?.leaderName || 'ريفة المنصوري'}`);
+    setCompSupervisorLabel('المشرفة:');
+    setCompSupervisorName('أ. مشرفة الحلقة');
+    showToast?.('تمت إعادة ضبط المواضع وتصميم بطاقة المنافسة بالكامل');
+  };
+
   const handleExportWinnerGroupPng = async () => {
-    if (!competitionWinnerCardRef.current) return;
+    if (!competitionWinnerCardRef.current || isExportingCompetitionPng) return;
+    setCompSelectedElement(null);
     setIsExportingCompetitionPng(true);
     try {
-      const dataUrl = await toPng(competitionWinnerCardRef.current, {
+      await new Promise<void>(resolve =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      );
+      if (typeof document !== 'undefined' && 'fonts' in document) {
+        try {
+          await document.fonts.ready;
+        } catch {
+          // ignore
+        }
+      }
+      const cardEl = competitionWinnerCardRef.current;
+      const imgs = Array.from(cardEl.querySelectorAll('img'));
+      await Promise.all(
+        imgs.map(img => (typeof img.decode === 'function' ? img.decode().catch(() => {}) : Promise.resolve()))
+      );
+
+      const rect = cardEl.getBoundingClientRect();
+      const exactWidth = Math.round(rect.width) || cardEl.offsetWidth || 620;
+      const exactHeight = Math.round(rect.height) || cardEl.offsetHeight;
+
+      const exportOptions = {
         cacheBust: false,
         pixelRatio: 3,
-        backgroundColor: '#FFFDF8'
-      });
+        width: exactWidth,
+        height: exactHeight,
+        backgroundColor: compBgColor,
+        style: {
+          width: `${exactWidth}px`,
+          minWidth: `${exactWidth}px`,
+          maxWidth: `${exactWidth}px`,
+          height: `${exactHeight}px`,
+          minHeight: `${exactHeight}px`,
+          maxHeight: `${exactHeight}px`,
+          margin: '0',
+          boxSizing: 'border-box',
+          backgroundColor: compBgColor,
+          borderColor: compShowOuterBorder ? compOuterBorderColor : 'transparent',
+          borderWidth: compShowOuterBorder ? '4px' : '0px',
+          borderStyle: compShowOuterBorder ? 'solid' : 'none'
+        },
+        filter: (node: Node) => {
+          if (
+            node instanceof HTMLElement &&
+            (node.dataset?.exportIgnore === 'true' || node.dataset?.html2canvasIgnore === 'true')
+          ) {
+            return false;
+          }
+          return true;
+        }
+      };
+
+      let dataUrl = '';
+      try {
+        dataUrl = await toPng(cardEl, exportOptions);
+      } catch {
+        dataUrl = await toPng(cardEl, { ...exportOptions, skipFonts: true });
+      }
+
       const link = document.createElement('a');
       const winnerName = (groupCompetitionLeaderboard[0]?.circleName || 'المجموعة-الفائزة').replace(/\s+/g, '-');
-      link.download = `بطاقة-تتويج-${winnerName}-${selectedDate}.png`;
+      link.download = `بطاقة-تتويج-منافسة-المجموعات-${winnerName}-${selectedDate}.png`;
       link.href = dataUrl;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      showToast?.('تم تصدير بطاقة المجموعة الفائزة بصيغة PNG بنجاح 🏆');
+      showToast?.('تم تصدير بطاقة منافسة المجموعات بصيغة PNG بدقة عالية بنجاح');
     } catch {
       showToast?.('تعذر تصدير البطاقة، يرجى المحاولة مرة أخرى', 'error');
     } finally {
@@ -3824,312 +4176,1837 @@ export const AttendanceView: React.FC = () => {
         </ErrorBoundary>
       )}
 
-      {/* GROUP / CIRCLE COMPETITION LEADERBOARD MODAL ("منافسة المجموعات والحلقات") */}
+      {/* GROUP / CIRCLE COMPETITION LEADERBOARD STUDIO MODAL ("استوديو منافسة المجموعات والحلقات") */}
       {showGroupCompetitionModal && (
         <div
-          className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+          className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto"
           onClick={() => setShowGroupCompetitionModal(false)}
         >
           <div
-            className="bg-white rounded-3xl border border-stone-200/80 shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto p-5 sm:p-6 space-y-5"
+            className="w-full max-w-2xl my-auto space-y-3"
             onClick={e => e.stopPropagation()}
             dir="rtl"
           >
-            {/* Modal Header */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-stone-200/70">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-theme-primary text-white flex items-center justify-center shadow-xs">
-                  <Trophy className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-stone-800">
-                    منافسة المجموعات والحلقات
+            {/* Hidden File Inputs Inside Stop-Propagated Container to Prevent Modal Close / Freeze */}
+            <input
+              ref={compLogoInputRef}
+              type="file"
+              accept="image/*"
+              onClick={e => e.stopPropagation()}
+              onChange={handleUploadCompetitionLogo}
+              className="hidden"
+            />
+            <input
+              ref={compBgInputRef}
+              type="file"
+              accept="image/*"
+              onClick={e => e.stopPropagation()}
+              onChange={handleUploadCompetitionBg}
+              className="hidden"
+            />
+
+            {/* Studio Floating Control Toolbar (شريط أدوات استوديو منافسة المجموعات) */}
+            <div className="bg-white/95 backdrop-blur-md p-3 rounded-2xl border border-[#E2D5CC] shadow-xl space-y-2.5">
+              {/* Top Row: Studio Title + Period Toggle + Compact Export PNG & Close */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-stone-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-theme-primary text-white flex items-center justify-center shadow-2xs shrink-0">
+                    <Trophy className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-xs sm:text-sm font-bold text-stone-900">
+                    استوديو منافسة المجموعات والحلقات
                   </h3>
-                  <p className="text-xs text-stone-500 font-medium">
-                    ترتيب تنافسي تلقائي يجمع بين الأقل غياباً ونسبة الحضور ودرجة التحضير المبكر
-                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {/* Period Switcher */}
+                  <div className="inline-flex rounded-xl bg-[#FAF6F2] p-0.5 border border-[#E2D5CC]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCompetitionPeriod('week');
+                        setCompRankPillCustomText('');
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                        competitionPeriod === 'week'
+                          ? 'bg-theme-primary text-white shadow-2xs'
+                          : 'text-stone-600 hover:text-stone-900'
+                      }`}
+                    >
+                      {selectedStudyWeekInfo.weekLabelArabic} (الأحد - الخميس)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCompetitionPeriod('month');
+                        setCompRankPillCustomText('');
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                        competitionPeriod === 'month'
+                          ? 'bg-theme-primary text-white shadow-2xs'
+                          : 'text-stone-600 hover:text-stone-900'
+                      }`}
+                    >
+                      شهر {selectedStudyWeekInfo.hijriMonthName}
+                    </button>
+                  </div>
+
+                  {/* Export PNG Button */}
+                  <button
+                    type="button"
+                    onClick={handleExportWinnerGroupPng}
+                    disabled={isExportingCompetitionPng || groupCompetitionLeaderboard.length === 0}
+                    title="تصدير PNG"
+                    aria-label="تصدير PNG"
+                    className="h-9 px-3 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold shadow-xs transition active:scale-95 disabled:opacity-50 cursor-pointer inline-flex items-center gap-1.5"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>{isExportingCompetitionPng ? 'جاري التصدير...' : 'تصدير PNG'}</span>
+                  </button>
+
+                  {/* Close Modal Button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowGroupCompetitionModal(false)}
+                    className="w-9 h-9 rounded-xl bg-[#FAF6F2] hover:bg-[#F2ECE6] text-theme-primary border border-[#E2D5CC] flex items-center justify-center transition cursor-pointer"
+                    title="إغلاق"
+                    aria-label="إغلاق"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                {/* Period Switcher */}
-                <div className="inline-flex rounded-xl bg-stone-100 p-1 border border-stone-200/80">
+              {/* Compact Icon-Only Bar + Font & Zoom Controls */}
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                {/* a) Single "الألوان" Popover Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCompShowColorsPopover(prev => !prev);
+                    setCompShowSliders(false);
+                  }}
+                  title="الألوان"
+                  aria-label="الألوان"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                    compShowColorsPopover
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
+                  }`}
+                >
+                  <Palette className="w-4 h-4" />
+                </button>
+
+                {/* Toggle Other Groups Statistics List inside Card (Default ON) */}
+                <button
+                  type="button"
+                  onClick={() => setCompShowOtherGroups(prev => !prev)}
+                  title="إظهار/إخفاء إحصائيات بقية المجموعات"
+                  aria-label="إظهار/إخفاء إحصائيات بقية المجموعات"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                    compShowOtherGroups
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
+                  }`}
+                >
+                  <ListOrdered className="w-4 h-4" />
+                </button>
+
+                {/* b) Visibility & Frame Toggles */}
+                {/* Alignment Grid Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setCompShowAlignmentGrid(prev => !prev)}
+                  title="شبكة المحاذاة"
+                  aria-label="شبكة المحاذاة"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                    compShowAlignmentGrid
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
+                  }`}
+                >
+                  <Grid3X3 className="w-4 h-4" />
+                </button>
+
+                {/* Toggle Top Rectangle */}
+                <button
+                  type="button"
+                  onClick={() => setCompShowHeaderBox(prev => !prev)}
+                  title="إخفاء/إظهار المستطيل العلوي"
+                  aria-label="إخفاء/إظهار المستطيل العلوي"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                    compShowHeaderBox
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
+                  }`}
+                >
+                  <Square className="w-4 h-4" />
+                </button>
+
+                {/* Toggle Top Rectangle Border */}
+                <button
+                  type="button"
+                  onClick={() => setCompShowHeaderBorder(prev => !prev)}
+                  title="إخفاء/إظهار حدود المستطيل"
+                  aria-label="إخفاء/إظهار حدود المستطيل"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                    compShowHeaderBorder
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
+                  }`}
+                >
+                  <MinusSquare className="w-4 h-4" />
+                </button>
+
+                {/* Toggle Outer Frame */}
+                <button
+                  type="button"
+                  onClick={() => setCompShowOuterBorder(prev => !prev)}
+                  title="إخفاء/إظهار الإطار الخارجي"
+                  aria-label="إخفاء/إظهار الإطار الخارجي"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                    compShowOuterBorder
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
+                  }`}
+                >
+                  <Frame className="w-4 h-4" />
+                </button>
+
+                {/* c) Logo & Custom Background Upload */}
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    compLogoInputRef.current?.click();
+                  }}
+                  title="تغيير شعار المقرأة"
+                  aria-label="تغيير شعار المقرأة"
+                  className="w-9 h-9 rounded-xl bg-[#FAF6F2] text-theme-primary border border-[#E2D5CC] hover:bg-[#F2ECE6] flex items-center justify-center transition cursor-pointer"
+                >
+                  <ImagePlus className="w-4 h-4" />
+                </button>
+                {compLogoUrl && (
                   <button
                     type="button"
-                    onClick={() => setCompetitionPeriod('week')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                      competitionPeriod === 'week'
-                        ? 'bg-theme-primary text-white shadow-2xs'
-                        : 'text-stone-600 hover:text-stone-900'
-                    }`}
+                    onClick={() => setCompLogoUrl('')}
+                    title="استعادة الشعار الافتراضي"
+                    aria-label="استعادة الشعار الافتراضي"
+                    className="w-9 h-9 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 flex items-center justify-center transition cursor-pointer"
                   >
-                    {selectedStudyWeekInfo.weekLabelArabic} (الأحد - الخميس)
+                    <Trash2 className="w-4 h-4" />
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setCompetitionPeriod('month')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                      competitionPeriod === 'month'
-                        ? 'bg-theme-primary text-white shadow-2xs'
-                        : 'text-stone-600 hover:text-stone-900'
-                    }`}
-                  >
-                    شهر {selectedStudyWeekInfo.hijriMonthName}
-                  </button>
-                </div>
+                )}
 
                 <button
                   type="button"
-                  onClick={() => setShowGroupCompetitionModal(false)}
-                  className="w-9 h-9 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-600 flex items-center justify-center font-bold transition cursor-pointer"
-                  title="إغلاق"
+                  onClick={e => {
+                    e.stopPropagation();
+                    compBgInputRef.current?.click();
+                  }}
+                  title="خلفية مخصصة"
+                  aria-label="خلفية مخصصة"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                    compCustomBgUrl
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
+                  }`}
                 >
-                  ✕
+                  <ImageIcon className="w-4 h-4" />
                 </button>
-              </div>
-            </div>
+                {compCustomBgUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setCompCustomBgUrl('')}
+                    className="h-9 px-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-1 text-[11px] font-bold transition cursor-pointer"
+                    title="إزالة الخلفية"
+                    aria-label="إزالة الخلفية"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>إزالة الخلفية</span>
+                  </button>
+                )}
 
-            {/* Ranked Group Cards */}
-            {groupCompetitionLeaderboard.length > 0 ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                  {groupCompetitionLeaderboard.map((grp, idx) => {
-                    const rankNumber = idx + 1;
-                    const rankLabels = [
-                      'المركز الأول',
-                      'المركز الثاني',
-                      'المركز الثالث',
-                      'المركز الرابع',
-                      'المركز الخامس',
-                      'المركز السادس'
-                    ];
-                    const rankTitle = rankLabels[idx] || `المركز ${rankNumber}`;
-                    const isFirst = idx === 0;
-                    const isSecond = idx === 1;
-                    const isThird = idx === 2;
+                {/* Logo & Signature Size Sliders Toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCompShowSliders(prev => !prev);
+                    setCompShowColorsPopover(false);
+                  }}
+                  title="حجم الشعار وخط التوقيع"
+                  aria-label="حجم الشعار وخط التوقيع"
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                    compShowSliders
+                      ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                      : 'bg-[#FAF6F2] text-theme-primary border-[#E2D5CC] hover:bg-[#F2ECE6]'
+                  }`}
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                </button>
 
-                    return (
-                      <div
-                        key={grp.circleId}
-                        className={`rounded-2xl border p-4 transition-all ${
-                          isFirst
-                            ? 'bg-amber-50/70 border-amber-300 shadow-sm ring-1 ring-amber-300/60'
-                            : isSecond
-                              ? 'bg-stone-50/90 border-stone-300'
-                              : isThird
-                                ? 'bg-orange-50/40 border-orange-200'
-                                : 'bg-white border-stone-200/80'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2 mb-3">
-                          <div className="flex items-center gap-2.5">
-                            <div
-                              className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
-                                isFirst
-                                  ? 'bg-amber-500 text-white shadow-xs'
-                                  : isSecond
-                                    ? 'bg-stone-600 text-white'
-                                    : isThird
-                                      ? 'bg-amber-700 text-white'
-                                      : 'bg-stone-100 text-stone-700'
-                              }`}
-                            >
-                              {rankNumber}
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span
-                                  className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                                    isFirst
-                                      ? 'bg-amber-200/80 text-amber-950'
-                                      : 'bg-stone-200/70 text-stone-700'
-                                  }`}
-                                >
-                                  {rankTitle}
-                                </span>
-                                <span className="text-[11px] font-bold text-stone-500">
-                                  • {grp.trackName}
-                                </span>
-                              </div>
-                              <h4 className="text-base font-bold text-stone-800 mt-0.5">
-                                {grp.circleName}
-                              </h4>
-                              <p className="text-xs text-stone-500 font-medium">
-                                المعلمة: {grp.teacherName} • {grp.studentCount} طالبة
-                              </p>
-                            </div>
-                          </div>
+                {/* Reset Positions & Studio Button */}
+                <button
+                  type="button"
+                  onClick={handleResetCompetitionPositions}
+                  onDoubleClick={handleResetCompetitionStudio}
+                  title="إعادة ضبط المواضع (نقر مزدوج لإعادة ضبط التصميم بالكامل)"
+                  aria-label="إعادة ضبط المواضع"
+                  className="w-9 h-9 rounded-xl bg-[#FAF6F2] text-theme-primary border border-[#E2D5CC] hover:bg-[#F2ECE6] flex items-center justify-center transition cursor-pointer"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
 
-                          {/* Total Competition Score Badge */}
-                          <div className="text-left shrink-0">
-                            <div className="text-[10px] font-bold text-stone-500">
-                              المجموع الكلي
-                            </div>
-                            <div
-                              className={`text-xl font-extrabold ${
-                                isFirst ? 'text-amber-700' : 'text-theme-primary'
-                              }`}
-                            >
-                              {grp.totalCompetitionScore}%
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Metrics Breakdown */}
-                        <div className="grid grid-cols-3 gap-2 pt-2.5 border-t border-stone-200/60 text-center">
-                          <div className="bg-white/90 rounded-xl p-2 border border-stone-200/60">
-                            <div className="text-[10px] font-bold text-stone-500">
-                              نسبة الحضور
-                            </div>
-                            <div className="text-sm font-bold text-emerald-700 mt-0.5">
-                              {grp.attendanceRate}%
-                            </div>
-                          </div>
-                          <div className="bg-white/90 rounded-xl p-2 border border-stone-200/60">
-                            <div className="text-[10px] font-bold text-stone-500">
-                              الأقل غياباً
-                            </div>
-                            <div className="text-sm font-bold text-stone-800 mt-0.5">
-                              {grp.absentSessions === 0 ? '٠ غياب' : `${grp.absentSessions} غياب`}
-                            </div>
-                          </div>
-                          <div className="bg-white/90 rounded-xl p-2 border border-stone-200/60">
-                            <div className="text-[10px] font-bold text-stone-500">
-                              التحضير المبكر
-                            </div>
-                            <div className="text-sm font-bold text-amber-700 mt-0.5">
-                              {grp.earlyPrepRate}% ({grp.earlyPrepSessions})
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                {/* Font Selector */}
+                <div className="h-9 inline-flex items-center gap-1 bg-[#FAF6F2] px-2.5 rounded-xl border border-[#E2D5CC]">
+                  <Type className="w-3.5 h-3.5 text-theme-primary" />
+                  <select
+                    value={compFontFamily}
+                    onChange={e => setCompFontFamily(e.target.value as any)}
+                    className="bg-transparent text-xs font-bold text-stone-800 focus:outline-hidden cursor-pointer"
+                    title="نوع الخط"
+                    aria-label="نوع الخط"
+                  >
+                    <option value="Thmanyah Sans">ثمانية</option>
+                    <option value="Cairo">القاهرة</option>
+                    <option value="Tajawal">تجوال</option>
+                    <option value="Amiri">أميري</option>
+                    <option value="Readex Pro">Readex</option>
+                  </select>
                 </div>
 
-                {/* Winner Announcement Card Preview & PNG Export */}
-                {groupCompetitionLeaderboard[0] && (
-                  <div className="pt-4 border-t border-stone-200/80 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-stone-700">
-                        معاينة بطاقة تتويج المجموعة الفائزة بالمركز الأول (للمشاركة عبر واتساب):
-                      </span>
+                {/* -A / 100% / +A Text Scale Controls */}
+                <div className="h-9 inline-flex items-center bg-[#FAF6F2] rounded-xl border border-[#E2D5CC] overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setCompFontScale(prev => Math.min(1.35, Number((prev + 0.06).toFixed(2))))}
+                    className="px-2 h-full hover:bg-[#F2ECE6] font-bold text-theme-primary cursor-pointer"
+                    title="تكبير النص"
+                    aria-label="تكبير النص"
+                  >
+                    +A
+                  </button>
+                  <span className="text-[10px] font-mono text-stone-600 px-1.5 border-x border-[#E2D5CC]">
+                    {Math.round(compFontScale * 100)}%
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCompFontScale(prev => Math.max(0.8, Number((prev - 0.06).toFixed(2))))}
+                    className="px-2 h-full hover:bg-[#F2ECE6] font-bold text-theme-primary cursor-pointer"
+                    title="تصغير النص"
+                    aria-label="تصغير النص"
+                  >
+                    -A
+                  </button>
+                </div>
+              </div>
+
+              {/* Logo Size & Signature Font Size Sliders Popover */}
+              {compShowSliders && (
+                <div className="pt-2 border-t border-stone-100 bg-[#FCFAF8] p-2.5 rounded-xl grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                  <div className="flex items-center justify-between gap-2 bg-white p-2 rounded-xl border border-stone-200">
+                    <span className="font-bold text-stone-700 shrink-0">حجم شعار المقرأة: {compLogoSize}px</span>
+                    <input
+                      type="range"
+                      min={36}
+                      max={130}
+                      value={compLogoSize}
+                      onChange={e => setCompLogoSize(Number(e.target.value))}
+                      className="w-28 accent-theme-primary cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 bg-white p-2 rounded-xl border border-stone-200">
+                    <span className="font-bold text-stone-700 shrink-0">
+                      حجم خط التوقيع: {compSignatureFontSize}px
+                    </span>
+                    <div className="flex items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={handleExportWinnerGroupPng}
-                        disabled={isExportingCompetitionPng}
-                        className="px-4 py-2 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold flex items-center gap-2 shadow-xs transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                        onClick={() => setCompSignatureFontSize(prev => Math.max(8, Number((prev - 0.5).toFixed(1))))}
+                        className="w-6 h-6 rounded-lg bg-[#FAF6F2] hover:bg-[#F2ECE6] text-theme-primary border border-[#E2D5CC] font-bold flex items-center justify-center cursor-pointer"
+                        title="تصغير خط التوقيع"
                       >
-                        <Download className="w-4 h-4" />
-                        <span>
-                          {isExportingCompetitionPng
-                            ? 'جاري تصدير البطاقة...'
-                            : 'تصدير بطاقة المجموعة الفائزة PNG'}
-                        </span>
+                        -
+                      </button>
+                      <input
+                        type="range"
+                        min={8}
+                        max={20}
+                        step={0.5}
+                        value={compSignatureFontSize}
+                        onChange={e => setCompSignatureFontSize(Number(e.target.value))}
+                        className="w-20 accent-theme-primary cursor-pointer"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setCompSignatureFontSize(prev => Math.min(20, Number((prev + 0.5).toFixed(1))))}
+                        className="w-6 h-6 rounded-lg bg-[#FAF6F2] hover:bg-[#F2ECE6] text-theme-primary border border-[#E2D5CC] font-bold flex items-center justify-center cursor-pointer"
+                        title="تكبير خط التوقيع"
+                      >
+                        +
                       </button>
                     </div>
+                  </div>
+                </div>
+              )}
 
-                    <div className="flex justify-center overflow-x-auto py-1">
-                      <div
-                        ref={competitionWinnerCardRef}
-                        style={{
-                          width: '540px',
-                          minWidth: '540px',
-                          backgroundColor: '#FFFDF8',
-                          borderColor: '#C9A24D'
-                        }}
-                        className="rounded-3xl border-2 p-6 text-center shadow-md relative overflow-hidden"
-                        dir="rtl"
-                      >
-                        <div
-                          style={{ backgroundColor: '#9A5643' }}
-                          className="rounded-2xl py-3 px-5 text-white mb-4 shadow-xs"
-                        >
-                          <div className="text-xs font-bold opacity-90">
-                            {boardAcademyTitle || 'غيث الغيم'}
-                          </div>
-                          <div className="text-lg font-extrabold mt-0.5">
-                            تتويج المجموعة الفائزة في منافسة الحلقات
-                          </div>
+              {/* Unified "الألوان" (Colors & Granular Borders) Popover for Competition Studio */}
+              {compShowColorsPopover && (
+                <div className="pt-2.5 border-t border-stone-100 bg-[#FCFAF8] p-3 rounded-xl space-y-2.5 animate-in fade-in text-[11px]">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {/* 1. الخلفية + إزالة الخلفية */}
+                    <div className="flex flex-col gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="font-bold text-stone-800">الخلفية</span>
+                        <div className="flex items-center gap-1">
+                          {BG_COLOR_PRESETS.map(p => (
+                            <button
+                              key={p.label}
+                              type="button"
+                              onClick={() => setCompBgColor(p.color)}
+                              style={{ backgroundColor: p.color }}
+                              title={p.label}
+                              aria-label={p.label}
+                              className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                                compBgColor.toLowerCase() === p.color.toLowerCase()
+                                  ? 'ring-2 ring-offset-1 ring-theme-primary border-white scale-110'
+                                  : 'border-stone-300 hover:scale-105'
+                              }`}
+                            />
+                          ))}
+                          <input
+                            type="color"
+                            value={compBgColor}
+                            onChange={e => setCompBgColor(e.target.value)}
+                            title="الخلفية"
+                            aria-label="الخلفية"
+                            className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                          />
                         </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-100 text-[10px]">
+                        <span className="text-stone-500 font-bold">تظليل: {compBgTintOpacity}%</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={compBgTintOpacity}
+                          onChange={e => setCompBgTintOpacity(Number(e.target.value))}
+                          className="w-20 accent-theme-primary cursor-pointer"
+                        />
+                        <input
+                          type="color"
+                          value={compBgTintColor}
+                          onChange={e => setCompBgTintColor(e.target.value)}
+                          title="لون التظليل"
+                          aria-label="لون التظليل"
+                          className="w-4 h-4 rounded border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                        {compCustomBgUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setCompCustomBgUrl('')}
+                            className="px-1.5 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold cursor-pointer"
+                          >
+                            إزالة الخلفية
+                          </button>
+                        )}
+                      </div>
+                    </div>
 
-                        <div
-                          style={{
-                            backgroundColor: '#FBF7EE',
-                            borderColor: '#C9A24D',
-                            color: '#6E5638'
+                    {/* 2. الإطار الخارجي (Outer Frame Color & Show/Hide Toggle) */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">الإطار الخارجي</span>
+                      <div className="flex items-center gap-1 flex-wrap justify-end">
+                        {['#C9A24D', '#9A5643', '#2D5A43', '#1E293B', '#FFFFFF'].map(c => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => {
+                              setCompOuterBorderColor(c);
+                              setCompShowOuterBorder(true);
+                            }}
+                            style={{ backgroundColor: c }}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              compShowOuterBorder && compOuterBorderColor.toLowerCase() === c.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                            title={c}
+                          />
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setCompShowOuterBorder(prev => !prev)}
+                          className={`px-1.5 py-0.5 rounded-md border text-[9px] font-bold transition cursor-pointer ${
+                            !compShowOuterBorder
+                              ? 'bg-theme-primary text-white border-theme-primary'
+                              : 'border-stone-300 bg-stone-50 text-stone-600 hover:bg-stone-100'
+                          }`}
+                        >
+                          {compShowOuterBorder ? 'بدون إطار' : 'إظهار الإطار'}
+                        </button>
+                        <input
+                          type="color"
+                          value={compOuterBorderColor}
+                          onChange={e => {
+                            setCompOuterBorderColor(e.target.value);
+                            setCompShowOuterBorder(true);
                           }}
-                          className="inline-flex items-center gap-2 px-4 py-1 rounded-full border text-xs font-bold mb-3"
+                          title="الإطار الخارجي"
+                          aria-label="الإطار الخارجي"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 3. المستطيل العلوي (Fill + Show/Hide Box) */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">المستطيل العلوي</span>
+                      <div className="flex items-center gap-1 flex-wrap justify-end">
+                        {[
+                          { color: '#9A5643', label: 'بني دافئ' },
+                          { color: '#2D5A43', label: 'أخضر زيتي' },
+                          { color: '#B8860B', label: 'ذهبي' },
+                          { color: '#7A283B', label: 'عنابي' },
+                          { color: '#1E293B', label: 'كحلي' }
+                        ].map(swatch => (
+                          <button
+                            key={swatch.color}
+                            type="button"
+                            onClick={() => {
+                              setCompHeaderBgColor(swatch.color);
+                              setCompShowHeaderBox(true);
+                            }}
+                            style={{ backgroundColor: swatch.color }}
+                            title={swatch.label}
+                            aria-label={swatch.label}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              compShowHeaderBox && compHeaderBgColor.toLowerCase() === swatch.color.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-white scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                          />
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setCompShowHeaderBox(prev => !prev)}
+                          className={`px-1.5 py-0.5 rounded-md border text-[9px] font-bold transition cursor-pointer ${
+                            !compShowHeaderBox
+                              ? 'bg-theme-primary text-white border-theme-primary'
+                              : 'border-stone-300 bg-stone-50 text-stone-600 hover:bg-stone-100'
+                          }`}
                         >
-                          <span>
-                            {competitionPeriod === 'week'
-                              ? selectedStudyWeekInfo.weekLabelArabic
-                              : `شهر ${selectedStudyWeekInfo.hijriMonthName}`}
-                          </span>
-                          <span>•</span>
-                          <span>المركز الأول</span>
-                        </div>
-
-                        <div className="my-2">
-                          <div className="text-2xl font-extrabold text-stone-800">
-                            {groupCompetitionLeaderboard[0].circleName}
-                          </div>
-                          <div className="text-xs font-bold text-stone-600 mt-1">
-                            {groupCompetitionLeaderboard[0].trackName} • بإشراف المعلمة:{' '}
-                            {groupCompetitionLeaderboard[0].teacherName}
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-2.5 my-4">
-                          <div className="rounded-2xl bg-amber-50/90 border border-amber-200/80 p-2.5">
-                            <div className="text-[11px] font-bold text-stone-600">
-                              نسبة الحضور
-                            </div>
-                            <div className="text-base font-extrabold text-emerald-800 mt-0.5">
-                              {groupCompetitionLeaderboard[0].attendanceRate}%
-                            </div>
-                          </div>
-                          <div className="rounded-2xl bg-amber-50/90 border border-amber-200/80 p-2.5">
-                            <div className="text-[11px] font-bold text-stone-600">
-                              الانضباط والغياب
-                            </div>
-                            <div className="text-base font-extrabold text-stone-800 mt-0.5">
-                              {groupCompetitionLeaderboard[0].absentSessions === 0
-                                ? '٠ غياب'
-                                : `${groupCompetitionLeaderboard[0].absentSessions} غياب`}
-                            </div>
-                          </div>
-                          <div className="rounded-2xl bg-amber-50/90 border border-amber-200/80 p-2.5">
-                            <div className="text-[11px] font-bold text-stone-600">
-                              التحضير المبكر
-                            </div>
-                            <div className="text-base font-extrabold text-amber-800 mt-0.5">
-                              {groupCompetitionLeaderboard[0].earlyPrepRate}%
-                            </div>
-                          </div>
-                        </div>
-
-                        <div
-                          style={{
-                            backgroundColor: '#FFF8E7',
-                            borderColor: '#C9A24D'
+                          {compShowHeaderBox ? 'إخفاء' : 'إظهار'}
+                        </button>
+                        <input
+                          type="color"
+                          value={compHeaderBgColor}
+                          onChange={e => {
+                            setCompHeaderBgColor(e.target.value);
+                            setCompShowHeaderBox(true);
                           }}
-                          className="inline-flex items-center gap-2 px-5 py-1.5 rounded-2xl border text-sm font-extrabold text-amber-900"
-                        >
-                          <span>المجموع الكلي للمنافسة:</span>
-                          <span>{groupCompetitionLeaderboard[0].totalCompetitionScore}%</span>
-                        </div>
+                          title="المستطيل العلوي"
+                          aria-label="المستطيل العلوي"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </div>
+                    </div>
 
-                        <p className="text-xs font-bold text-stone-600 mt-3">
-                          بارك الله في جهود معلمة الحلقة وطالباتها وزادهنّ همّةً وتألقاً
-                        </p>
+                    {/* 4. إطار المستطيل العلوي (Border Color + Border Toggle) */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">إطار المستطيل</span>
+                      <div className="flex items-center gap-1 flex-wrap justify-end">
+                        {[
+                          { color: '#C9A24D', label: 'ذهبي' },
+                          { color: '#FFFFFF', label: 'أبيض' },
+                          { color: '#9A5643', label: 'بني دافئ' },
+                          { color: '#2D5A43', label: 'أخضر زيتي' },
+                          { color: '#1E293B', label: 'كحلي' }
+                        ].map(swatch => (
+                          <button
+                            key={swatch.color}
+                            type="button"
+                            onClick={() => {
+                              setCompHeaderBorderColor(swatch.color);
+                              setCompShowHeaderBorder(true);
+                            }}
+                            style={{ backgroundColor: swatch.color }}
+                            title={swatch.label}
+                            aria-label={swatch.label}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              compShowHeaderBorder && compHeaderBorderColor.toLowerCase() === swatch.color.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                          />
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setCompShowHeaderBorder(prev => !prev)}
+                          className={`px-1.5 py-0.5 rounded-md border text-[9px] font-bold transition cursor-pointer ${
+                            !compShowHeaderBorder
+                              ? 'bg-theme-primary text-white border-theme-primary'
+                              : 'border-stone-300 bg-stone-50 text-stone-600 hover:bg-stone-100'
+                          }`}
+                        >
+                          بدون إطار
+                        </button>
+                        <input
+                          type="color"
+                          value={compHeaderBorderColor}
+                          onChange={e => {
+                            setCompHeaderBorderColor(e.target.value);
+                            setCompShowHeaderBorder(true);
+                          }}
+                          title="إطار المستطيل"
+                          aria-label="إطار المستطيل"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 5. شريط المركز والأسبوع (Pill Fill) */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">تعبئة الشريط</span>
+                      <div className="flex items-center gap-1">
+                        {[
+                          { color: '#FBF7EE', label: 'كريمي' },
+                          { color: '#FFFFFF', label: 'أبيض' },
+                          { color: '#FDF7E7', label: 'ذهبي فاتح' },
+                          { color: '#9A5643', label: 'بني دافئ' },
+                          { color: '#2D5A43', label: 'أخضر زيتي' },
+                          { color: '#1E293B', label: 'كحلي' }
+                        ].map(swatch => (
+                          <button
+                            key={swatch.color}
+                            type="button"
+                            onClick={() => setCompPillBgColor(swatch.color)}
+                            style={{ backgroundColor: swatch.color }}
+                            title={swatch.label}
+                            aria-label={swatch.label}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              compPillBgColor.toLowerCase() === swatch.color.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                          />
+                        ))}
+                        <input
+                          type="color"
+                          value={compPillBgColor}
+                          onChange={e => setCompPillBgColor(e.target.value)}
+                          title="تعبئة الشريط"
+                          aria-label="تعبئة الشريط"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 6. إطار شريط المركز (Pill Border Color + Toggle) */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">إطار الشريط</span>
+                      <div className="flex items-center gap-1 flex-wrap justify-end">
+                        {[
+                          { color: '#C9A24D', label: 'ذهبي' },
+                          { color: '#9A5643', label: 'بني دافئ' },
+                          { color: '#2D5A43', label: 'أخضر زيتي' },
+                          { color: '#D47A8F', label: 'وردي' },
+                          { color: '#1E293B', label: 'كحلي' },
+                          { color: '#FFFFFF', label: 'أبيض' }
+                        ].map(swatch => (
+                          <button
+                            key={swatch.color}
+                            type="button"
+                            onClick={() => {
+                              setCompPillBorderColor(swatch.color);
+                              setCompShowPillBorder(true);
+                            }}
+                            style={{ backgroundColor: swatch.color }}
+                            title={swatch.label}
+                            aria-label={swatch.label}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              compShowPillBorder && compPillBorderColor.toLowerCase() === swatch.color.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                          />
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setCompShowPillBorder(prev => !prev)}
+                          title="إظهار/إخفاء إطار الشريط"
+                          className={`px-1.5 py-0.5 rounded-md border text-[9px] font-bold transition cursor-pointer ${
+                            !compShowPillBorder
+                              ? 'bg-theme-primary text-white border-theme-primary'
+                              : 'border-stone-300 bg-stone-50 text-stone-600 hover:bg-stone-100'
+                          }`}
+                        >
+                          بدون إطار
+                        </button>
+                        <input
+                          type="color"
+                          value={compPillBorderColor.startsWith('#') ? compPillBorderColor : '#C9A24D'}
+                          onChange={e => {
+                            setCompPillBorderColor(e.target.value);
+                            setCompShowPillBorder(true);
+                          }}
+                          title="إطار الشريط"
+                          aria-label="إطار الشريط"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 7. بطاقات الإحصائيات الـ 4 (Stats Cards Fill) */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">بطاقات الإحصاء</span>
+                      <div className="flex items-center gap-1">
+                        {[
+                          { color: '#FFFBEB', label: 'ذهبي ناعم' },
+                          { color: '#FAF6F2', label: 'كريمي' },
+                          { color: '#FFFFFF', label: 'أبيض' },
+                          { color: '#EFF6F1', label: 'زيتي فاتح' },
+                          { color: '#FDF2F5', label: 'وردي فاتح' },
+                          { color: '#F5EBE6', label: 'بني فاتح' }
+                        ].map(swatch => (
+                          <button
+                            key={swatch.color}
+                            type="button"
+                            onClick={() => setCompStatsCardBgColor(swatch.color)}
+                            style={{ backgroundColor: swatch.color }}
+                            title={swatch.label}
+                            aria-label={swatch.label}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              compStatsCardBgColor.toLowerCase() === swatch.color.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                          />
+                        ))}
+                        <input
+                          type="color"
+                          value={compStatsCardBgColor}
+                          onChange={e => setCompStatsCardBgColor(e.target.value)}
+                          title="بطاقات الإحصاء"
+                          aria-label="بطاقات الإحصاء"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 8. إطار بطاقات الإحصائيات (Stats Cards Border Color + Toggle) */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">إطار الإحصاء</span>
+                      <div className="flex items-center gap-1 flex-wrap justify-end">
+                        {[
+                          { color: '#C9A24D', label: 'ذهبي' },
+                          { color: '#FDE68A', label: 'ذهبي فاتح' },
+                          { color: '#9A5643', label: 'بني دافئ' },
+                          { color: '#2D5A43', label: 'أخضر زيتي' },
+                          { color: '#D47A8F', label: 'وردي' },
+                          { color: '#1E293B', label: 'كحلي' }
+                        ].map(swatch => (
+                          <button
+                            key={swatch.color}
+                            type="button"
+                            onClick={() => {
+                              setCompStatsCardBorderColor(swatch.color);
+                              setCompShowStatsCardBorder(true);
+                            }}
+                            style={{ backgroundColor: swatch.color }}
+                            title={swatch.label}
+                            aria-label={swatch.label}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              compShowStatsCardBorder && compStatsCardBorderColor.toLowerCase() === swatch.color.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                          />
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setCompShowStatsCardBorder(prev => !prev)}
+                          className={`px-1.5 py-0.5 rounded-md border text-[9px] font-bold transition cursor-pointer ${
+                            !compShowStatsCardBorder
+                              ? 'bg-theme-primary text-white border-theme-primary'
+                              : 'border-stone-300 bg-stone-50 text-stone-600 hover:bg-stone-100'
+                          }`}
+                        >
+                          بدون إطار
+                        </button>
+                        <input
+                          type="color"
+                          value={compStatsCardBorderColor}
+                          onChange={e => {
+                            setCompStatsCardBorderColor(e.target.value);
+                            setCompShowStatsCardBorder(true);
+                          }}
+                          title="إطار الإحصاء"
+                          aria-label="إطار الإحصاء"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 9. بطاقات بقية المجموعات (Other Groups Cards Fill) */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">بطاقات الحلقات</span>
+                      <div className="flex items-center gap-1">
+                        {[
+                          { color: '#FFFBEB', label: 'ذهبي ناعم' },
+                          { color: '#FAF6F2', label: 'كريمي' },
+                          { color: '#FFFFFF', label: 'أبيض' },
+                          { color: '#EFF6F1', label: 'زيتي فاتح' },
+                          { color: '#FDF2F5', label: 'وردي فاتح' },
+                          { color: '#F5EBE6', label: 'بني فاتح' }
+                        ].map(swatch => (
+                          <button
+                            key={swatch.color}
+                            type="button"
+                            onClick={() => setCompOtherGroupsBgColor(swatch.color)}
+                            style={{ backgroundColor: swatch.color }}
+                            title={swatch.label}
+                            aria-label={swatch.label}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              compOtherGroupsBgColor.toLowerCase() === swatch.color.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                          />
+                        ))}
+                        <input
+                          type="color"
+                          value={compOtherGroupsBgColor}
+                          onChange={e => setCompOtherGroupsBgColor(e.target.value)}
+                          title="بطاقات الحلقات"
+                          aria-label="بطاقات الحلقات"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 10. إطار بطاقات بقية المجموعات (Other Groups Cards Border + Toggle) */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
+                      <span className="font-bold text-stone-800">إطار الحلقات</span>
+                      <div className="flex items-center gap-1 flex-wrap justify-end">
+                        {[
+                          { color: '#C9A24D', label: 'ذهبي' },
+                          { color: '#FDE68A', label: 'ذهبي فاتح' },
+                          { color: '#9A5643', label: 'بني دافئ' },
+                          { color: '#2D5A43', label: 'أخضر زيتي' },
+                          { color: '#D47A8F', label: 'وردي' },
+                          { color: '#1E293B', label: 'كحلي' }
+                        ].map(swatch => (
+                          <button
+                            key={swatch.color}
+                            type="button"
+                            onClick={() => {
+                              setCompOtherGroupsBorderColor(swatch.color);
+                              setCompShowOtherGroupsBorder(true);
+                            }}
+                            style={{ backgroundColor: swatch.color }}
+                            title={swatch.label}
+                            aria-label={swatch.label}
+                            className={`w-4 h-4 rounded-full border transition cursor-pointer ${
+                              compShowOtherGroupsBorder && compOtherGroupsBorderColor.toLowerCase() === swatch.color.toLowerCase()
+                                ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
+                                : 'border-stone-300 hover:scale-105'
+                            }`}
+                          />
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setCompShowOtherGroupsBorder(prev => !prev)}
+                          className={`px-1.5 py-0.5 rounded-md border text-[9px] font-bold transition cursor-pointer ${
+                            !compShowOtherGroupsBorder
+                              ? 'bg-theme-primary text-white border-theme-primary'
+                              : 'border-stone-300 bg-stone-50 text-stone-600 hover:bg-stone-100'
+                          }`}
+                        >
+                          بدون إطار
+                        </button>
+                        <input
+                          type="color"
+                          value={compOtherGroupsBorderColor}
+                          onChange={e => {
+                            setCompOtherGroupsBorderColor(e.target.value);
+                            setCompShowOtherGroupsBorder(true);
+                          }}
+                          title="إطار الحلقات"
+                          aria-label="إطار الحلقات"
+                          className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
+                        />
                       </div>
                     </div>
                   </div>
-                )}
+
+                  {/* 11. ألوان النصوص (Title, Pill, Winner, Stats, Other Groups, Dua, Signatures) */}
+                  <div className="bg-white p-2.5 rounded-xl border border-stone-200 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1.5 border-b border-stone-100">
+                      <span className="font-bold text-stone-800">ألوان النصوص</span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {TEXT_COLOR_SWATCHES.map(preset => (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => {
+                              setCompTitleTextColor(compShowHeaderBox ? preset.headerText : preset.color);
+                              setCompPillTextColor(preset.color);
+                              setCompWinnerTextColor(preset.color);
+                              setCompStatsTextColor(preset.color);
+                              setCompOtherGroupsTextColor(preset.color);
+                              setCompDuaTextColor(preset.color);
+                              setCompSignatureTextColor(preset.color);
+                            }}
+                            style={{ backgroundColor: preset.color }}
+                            className="px-2 py-0.5 rounded-md text-white text-[10px] font-bold shadow-2xs hover:opacity-90 transition cursor-pointer"
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-7 gap-1.5 text-[10px]">
+                      <label className="flex items-center justify-between gap-1 bg-[#FAF6F2] px-2 py-1 rounded-lg border border-stone-200/80 cursor-pointer">
+                        <span className="font-bold text-stone-700">العنوان</span>
+                        <input
+                          type="color"
+                          value={compTitleTextColor}
+                          onChange={e => setCompTitleTextColor(e.target.value)}
+                          className="w-4 h-4 rounded border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-1 bg-[#FAF6F2] px-2 py-1 rounded-lg border border-stone-200/80 cursor-pointer">
+                        <span className="font-bold text-stone-700">الشريط</span>
+                        <input
+                          type="color"
+                          value={compPillTextColor}
+                          onChange={e => setCompPillTextColor(e.target.value)}
+                          className="w-4 h-4 rounded border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-1 bg-[#FAF6F2] px-2 py-1 rounded-lg border border-stone-200/80 cursor-pointer">
+                        <span className="font-bold text-stone-700">الفائزة</span>
+                        <input
+                          type="color"
+                          value={compWinnerTextColor}
+                          onChange={e => setCompWinnerTextColor(e.target.value)}
+                          className="w-4 h-4 rounded border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-1 bg-[#FAF6F2] px-2 py-1 rounded-lg border border-stone-200/80 cursor-pointer">
+                        <span className="font-bold text-stone-700">الإحصاء</span>
+                        <input
+                          type="color"
+                          value={compStatsTextColor}
+                          onChange={e => setCompStatsTextColor(e.target.value)}
+                          className="w-4 h-4 rounded border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-1 bg-[#FAF6F2] px-2 py-1 rounded-lg border border-stone-200/80 cursor-pointer">
+                        <span className="font-bold text-stone-700">الحلقات</span>
+                        <input
+                          type="color"
+                          value={compOtherGroupsTextColor}
+                          onChange={e => setCompOtherGroupsTextColor(e.target.value)}
+                          className="w-4 h-4 rounded border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-1 bg-[#FAF6F2] px-2 py-1 rounded-lg border border-stone-200/80 cursor-pointer">
+                        <span className="font-bold text-stone-700">الدعاء</span>
+                        <input
+                          type="color"
+                          value={compDuaTextColor}
+                          onChange={e => setCompDuaTextColor(e.target.value)}
+                          className="w-4 h-4 rounded border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-1 bg-[#FAF6F2] px-2 py-1 rounded-lg border border-stone-200/80 cursor-pointer">
+                        <span className="font-bold text-stone-700">التوقيع</span>
+                        <input
+                          type="color"
+                          value={compSignatureTextColor}
+                          onChange={e => setCompSignatureTextColor(e.target.value)}
+                          className="w-4 h-4 rounded border border-stone-300 cursor-pointer bg-transparent"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ====================================================================
+                Exportable Group Competition Card Canvas (بطاقة منافسة المجموعات والحلقات)
+                - Every element is freely draggable via pointer events (mouse/touch)
+                - Granular Border Toggle & Color Controls for every visual container
+                - Auto-collapsing click-to-edit text
+                - Bottom Opposite Signatures ("قائدة المقرأة" on Right, "المشرفة" on Left)
+               ==================================================================== */}
+            {groupCompetitionLeaderboard.length > 0 ? (
+              <div className="flex justify-center overflow-x-auto pb-2">
+                <div
+                  ref={competitionWinnerCardRef}
+                  onClick={e => {
+                    if (e.target === e.currentTarget) {
+                      setCompSelectedElement(null);
+                    }
+                  }}
+                  style={{
+                    width: '620px',
+                    minWidth: '620px',
+                    fontFamily: `"${compFontFamily}", sans-serif`,
+                    backgroundColor: compBgColor,
+                    borderColor: compShowOuterBorder ? compOuterBorderColor : 'transparent',
+                    borderWidth: compShowOuterBorder ? '4px' : '0px',
+                    borderStyle: compShowOuterBorder ? 'solid' : 'none',
+                    color: compWinnerTextColor
+                  }}
+                  className="relative rounded-[32px] p-6 sm:p-7 text-center shadow-2xl overflow-hidden select-none"
+                  dir="rtl"
+                >
+                  {/* Custom Uploaded Background Image Layer (Lightweight Compressed Base64 <img>) */}
+                  {compCustomBgUrl && (
+                    <img
+                      src={compCustomBgUrl}
+                      alt=""
+                      draggable={false}
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        zIndex: 0,
+                        pointerEvents: 'none'
+                      }}
+                    />
+                  )}
+
+                  {/* Background Tint Overlay */}
+                  {compBgTintOpacity > 0 && (
+                    <div
+                      style={{
+                        backgroundColor: compBgTintColor,
+                        opacity: compBgTintOpacity / 100,
+                        zIndex: 1
+                      }}
+                      className="pointer-events-none absolute inset-0"
+                    />
+                  )}
+
+                  {/* Optional Inner Decorative Frame */}
+                  {compShowOuterBorder && (
+                    <div
+                      style={{
+                        borderColor: `${compOuterBorderColor}70`,
+                        borderWidth: '1.5px',
+                        borderStyle: 'solid',
+                        zIndex: 2
+                      }}
+                      className="pointer-events-none absolute inset-3 rounded-[24px]"
+                    />
+                  )}
+
+                  {/* Alignment Grid Overlay (Strictly excluded from PNG export) */}
+                  {compShowAlignmentGrid && !isExportingCompetitionPng && (
+                    <div
+                      data-export-ignore="true"
+                      data-html2canvas-ignore="true"
+                      className="pointer-events-none absolute inset-0 z-25 overflow-hidden"
+                    >
+                      <div className="absolute inset-y-0 left-1/4 border-l border-dashed border-[#9A5643]/30" />
+                      <div className="absolute inset-y-0 left-3/4 border-l border-dashed border-[#9A5643]/30" />
+                      <div className="absolute inset-x-0 top-1/4 border-t border-dashed border-[#9A5643]/30" />
+                      <div className="absolute inset-x-0 top-3/4 border-t border-dashed border-[#9A5643]/30" />
+                      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 border-l-2 border-dashed border-[#9A5643]/65" />
+                      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-[#9A5643]/65" />
+                    </div>
+                  )}
+
+                  {/* Main Card Content Container */}
+                  <div className="relative z-10 flex flex-col items-center space-y-3.5">
+                    {/* 1. DRAGGABLE LOGO ("شعار المقرأة") */}
+                    <div
+                      onPointerDown={e => handleStartDragCompElement('logo', e)}
+                      style={{
+                        transform: `translate3d(${compElementOffsets.logo.x}px, ${compElementOffsets.logo.y}px, 0)`,
+                        touchAction: 'none',
+                        cursor: compDraggingElement === 'logo' ? 'grabbing' : 'grab',
+                        zIndex: compSelectedElement === 'logo' ? 30 : 12
+                      }}
+                      className={`flex justify-center p-1 rounded-2xl transition-shadow ${
+                        compSelectedElement === 'logo' && !isExportingCompetitionPng
+                          ? 'ring-2 ring-amber-500/80'
+                          : 'hover:ring-1 hover:ring-amber-400/50'
+                      }`}
+                    >
+                      {compLogoUrl ? (
+                        <img
+                          src={compLogoUrl}
+                          alt="شعار المقرأة"
+                          crossOrigin="anonymous"
+                          draggable={false}
+                          width={compLogoSize}
+                          height={compLogoSize}
+                          style={{
+                            width: `${compLogoSize}px`,
+                            height: `${compLogoSize}px`
+                          }}
+                          className="object-contain drop-shadow-xs pointer-events-none"
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: `${compLogoSize}px`,
+                            height: `${compLogoSize}px`,
+                            borderColor: `${compOuterBorderColor}90`
+                          }}
+                          className="rounded-2xl bg-white/95 border-2 shadow-xs flex items-center justify-center p-2 pointer-events-none"
+                        >
+                          <svg
+                            width={Math.round(compLogoSize * 0.72)}
+                            height={Math.round(compLogoSize * 0.72)}
+                            viewBox="0 0 48 48"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                            style={{
+                              width: `${Math.round(compLogoSize * 0.72)}px`,
+                              height: `${Math.round(compLogoSize * 0.72)}px`
+                            }}
+                          >
+                            {/* غيمة الغيث والبركة + الكتاب المفتوح (شعار غيث الغيم) */}
+                            <path
+                              d="M15 27H35C38.3137 27 41 24.3137 41 21C41 17.9255 38.6879 15.3905 35.702 15.0369C34.8012 10.172 30.3512 6.5 25 6.5C20.2215 6.5 16.1782 9.5754 14.7495 13.8617C11.9896 14.6644 10 17.2063 10 20.25C10 23.9779 12.2386 27 15 27Z"
+                              fill="#9A5643"
+                              fillOpacity="0.18"
+                              stroke="#9A5643"
+                              strokeWidth="2.4"
+                              strokeLinejoin="round"
+                            />
+                            <path
+                              d="M12 33C12 31.3431 13.3431 30 15 30H22.5C23.3284 30 24 30.6716 24 31.5V42.5C24 41.7 23.2 41 21.8 41H14C12.8954 41 12 41.8954 12 43V33Z"
+                              fill="#C9A24D"
+                              fillOpacity="0.25"
+                              stroke="#9A5643"
+                              strokeWidth="2.2"
+                              strokeLinejoin="round"
+                            />
+                            <path
+                              d="M36 33C36 31.3431 34.6569 30 33 30H25.5C24.6716 30 24 30.6716 24 31.5V42.5C24 41.7 24.8 41 26.2 41H34C35.1046 41 36 41.8954 36 43V33Z"
+                              fill="#C9A24D"
+                              fillOpacity="0.25"
+                              stroke="#9A5643"
+                              strokeWidth="2.2"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 2. DRAGGABLE TOP BANNER RECTANGLE (Auto-collapsing empty lines & centered remaining text) */}
+                    <div
+                      onPointerDown={e => handleStartDragCompElement('banner', e)}
+                      style={
+                        !compAcademySubtitle.trim() && !compMainTitle.trim()
+                          ? { display: 'none' }
+                          : {
+                              transform: `translate3d(${compElementOffsets.banner.x}px, ${compElementOffsets.banner.y}px, 0)`,
+                              touchAction: 'none',
+                              cursor: compDraggingElement === 'banner' ? 'grabbing' : 'grab',
+                              zIndex: compSelectedElement === 'banner' ? 30 : 12,
+                              ...(compShowHeaderBox
+                                ? {
+                                    backgroundColor: compHeaderBgColor,
+                                    borderColor: compShowHeaderBorder ? compHeaderBorderColor : 'transparent',
+                                    borderWidth: compShowHeaderBorder ? '2px' : '0px',
+                                    borderStyle: compShowHeaderBorder ? 'solid' : 'none',
+                                    paddingTop: '11px',
+                                    paddingBottom: '11px',
+                                    paddingLeft: '20px',
+                                    paddingRight: '20px'
+                                  }
+                                : {
+                                    paddingTop: '2px',
+                                    paddingBottom: '2px'
+                                  })
+                            }
+                      }
+                      className={`w-full flex flex-col items-center justify-center transition-shadow ${
+                        compShowHeaderBox ? 'rounded-2xl shadow-md' : 'bg-transparent'
+                      } ${
+                        compSelectedElement === 'banner' && !isExportingCompetitionPng
+                          ? 'ring-2 ring-amber-500/80'
+                          : 'hover:ring-1 hover:ring-amber-400/50'
+                      }`}
+                    >
+                      <div
+                        contentEditable
+                        suppressContentEditableWarning
+                        onInput={e => {
+                          if (!(e.currentTarget.textContent || '').trim()) {
+                            setCompAcademySubtitle('');
+                          }
+                        }}
+                        onBlur={e => setCompAcademySubtitle((e.currentTarget.textContent || '').trim())}
+                        style={{
+                          display: !compAcademySubtitle.trim() ? 'none' : 'block',
+                          fontSize: `${Math.round(12 * compFontScale)}px`,
+                          color: compShowHeaderBox
+                            ? compTitleTextColor
+                            : compTitleTextColor === '#FFFFFF'
+                              ? compHeaderBgColor
+                              : compTitleTextColor
+                        }}
+                        className={`font-bold opacity-95 outline-hidden hover:bg-black/5 rounded-lg px-2 py-0.5 cursor-text text-center ${
+                          compMainTitle.trim() ? 'mb-0.5' : ''
+                        }`}
+                      >
+                        {compAcademySubtitle}
+                      </div>
+
+                      <h2
+                        contentEditable
+                        suppressContentEditableWarning
+                        onInput={e => {
+                          if (!(e.currentTarget.textContent || '').trim()) {
+                            setCompMainTitle('');
+                          }
+                        }}
+                        onBlur={e => setCompMainTitle((e.currentTarget.textContent || '').trim())}
+                        style={{
+                          display: !compMainTitle.trim() ? 'none' : 'block',
+                          fontSize: `${Math.round(19 * compFontScale)}px`,
+                          color: compShowHeaderBox
+                            ? compTitleTextColor
+                            : compTitleTextColor === '#FFFFFF'
+                              ? compWinnerTextColor
+                              : compTitleTextColor
+                        }}
+                        className="font-extrabold outline-hidden hover:bg-black/5 rounded-lg px-2 py-0.5 cursor-text text-center leading-snug"
+                      >
+                        {compMainTitle}
+                      </h2>
+                    </div>
+
+                    {/* 3. DRAGGABLE RANK & WEEK/MONTH PILL BADGE (Click-to-edit & Auto-collapse) */}
+                    {(() => {
+                      const defaultPillText =
+                        competitionPeriod === 'week'
+                          ? `${selectedStudyWeekInfo.weekLabelArabic} • المركز الأول`
+                          : `شهر ${selectedStudyWeekInfo.hijriMonthName} • المركز الأول`;
+                      const activePillText =
+                        compRankPillCustomText !== '' ? compRankPillCustomText : defaultPillText;
+                      const showBorder =
+                        compShowPillBorder && compPillBorderColor !== 'transparent';
+
+                      return (
+                        <div
+                          onPointerDown={e => handleStartDragCompElement('pill', e)}
+                          style={{
+                            display: activePillText === '__HIDDEN__' ? 'none' : 'flex',
+                            transform: `translate3d(${compElementOffsets.pill.x}px, ${compElementOffsets.pill.y}px, 0)`,
+                            touchAction: 'none',
+                            cursor: compDraggingElement === 'pill' ? 'grabbing' : 'grab',
+                            zIndex: compSelectedElement === 'pill' ? 30 : 12
+                          }}
+                          className={`justify-center w-full p-0.5 rounded-full transition-shadow ${
+                            compSelectedElement === 'pill' && !isExportingCompetitionPng
+                              ? 'ring-2 ring-amber-500/80'
+                              : 'hover:ring-1 hover:ring-amber-400/50'
+                          }`}
+                        >
+                          <div
+                            contentEditable
+                            suppressContentEditableWarning
+                            onInput={e => {
+                              const txt = (e.currentTarget.textContent || '').trim();
+                              if (!txt) {
+                                setCompRankPillCustomText('__HIDDEN__');
+                              }
+                            }}
+                            onBlur={e => {
+                              const txt = (e.currentTarget.textContent || '').trim();
+                              setCompRankPillCustomText(txt ? txt : '__HIDDEN__');
+                            }}
+                            style={{
+                              fontSize: `${Math.round(12 * compFontScale)}px`,
+                              backgroundColor: compPillBgColor,
+                              borderColor: showBorder ? compPillBorderColor : 'transparent',
+                              borderWidth: showBorder ? '2px' : '0px',
+                              borderStyle: showBorder ? 'solid' : 'none',
+                              color: compPillTextColor,
+                              whiteSpace: 'nowrap',
+                              lineHeight: 1.4
+                            }}
+                            className="inline-flex items-center justify-center gap-2 px-5 py-1.5 rounded-full font-bold shadow-2xs outline-hidden cursor-text whitespace-nowrap"
+                          >
+                            {activePillText === '__HIDDEN__' ? '' : activePillText}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* 4. DRAGGABLE WINNER HIGHLIGHT SECTION */}
+                    <div
+                      onPointerDown={e => handleStartDragCompElement('winner', e)}
+                      style={{
+                        transform: `translate3d(${compElementOffsets.winner.x}px, ${compElementOffsets.winner.y}px, 0)`,
+                        touchAction: 'none',
+                        cursor: compDraggingElement === 'winner' ? 'grabbing' : 'grab',
+                        zIndex: compSelectedElement === 'winner' ? 30 : 12
+                      }}
+                      className={`w-full py-1 px-2 rounded-2xl transition-shadow ${
+                        compSelectedElement === 'winner' && !isExportingCompetitionPng
+                          ? 'ring-2 ring-amber-500/80'
+                          : 'hover:ring-1 hover:ring-amber-400/50'
+                      }`}
+                    >
+                      <div
+                        style={{
+                          fontSize: `${Math.round(24 * compFontScale)}px`,
+                          color: compWinnerTextColor
+                        }}
+                        className="font-extrabold leading-tight"
+                      >
+                        {groupCompetitionLeaderboard[0].circleName}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: `${Math.round(12.5 * compFontScale)}px`,
+                          color: compWinnerTextColor
+                        }}
+                        className="font-bold opacity-80 mt-0.5"
+                      >
+                        {groupCompetitionLeaderboard[0].trackName} • بإشراف المعلمة:{' '}
+                        {groupCompetitionLeaderboard[0].teacherName} ({groupCompetitionLeaderboard[0].studentCount} طالبة)
+                      </div>
+                    </div>
+
+                    {/* 5. DRAGGABLE 4 STATS CARDS GRID */}
+                    <div
+                      onPointerDown={e => handleStartDragCompElement('stats', e)}
+                      style={{
+                        transform: `translate3d(${compElementOffsets.stats.x}px, ${compElementOffsets.stats.y}px, 0)`,
+                        touchAction: 'none',
+                        cursor: compDraggingElement === 'stats' ? 'grabbing' : 'grab',
+                        zIndex: compSelectedElement === 'stats' ? 30 : 12
+                      }}
+                      className={`w-full grid grid-cols-4 gap-2 p-1 rounded-2xl transition-shadow ${
+                        compSelectedElement === 'stats' && !isExportingCompetitionPng
+                          ? 'ring-2 ring-amber-500/80'
+                          : 'hover:ring-1 hover:ring-amber-400/50'
+                      }`}
+                    >
+                      {[
+                        {
+                          label: 'عدد الغيابات',
+                          value:
+                            groupCompetitionLeaderboard[0].absentSessions === 0
+                              ? '٠ غياب'
+                              : `${groupCompetitionLeaderboard[0].absentSessions} غياب`
+                        },
+                        {
+                          label: 'نسبة الحضور',
+                          value: `${groupCompetitionLeaderboard[0].attendanceRate}%`
+                        },
+                        {
+                          label: 'التحضير المبكر',
+                          value: `${groupCompetitionLeaderboard[0].earlyPrepRate}%`
+                        },
+                        {
+                          label: 'المجموع الكلي',
+                          value: `${groupCompetitionLeaderboard[0].totalCompetitionScore}%`
+                        }
+                      ].map(item => (
+                        <div
+                          key={item.label}
+                          style={{
+                            backgroundColor: compStatsCardBgColor,
+                            borderColor: compShowStatsCardBorder ? compStatsCardBorderColor : 'transparent',
+                            borderWidth: compShowStatsCardBorder ? '1.5px' : '0px',
+                            borderStyle: compShowStatsCardBorder ? 'solid' : 'none'
+                          }}
+                          className="rounded-2xl p-2.5 flex flex-col items-center justify-center shadow-2xs"
+                        >
+                          <div
+                            style={{
+                              fontSize: `${Math.round(10.5 * compFontScale)}px`,
+                              color: compStatsTextColor
+                            }}
+                            className="font-bold opacity-85"
+                          >
+                            {item.label}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: `${Math.round(15 * compFontScale)}px`,
+                              color: compStatsTextColor
+                            }}
+                            className="font-extrabold mt-0.5"
+                          >
+                            {item.value}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* 6. DRAGGABLE OTHER COMPETING GROUPS' STATISTICS LIST (Default ON, Included in PNG Export) */}
+                    {compShowOtherGroups && groupCompetitionLeaderboard.length > 1 && (
+                      <div
+                        onPointerDown={e => handleStartDragCompElement('otherGroups', e)}
+                        style={{
+                          transform: `translate3d(${compElementOffsets.otherGroups.x}px, ${compElementOffsets.otherGroups.y}px, 0)`,
+                          touchAction: 'none',
+                          cursor: compDraggingElement === 'otherGroups' ? 'grabbing' : 'grab',
+                          zIndex: compSelectedElement === 'otherGroups' ? 30 : 12
+                        }}
+                        className={`w-full pt-3 border-t border-stone-200/80 space-y-2 p-1 rounded-2xl transition-shadow ${
+                          compSelectedElement === 'otherGroups' && !isExportingCompetitionPng
+                            ? 'ring-2 ring-amber-500/80'
+                            : 'hover:ring-1 hover:ring-amber-400/50'
+                        }`}
+                      >
+                        {/* Click-to-edit Section Header */}
+                        <div
+                          contentEditable
+                          suppressContentEditableWarning
+                          onInput={e => {
+                            if (!(e.currentTarget.textContent || '').trim()) {
+                              setCompOtherGroupsSectionTitle('');
+                            }
+                          }}
+                          onBlur={e =>
+                            setCompOtherGroupsSectionTitle((e.currentTarget.textContent || '').trim())
+                          }
+                          style={{
+                            display: !compOtherGroupsSectionTitle.trim() ? 'none' : 'block',
+                            fontSize: `${Math.round(12 * compFontScale)}px`,
+                            color: compOtherGroupsTextColor
+                          }}
+                          className="font-extrabold text-center outline-hidden hover:bg-black/5 rounded-lg px-2 py-0.5 cursor-text"
+                        >
+                          {compOtherGroupsSectionTitle}
+                        </div>
+
+                        <div className="space-y-1.5">
+                          {groupCompetitionLeaderboard.slice(1).map((grp, idx) => {
+                            const rankNumber = idx + 2;
+                            const rankNames: Record<number, string> = {
+                              2: 'المركز الثاني',
+                              3: 'المركز الثالث',
+                              4: 'المركز الرابع',
+                              5: 'المركز الخامس',
+                              6: 'المركز السادس',
+                              7: 'المركز السابع',
+                              8: 'المركز الثامن'
+                            };
+                            const rankLabel = rankNames[rankNumber] || `المركز ${rankNumber}`;
+
+                            return (
+                              <div
+                                key={grp.circleId}
+                                style={{
+                                  backgroundColor: compOtherGroupsBgColor,
+                                  borderColor: compShowOtherGroupsBorder ? compOtherGroupsBorderColor : 'transparent',
+                                  borderWidth: compShowOtherGroupsBorder ? '1.5px' : '0px',
+                                  borderStyle: compShowOtherGroupsBorder ? 'solid' : 'none',
+                                  color: compOtherGroupsTextColor
+                                }}
+                                className="rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-2 text-right shadow-2xs"
+                              >
+                                {/* Group Rank & Info */}
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div
+                                    style={{
+                                      backgroundColor: compHeaderBgColor,
+                                      color: '#FFFFFF',
+                                      fontSize: `${Math.round(11 * compFontScale)}px`
+                                    }}
+                                    className="w-7 h-7 rounded-xl font-extrabold flex items-center justify-center shrink-0 shadow-2xs"
+                                  >
+                                    {rankNumber}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span
+                                        style={{
+                                          fontSize: `${Math.round(13 * compFontScale)}px`,
+                                          color: compOtherGroupsTextColor
+                                        }}
+                                        className="font-extrabold truncate"
+                                      >
+                                        {grp.circleName}
+                                      </span>
+                                      <span
+                                        style={{
+                                          fontSize: `${Math.round(10 * compFontScale)}px`,
+                                          backgroundColor: `${compHeaderBgColor}15`,
+                                          color: compOtherGroupsTextColor
+                                        }}
+                                        className="px-2 py-0.5 rounded-full font-bold"
+                                      >
+                                        {rankLabel}
+                                      </span>
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: `${Math.round(10.5 * compFontScale)}px`,
+                                        color: compOtherGroupsTextColor
+                                      }}
+                                      className="font-bold opacity-75 truncate"
+                                    >
+                                      أ. {grp.teacherName} • {grp.trackName}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* 4 Clear Statistical Badges: Absences, Attendance %, Early Prep %, Total Score % */}
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {/* عدد الغيابات (Highlighted Clearly) */}
+                                  <div
+                                    style={{
+                                      borderColor: compShowOtherGroupsBorder ? compOtherGroupsBorderColor : 'transparent',
+                                      borderWidth: compShowOtherGroupsBorder ? '1px' : '0px',
+                                      borderStyle: compShowOtherGroupsBorder ? 'solid' : 'none'
+                                    }}
+                                    className="px-2.5 py-1 rounded-xl bg-white/90 text-center min-w-[58px]"
+                                  >
+                                    <div
+                                      style={{ fontSize: `${Math.round(9 * compFontScale)}px` }}
+                                      className="font-bold opacity-70"
+                                    >
+                                      الغيابات
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: `${Math.round(11.5 * compFontScale)}px`,
+                                        color: grp.absentSessions === 0 ? '#15803D' : '#B91C1C'
+                                      }}
+                                      className="font-extrabold"
+                                    >
+                                      {grp.absentSessions === 0 ? '٠ غياب' : `${grp.absentSessions} غياب`}
+                                    </div>
+                                  </div>
+
+                                  {/* نسبة الحضور (%) */}
+                                  <div
+                                    style={{
+                                      borderColor: compShowOtherGroupsBorder ? compOtherGroupsBorderColor : 'transparent',
+                                      borderWidth: compShowOtherGroupsBorder ? '1px' : '0px',
+                                      borderStyle: compShowOtherGroupsBorder ? 'solid' : 'none'
+                                    }}
+                                    className="px-2 py-1 rounded-xl bg-white/90 text-center min-w-[52px]"
+                                  >
+                                    <div
+                                      style={{ fontSize: `${Math.round(9 * compFontScale)}px` }}
+                                      className="font-bold opacity-70"
+                                    >
+                                      الحضور
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: `${Math.round(11.5 * compFontScale)}px`,
+                                        color: compOtherGroupsTextColor
+                                      }}
+                                      className="font-extrabold"
+                                    >
+                                      {grp.attendanceRate}%
+                                    </div>
+                                  </div>
+
+                                  {/* التحضير المبكر (%) */}
+                                  <div
+                                    style={{
+                                      borderColor: compShowOtherGroupsBorder ? compOtherGroupsBorderColor : 'transparent',
+                                      borderWidth: compShowOtherGroupsBorder ? '1px' : '0px',
+                                      borderStyle: compShowOtherGroupsBorder ? 'solid' : 'none'
+                                    }}
+                                    className="px-2 py-1 rounded-xl bg-white/90 text-center min-w-[52px]"
+                                  >
+                                    <div
+                                      style={{ fontSize: `${Math.round(9 * compFontScale)}px` }}
+                                      className="font-bold opacity-70"
+                                    >
+                                      المبكر
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: `${Math.round(11.5 * compFontScale)}px`,
+                                        color: compOtherGroupsTextColor
+                                      }}
+                                      className="font-extrabold"
+                                    >
+                                      {grp.earlyPrepRate}%
+                                    </div>
+                                  </div>
+
+                                  {/* المجموع الكلي (%) */}
+                                  <div
+                                    style={{
+                                      backgroundColor: compPillBgColor,
+                                      borderColor: compShowOtherGroupsBorder
+                                        ? compPillBorderColor === 'transparent'
+                                          ? compOtherGroupsBorderColor
+                                          : compPillBorderColor
+                                        : 'transparent',
+                                      borderWidth: compShowOtherGroupsBorder ? '1px' : '0px',
+                                      borderStyle: compShowOtherGroupsBorder ? 'solid' : 'none'
+                                    }}
+                                    className="px-2.5 py-1 rounded-xl text-center min-w-[56px]"
+                                  >
+                                    <div
+                                      style={{ fontSize: `${Math.round(9 * compFontScale)}px` }}
+                                      className="font-bold opacity-75"
+                                    >
+                                      المجموع
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: `${Math.round(12 * compFontScale)}px`,
+                                        color: compOtherGroupsTextColor
+                                      }}
+                                      className="font-extrabold"
+                                    >
+                                      {grp.totalCompetitionScore}%
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 7. DRAGGABLE CLOSING DUA / BLESSING LINE (Click-to-edit & Auto-collapse) */}
+                    <div
+                      onPointerDown={e => handleStartDragCompElement('dua', e)}
+                      style={{
+                        display: !compClosingDua.trim() ? 'none' : 'block',
+                        transform: `translate3d(${compElementOffsets.dua.x}px, ${compElementOffsets.dua.y}px, 0)`,
+                        touchAction: 'none',
+                        cursor: compDraggingElement === 'dua' ? 'grabbing' : 'grab',
+                        zIndex: compSelectedElement === 'dua' ? 30 : 12
+                      }}
+                      className={`w-full pt-1 rounded-xl transition-shadow ${
+                        compSelectedElement === 'dua' && !isExportingCompetitionPng
+                          ? 'ring-2 ring-amber-500/80'
+                          : 'hover:ring-1 hover:ring-amber-400/50'
+                      }`}
+                    >
+                      <p
+                        contentEditable
+                        suppressContentEditableWarning
+                        onInput={e => {
+                          if (!(e.currentTarget.textContent || '').trim()) {
+                            setCompClosingDua('');
+                          }
+                        }}
+                        onBlur={e => setCompClosingDua((e.currentTarget.textContent || '').trim())}
+                        style={{
+                          display: !compClosingDua.trim() ? 'none' : 'inline-block',
+                          fontSize: `${Math.round(12.5 * compFontScale)}px`,
+                          color: compDuaTextColor
+                        }}
+                        className="font-bold outline-hidden hover:bg-black/5 rounded-lg px-2 py-0.5 cursor-text text-center"
+                      >
+                        {compClosingDua}
+                      </p>
+                    </div>
+
+                    {/* 8 & 9. BOTTOM OPPOSITE SIGNATURES ("قائدة المقرأة" on Right, "المشرفة" on Left) */}
+                    {(compLeaderLabel.trim() ||
+                      compLeaderName.trim() ||
+                      compSupervisorLabel.trim() ||
+                      compSupervisorName.trim()) && (
+                      <div className="w-full pt-2 flex items-start justify-between gap-4 px-3">
+                        {/* Right Signature Block: قائدة المقرأة */}
+                        <div
+                          onPointerDown={e => handleStartDragCompElement('leaderSig', e)}
+                          style={{
+                            display:
+                              !compLeaderLabel.trim() && !compLeaderName.trim()
+                                ? 'none'
+                                : 'flex',
+                            transform: `translate3d(${compElementOffsets.leaderSig.x}px, ${compElementOffsets.leaderSig.y}px, 0)`,
+                            touchAction: 'none',
+                            cursor: compDraggingElement === 'leaderSig' ? 'grabbing' : 'grab',
+                            zIndex: compSelectedElement === 'leaderSig' ? 30 : 15
+                          }}
+                          className={`group flex-col items-center justify-center text-center px-3 py-1 rounded-xl transition-shadow relative ${
+                            compSelectedElement === 'leaderSig' && !isExportingCompetitionPng
+                              ? 'ring-2 ring-amber-500/80 bg-amber-50/20'
+                              : 'hover:ring-1 hover:ring-amber-400/50'
+                          }`}
+                        >
+                          {/* Floating Signature Font Size Mini Toolbar (Excluded from PNG export) */}
+                          <div
+                            data-export-ignore="true"
+                            data-html2canvas-ignore="true"
+                            data-no-drag="true"
+                            className="opacity-0 group-hover:opacity-100 absolute -top-6 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-stone-900/90 text-white px-2 py-0.5 rounded-full text-[9px] shadow-md whitespace-nowrap transition z-40"
+                          >
+                            <span>✋ اسحبي</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCompSignatureFontSize(prev => Math.min(20, Number((prev + 0.5).toFixed(1))))
+                              }
+                              className="px-1 hover:text-amber-300 font-bold cursor-pointer"
+                              title="تكبير خط التوقيع"
+                            >
+                              +
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCompSignatureFontSize(prev => Math.max(8, Number((prev - 0.5).toFixed(1))))
+                              }
+                              className="px-1 hover:text-amber-300 font-bold cursor-pointer"
+                              title="تصغير خط التوقيع"
+                            >
+                              -
+                            </button>
+                          </div>
+
+                          <div
+                            contentEditable
+                            suppressContentEditableWarning
+                            onInput={e => {
+                              if (!(e.currentTarget.textContent || '').trim()) {
+                                setCompLeaderLabel('');
+                              }
+                            }}
+                            onBlur={e => setCompLeaderLabel((e.currentTarget.textContent || '').trim())}
+                            style={{
+                              display: !compLeaderLabel.trim() ? 'none' : 'block',
+                              fontSize: `${Math.round(compSignatureFontSize * 0.92)}px`,
+                              color: compSignatureTextColor
+                            }}
+                            className="font-bold opacity-85 outline-hidden hover:bg-black/5 rounded-md px-1.5 cursor-text whitespace-nowrap"
+                          >
+                            {compLeaderLabel}
+                          </div>
+
+                          <div
+                            contentEditable
+                            suppressContentEditableWarning
+                            onInput={e => {
+                              if (!(e.currentTarget.textContent || '').trim()) {
+                                setCompLeaderName('');
+                              }
+                            }}
+                            onBlur={e => setCompLeaderName((e.currentTarget.textContent || '').trim())}
+                            style={{
+                              display: !compLeaderName.trim() ? 'none' : 'block',
+                              fontSize: `${Math.round(compSignatureFontSize * 1.05)}px`,
+                              color: compSignatureTextColor
+                            }}
+                            className="font-extrabold outline-hidden hover:bg-black/5 rounded-md px-1.5 cursor-text whitespace-nowrap mt-0.5"
+                          >
+                            {compLeaderName}
+                          </div>
+                        </div>
+
+                        {/* Left Signature Block: المشرفة */}
+                        <div
+                          onPointerDown={e => handleStartDragCompElement('supervisorSig', e)}
+                          style={{
+                            display:
+                              !compSupervisorLabel.trim() && !compSupervisorName.trim()
+                                ? 'none'
+                                : 'flex',
+                            transform: `translate3d(${compElementOffsets.supervisorSig.x}px, ${compElementOffsets.supervisorSig.y}px, 0)`,
+                            touchAction: 'none',
+                            cursor: compDraggingElement === 'supervisorSig' ? 'grabbing' : 'grab',
+                            zIndex: compSelectedElement === 'supervisorSig' ? 30 : 15
+                          }}
+                          className={`group flex-col items-center justify-center text-center px-3 py-1 rounded-xl transition-shadow relative ${
+                            compSelectedElement === 'supervisorSig' && !isExportingCompetitionPng
+                              ? 'ring-2 ring-amber-500/80 bg-amber-50/20'
+                              : 'hover:ring-1 hover:ring-amber-400/50'
+                          }`}
+                        >
+                          {/* Floating Signature Font Size Mini Toolbar (Excluded from PNG export) */}
+                          <div
+                            data-export-ignore="true"
+                            data-html2canvas-ignore="true"
+                            data-no-drag="true"
+                            className="opacity-0 group-hover:opacity-100 absolute -top-6 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-stone-900/90 text-white px-2 py-0.5 rounded-full text-[9px] shadow-md whitespace-nowrap transition z-40"
+                          >
+                            <span>✋ اسحبي</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCompSignatureFontSize(prev => Math.min(20, Number((prev + 0.5).toFixed(1))))
+                              }
+                              className="px-1 hover:text-amber-300 font-bold cursor-pointer"
+                              title="تكبير خط التوقيع"
+                            >
+                              +
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCompSignatureFontSize(prev => Math.max(8, Number((prev - 0.5).toFixed(1))))
+                              }
+                              className="px-1 hover:text-amber-300 font-bold cursor-pointer"
+                              title="تصغير خط التوقيع"
+                            >
+                              -
+                            </button>
+                          </div>
+
+                          <div
+                            contentEditable
+                            suppressContentEditableWarning
+                            onInput={e => {
+                              if (!(e.currentTarget.textContent || '').trim()) {
+                                setCompSupervisorLabel('');
+                              }
+                            }}
+                            onBlur={e => setCompSupervisorLabel((e.currentTarget.textContent || '').trim())}
+                            style={{
+                              display: !compSupervisorLabel.trim() ? 'none' : 'block',
+                              fontSize: `${Math.round(compSignatureFontSize * 0.92)}px`,
+                              color: compSignatureTextColor
+                            }}
+                            className="font-bold opacity-85 outline-hidden hover:bg-black/5 rounded-md px-1.5 cursor-text whitespace-nowrap"
+                          >
+                            {compSupervisorLabel}
+                          </div>
+
+                          <div
+                            contentEditable
+                            suppressContentEditableWarning
+                            onInput={e => {
+                              if (!(e.currentTarget.textContent || '').trim()) {
+                                setCompSupervisorName('');
+                              }
+                            }}
+                            onBlur={e => setCompSupervisorName((e.currentTarget.textContent || '').trim())}
+                            style={{
+                              display: !compSupervisorName.trim() ? 'none' : 'block',
+                              fontSize: `${Math.round(compSignatureFontSize * 1.05)}px`,
+                              color: compSignatureTextColor
+                            }}
+                            className="font-extrabold outline-hidden hover:bg-black/5 rounded-md px-1.5 cursor-text whitespace-nowrap mt-0.5"
+                          >
+                            {compSupervisorName}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             ) : (
-              <div className="text-center py-8 text-stone-500 text-sm font-bold">
+              <div className="bg-white rounded-3xl p-8 text-center text-stone-500 text-sm font-bold shadow-xl">
                 لا توجد حلقات نشطة حالياً للمقارنة.
               </div>
             )}
