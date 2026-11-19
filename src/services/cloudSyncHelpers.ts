@@ -821,34 +821,63 @@ export class ShardSubscriptionCoordinator {
   }
 
   /**
-   * Checks whether all loaded shards meet the minimum revision manifest (`_shardRevisions`)
-   * advertised by `master_state` (Generation Marker consistency).
-   * If `master_state` was updated in generation G and expects `shard_daily_0` at `_revision >= 4`,
-   * but `shard_daily_0` is still at `_revision: 3`, this returns `['shard_daily_0']`.
+   * Verifies exact revision parity for every shard advertised by master_state and every
+   * overflow shard referenced by a loaded shard. A newer revision is not accepted as proof
+   * of consistency: it may belong to a different, not-yet-published generation.
    */
   getOutdatedShardIds(masterDocId = 'master_state'): string[] {
     const masterData = this.dataById.get(masterDocId);
     if (!masterData || typeof masterData !== 'object') return [];
-    const expectedRevisions = masterData._shardRevisions;
-    if (!expectedRevisions || typeof expectedRevisions !== 'object') return [];
 
-    const outdated: string[] = [];
-    for (const [shardId, expectedRevRaw] of Object.entries(expectedRevisions)) {
+    const expectedRevisions =
+      masterData._shardRevisions && typeof masterData._shardRevisions === 'object'
+        ? masterData._shardRevisions as Record<string, unknown>
+        : {};
+    const outdated = new Set<string>();
+
+    const verifyExpectedRevision = (shardId: string, expectedRevRaw: unknown): void => {
       const expectedRev = Number(expectedRevRaw);
-      if (!Number.isFinite(expectedRev) || expectedRev <= 0) continue;
+      if (!Number.isFinite(expectedRev) || expectedRev <= 0) {
+        outdated.add(shardId);
+        return;
+      }
+
       const shardMeta = this.metaById.get(shardId);
       const shardData = this.dataById.get(shardId);
-      if (!shardMeta || !shardMeta.loaded) {
-        outdated.push(shardId);
-        continue;
+      if (!shardMeta || !shardMeta.loaded || shardMeta.error !== null || !shardMeta.exists) {
+        outdated.add(shardId);
+        return;
       }
+
       const actualRev =
         shardData && typeof shardData._revision === 'number' ? shardData._revision : 0;
-      if (actualRev < expectedRev) {
-        outdated.push(shardId);
+      if (actualRev !== expectedRev) {
+        outdated.add(shardId);
+      }
+    };
+
+    for (const [shardId, expectedRev] of Object.entries(expectedRevisions)) {
+      verifyExpectedRevision(shardId, expectedRev);
+    }
+
+    // A pointer is part of the published generation. It must have an explicit manifest
+    // revision and a loaded, existing document; otherwise assembly could emit partial data.
+    for (const shardData of this.dataById.values()) {
+      if (!shardData || typeof shardData !== 'object' || !Array.isArray(shardData.overflowShardIds)) {
+        continue;
+      }
+      for (const rawOverflowId of shardData.overflowShardIds) {
+        if (typeof rawOverflowId !== 'string' || !rawOverflowId.trim()) continue;
+        const overflowId = rawOverflowId.trim();
+        if (!Object.prototype.hasOwnProperty.call(expectedRevisions, overflowId)) {
+          outdated.add(overflowId);
+          continue;
+        }
+        verifyExpectedRevision(overflowId, expectedRevisions[overflowId]);
       }
     }
-    return outdated;
+
+    return Array.from(outdated);
   }
 
   isGenerationConsistent(masterDocId = 'master_state'): boolean {
