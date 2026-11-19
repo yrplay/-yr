@@ -1,23 +1,147 @@
 import type { StudentSubscription } from '../types';
 
+export const CANONICAL_HIJRI_MONTHS = [
+  'محرم',
+  'صفر',
+  'ربيع الأول',
+  'ربيع الآخر',
+  'جمادى الأولى',
+  'جمادى الآخرة',
+  'رجب',
+  'شعبان',
+  'رمضان',
+  'شوال',
+  'ذو القعدة',
+  'ذو الحجة'
+] as const;
+
+export const toWesternDigits = (value: string): string =>
+  value.replace(/[٠-٩]/g, ch => String(ch.charCodeAt(0) - 0x0660));
+
+const HIJRI_MONTH_VARIANTS: Array<{ index: number; canonical: string; patterns: string[] }> = [
+  { index: 1, canonical: 'محرم', patterns: ['المحرم', 'محرم'] },
+  { index: 2, canonical: 'صفر', patterns: ['صفر'] },
+  { index: 3, canonical: 'ربيع الأول', patterns: ['ربيع الأول', 'ربيع الاول'] },
+  { index: 4, canonical: 'ربيع الآخر', patterns: ['ربيع الآخر', 'ربيع الاخر', 'ربيع الثاني', 'ربيع الثانى'] },
+  { index: 5, canonical: 'جمادى الأولى', patterns: ['جمادى الأولى', 'جمادى الاولى', 'جماد الأولى', 'جماد الاولى', 'جماد الأول'] },
+  {
+    index: 6,
+    canonical: 'جمادى الآخرة',
+    patterns: ['جمادى الآخرة', 'جمادى الاخرة', 'جمادى الآخر', 'جمادى الاخر', 'جمادى الثانية', 'جمادى الثانيه', 'جماد الآخرة', 'جماد الآخر']
+  },
+  { index: 7, canonical: 'رجب', patterns: ['رجب'] },
+  { index: 8, canonical: 'شعبان', patterns: ['شعبان'] },
+  { index: 9, canonical: 'رمضان', patterns: ['رمضان'] },
+  { index: 10, canonical: 'شوال', patterns: ['شوال'] },
+  { index: 11, canonical: 'ذو القعدة', patterns: ['ذو القعدة', 'ذي القعدة', 'ذى القعدة', 'ذو القعده'] },
+  { index: 12, canonical: 'ذو الحجة', patterns: ['ذو الحجة', 'ذي الحجة', 'ذى الحجة', 'ذو الحجه'] }
+];
+
+export interface ParsedHijriCycle {
+  canonicalLabel: string;
+  monthName: string;
+  monthIndex: number;
+  hijriYear: number;
+  hasExplicitYear: boolean;
+}
+
+export const parseHijriCycle = (
+  rawCycle: string | undefined | null,
+  fallbackHijriYear = 1448
+): ParsedHijriCycle | null => {
+  if (!rawCycle || typeof rawCycle !== 'string') return null;
+  const cleaned = toWesternDigits(rawCycle).trim().replace(/\s+/g, ' ');
+  if (!cleaned) return null;
+
+  const matchedMonths: Array<{ index: number; canonical: string }> = [];
+  for (const entry of HIJRI_MONTH_VARIANTS) {
+    if (entry.patterns.some(p => cleaned.includes(p))) {
+      matchedMonths.push({ index: entry.index, canonical: entry.canonical });
+    }
+  }
+
+  // Reject compound multi-month legacy strings (e.g. "ربيع الآخر - جمادى الأولى 1446") or non-month strings
+  if (matchedMonths.length !== 1) {
+    return null;
+  }
+
+  const yearMatch = cleaned.match(/\b(14\d{2})\b/) || cleaned.match(/(14\d{2})/);
+  const hasExplicitYear = Boolean(yearMatch);
+  const hijriYear = yearMatch ? Number(yearMatch[1]) : fallbackHijriYear;
+  const month = matchedMonths[0];
+  const canonicalLabel = `${month.canonical} ${hijriYear}هـ`;
+
+  return {
+    canonicalLabel,
+    monthName: month.canonical,
+    monthIndex: month.index,
+    hijriYear,
+    hasExplicitYear
+  };
+};
+
+export const normalizeHijriCycleLabel = (
+  rawCycle: string | undefined | null,
+  fallbackHijriYear = 1448
+): string => {
+  const parsed = parseHijriCycle(rawCycle, fallbackHijriYear);
+  if (parsed) return parsed.canonicalLabel;
+  return (rawCycle || '').trim();
+};
+
+const hasActiveSubscriptionData = (sub: StudentSubscription): boolean =>
+  Boolean(
+    (sub.paidAmount ?? 0) > 0 ||
+      sub.status === 'paid' ||
+      sub.status === 'partial' ||
+      sub.status === 'exempt' ||
+      sub.status === 'overdue' ||
+      sub.receiptNumber?.trim() ||
+      sub.notes?.trim()
+  );
+
 export const deduplicateSubscriptionsByCycle = (
   subscriptions: StudentSubscription[],
   currentCycle: string,
-  cycleFilter: string
+  cycleFilter: string,
+  fallbackHijriYear = 1448
 ) => {
   if (!subscriptions || subscriptions.length === 0) return [];
 
-  // The "all" view must retain the latest record for every cycle, not only
+  const normalizedCurrentCycle = normalizeHijriCycleLabel(currentCycle, fallbackHijriYear);
+  const normalizedFilter =
+    cycleFilter === 'all' ? 'all' : normalizeHijriCycleLabel(cycleFilter, fallbackHijriYear);
+
+  // The "all" view must retain the latest record for every canonical cycle, not only
   // the latest record across the student's entire subscription history.
   const byCycle = new Map<string, StudentSubscription>();
   subscriptions.forEach(subscription => {
-    const cycle = subscription.cycleMonth || currentCycle;
-    if (cycleFilter !== 'all' && cycle !== cycleFilter) return;
+    const parsed = parseHijriCycle(subscription.cycleMonth, fallbackHijriYear);
+    // Ignore legacy compound seed strings that do not map to a canonical Hijri month
+    if (subscription.cycleMonth && !parsed) return;
+
+    const cycle = parsed ? parsed.canonicalLabel : normalizedCurrentCycle;
+    if (normalizedFilter !== 'all' && cycle !== normalizedFilter) return;
 
     const subscriptionTime = Date.parse(subscription.updatedAt || '') || 0;
     const existing = byCycle.get(cycle);
-    const existingTime = existing ? Date.parse(existing.updatedAt || '') || 0 : -1;
-    if (!existing || subscriptionTime >= existingTime) {
+    if (!existing) {
+      byCycle.set(cycle, subscription);
+      return;
+    }
+
+    const subActive = hasActiveSubscriptionData(subscription);
+    const existingActive = hasActiveSubscriptionData(existing);
+    if (subActive && !existingActive) {
+      byCycle.set(cycle, subscription);
+      return;
+    }
+    if (!subActive && existingActive) {
+      return;
+    }
+
+    const existingTime = Date.parse(existing.updatedAt || '') || 0;
+    if (subscriptionTime >= existingTime) {
       byCycle.set(cycle, subscription);
     }
   });

@@ -5,23 +5,17 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { hasFullAccess, StudentSubscription, isStudentEffectivelyArchived, deduplicateStudentsByName } from '../types';
-import { calculateSubscriptionStats, deduplicateSubscriptionsByCycle } from '../services/subscriptionMath';
+import {
+  CANONICAL_HIJRI_MONTHS,
+  calculateSubscriptionStats,
+  deduplicateSubscriptionsByCycle,
+  normalizeHijriCycleLabel,
+  parseHijriCycle
+} from '../services/subscriptionMath';
+import { getHijriParts } from '../utils/hijriDate';
 import { RenderEntityIcon } from '../components/CircleIconLibrary';
 
-const HIJRI_MONTHS = [
-  'محرم ١٤٤٧هـ',
-  'صفر ١٤٤٧هـ',
-  'ربيع الأول ١٤٤٧هـ',
-  'ربيع الثاني ١٤٤٧هـ',
-  'جمادى الأولى ١٤٤٧هـ',
-  'جمادى الآخرة ١٤٤٧هـ',
-  'رجب ١٤٤٧هـ',
-  'شعبان ١٤٤٧هـ',
-  'رمضان ١٤٤٧هـ',
-  'شوال ١٤٤٧هـ',
-  'ذو القعدة ١٤٤٧هـ',
-  'ذو الحجة ١٤٤٧هـ'
-];
+const LEGACY_SEED_SUBSCRIPTION_IDS = new Set(['sub-1', 'sub-2', 'sub-3', 'sub-4', 'sub-5', 'sub-6']);
 
 interface SubscriptionsFinancialsViewProps {
   onNavigateToStudent?: (studentId: string) => void;
@@ -36,6 +30,20 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
     selectedTrackId, setSelectedTrackId
   } = useApp();
 
+  const currentHijriParts = useMemo(() => getHijriParts(), []);
+  const activeHijriYear = currentHijriParts.year >= 1448 ? currentHijriParts.year : 1448;
+  const activeHijriMonthIndex =
+    currentHijriParts.month >= 1 && currentHijriParts.month <= 12 ? currentHijriParts.month : 6;
+  const defaultActiveCycle = `${CANONICAL_HIJRI_MONTHS[activeHijriMonthIndex - 1]} ${activeHijriYear}هـ`;
+
+  const currentCycle = useMemo(() => {
+    const parsed = parseHijriCycle(settings?.currentHijriMonth, activeHijriYear);
+    if (parsed && parsed.hijriYear === activeHijriYear) {
+      return parsed.canonicalLabel;
+    }
+    return defaultActiveCycle;
+  }, [settings?.currentHijriMonth, activeHijriYear, defaultActiveCycle]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [subscriptionTab, setSubscriptionTab] = useState<'active' | 'archived'>('active');
@@ -45,7 +53,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
   // حالة نافذة تعديل الرسوم العامة ودورة التحصيل
   const [showFeeSettingsModal, setShowFeeSettingsModal] = useState(false);
   const [editingDefaultFee, setEditingDefaultFee] = useState<number>(settings?.defaultSubscriptionFee ?? 150);
-  const [editingCycle, setEditingCycle] = useState<string>(settings?.currentHijriMonth || 'الشهر الحالي');
+  const [editingCycle, setEditingCycle] = useState<string>(currentCycle);
   const [editingCurrency, setEditingCurrency] = useState<string>(settings?.currency || 'ر.س');
   const [applyToExisting, setApplyToExisting] = useState(false);
   const [isSavingFeeSettings, setIsSavingFeeSettings] = useState(false);
@@ -54,33 +62,78 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
 
   const defaultFee = settings?.defaultSubscriptionFee ?? 150;
   const currency = settings?.currency || 'ر.س';
-  const currentCycle = settings?.currentHijriMonth || 'الشهر الحالي';
 
-  // فلتر دورة التحصيل بحسب الأشهر
-  const [selectedCycleFilter, setSelectedCycleFilter] = useState<string>('all');
+  // فلتر دورة التحصيل بحسب الأشهر (يبدأ افتراضياً بالشهر الهجري الحالي النشط)
+  const [selectedCycleFilter, setSelectedCycleFilter] = useState<string>(() => currentCycle);
 
-  // قائمة دورات الأشهر المتاحة للاختيار
+  // قائمة دورات الأشهر المتاحة للاختيار مرتبة ترتيباً هجرياً صارماً من محرم (1) إلى ذو الحجة (12)
   const availableCycles = useMemo(() => {
-    const list: string[] = [];
-    if (currentCycle && !list.includes(currentCycle)) {
-      list.push(currentCycle);
-    }
-    HIJRI_MONTHS.forEach(m => {
-      if (!list.includes(m)) list.push(m);
+    const cycleMap = new Map<string, { hijriYear: number; monthIndex: number; label: string }>();
+
+    // 1. إضافة جميع أشهر السنة الهجرية النشطة (1448هـ) من محرم (1) إلى ذو الحجة (12)
+    CANONICAL_HIJRI_MONTHS.forEach((monthName, idx) => {
+      const monthIndex = idx + 1;
+      const key = `${activeHijriYear}-${String(monthIndex).padStart(2, '0')}`;
+      cycleMap.set(key, {
+        hijriYear: activeHijriYear,
+        monthIndex,
+        label: `${monthName} ${activeHijriYear}هـ`
+      });
     });
-    (studentSubscriptions || []).forEach(s => {
-      if (s.cycleMonth && !list.includes(s.cycleMonth)) {
-        list.push(s.cycleMonth);
+
+    // 2. إضافة أي شهر من سنوات سابقة فقط إذا كان يملك سجلات سداد حقيقية محفوظة لطالبات فعليات في المنظومة
+    const validStudentIds = new Set((students || []).map(st => st.id));
+    (studentSubscriptions || []).forEach(sub => {
+      if (!sub || !sub.cycleMonth) return;
+      if (sub.id && LEGACY_SEED_SUBSCRIPTION_IDS.has(sub.id)) return;
+      if (validStudentIds.size > 0 && !validStudentIds.has(sub.studentId)) return;
+
+      const hasRealSavedPayment =
+        (sub.paidAmount ?? 0) > 0 ||
+        sub.status === 'paid' ||
+        sub.status === 'partial' ||
+        sub.status === 'exempt' ||
+        sub.status === 'overdue' ||
+        Boolean(sub.receiptNumber?.trim());
+      if (!hasRealSavedPayment) return;
+
+      const parsed = parseHijriCycle(sub.cycleMonth, activeHijriYear);
+      if (!parsed || !parsed.hasExplicitYear) return;
+
+      const key = `${parsed.hijriYear}-${String(parsed.monthIndex).padStart(2, '0')}`;
+      if (!cycleMap.has(key)) {
+        cycleMap.set(key, {
+          hijriYear: parsed.hijriYear,
+          monthIndex: parsed.monthIndex,
+          label: parsed.canonicalLabel
+        });
       }
     });
-    return list;
-  }, [currentCycle, studentSubscriptions]);
+
+    // 3. التأكد من وجود الدورة الحالية المعتمدة
+    const parsedCurrent = parseHijriCycle(currentCycle, activeHijriYear);
+    if (parsedCurrent) {
+      const key = `${parsedCurrent.hijriYear}-${String(parsedCurrent.monthIndex).padStart(2, '0')}`;
+      if (!cycleMap.has(key)) {
+        cycleMap.set(key, {
+          hijriYear: parsedCurrent.hijriYear,
+          monthIndex: parsedCurrent.monthIndex,
+          label: parsedCurrent.canonicalLabel
+        });
+      }
+    }
+
+    return Array.from(cycleMap.values())
+      .sort((a, b) => a.hijriYear - b.hijriYear || a.monthIndex - b.monthIndex)
+      .map(entry => entry.label);
+  }, [activeHijriYear, currentCycle, studentSubscriptions, students]);
 
   const getStudentSubscriptions = (studentId: string, cycleFilter = selectedCycleFilter) =>
     deduplicateSubscriptionsByCycle(
       (studentSubscriptions || []).filter(subscription => subscription.studentId === studentId),
       currentCycle,
-      cycleFilter
+      cycleFilter,
+      activeHijriYear
     );
 
   // قفل أمني: حصر قسم الاشتراكات والمالية على الإدارة العليا أو من يملك صلاحية إدارة المالية
@@ -196,7 +249,10 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
 
     // جلب سجل الاشتراك المعروض حالياً للطالبة لضمان التطابق الكامل مع الجدول
     const existing = getStudentSubscriptions(studentId, selectedCycleFilter)[0];
-    const writeCycle = existing?.cycleMonth || (selectedCycleFilter === 'all' ? currentCycle : selectedCycleFilter);
+    const writeCycle =
+      selectedCycleFilter === 'all'
+        ? (existing?.cycleMonth ? normalizeHijriCycleLabel(existing.cycleMonth, activeHijriYear) : currentCycle)
+        : normalizeHijriCycleLabel(selectedCycleFilter, activeHijriYear);
 
     if (existing) {
       const req = existing.requiredAmount ?? studentFee;
@@ -216,7 +272,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
         ...existing,
         studentId,
         trackId: existing.trackId || assignedTrackId,
-        cycleMonth: writeCycle,
+        cycleMonth: normalizeHijriCycleLabel(existing.cycleMonth || writeCycle, activeHijriYear),
         requiredAmount: req,
         paidAmount: resolvedStatus === 'exempt' ? 0 : paid,
         status: resolvedStatus,
@@ -243,7 +299,14 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
   const handleSavePayment = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!selectedSub || !selectedSub.studentId) return;
-    await saveStudentSubscription(selectedSub);
+    const normalizedSubCycle = normalizeHijriCycleLabel(
+      selectedSub.cycleMonth || (selectedCycleFilter === 'all' ? currentCycle : selectedCycleFilter),
+      activeHijriYear
+    );
+    await saveStudentSubscription({
+      ...selectedSub,
+      cycleMonth: normalizedSubCycle
+    });
     setShowPaymentModal(false);
     setSelectedSub(null);
   };
@@ -252,16 +315,18 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
   const handleSaveFeeSettings = async () => {
     setIsSavingFeeSettings(true);
     try {
+      const normalizedCycle = normalizeHijriCycleLabel(editingCycle, activeHijriYear) || defaultActiveCycle;
       await updateSettings({
         defaultSubscriptionFee: Number(editingDefaultFee) || 150,
-        currentHijriMonth: editingCycle,
+        currentHijriMonth: normalizedCycle,
         currency: editingCurrency
       });
+      setSelectedCycleFilter(normalizedCycle);
 
       // إذا طلبت الإدارة تطبيق الرسم الجديد على الطالبات النشطات فقط (حفاظاً على السجلات التاريخية للمؤرشفات)
       if (applyToExisting && activeScopedStudents.length > 0) {
         for (const st of activeScopedStudents) {
-          const existing = getStudentSubscriptions(st.id, editingCycle)[0];
+          const existing = getStudentSubscriptions(st.id, normalizedCycle)[0];
           const newFee = Number(editingDefaultFee) || 150;
           if (existing) {
             if (existing.status !== 'exempt') {
@@ -277,7 +342,7 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
             await saveStudentSubscription({
               studentId: st.id,
               trackId: st.trackId || 'general',
-              cycleMonth: editingCycle,
+              cycleMonth: normalizedCycle,
               requiredAmount: newFee,
               paidAmount: 0,
               status: 'pending'
@@ -1125,13 +1190,20 @@ export const SubscriptionsFinancialsView: React.FC<SubscriptionsFinancialsViewPr
                 <label className="block text-stone-700 dark:text-stone-300 mb-1.5 font-bold">
                   اسم دورة التحصيل الحالية
                 </label>
-                <input
-                  type="text"
-                  placeholder="مثال: رمضان ١٤٤٧هـ أو شعبان..."
-                  value={editingCycle}
+                <select
+                  value={normalizeHijriCycleLabel(editingCycle, activeHijriYear) || defaultActiveCycle}
                   onChange={e => setEditingCycle(e.target.value)}
-                  className="w-full bg-[#FAF7F5] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-3 py-2.5 text-xs text-stone-800 dark:text-stone-100 outline-hidden focus:border-[#8E5364]"
-                />
+                  className="w-full bg-[#FAF7F5] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-3 py-2.5 text-xs font-bold text-stone-800 dark:text-stone-100 outline-hidden focus:border-[#8E5364] cursor-pointer"
+                >
+                  {CANONICAL_HIJRI_MONTHS.map(monthName => {
+                    const cycleOption = `${monthName} ${activeHijriYear}هـ`;
+                    return (
+                      <option key={cycleOption} value={cycleOption} className="bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-100">
+                        {cycleOption}
+                      </option>
+                    );
+                  })}
+                </select>
               </div>
 
               <div>
