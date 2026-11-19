@@ -999,6 +999,36 @@ describe('7. Production Hardening & Edge-Case Verification Suite (9 Required Sce
     assert.equal(hydrated[0].payload.attendanceRecords[0].id, 'att_1');
   });
 
+  it('serializes concurrent durable enqueues so the final persisted snapshot retains every operation', async () => {
+    let persisted = '';
+    let writeCount = 0;
+    const delayedIndexedDb = {
+      getItem: async () => persisted || null,
+      setItem: async (_key: string, value: string) => {
+        const currentWrite = ++writeCount;
+        // Force the first snapshot to finish after a later call would have started without serialization.
+        await new Promise(resolve => setTimeout(resolve, currentWrite === 1 ? 20 : 0));
+        persisted = value;
+      },
+      removeItem: async () => {
+        persisted = '';
+      }
+    };
+    const queue = new PendingSyncQueueManager('test_concurrent_durable_enqueue', {
+      primaryStorage: null,
+      fallbackStorage: delayedIndexedDb
+    });
+
+    await Promise.all([
+      queue.enqueueDurable({ opId: 'concurrent_1', changedKeys: ['students'], payload: { students: [{ id: 's1' }] } }),
+      queue.enqueueDurable({ opId: 'concurrent_2', changedKeys: ['attendanceRecords'], payload: { attendanceRecords: [{ id: 'a1' }] } })
+    ]);
+
+    const stored = JSON.parse(persisted) as Array<{ opId: string }>;
+    assert.deepEqual(stored.map(item => item.opId), ['concurrent_1', 'concurrent_2']);
+    assert.equal(queue.size(), 2);
+  });
+
   it('Scenario 2: Local storage failure rejects fake offline save when both localStorage and IndexedDB fail', async () => {
     const brokenPrimaryStorage = {
       getItem: () => null,
