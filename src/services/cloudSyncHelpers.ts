@@ -1202,13 +1202,16 @@ export const executeOptimisticDocMerge = async (params: {
 };
 
 /**
- * Executes a dynamic, size-bounded shard write that connects `partitionItemsIntoBoundedShards`
- * directly to the transactional sync pipeline:
- * 1. Collects existing items from both the base shard and any existing `overflowShardIds`.
- * 2. Merges incoming items with remote items (respecting tombstones and `_replaceState`).
- * 3. Partitions the merged items into bounded sub-shards (`<= maxBytesPerShard`).
- * 4. Writes overflow shards first, then writes the base shard with `overflowShardIds`, and clears
- *    any retired overflow shards if the collection shrank.
+ * Executes a size-bounded shard update using an optimistic commit protocol:
+ * 1. Read the base document and every overflow document it currently references.
+ * 2. Build a complete new partition using that exact snapshot.
+ * 3. Write operation-scoped overflow documents before publishing their IDs.
+ * 4. Publish the new base pointer only if the base revision and old pointer are unchanged.
+ * 5. Retry on a concurrent base update; retire old overflow documents only after commit.
+ *
+ * This prevents readers from following pointers to overflow documents that have not yet
+ * been written, and prevents a writer using a stale overflow snapshot from replacing a
+ * concurrent writer's newer data.
  */
 export const executeBoundedShardSync = async <T extends Record<string, any>>(params: {
   baseShardId: string;
@@ -1235,118 +1238,178 @@ export const executeBoundedShardSync = async <T extends Record<string, any>>(par
   overflowShardIds: string[];
 }> => {
   const maxBytes = params.maxBytesPerShard ?? SHARD_SAFE_BYTE_LIMIT;
-  const writtenShardRevisions: Record<string, number> = {};
-  let finalItems: T[] = [];
-  let previousOverflowIds: string[] = [];
+  const maxCommitAttempts = 5;
 
-  // Read base shard first inside or alongside overflow discovery, then commit overflow + base shards
-  const baseOverflowProbe = await params.readOverflowDoc(params.baseShardId);
-  if (Array.isArray(baseOverflowProbe?.overflowShardIds)) {
-    previousOverflowIds = baseOverflowProbe!.overflowShardIds.map(String).filter(Boolean);
-  }
-  const existingOverflowItems: T[] = [];
-  for (const ovId of previousOverflowIds) {
-    const ovDoc = await params.readOverflowDoc(ovId);
-    if (Array.isArray(ovDoc?.items)) {
-      existingOverflowItems.push(...(ovDoc!.items as T[]));
+  class BaseRevisionConflictError extends Error {
+    constructor() {
+      super('SHARD_BASE_REVISION_CHANGED');
+      this.name = 'BaseRevisionConflictError';
     }
   }
 
-  let partitions: Array<{ shardId: string; items: T[]; byteSize: number }> = [];
-
-  // Run transaction on base shard to merge with latest remote items and determine exact partitions
-  const baseRes = await params.runDocTransaction({
-    docId: params.baseShardId,
-    opId: params.opId,
-    buildNext: remoteData => {
-      const existingBaseItems = Array.isArray(remoteData?.items) ? (remoteData!.items as T[]) : [];
-      const allExisting = [...existingBaseItems, ...existingOverflowItems];
-      finalItems = deepCleanForFirestore(
-        params.deduplicateAndMerge(allExisting, params.incomingItems, params.deletedIds, params.replaceState)
-      );
-
-      partitions = partitionItemsIntoBoundedShards(params.baseShardId, finalItems, maxBytes);
-      const basePart = partitions[0] || { shardId: params.baseShardId, items: [], byteSize: 0 };
-      const nextOverflowIds = partitions.slice(1).map(p => p.shardId);
-
-      const prevRemoteOverflowIds = Array.isArray(remoteData?.overflowShardIds)
-        ? remoteData!.overflowShardIds.map(String)
-        : [];
-
-      if (
-        !params.replaceState &&
-        existingBaseItems.length === basePart.items.length &&
-        JSON.stringify(existingBaseItems) === JSON.stringify(basePart.items) &&
-        JSON.stringify(prevRemoteOverflowIds) === JSON.stringify(nextOverflowIds)
-      ) {
-        return { skipWrite: true, payload: remoteData || {} };
-      }
-
-      return {
-        skipWrite: false,
-        payload: {
-          users: [],
-          shardType: params.shardType,
-          ...(params.bucket !== undefined ? { bucket: params.bucket } : {}),
-          items: basePart.items,
-          overflowShardIds: nextOverflowIds,
-          updatedAt: new Date().toISOString()
-        }
-      };
+  const getOperationToken = (value: string): string => {
+    let hash = 2166136261;
+    for (let i = 0; i < value.length; i++) {
+      hash ^= value.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
     }
-  });
+    return (hash >>> 0).toString(36);
+  };
 
-  writtenShardRevisions[params.baseShardId] = baseRes.revision;
-  const activeOverflowPartitions = partitions.slice(1);
-  const activeOverflowIds = activeOverflowPartitions.map(p => p.shardId);
-
-  // Write each active overflow shard transactionally
-  for (let i = 0; i < activeOverflowPartitions.length; i++) {
-    const part = activeOverflowPartitions[i];
-    const ovRes = await params.runDocTransaction({
-      docId: part.shardId,
-      opId: `${params.opId}_ov_${i + 1}`,
-      buildNext: () => ({
+  const writeRetiredOverflow = async (docId: string, attempt: number): Promise<number> => {
+    const result = await params.runDocTransaction({
+      docId,
+      opId: `${params.opId}_retire_${attempt}_${getOperationToken(docId)}`,
+      buildNext: remoteData => ({
         skipWrite: false,
         payload: {
           users: [],
           shardType: `${params.shardType}_overflow`,
           parentShardId: params.baseShardId,
-          overflowIndex: i + 1,
-          items: part.items,
-          updatedAt: new Date().toISOString()
+          items: [],
+          updatedAt: new Date().toISOString(),
+          ...(remoteData?.overflowIndex !== undefined ? { overflowIndex: remoteData.overflowIndex } : {})
         }
       })
     });
-    writtenShardRevisions[part.shardId] = ovRes.revision;
-  }
+    return result.revision;
+  };
 
-  // Clear any retired overflow shards from previous larger states
-  for (const oldOvId of previousOverflowIds) {
-    if (!activeOverflowIds.includes(oldOvId)) {
-      const clearRes = await params.runDocTransaction({
-        docId: oldOvId,
-        opId: `${params.opId}_clear_${oldOvId}`,
+  for (let attempt = 1; attempt <= maxCommitAttempts; attempt++) {
+    const baseSnapshot = await params.readOverflowDoc(params.baseShardId);
+    const baseRevision =
+      baseSnapshot && typeof baseSnapshot._revision === 'number' ? baseSnapshot._revision : 0;
+    const previousOverflowIds = Array.isArray(baseSnapshot?.overflowShardIds)
+      ? Array.from(new Set(baseSnapshot.overflowShardIds.map(String).filter(Boolean)))
+      : [];
+
+    const overflowSnapshots = new Map<string, Record<string, any>>();
+    const existingOverflowItems: T[] = [];
+    for (const overflowId of previousOverflowIds) {
+      const overflowDoc = await params.readOverflowDoc(overflowId);
+      if (!overflowDoc || !Array.isArray(overflowDoc.items)) {
+        throw new Error(`MISSING_REFERENCED_OVERFLOW_DOC:${overflowId}`);
+      }
+      overflowSnapshots.set(overflowId, overflowDoc);
+      existingOverflowItems.push(...(overflowDoc.items as T[]));
+    }
+
+    const existingBaseItems = Array.isArray(baseSnapshot?.items) ? (baseSnapshot!.items as T[]) : [];
+    const allExisting = [...existingBaseItems, ...existingOverflowItems];
+    const finalItems = deepCleanForFirestore(
+      params.deduplicateAndMerge(allExisting, params.incomingItems, params.deletedIds, params.replaceState)
+    );
+    const rawPartitions = partitionItemsIntoBoundedShards(params.baseShardId, finalItems, maxBytes);
+    const basePart = rawPartitions[0] || { shardId: params.baseShardId, items: [], byteSize: 0 };
+    const operationToken = getOperationToken(`${params.opId}:attempt:${attempt}`);
+    const activeOverflowPartitions = rawPartitions.slice(1).map((part, index) => ({
+      ...part,
+      shardId: `${params.baseShardId}_overflow_${operationToken}_${index + 1}`
+    }));
+    const activeOverflowIds = activeOverflowPartitions.map(part => part.shardId);
+
+    const oldPartitions = [existingBaseItems, ...previousOverflowIds.map(id => overflowSnapshots.get(id)!.items as T[])];
+    const unchangedItems =
+      !params.replaceState &&
+      oldPartitions.flat().length === finalItems.length &&
+      JSON.stringify(oldPartitions.flat()) === JSON.stringify(finalItems);
+    if (unchangedItems) {
+      const revisions: Record<string, number> = {};
+      revisions[params.baseShardId] = baseRevision;
+      for (const [id, doc] of overflowSnapshots.entries()) {
+        revisions[id] = typeof doc._revision === 'number' ? doc._revision : 0;
+      }
+      return {
+        totalCount: finalItems.length,
+        writtenShardRevisions: revisions,
+        overflowShardIds: previousOverflowIds
+      };
+    }
+
+    // Prepare overflow docs first. They are not visible to readers until the base pointer commits.
+    const preparedRevisions: Record<string, number> = {};
+    for (let i = 0; i < activeOverflowPartitions.length; i++) {
+      const part = activeOverflowPartitions[i];
+      const result = await params.runDocTransaction({
+        docId: part.shardId,
+        opId: `${params.opId}_prepare_${attempt}_${i + 1}`,
         buildNext: () => ({
           skipWrite: false,
           payload: {
             users: [],
             shardType: `${params.shardType}_overflow`,
             parentShardId: params.baseShardId,
-            items: [],
+            overflowIndex: i + 1,
+            items: part.items,
             updatedAt: new Date().toISOString()
           }
         })
       });
-      writtenShardRevisions[oldOvId] = clearRes.revision;
+      preparedRevisions[part.shardId] = result.revision;
     }
+
+    let baseResult: { committed: boolean; skipped: boolean; revision: number };
+    try {
+      baseResult = await params.runDocTransaction({
+        docId: params.baseShardId,
+        opId: `${params.opId}_publish_${attempt}`,
+        buildNext: (remoteData, exists) => {
+          const remoteRevision =
+            remoteData && typeof remoteData._revision === 'number' ? remoteData._revision : 0;
+          const remoteOverflowIds = Array.isArray(remoteData?.overflowShardIds)
+            ? Array.from(new Set(remoteData.overflowShardIds.map(String).filter(Boolean)))
+            : [];
+          if (
+            remoteRevision !== baseRevision ||
+            JSON.stringify(remoteOverflowIds) !== JSON.stringify(previousOverflowIds) ||
+            exists !== Boolean(baseSnapshot)
+          ) {
+            throw new BaseRevisionConflictError();
+          }
+
+          return {
+            skipWrite: false,
+            payload: {
+              users: [],
+              shardType: params.shardType,
+              ...(params.bucket !== undefined ? { bucket: params.bucket } : {}),
+              items: basePart.items,
+              overflowShardIds: activeOverflowIds,
+              updatedAt: new Date().toISOString()
+            }
+          };
+        }
+      });
+    } catch (error) {
+      if (!(error instanceof BaseRevisionConflictError)) throw error;
+      // Prepared documents are still unreferenced. Leave them harmlessly orphaned rather
+      // than risk deleting a document after an ambiguous network/transaction failure.
+      if (attempt === maxCommitAttempts) {
+        throw new Error('SHARD_CONCURRENT_UPDATE_RETRY_EXHAUSTED');
+      }
+      continue;
+    }
+
+    const writtenShardRevisions: Record<string, number> = {
+      [params.baseShardId]: baseResult.revision,
+      ...preparedRevisions
+    };
+
+    // The base now references only the new, fully written overflow docs. Retire the old set.
+    for (const oldId of previousOverflowIds) {
+      if (!activeOverflowIds.includes(oldId)) {
+        writtenShardRevisions[oldId] = await writeRetiredOverflow(oldId, attempt);
+      }
+    }
+
+    return {
+      totalCount: finalItems.length,
+      writtenShardRevisions,
+      overflowShardIds: activeOverflowIds
+    };
   }
 
-  return {
-    totalCount: finalItems.length,
-    writtenShardRevisions,
-    overflowShardIds: activeOverflowIds
-  };
+  throw new Error('SHARD_CONCURRENT_UPDATE_RETRY_EXHAUSTED');
 };
 
 // ============================================================================
