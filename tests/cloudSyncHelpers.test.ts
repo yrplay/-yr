@@ -1186,6 +1186,54 @@ describe('7. Production Hardening & Edge-Case Verification Suite (9 Required Sce
     assert.equal(consistentAssembly.complete, true);
     assert.equal(consistentAssembly.generationConsistent, true);
 
+    // A shard newer than the published manifest is not proof that it belongs to this generation.
+    coordinator.recordSnapshot('shard_daily_0', {
+      exists: true,
+      data: { _revision: 4, items: [{ id: 'item_from_unpublished_generation' }] },
+      fromCache: false,
+      hasPendingWrites: false
+    });
+    assert.equal(coordinator.isGenerationConsistent('master_state'), false);
+    assert.deepEqual(coordinator.getOutdatedShardIds('master_state'), ['shard_daily_0']);
+
+    // Restore the published base revision, then verify that every overflow pointer is
+    // represented in the manifest and resolves to an existing, loaded document.
+    coordinator.recordSnapshot('shard_daily_0', {
+      exists: true,
+      data: { _revision: 3, overflowShardIds: ['shard_daily_0_overflow_1'], items: [] },
+      fromCache: false,
+      hasPendingWrites: false
+    });
+    assert.equal(coordinator.isGenerationConsistent('master_state'), false);
+    assert.deepEqual(coordinator.getOutdatedShardIds('master_state'), ['shard_daily_0_overflow_1']);
+
+    coordinator.recordSnapshot('shard_daily_0_overflow_1', {
+      exists: false,
+      data: null,
+      fromCache: false,
+      hasPendingWrites: false
+    });
+    assert.deepEqual(coordinator.getOutdatedShardIds('master_state'), ['shard_daily_0_overflow_1']);
+
+    coordinator.recordSnapshot('master_state', {
+      exists: true,
+      data: {
+        _revision: 6,
+        _syncGeneration: 'gen_3',
+        _shardRevisions: { shard_daily_0: 3, shard_daily_0_overflow_1: 1 },
+        users: [{ id: 'u1', name: 'أ. مريم' }]
+      },
+      fromCache: false,
+      hasPendingWrites: false
+    });
+    coordinator.recordSnapshot('shard_daily_0_overflow_1', {
+      exists: true,
+      data: { _revision: 1, items: [{ id: 'overflow_item_1' }] },
+      fromCache: false,
+      hasPendingWrites: false
+    });
+    assert.equal(coordinator.isGenerationConsistent('master_state'), true);
+
     // Also test _replaceState protection against overwriting newer server data with stale local state
     const newerRemoteMaster = {
       _revision: 10,
