@@ -634,17 +634,6 @@ describe('3. Data Integrity & Sandboxed Migration Tests', () => {
     });
     assert.equal(partialRun.report.status, 'partial_paused');
     assert.equal(partialRun.checkpoint.completedShards.length, 3);
-    // Every migration overflow document must be written before the base shard that publishes it.
-    const firstOverflowIndex = migrationWriteOrder.findIndex(id => id.includes('_overflow_mig_'));
-    assert.equal(firstOverflowIndex >= 0, true);
-    const firstOverflowId = migrationWriteOrder[firstOverflowIndex];
-    const parentShardId = firstOverflowId.split('_overflow_mig_')[0];
-    const parentBaseIndex = migrationWriteOrder.indexOf(parentShardId);
-    assert.equal(parentBaseIndex > firstOverflowIndex, true);
-    assert.equal(
-      sandboxStore.get(parentShardId)?.overflowShardIds?.every((id: string) => sandboxStore.has(id)),
-      true
-    );
     // Legacy source is still retained on master_state while paused
     assert.equal(Array.isArray(sandboxStore.get('master_state')?.dailyRecords), true);
 
@@ -661,6 +650,24 @@ describe('3. Data Integrity & Sandboxed Migration Tests', () => {
     assert.equal(resumedRun.report.legacySourceCleanedAfterVerification, true);
     assert.equal(resumedRun.report.collections.every(c => c.verified), true);
     assert.equal(sandboxStore.get('master_state')?.dailyRecords, undefined);
+
+    // Verify every overflow write precedes the base write that publishes its pointer.
+    const migrationParents = new Set(
+      migrationWriteOrder
+        .filter(id => id.includes('_overflow_mig_'))
+        .map(id => id.split('_overflow_mig_')[0])
+    );
+    assert.equal(migrationParents.size > 0, true);
+    for (const parentId of migrationParents) {
+      const overflowIds = migrationWriteOrder.filter(id => id.startsWith(`${parentId}_overflow_mig_`));
+      const parentIndex = migrationWriteOrder.indexOf(parentId);
+      assert.equal(parentIndex >= 0, true);
+      assert.equal(overflowIds.every(id => migrationWriteOrder.indexOf(id) < parentIndex), true);
+      assert.equal(
+        sandboxStore.get(parentId)?.overflowShardIds?.every((id: string) => sandboxStore.has(id)),
+        true
+      );
+    }
 
     // 3. Run migration again (Idempotency check -> zero data loss or duplication)
     const idempotentRun = await executeSafeLegacyShardMigration({
