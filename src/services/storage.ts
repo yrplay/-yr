@@ -76,16 +76,51 @@ export const validateImageDataUrlBeforeProcessing = (
     throw new ImageStorageError('INVALID_IMAGE_FORMAT', 'ملف الصورة غير صالح أو فارغ.');
   }
   const trimmed = dataUrl.trim();
-  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith('/')) {
-    return { byteSize: trimmed.length, isDataUrl: false };
-  }
-  if (!/^data:image\/(png|jpeg|jpg|webp|gif|svg\+xml);base64,/i.test(trimmed)) {
+
+  // Strictly validate external or relative URLs (reject malformed URLs, spaces, javascript:, or protocol-relative //)
+  if (!trimmed.startsWith('data:')) {
+    if (/\s/.test(trimmed)) {
+      throw new ImageStorageError('INVALID_IMAGE_FORMAT', 'رابط الصورة يحتوي على مسافات أو محارف غير صالحة.');
+    }
+    if (trimmed.startsWith('/')) {
+      if (trimmed.startsWith('//') || trimmed.length < 2 || !/^\/[a-zA-Z0-9._/-]+$/.test(trimmed)) {
+        throw new ImageStorageError('INVALID_IMAGE_FORMAT', 'مسار الصورة المحلي غير صالح.');
+      }
+      return { byteSize: trimmed.length, isDataUrl: false };
+    }
+    if (/^https?:\/\//i.test(trimmed)) {
+      try {
+        const parsed = new URL(trimmed);
+        if (
+          (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') ||
+          !parsed.hostname ||
+          (!parsed.hostname.includes('.') && parsed.hostname !== 'localhost')
+        ) {
+          throw new ImageStorageError('INVALID_IMAGE_FORMAT', 'رابط الصورة الخارجي غير صالح.');
+        }
+        return { byteSize: trimmed.length, isDataUrl: false };
+      } catch (err) {
+        if (err instanceof ImageStorageError) throw err;
+        throw new ImageStorageError('INVALID_IMAGE_FORMAT', 'رابط الصورة الخارجي غير صالح.');
+      }
+    }
     throw new ImageStorageError(
       'INVALID_IMAGE_FORMAT',
-      'صيغة الصورة غير مدعومة؛ يرجى اختيار صورة بصيغة PNG أو JPG أو WebP.'
+      'صيغة رابط الصورة غير مدعومة؛ يرجى استخدام صورة بصيغة PNG أو JPG أو WebP أو رابط HTTPS صالح.'
+    );
+  }
+
+  const dataUrlMatch = trimmed.match(/^data:image\/(png|jpeg|jpg|webp|gif|svg\+xml);base64,([A-Za-z0-9+/=]+)$/i);
+  if (!dataUrlMatch || !dataUrlMatch[2] || dataUrlMatch[2].length < 4) {
+    throw new ImageStorageError(
+      'INVALID_IMAGE_FORMAT',
+      'صيغة الصورة غير مدعومة أو محتوى Base64 تالف؛ يرجى اختيار صورة بصيغة PNG أو JPG أو WebP.'
     );
   }
   const byteSize = estimateDataUrlByteSize(trimmed);
+  if (byteSize <= 0) {
+    throw new ImageStorageError('INVALID_IMAGE_FORMAT', 'بيانات الصورة فارغة أو تالفة.');
+  }
   if (byteSize > maxRawBytes) {
     throw new ImageStorageError(
       'IMAGE_TOO_LARGE',
@@ -117,6 +152,10 @@ export const persistAssetLocallyWithQuotaRecovery = (
       storageObj.removeItem(key);
     } else {
       storageObj.setItem(key, url);
+      const verifyRead = storageObj.getItem(key);
+      if (verifyRead !== url) {
+        return { persisted: false, quotaExceeded: false };
+      }
     }
     return { persisted: true, quotaExceeded: false };
   } catch (err) {
@@ -138,6 +177,10 @@ export const persistAssetLocallyWithQuotaRecovery = (
     }
     try {
       storageObj.setItem(key, url);
+      const verifyRead = storageObj.getItem(key);
+      if (verifyRead !== url) {
+        return { persisted: false, quotaExceeded: true };
+      }
       return { persisted: true, quotaExceeded: false };
     } catch {
       return { persisted: false, quotaExceeded: true };
@@ -245,11 +288,13 @@ export interface UploadImageOptions {
 
 /**
  * Full-featured image upload and verification pipeline:
- * 1. Validates format and raw byte size before processing.
+ * 1. Validates format (both data:image/*;base64 and external/relative URLs) and raw byte size before processing.
  * 2. Downscales/compresses to a Firestore-safe compact size and rejects images that still exceed `MAX_FIRESTORE_INLINE_IMAGE_BYTES`.
  * 3. Attempts cloud storage endpoint upload when authenticated or when `customUploader` is provided.
- * 4. Handles `QuotaExceededError` when caching locally so the image is preserved across reloads.
- * 5. Accurately reports `cloudVerified`, `storageMode` (`cloud-storage` | `firestore-inline` | `offline-pending`), and `localPersisted`.
+ * 4. Never claims `cloudVerified: true` merely because `isOnline` is true; `cloudVerified` is ONLY `true`
+ *    when the cloud upload endpoint / customUploader actually confirms persistence.
+ * 5. When working offline (or when cloud verification did not occur and local storage fails), throws
+ *    `ImageStorageError('STORAGE_QUOTA_EXCEEDED', ...)` if local persistence fails so the caller is never misled.
  */
 export const uploadImageDataUrlWithMeta = async (
   dataUrl: string,
@@ -257,6 +302,7 @@ export const uploadImageDataUrlWithMeta = async (
   options?: UploadImageOptions
 ): Promise<ImageUploadResult> => {
   const { isDataUrl } = validateImageDataUrlBeforeProcessing(dataUrl);
+  const trimmedUrl = dataUrl.trim();
   const isOnline =
     options?.isOnline !== undefined
       ? options.isOnline
@@ -265,19 +311,83 @@ export const uploadImageDataUrlWithMeta = async (
       : navigator.onLine !== false;
 
   if (!isDataUrl) {
-    const localRes = persistAssetLocallyWithQuotaRecovery(category, dataUrl, options?.storageObj);
+    const localRes = persistAssetLocallyWithQuotaRecovery(category, trimmedUrl, options?.storageObj);
+
+    if (!isOnline) {
+      if (options?.requireCloudEndpoint) {
+        throw new ImageStorageError(
+          'CLOUD_UPLOAD_FAILED',
+          'تعذر التحقق من رابط الصورة سحابياً بسبب انقطاع الاتصال بالإنترنت.'
+        );
+      }
+      if (!localRes.persisted) {
+        throw new ImageStorageError(
+          'STORAGE_QUOTA_EXCEEDED',
+          'فشل حفظ رابط الصورة في التخزين المحلي أثناء العمل دون اتصال.'
+        );
+      }
+      return {
+        url: trimmedUrl,
+        category,
+        storageMode: 'offline-pending',
+        cloudVerified: false,
+        localPersisted: localRes.persisted,
+        quotaExceeded: localRes.quotaExceeded,
+        byteSize: trimmedUrl.length
+      };
+    }
+
+    if (options?.customUploader) {
+      try {
+        const upRes = await options.customUploader({ category, dataUrl: trimmedUrl });
+        if (upRes.ok && upRes.url) {
+          const verifiedLocal = persistAssetLocallyWithQuotaRecovery(category, upRes.url, options?.storageObj);
+          return {
+            url: upRes.url,
+            category,
+            storageMode: 'cloud-storage',
+            cloudVerified: true,
+            localPersisted: verifiedLocal.persisted,
+            quotaExceeded: verifiedLocal.quotaExceeded,
+            byteSize: upRes.url.length
+          };
+        }
+        if (options.requireCloudEndpoint) {
+          throw new ImageStorageError('CLOUD_UPLOAD_FAILED', 'فشل تأكيد رابط الصورة في الخادم السحابي.');
+        }
+      } catch (err) {
+        if (err instanceof ImageStorageError || options.requireCloudEndpoint) {
+          throw err instanceof ImageStorageError
+            ? err
+            : new ImageStorageError('CLOUD_UPLOAD_FAILED', 'فشل تأكيد رابط الصورة في الخادم السحابي.');
+        }
+      }
+    } else if (options?.requireCloudEndpoint) {
+      throw new ImageStorageError(
+        'CLOUD_UPLOAD_FAILED',
+        'لم يتم توفير خدمة التحقق السحابي لتأكيد حفظ رابط الصورة.'
+      );
+    }
+
+    if (!localRes.persisted && localRes.quotaExceeded) {
+      throw new ImageStorageError(
+        'STORAGE_QUOTA_EXCEEDED',
+        'تجاوزت مساحة التخزين المحلي الحد المسموح ولم يتم التحقق من الصورة سحابياً.'
+      );
+    }
+
     return {
-      url: dataUrl,
+      url: trimmedUrl,
       category,
-      storageMode: isOnline ? 'cloud-storage' : 'offline-pending',
-      cloudVerified: isOnline,
+      storageMode: 'firestore-inline',
+      cloudVerified: false,
       localPersisted: localRes.persisted,
       quotaExceeded: localRes.quotaExceeded,
-      byteSize: dataUrl.length
+      byteSize: trimmedUrl.length
     };
   }
 
-  const compactDataUrl = await ensureCompactDataUrl(dataUrl);
+  const compactDataUrl = await ensureCompactDataUrl(trimmedUrl);
   const maxInlineBytes = options?.maxInlineBytes ?? MAX_FIRESTORE_INLINE_IMAGE_BYTES;
   const compactByteSize = estimateDataUrlByteSize(compactDataUrl);
 
@@ -300,6 +410,12 @@ export const uploadImageDataUrlWithMeta = async (
         'تعذر رفع الصورة سحابياً بسبب انقطاع الاتصال بالإنترنت.'
       );
     }
+    if (!localRes.persisted) {
+      throw new ImageStorageError(
+        'STORAGE_QUOTA_EXCEEDED',
+        'فشل حفظ الصورة في التخزين المحلي أثناء العمل دون اتصال؛ تعذر تأمين الصورة محلياً.'
+      );
+    }
     return {
       url: compactDataUrl,
       category,
@@ -316,14 +432,14 @@ export const uploadImageDataUrlWithMeta = async (
     try {
       const upRes = await options.customUploader({ category, dataUrl: compactDataUrl });
       if (upRes.ok && upRes.url) {
-        persistAssetLocallyWithQuotaRecovery(category, upRes.url, options?.storageObj);
+        const verifiedLocal = persistAssetLocallyWithQuotaRecovery(category, upRes.url, options?.storageObj);
         return {
           url: upRes.url,
           category,
           storageMode: 'cloud-storage',
           cloudVerified: true,
-          localPersisted: localRes.persisted,
-          quotaExceeded: localRes.quotaExceeded,
+          localPersisted: verifiedLocal.persisted,
+          quotaExceeded: verifiedLocal.quotaExceeded,
           byteSize: compactByteSize
         };
       }
@@ -358,14 +474,14 @@ export const uploadImageDataUrlWithMeta = async (
 
           const result = await response.json().catch(() => ({}));
           if (response.ok && typeof result?.url === 'string' && result.url) {
-            persistAssetLocallyWithQuotaRecovery(category, result.url, options?.storageObj);
+            const verifiedLocal = persistAssetLocallyWithQuotaRecovery(category, result.url, options?.storageObj);
             return {
               url: result.url,
               category,
               storageMode: 'cloud-storage',
               cloudVerified: true,
-              localPersisted: localRes.persisted,
-              quotaExceeded: localRes.quotaExceeded,
+              localPersisted: verifiedLocal.persisted,
+              quotaExceeded: verifiedLocal.quotaExceeded,
               byteSize: compactByteSize
             };
           }
@@ -377,7 +493,19 @@ export const uploadImageDataUrlWithMeta = async (
           throw new ImageStorageError('CLOUD_UPLOAD_FAILED', 'تعذر الاتصال بخادم رفع الصور.');
         }
       }
+    } else if (options?.requireCloudEndpoint) {
+      throw new ImageStorageError(
+        'CLOUD_UPLOAD_FAILED',
+        'يتطلب الرفع السحابي المباشر جلسة مصادقة نشطة.'
+      );
     }
+  }
+
+  if (!localRes.persisted && localRes.quotaExceeded) {
+    throw new ImageStorageError(
+      'STORAGE_QUOTA_EXCEEDED',
+      'فشل حفظ الصورة في التخزين المحلي بسبب امتلاء المساحة ولم يتم رفعها لخادم التخزين السحابي.'
+    );
   }
 
   return {

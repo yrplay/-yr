@@ -4,14 +4,17 @@ import {
   ALL_SHARD_DOC_IDS,
   ATTENDANCE_SHARD_DOC_IDS,
   DAILY_SHARD_DOC_IDS,
+  DebouncedPersistCoordinator,
   FIRESTORE_HARD_BYTE_LIMIT,
   SHARD_SAFE_BYTE_LIMIT,
   SHARD_SUBMISSIONS_DOC_ID,
   SHARD_SUBSCRIPTIONS_LOGS_DOC_ID,
   FirestoreDocumentSizeLimitError,
+  PendingQueuePersistenceError,
   PendingSyncQueueManager,
   ShardSubscriptionCoordinator,
   StaleCacheWriteError,
+  StaleReplaceStateError,
   assembleShardedCloudState,
   assertServerReadForWrite,
   createOperationId,
@@ -20,6 +23,7 @@ import {
   deduplicateChallengeSubmissions,
   deduplicateDailyRecords,
   estimateFirestoreDocSizeBytes,
+  executeBoundedShardSync,
   executeOptimisticDocMerge,
   executeSafeLegacyShardMigration,
   getAttendanceRecordShardId,
@@ -28,7 +32,9 @@ import {
   partitionItemsIntoBoundedShards,
   pruneDeadStaffProfiles,
   sanitizeStaffUserForFirestore,
-  validateDocumentSizeWithinLimit
+  validateDocumentSizeWithinLimit,
+  validateReplaceStateFreshness,
+  verifyCollectionContentParity
 } from '../src/services/cloudSyncHelpers';
 import {
   ImageStorageError,
@@ -51,6 +57,7 @@ import {
   getHijriYearTotalDays,
   isHijriLeapYear,
   parseDateInput,
+  parseHijriJoinDate,
   resolveHijriToGregorianStrict,
   shiftHijriDay,
   tryResolveHijriToGregorian,
@@ -354,7 +361,9 @@ describe('1. Sync & Concurrency Tests (Distributed Multi-Device & Optimistic Con
   });
 
   it('queues operations offline in PendingSyncQueueManager and flushes them in causal order on reconnect', async () => {
-    const queue = new PendingSyncQueueManager('test_pending_queue_v1');
+    const queue = new PendingSyncQueueManager('test_pending_queue_v1', {
+      primaryStorage: createMockStorage()
+    });
     queue.clear();
 
     queue.enqueue({
@@ -944,5 +953,446 @@ describe('6. Core Domain & Recitation Progress Regression Tests', () => {
     assert.equal(createOperationId('test').startsWith('test_'), true);
     assert.equal(deduplicateAtqiniSubmissions([{ id: '1', assignmentId: 'a1', studentId: 's1', hijriDate: '1447-09-01' }]).length, 1);
     assert.equal(deduplicateChallengeSubmissions([{ id: '1', challengeId: 'c1', studentId: 's1' }]).length, 1);
+  });
+});
+
+describe('7. Production Hardening & Edge-Case Verification Suite (9 Required Scenarios)', () => {
+  it('Scenario 1: App reload while Offline preserves queued operations via localStorage or IndexedDB fallback', async () => {
+    const primaryLocalStorage = createMockStorage(0); // Quota full in localStorage (0 entries allowed)
+    const idbBackingMap = new Map<string, string>();
+    const asyncIndexedDbFallback = {
+      async getItem(key: string) {
+        return idbBackingMap.get(key) ?? null;
+      },
+      async setItem(key: string, value: string) {
+        idbBackingMap.set(key, value);
+      },
+      async removeItem(key: string) {
+        idbBackingMap.delete(key);
+      }
+    };
+
+    // Session 1 (before reload): localStorage fails with QuotaExceededError, automatically falls back to IndexedDB
+    const queueBeforeReload = new PendingSyncQueueManager('test_offline_reload_q', {
+      primaryStorage: primaryLocalStorage,
+      fallbackStorage: asyncIndexedDbFallback
+    });
+
+    const queuedEntry = await queueBeforeReload.enqueueDurable({
+      opId: 'op_offline_1',
+      changedKeys: ['attendanceRecords'],
+      payload: {
+        attendanceRecords: [{ id: 'att_1', studentId: 'stu_1', date: '2026-03-10', status: 'present' }]
+      }
+    });
+    assert.equal(queuedEntry.storageBackend, 'indexedDB');
+    assert.equal(queueBeforeReload.size(), 1);
+
+    // Session 2 (simulate full browser reload while still offline -> fresh PendingSyncQueueManager instance)
+    const queueAfterReload = new PendingSyncQueueManager('test_offline_reload_q', {
+      primaryStorage: primaryLocalStorage,
+      fallbackStorage: asyncIndexedDbFallback
+    });
+    const hydrated = await queueAfterReload.hydrateFromDurableStorage();
+    assert.equal(hydrated.length, 1);
+    assert.equal(hydrated[0].opId, 'op_offline_1');
+    assert.equal(hydrated[0].payload.attendanceRecords[0].id, 'att_1');
+  });
+
+  it('Scenario 2: Local storage failure rejects fake offline save when both localStorage and IndexedDB fail', async () => {
+    const brokenPrimaryStorage = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('QuotaExceededError');
+      },
+      removeItem: () => {}
+    };
+    const brokenIndexedDbStorage = {
+      getItem: async () => null,
+      setItem: async () => {
+        throw new Error('IDB_DISK_FULL');
+      },
+      removeItem: async () => {}
+    };
+
+    const queue = new PendingSyncQueueManager('test_broken_storage_q', {
+      primaryStorage: brokenPrimaryStorage,
+      fallbackStorage: brokenIndexedDbStorage
+    });
+
+    // Synchronous enqueue must throw PendingQueuePersistenceError and NOT leave item in memoryQueue
+    assert.throws(
+      () =>
+        queue.enqueue({
+          opId: 'op_unpersisted_sync',
+          changedKeys: ['users'],
+          payload: { users: [{ id: 'u1', name: 'معلمة' }] }
+        }),
+      PendingQueuePersistenceError
+    );
+    assert.equal(queue.size(), 0);
+
+    // Async enqueueDurable must also throw PendingQueuePersistenceError and roll back memoryQueue
+    await assert.rejects(
+      () =>
+        queue.enqueueDurable({
+          opId: 'op_unpersisted_async',
+          changedKeys: ['users'],
+          payload: { users: [{ id: 'u1', name: 'معلمة' }] }
+        }),
+      PendingQueuePersistenceError
+    );
+    assert.equal(queue.size(), 0);
+  });
+
+  it('Scenario 3: Two consecutive persistState calls within < 350ms resolve BOTH promises cleanly with zero hanging promises', async () => {
+    const coordinator = new DebouncedPersistCoordinator(120); // < 350ms window
+    const executedBatches: Array<{ opId: string; changedKeys: string[] }> = [];
+
+    const firstCallPromise = coordinator.schedule({
+      opId: 'op_call_1',
+      changedKeys: ['users'],
+      payload: { users: [{ id: 'u1', name: 'أ. فاطمة' }] },
+      executor: async (mergedPayload, opId) => {
+        executedBatches.push({ opId, changedKeys: mergedPayload._changedKeys });
+        return { cloudSynced: true, queuedOffline: false, opId };
+      }
+    });
+
+    // Wait 30ms (< 350ms debounce) and trigger second persistState call
+    await new Promise(r => setTimeout(r, 30));
+
+    const secondCallPromise = coordinator.schedule({
+      opId: 'op_call_2',
+      changedKeys: ['circles'],
+      payload: {
+        users: [{ id: 'u1', name: 'أ. فاطمة' }],
+        circles: [{ id: 'c1', name: 'حلقة النور' }]
+      },
+      executor: async (mergedPayload, opId) => {
+        executedBatches.push({ opId, changedKeys: mergedPayload._changedKeys });
+        return { cloudSynced: true, queuedOffline: false, opId };
+      }
+    });
+
+    const [firstResult, secondResult] = await Promise.all([firstCallPromise, secondCallPromise]);
+
+    // Exactly ONE coalesced cloud write ran, and BOTH promises resolved with a clear outcome!
+    assert.equal(executedBatches.length, 1);
+    assert.deepEqual(executedBatches[0].changedKeys.sort(), ['circles', 'users']);
+    assert.equal(firstResult.cloudSynced, true);
+    assert.equal(secondResult.cloudSynced, true);
+    assert.equal(firstResult.coalescedCount, 2);
+    assert.equal(secondResult.coalescedCount, 2);
+  });
+
+  it('Scenario 4: Exceeding Shard size limit dynamically creates overflow shards in sync path and reassembles them seamlessly', async () => {
+    const firestoreDocs = new Map<string, Record<string, any>>();
+    firestoreDocs.set('master_state', {
+      _revision: 1,
+      users: [{ id: 'u1', name: 'أ. سارة' }]
+    });
+
+    // Generate 40 large daily records that exceed a 6 KB bounded shard threshold
+    const incomingLargeRecords = Array.from({ length: 40 }, (_, i) => ({
+      id: `dr_stu_${i}_2026-03-10`,
+      studentId: `stu_${i}`,
+      date: '2026-03-10',
+      notes: 'تسميع ممتاز مع مراجعة التجويد وأحكام المدود '.repeat(6),
+      updatedAt: '2026-03-10T10:00:00.000Z'
+    }));
+
+    const syncRes = await executeBoundedShardSync({
+      baseShardId: 'shard_daily_0',
+      shardType: 'dailyRecords',
+      bucket: 0,
+      opId: 'op_overflow_test',
+      incomingItems: incomingLargeRecords,
+      deletedIds: [],
+      replaceState: false,
+      maxBytesPerShard: 6000, // Force dynamic overflow sharding
+      deduplicateAndMerge: (existing, incoming) => deduplicateDailyRecords([...existing, ...incoming]),
+      readOverflowDoc: async docId => firestoreDocs.get(docId) ?? null,
+      runDocTransaction: async txParams => {
+        const existing = firestoreDocs.get(txParams.docId) ?? null;
+        const prevRev = typeof existing?._revision === 'number' ? existing._revision : 0;
+        const built = txParams.buildNext(existing, existing !== null);
+        if (!built.skipWrite) {
+          const nextRev = prevRev + 1;
+          firestoreDocs.set(txParams.docId, { ...built.payload, _revision: nextRev });
+          return { committed: true, skipped: false, revision: nextRev };
+        }
+        return { committed: true, skipped: true, revision: prevRev };
+      }
+    });
+
+    assert.equal(syncRes.totalCount, 40);
+    assert.equal(syncRes.overflowShardIds.length >= 2, true);
+    assert.equal(firestoreDocs.has('shard_daily_0_overflow_1'), true);
+
+    // Verify full reassembly across base + dynamic overflow shards
+    const allShardsObj: Record<string, Record<string, any> | null> = {};
+    for (const [k, v] of firestoreDocs.entries()) {
+      if (k !== 'master_state') allShardsObj[k] = v;
+    }
+    const reassembled = assembleShardedCloudState(firestoreDocs.get('master_state'), allShardsObj);
+    assert.equal(reassembled?.dailyRecords.length, 40);
+  });
+
+  it('Scenario 5: Concurrent edits on master_state and Shards enforce Generation Marker (_shardRevisions) and protect _replaceState from stale overwrite', () => {
+    const coordinator = new ShardSubscriptionCoordinator('master_state', ALL_SHARD_DOC_IDS);
+
+    // Load all 8 shards at initial _revision = 2
+    for (const shardId of ALL_SHARD_DOC_IDS) {
+      coordinator.recordSnapshot(shardId, {
+        exists: true,
+        data: { _revision: 2, items: [{ id: `item_${shardId}`, studentId: 's1', date: '2026-03-01' }] },
+        fromCache: false,
+        hasPendingWrites: false
+      });
+    }
+
+    // Now master_state arrives from a newer multi-document write (generation G2) expecting shard_daily_0 at _revision = 3
+    coordinator.recordSnapshot('master_state', {
+      exists: true,
+      data: {
+        _revision: 5,
+        _syncGeneration: 'gen_2',
+        _shardRevisions: { shard_daily_0: 3 },
+        users: [{ id: 'u1', name: 'أ. مريم' }]
+      },
+      fromCache: false,
+      hasPendingWrites: false
+    });
+
+    // Because shard_daily_0 is still at _revision = 2 (< expected 3), state is NOT generation-consistent yet!
+    assert.equal(coordinator.isGenerationConsistent('master_state'), false);
+    assert.deepEqual(coordinator.getOutdatedShardIds('master_state'), ['shard_daily_0']);
+    assert.equal(coordinator.computeStatus({ isOnline: true, pendingQueueCount: 0 }), 'syncing');
+    const prematureAssembly = coordinator.assembleIfComplete('master_state');
+    assert.equal(prematureAssembly.complete, false);
+    assert.equal(prematureAssembly.generationConsistent, false);
+
+    // Once shard_daily_0 snapshot arrives at _revision = 3, generation consistency is satisfied!
+    coordinator.recordSnapshot('shard_daily_0', {
+      exists: true,
+      data: { _revision: 3, items: [{ id: 'item_shard_daily_0_v3', studentId: 's1', date: '2026-03-02' }] },
+      fromCache: false,
+      hasPendingWrites: false
+    });
+    assert.equal(coordinator.isGenerationConsistent('master_state'), true);
+    assert.equal(coordinator.computeStatus({ isOnline: true, pendingQueueCount: 0 }), 'connected');
+    const consistentAssembly = coordinator.assembleIfComplete('master_state');
+    assert.equal(consistentAssembly.complete, true);
+    assert.equal(consistentAssembly.generationConsistent, true);
+
+    // Also test _replaceState protection against overwriting newer server data with stale local state
+    const newerRemoteMaster = {
+      _revision: 10,
+      lastSyncedAt: '2026-03-15T12:00:00.000Z',
+      users: [{ id: 'u1', name: 'معلمة محدثة على الخادم', updatedAt: '2026-03-15T12:00:00.000Z' }]
+    };
+    const staleLocalReplace = {
+      _replaceState: true,
+      _expectedBaseRevision: 8,
+      lastSyncedAt: '2026-03-14T10:00:00.000Z',
+      users: [{ id: 'u1', name: 'نسخة قديمة', updatedAt: '2026-03-14T10:00:00.000Z' }]
+    };
+    assert.throws(
+      () => validateReplaceStateFreshness(newerRemoteMaster, staleLocalReplace),
+      StaleReplaceStateError
+    );
+  });
+
+  it('Scenario 6: Record content mismatch with equal record counts during migration is detected and triggers automatic rollback', async () => {
+    const sandbox = new Map<string, Record<string, any>>();
+    const originalMaster = {
+      users: [{ id: 'u1', name: 'أ. نورة' }],
+      dailyRecords: [
+        { id: 'dr_s1_2026-03-01', studentId: 's1', date: '2026-03-01', score: 100, updatedAt: '2026-03-01T10:00:00Z' },
+        { id: 'dr_s2_2026-03-01', studentId: 's2', date: '2026-03-01', score: 95, updatedAt: '2026-03-01T10:00:00Z' }
+      ]
+    };
+    sandbox.set('master_state', structuredClone(originalMaster));
+
+    // Direct unit check on verifyCollectionContentParity when counts match (2 === 2) but content differs
+    const parityCheck = verifyCollectionContentParity(
+      originalMaster.dailyRecords,
+      [
+        { id: 'dr_s1_2026-03-01', studentId: 's1', date: '2026-03-01', score: 100, updatedAt: '2026-03-01T10:00:00Z' },
+        { id: 'dr_s2_2026-03-01', studentId: 's2', date: '2026-03-01', score: 50, updatedAt: '2026-03-01T10:00:00Z' } // Corrupted score!
+      ],
+      r => r.id
+    );
+    assert.equal(parityCheck.countMatched, true);
+    assert.equal(parityCheck.idsMatched, true);
+    assert.equal(parityCheck.contentMatched, false);
+    assert.equal(parityCheck.verified, false);
+
+    // Simulate subtle content corruption on write where record count stays identical (2 records)
+    const migrationRes = await executeSafeLegacyShardMigration({
+      cleanupLegacyAfterVerification: true,
+      adapter: {
+        readAllDocs: async () => {
+          const docs: Record<string, Record<string, any> | null> = {};
+          for (const [k, v] of sandbox.entries()) {
+            docs[k] = structuredClone(v);
+          }
+          return { completeRead: true, docs };
+        },
+        writeDoc: async (docId, payload) => {
+          const copy = structuredClone(payload);
+          if (docId.startsWith('shard_daily_') && Array.isArray(copy.items) && copy.items.length > 0) {
+            // Mutate content without changing record count
+            copy.items[0].score = 0;
+          }
+          sandbox.set(docId, copy);
+        }
+      }
+    });
+
+    assert.equal(migrationRes.report.status, 'rolled_back');
+    assert.equal(migrationRes.report.rolledBack, true);
+    assert.equal(migrationRes.report.error, 'VERIFICATION_CONTENT_MISMATCH');
+    // Verify original master_state was restored intact with score = 100 and 95
+    assert.equal(sandbox.get('master_state')?.dailyRecords?.[0]?.score, 100);
+    assert.equal(sandbox.get('master_state')?.dailyRecords?.[1]?.score, 95);
+  });
+
+  it('Scenario 7: Data recovery after sync interruption replays queued operations in causal order without data loss', async () => {
+    const primaryStorage = createMockStorage();
+    const queue = new PendingSyncQueueManager('test_recovery_q', {
+      primaryStorage
+    });
+
+    await queue.enqueueDurable({
+      opId: 'op_rec_1',
+      changedKeys: ['students'],
+      payload: { students: [{ id: 'stu_1', name: 'طالبة 1', updatedAt: '2026-03-10T08:00:00Z' }] }
+    });
+    await queue.enqueueDurable({
+      opId: 'op_rec_2',
+      changedKeys: ['attendanceRecords'],
+      payload: {
+        attendanceRecords: [{ id: 'att_stu_1', studentId: 'stu_1', date: '2026-03-10', status: 'present' }]
+      }
+    });
+
+    // Simulate interruption on second operation during first flush attempt
+    let failOnSecond = true;
+    const committedOps: string[] = [];
+    const firstFlush = await queue.flush(async op => {
+      if (op.opId === 'op_rec_2' && failOnSecond) {
+        throw new Error('NETWORK_INTERRUPTED_MID_SYNC');
+      }
+      committedOps.push(op.opId);
+    });
+
+    assert.equal(firstFlush.flushedCount, 1);
+    assert.equal(firstFlush.remainingCount, 1);
+
+    // Simulate app reload and reconnection -> resume remaining operation
+    failOnSecond = false;
+    const reloadedQueue = new PendingSyncQueueManager('test_recovery_q', {
+      primaryStorage
+    });
+    const secondFlush = await reloadedQueue.flush(async op => {
+      committedOps.push(op.opId);
+    });
+
+    assert.equal(secondFlush.flushedCount, 1);
+    assert.equal(secondFlush.remainingCount, 0);
+    assert.deepEqual(committedOps, ['op_rec_1', 'op_rec_2']);
+  });
+
+  it('Scenario 8: Invalid Hijri dates in parseHijriJoinDate are rejected without silent clamping while preserving historical records', () => {
+    // 1. Default empty/undefined initialization returns 1448-01-01
+    assert.deepEqual(parseHijriJoinDate(undefined), { year: 1448, month: 1, day: 1 });
+    assert.deepEqual(parseHijriJoinDate(''), { year: 1448, month: 1, day: 1 });
+
+    // 2. Valid historical Hijri date before 1440 AH (e.g. 1435-04-15) is preserved without clamping to 1440!
+    assert.deepEqual(parseHijriJoinDate('1435-04-15'), { year: 1435, month: 4, day: 15 });
+
+    // 3. Valid Gregorian join date converts accurately to Hijri parts
+    const gregConverted = parseHijriJoinDate('2025-03-01');
+    assert.equal(gregConverted.year, 1446);
+    assert.equal(gregConverted.month, 9);
+
+    // 4. Out-of-bounds month (1447-13-01) or day (1447-05-35) MUST throw instead of silently clamping to 12 or 30
+    assert.throws(() => parseHijriJoinDate('1447-13-01'), HijriConversionError);
+    assert.throws(() => parseHijriJoinDate('1447-00-10'), HijriConversionError);
+    assert.throws(() => parseHijriJoinDate('1447-05-35'), HijriConversionError);
+
+    // 5. Day 30 in a 29-day Umm al-Qura Hijri month MUST throw instead of silently passing
+    const month29 = Array.from({ length: 12 }, (_, i) => i + 1).find(
+      m => getHijriMonthLength(1447, m) === 29
+    )!;
+    assert.throws(
+      () => parseHijriJoinDate(`1447-${String(month29).padStart(2, '0')}-30`),
+      HijriConversionError
+    );
+
+    // 6. Malformed string or invalid Gregorian date (2026-02-30) MUST throw instead of falling back to 1448-01-01
+    assert.throws(() => parseHijriJoinDate('not-a-date'), HijriConversionError);
+    assert.throws(() => parseHijriJoinDate('2026-02-30'), HijriConversionError);
+  });
+
+  it('Scenario 9: Invalid image URLs and offline storage failures are caught and cloudVerified is never true without server confirmation', async () => {
+    const validPngDataUrl =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const workingStorage = createMockStorage();
+
+    // 1. External HTTPS URL when online WITHOUT a cloud verification uploader MUST NOT claim cloudVerified: true
+    const unverifiedExternal = await uploadImageDataUrlWithMeta(
+      'https://example.com/logo.png',
+      'institution-logo',
+      {
+        isOnline: true,
+        storageObj: workingStorage
+      }
+    );
+    assert.equal(unverifiedExternal.cloudVerified, false);
+    assert.equal(unverifiedExternal.localPersisted, true);
+
+    // 2. Invalid image URLs (malformed host, spaces, protocol-relative //, corrupted base64) MUST throw ImageStorageError
+    await assert.rejects(
+      () => uploadImageDataUrlWithMeta('https://', 'institution-logo', { isOnline: true, storageObj: workingStorage }),
+      ImageStorageError
+    );
+    await assert.rejects(
+      () =>
+        uploadImageDataUrlWithMeta('https://bad url with spaces.com/a.png', 'institution-logo', {
+          isOnline: true,
+          storageObj: workingStorage
+        }),
+      ImageStorageError
+    );
+    await assert.rejects(
+      () =>
+        uploadImageDataUrlWithMeta('//evil.example.com/a.png', 'institution-logo', {
+          isOnline: true,
+          storageObj: workingStorage
+        }),
+      ImageStorageError
+    );
+    await assert.rejects(
+      () =>
+        uploadImageDataUrlWithMeta('data:image/png;base64,!!!invalid_base64!!!', 'institution-logo', {
+          isOnline: true,
+          storageObj: workingStorage
+        }),
+      ImageStorageError
+    );
+
+    // 3. Offline upload when local storage fails MUST throw ImageStorageError('STORAGE_QUOTA_EXCEEDED')
+    const failingOfflineStorage = createMockStorage(0); // 0 capacity -> always throws QuotaExceededError
+    await assert.rejects(
+      () =>
+        uploadImageDataUrlWithMeta(validPngDataUrl, 'institution-logo', {
+          isOnline: false,
+          storageObj: failingOfflineStorage
+        }),
+      (err: any) => err instanceof ImageStorageError && err.code === 'STORAGE_QUOTA_EXCEEDED'
+    );
   });
 });

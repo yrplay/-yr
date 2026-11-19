@@ -373,27 +373,103 @@ export const tryResolveHijriToGregorian = (
   }
 };
 
-export const parseHijriJoinDate = (input?: string): { year: number; month: number; day: number } => {
-  if (typeof input === 'string') {
-    const trimmed = input
-      .trim()
-      .replace(/[٠-٩]/g, ch => String(ch.charCodeAt(0) - 0x0660));
-    const directHijriMatch = trimmed.match(/^(14\d{2})-(\d{1,2})-(\d{1,2})$/);
-    if (directHijriMatch) {
-      const y = Math.min(1455, Math.max(1440, Number(directHijriMatch[1]) || 1448));
-      const m = Math.min(12, Math.max(1, Number(directHijriMatch[2]) || 1));
-      const d = Math.min(30, Math.max(1, Number(directHijriMatch[3]) || 1));
-      return { year: y, month: m, day: d };
-    }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      const parts = getHijriParts(trimmed);
-      const y = parts.year >= 1440 && parts.year <= 1455 ? parts.year : 1448;
-      const m = Math.min(12, Math.max(1, parts.month || 1));
-      const d = Math.min(30, Math.max(1, parts.day || 1));
-      return { year: y, month: m, day: d };
-    }
+/**
+ * Parses a Hijri or Gregorian join date string into validated Hijri `{ year, month, day }` parts.
+ * - Never silently clamps out-of-range months, days, or invalid 30th day in a 29-day Umm al-Qura month.
+ * - Throws `HijriConversionError` on malformed strings, out-of-range Hijri/Gregorian dates, or impossible calendar dates.
+ * - Preserves full compatibility with valid historical Hijri join dates (`1356..1500 AH`, including years before 1440 AH)
+ *   and valid Gregorian ISO dates (`YYYY-MM-DD` or full ISO timestamp).
+ * - If `input` is omitted or empty string, returns default `{ year: 1448, month: 1, day: 1 }` for new record initialization.
+ */
+export const parseHijriJoinDate = (
+  input?: string,
+  options?: { allowLegacyDay30?: boolean }
+): { year: number; month: number; day: number } => {
+  if (input === undefined || input === null) {
+    return { year: 1448, month: 1, day: 1 };
   }
-  return { year: 1448, month: 1, day: 1 };
+  if (typeof input !== 'string') {
+    throw new HijriConversionError('INVALID_HIJRI_INPUT', 'نوع تاريخ الانضمام غير صالح.');
+  }
+
+  const trimmed = input
+    .trim()
+    .replace(/[٠-٩]/g, ch => String(ch.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, ch => String(ch.charCodeAt(0) - 0x06f0));
+
+  if (!trimmed) {
+    return { year: 1448, month: 1, day: 1 };
+  }
+
+  // Extract YYYY-MM-DD (supporting optional ISO time suffix T... for historical timestamps)
+  const ymdMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:T[\d:.+-Z]+)?$/);
+  if (!ymdMatch) {
+    throw new HijriConversionError(
+      'INVALID_HIJRI_INPUT',
+      `صيغة تاريخ الانضمام (${trimmed}) غير صالحة؛ يجب أن تكون بصيغة YYYY-MM-DD.`
+    );
+  }
+
+  const y = Number(ymdMatch[1]);
+  const m = Number(ymdMatch[2]);
+  const d = Number(ymdMatch[3]);
+
+  // Case 1: Hijri calendar year (1356..1500 AH) — validate strictly without silent clamping
+  if (y >= HIJRI_MIN_YEAR && y <= HIJRI_MAX_YEAR) {
+    const validated = validateHijriDateParts(y, m, d, {
+      strictMonthLength: options?.allowLegacyDay30 !== true
+    });
+    if (!validated.valid) {
+      throw new HijriConversionError(
+        validated.errorCode || 'INVALID_HIJRI_INPUT',
+        validated.errorMessage || `تاريخ هجري غير صالح (${trimmed}).`
+      );
+    }
+    return {
+      year: y,
+      month: m,
+      day: Math.min(d, validated.maxDayInMonth)
+    };
+  }
+
+  // Case 2: Gregorian calendar year (1900..2200 CE) — validate calendar date before converting to Hijri
+  if (y >= 1900 && y <= 2200) {
+    if (m < 1 || m > 12 || d < 1 || d > 31) {
+      throw new HijriConversionError(
+        'INVALID_HIJRI_INPUT',
+        `التاريخ الميلادي المدخل (${trimmed}) يحتوي على شهر أو يوم خارج النطاق الصحيح.`
+      );
+    }
+    const dt = new Date(y, m - 1, d, 12, 0, 0, 0);
+    if (
+      isNaN(dt.getTime()) ||
+      dt.getFullYear() !== y ||
+      dt.getMonth() !== m - 1 ||
+      dt.getDate() !== d
+    ) {
+      throw new HijriConversionError(
+        'INVALID_HIJRI_INPUT',
+        `التاريخ الميلادي المدخل (${trimmed}) غير موجود في التقويم.`
+      );
+    }
+    const parts = getHijriParts(dt);
+    if (parts.year < HIJRI_MIN_YEAR || parts.year > HIJRI_MAX_YEAR) {
+      throw new HijriConversionError(
+        'HIJRI_YEAR_OUT_OF_RANGE',
+        `التاريخ المقابل بالهجري (${parts.year}) يقع خارج نطاق تقويم أم القرى المعتمد.`
+      );
+    }
+    return {
+      year: parts.year,
+      month: parts.month,
+      day: parts.day
+    };
+  }
+
+  throw new HijriConversionError(
+    'HIJRI_YEAR_OUT_OF_RANGE',
+    `السنة المدخلة (${y}) تقع خارج النطاق الهجري (${HIJRI_MIN_YEAR}-${HIJRI_MAX_YEAR}) والميلادي المعتمد.`
+  );
 };
 
 export const parseDateInput = (
@@ -1057,10 +1133,36 @@ export const HijriJoinDateSelector: React.FC<HijriJoinDateSelectorProps> = ({
   onChange,
   label
 }) => {
-  const parsed = parseHijriJoinDate(value);
+  const parsed = React.useMemo(() => {
+    try {
+      return parseHijriJoinDate(value, { allowLegacyDay30: true });
+    } catch {
+      return { year: 1448, month: 1, day: 1 };
+    }
+  }, [value]);
+
+  const maxDaysInSelectedMonth = React.useMemo(() => {
+    try {
+      return getHijriMonthLength(parsed.year, parsed.month);
+    } catch {
+      return 30;
+    }
+  }, [parsed.year, parsed.month]);
+
+  const availableYears = React.useMemo(() => {
+    if (HIJRI_YEARS.includes(parsed.year)) return HIJRI_YEARS;
+    return Array.from(new Set([...HIJRI_YEARS, parsed.year])).sort((a, b) => a - b);
+  }, [parsed.year]);
 
   const handlePartChange = (nextYear: number, nextMonth: number, nextDay: number) => {
-    const formatted = `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(nextDay).padStart(2, '0')}`;
+    let maxD = 30;
+    try {
+      maxD = getHijriMonthLength(nextYear, nextMonth);
+    } catch {
+      maxD = 30;
+    }
+    const safeDay = Math.min(maxD, Math.max(1, nextDay));
+    const formatted = `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(safeDay).padStart(2, '0')}`;
     onChange(formatted);
   };
 
@@ -1078,11 +1180,11 @@ export const HijriJoinDateSelector: React.FC<HijriJoinDateSelectorProps> = ({
             اليوم
           </label>
           <select
-            value={parsed.day}
+            value={Math.min(parsed.day, maxDaysInSelectedMonth)}
             onChange={e => handlePartChange(parsed.year, parsed.month, Number(e.target.value))}
             className="w-full px-2.5 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-xs font-bold text-stone-800 dark:text-stone-100 focus:outline-none focus:border-[#8E5364] cursor-pointer"
           >
-            {Array.from({ length: 30 }, (_, i) => i + 1).map(d => (
+            {Array.from({ length: maxDaysInSelectedMonth }, (_, i) => i + 1).map(d => (
               <option key={d} value={d}>
                 {d}
               </option>
@@ -1118,7 +1220,7 @@ export const HijriJoinDateSelector: React.FC<HijriJoinDateSelectorProps> = ({
             onChange={e => handlePartChange(Number(e.target.value), parsed.month, parsed.day)}
             className="w-full px-2.5 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-xs font-bold text-stone-800 dark:text-stone-100 focus:outline-none focus:border-[#8E5364] cursor-pointer"
           >
-            {HIJRI_YEARS.map(yr => (
+            {availableYears.map(yr => (
               <option key={yr} value={yr}>
                 {yr} هـ
               </option>
@@ -1129,7 +1231,7 @@ export const HijriJoinDateSelector: React.FC<HijriJoinDateSelectorProps> = ({
       <div className="flex items-center justify-between px-1 text-[11px] text-stone-500 dark:text-stone-400">
         <span>التاريخ المختار:</span>
         <span className="font-bold text-[#8E5364] dark:text-[#E8BDC8]">
-          {parsed.day} {HIJRI_MONTHS[parsed.month - 1]} {parsed.year} هـ
+          {Math.min(parsed.day, maxDaysInSelectedMonth)} {HIJRI_MONTHS[parsed.month - 1]} {parsed.year} هـ
         </span>
       </div>
     </div>

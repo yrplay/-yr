@@ -34,6 +34,32 @@ export class FirestoreDocumentSizeLimitError extends Error {
   }
 }
 
+export class PendingQueuePersistenceError extends Error {
+  readonly code = 'PENDING_QUEUE_STORAGE_FAILED';
+  constructor(message?: string) {
+    super(
+      message ||
+        'تعذر حفظ العملية في التخزين المحلي الدائم (localStorage و IndexedDB) أثناء العمل دون اتصال.'
+    );
+    this.name = 'PendingQueuePersistenceError';
+  }
+}
+
+export class StaleReplaceStateError extends Error {
+  readonly code = 'STALE_REPLACE_STATE_REJECTED';
+  readonly remoteRevision: number;
+  readonly expectedBaseRevision: number | null;
+  constructor(remoteRevision: number, expectedBaseRevision: number | null, message?: string) {
+    super(
+      message ||
+        `تم رفض استبدال الحالة السحابية (_replaceState) لأن الخادم يحتوي على نسخة أحدث (revision=${remoteRevision}, expected=${expectedBaseRevision ?? 'unknown'}).`
+    );
+    this.name = 'StaleReplaceStateError';
+    this.remoteRevision = remoteRevision;
+    this.expectedBaseRevision = expectedBaseRevision;
+  }
+}
+
 export const createOperationId = (prefix = 'op'): string => {
   const rand = Math.random().toString(36).slice(2, 10);
   const time = Date.now().toString(36);
@@ -551,8 +577,29 @@ export const getAttendanceRecordShardId = (record: any): string => {
 };
 
 /**
- * Assembles the full application state from `master_state` plus all shard docs,
- * safely merging any unsharded legacy arrays still present inside `master_state`.
+ * Extracts all dynamic overflow shard document IDs referenced by any base shard document.
+ */
+export const extractReferencedOverflowShardIds = (
+  shardsById: Record<string, Record<string, any> | null | undefined>
+): string[] => {
+  const overflowIds = new Set<string>();
+  for (const docData of Object.values(shardsById || {})) {
+    if (!docData || typeof docData !== 'object') continue;
+    if (Array.isArray(docData.overflowShardIds)) {
+      for (const id of docData.overflowShardIds) {
+        if (typeof id === 'string' && id.trim()) {
+          overflowIds.add(id.trim());
+        }
+      }
+    }
+  }
+  return Array.from(overflowIds);
+};
+
+/**
+ * Assembles the full application state from `master_state` plus all shard docs (and any dynamic
+ * overflow shards created by `partitionItemsIntoBoundedShards`), safely merging any unsharded
+ * legacy arrays still present inside `master_state`.
  */
 export const assembleShardedCloudState = (
   masterRaw: Record<string, any> | null | undefined,
@@ -573,25 +620,36 @@ export const assembleShardedCloudState = (
     return items.filter(item => item && item[keyField] !== undefined && !deletedSet.has(String(item[keyField])));
   };
 
-  // Collect any dynamic overflow shards if present in shardsById
-  const collectShardItems = (baseShardIds: string[]): any[] => {
+  // Collect items across base shards and any dynamic overflow shards (including legacy prefix-matched overflow shards)
+  const collectShardFieldItems = (baseShardIds: string[], fieldName = 'items'): any[] => {
     const collected: any[] = [];
     const visited = new Set<string>();
-    for (const id of baseShardIds) {
-      visited.add(id);
-      const shardDoc = shardsById?.[id];
-      if (Array.isArray(shardDoc?.items)) {
-        collected.push(...shardDoc!.items);
+
+    const collectFromDocId = (docId: string) => {
+      if (visited.has(docId)) return;
+      visited.add(docId);
+      const shardDoc = shardsById?.[docId];
+      if (!shardDoc || typeof shardDoc !== 'object') return;
+      if (Array.isArray(shardDoc[fieldName])) {
+        collected.push(...shardDoc[fieldName]);
+      } else if (fieldName !== 'items' && Array.isArray(shardDoc.items)) {
+        collected.push(...shardDoc.items);
       }
-      if (Array.isArray(shardDoc?.overflowShardIds)) {
-        for (const overflowId of shardDoc!.overflowShardIds) {
-          if (!visited.has(overflowId)) {
-            visited.add(overflowId);
-            const ovDoc = shardsById?.[overflowId];
-            if (Array.isArray(ovDoc?.items)) {
-              collected.push(...ovDoc!.items);
-            }
+      if (Array.isArray(shardDoc.overflowShardIds)) {
+        for (const overflowId of shardDoc.overflowShardIds) {
+          if (typeof overflowId === 'string' && overflowId) {
+            collectFromDocId(overflowId);
           }
+        }
+      }
+    };
+
+    for (const id of baseShardIds) {
+      collectFromDocId(id);
+      // Also discover any overflow shards present in shardsById by prefix convention `${id}_overflow_`
+      for (const candidateKey of Object.keys(shardsById || {})) {
+        if (candidateKey.startsWith(`${id}_overflow_`)) {
+          collectFromDocId(candidateKey);
         }
       }
     }
@@ -599,7 +657,7 @@ export const assembleShardedCloudState = (
   };
 
   // 1. Daily Records
-  const dailyShardItems = collectShardItems(DAILY_SHARD_DOC_IDS);
+  const dailyShardItems = collectShardFieldItems(DAILY_SHARD_DOC_IDS, 'items');
   const combinedDaily = deduplicateDailyRecords([
     ...(Array.isArray(base.dailyRecords) ? base.dailyRecords : []),
     ...dailyShardItems
@@ -607,39 +665,41 @@ export const assembleShardedCloudState = (
   base.dailyRecords = filterNotDeleted(combinedDaily, 'dailyRecords');
 
   // 2. Attendance Records
-  const attendanceShardItems = collectShardItems(ATTENDANCE_SHARD_DOC_IDS);
+  const attendanceShardItems = collectShardFieldItems(ATTENDANCE_SHARD_DOC_IDS, 'items');
   const combinedAttendance = deduplicateAttendanceRecords([
     ...(Array.isArray(base.attendanceRecords) ? base.attendanceRecords : []),
     ...attendanceShardItems
   ]);
   base.attendanceRecords = filterNotDeleted(combinedAttendance, 'attendanceRecords');
 
-  // 3. Submissions (Atqini + Challenges)
-  const submissionsShard = shardsById?.[SHARD_SUBMISSIONS_DOC_ID] || {};
+  // 3. Submissions (Atqini + Challenges) with dynamic overflow support
+  const atqiniShardItems = collectShardFieldItems([SHARD_SUBMISSIONS_DOC_ID], 'studentAtqiniSubmissions');
   const combinedAtqini = deduplicateAtqiniSubmissions([
     ...(Array.isArray(base.studentAtqiniSubmissions) ? base.studentAtqiniSubmissions : []),
-    ...(Array.isArray(submissionsShard.studentAtqiniSubmissions) ? submissionsShard.studentAtqiniSubmissions : [])
+    ...atqiniShardItems
   ]);
   base.studentAtqiniSubmissions = filterNotDeleted(combinedAtqini, 'studentAtqiniSubmissions');
 
+  const challengeShardItems = collectShardFieldItems([SHARD_SUBMISSIONS_DOC_ID], 'studentChallengeSubmissions');
   const combinedChallenges = deduplicateChallengeSubmissions([
     ...(Array.isArray(base.studentChallengeSubmissions) ? base.studentChallengeSubmissions : []),
-    ...(Array.isArray(submissionsShard.studentChallengeSubmissions) ? submissionsShard.studentChallengeSubmissions : [])
+    ...challengeShardItems
   ]);
   base.studentChallengeSubmissions = filterNotDeleted(combinedChallenges, 'studentChallengeSubmissions');
 
-  // 4. Subscriptions & Audit Logs
-  const subsLogsShard = shardsById?.[SHARD_SUBSCRIPTIONS_LOGS_DOC_ID] || {};
+  // 4. Subscriptions & Audit Logs with dynamic overflow support
+  const subsShardItems = collectShardFieldItems([SHARD_SUBSCRIPTIONS_LOGS_DOC_ID], 'studentSubscriptions');
   base.studentSubscriptions = mergeArrayByKey(
     Array.isArray(base.studentSubscriptions) ? base.studentSubscriptions : [],
-    Array.isArray(subsLogsShard.studentSubscriptions) ? subsLogsShard.studentSubscriptions : [],
+    subsShardItems,
     'id',
     deletedEntities.studentSubscriptions || []
   );
 
+  const logsShardItems = collectShardFieldItems([SHARD_SUBSCRIPTIONS_LOGS_DOC_ID], 'auditLogs');
   const mergedLogs = mergeArrayByKey(
     Array.isArray(base.auditLogs) ? base.auditLogs : [],
-    Array.isArray(subsLogsShard.auditLogs) ? subsLogsShard.auditLogs : [],
+    logsShardItems,
     'id',
     deletedEntities.auditLogs || []
   );
@@ -652,7 +712,7 @@ export const assembleShardedCloudState = (
 };
 
 // ============================================================================
-// SHARD SUBSCRIPTION & COMPLETENESS TRACKER (Section 4)
+// SHARD SUBSCRIPTION, DYNAMIC OVERFLOW & GENERATION CONSISTENCY TRACKER (Section 4 & 5)
 // ============================================================================
 
 export interface WatchedDocMeta {
@@ -667,6 +727,7 @@ export interface WatchedDocMeta {
 
 export class ShardSubscriptionCoordinator {
   private readonly requiredDocIds: string[];
+  private readonly dynamicOverflowDocIds = new Set<string>();
   private readonly metaById = new Map<string, WatchedDocMeta>();
   private readonly dataById = new Map<string, Record<string, any> | null>();
   private emitSequence = 0;
@@ -674,6 +735,12 @@ export class ShardSubscriptionCoordinator {
   constructor(masterDocId = 'master_state', shardDocIds: string[] = ALL_SHARD_DOC_IDS) {
     this.requiredDocIds = [masterDocId, ...shardDocIds];
     for (const id of this.requiredDocIds) {
+      this.initWatchedDoc(id);
+    }
+  }
+
+  private initWatchedDoc(id: string): void {
+    if (!this.metaById.has(id)) {
       this.metaById.set(id, {
         docId: id,
         loaded: false,
@@ -687,6 +754,24 @@ export class ShardSubscriptionCoordinator {
     }
   }
 
+  private getAllTrackedDocIds(): string[] {
+    return Array.from(new Set([...this.requiredDocIds, ...this.dynamicOverflowDocIds]));
+  }
+
+  registerDynamicShardIds(docIds: string[]): string[] {
+    const newlyAdded: string[] = [];
+    for (const rawId of docIds) {
+      const id = String(rawId || '').trim();
+      if (!id) continue;
+      if (!this.requiredDocIds.includes(id) && !this.dynamicOverflowDocIds.has(id)) {
+        this.dynamicOverflowDocIds.add(id);
+        this.initWatchedDoc(id);
+        newlyAdded.push(id);
+      }
+    }
+    return newlyAdded;
+  }
+
   recordSnapshot(
     docId: string,
     snapshot: {
@@ -695,7 +780,8 @@ export class ShardSubscriptionCoordinator {
       fromCache: boolean;
       hasPendingWrites: boolean;
     }
-  ): void {
+  ): string[] {
+    this.initWatchedDoc(docId);
     this.metaById.set(docId, {
       docId,
       loaded: true,
@@ -708,6 +794,17 @@ export class ShardSubscriptionCoordinator {
     if (!snapshot.hasPendingWrites || this.dataById.get(docId) === null) {
       this.dataById.set(docId, snapshot.exists ? snapshot.data : null);
     }
+
+    // Discover any dynamic overflow shards referenced by this shard or master_state._shardRevisions
+    const discovered: string[] = [];
+    const data = snapshot.exists ? snapshot.data : null;
+    if (Array.isArray(data?.overflowShardIds)) {
+      discovered.push(...this.registerDynamicShardIds(data!.overflowShardIds));
+    }
+    if (data?._shardRevisions && typeof data._shardRevisions === 'object') {
+      discovered.push(...this.registerDynamicShardIds(Object.keys(data._shardRevisions)));
+    }
+    return discovered;
   }
 
   recordError(docId: string, errorMessage: string): void {
@@ -723,12 +820,47 @@ export class ShardSubscriptionCoordinator {
     });
   }
 
-  isAllRequiredLoaded(): boolean {
-    for (const id of this.requiredDocIds) {
+  /**
+   * Checks whether all loaded shards meet the minimum revision manifest (`_shardRevisions`)
+   * advertised by `master_state` (Generation Marker consistency).
+   * If `master_state` was updated in generation G and expects `shard_daily_0` at `_revision >= 4`,
+   * but `shard_daily_0` is still at `_revision: 3`, this returns `['shard_daily_0']`.
+   */
+  getOutdatedShardIds(masterDocId = 'master_state'): string[] {
+    const masterData = this.dataById.get(masterDocId);
+    if (!masterData || typeof masterData !== 'object') return [];
+    const expectedRevisions = masterData._shardRevisions;
+    if (!expectedRevisions || typeof expectedRevisions !== 'object') return [];
+
+    const outdated: string[] = [];
+    for (const [shardId, expectedRevRaw] of Object.entries(expectedRevisions)) {
+      const expectedRev = Number(expectedRevRaw);
+      if (!Number.isFinite(expectedRev) || expectedRev <= 0) continue;
+      const shardMeta = this.metaById.get(shardId);
+      const shardData = this.dataById.get(shardId);
+      if (!shardMeta || !shardMeta.loaded) {
+        outdated.push(shardId);
+        continue;
+      }
+      const actualRev =
+        shardData && typeof shardData._revision === 'number' ? shardData._revision : 0;
+      if (actualRev < expectedRev) {
+        outdated.push(shardId);
+      }
+    }
+    return outdated;
+  }
+
+  isGenerationConsistent(masterDocId = 'master_state'): boolean {
+    return this.getOutdatedShardIds(masterDocId).length === 0;
+  }
+
+  isAllRequiredLoaded(masterDocId = 'master_state'): boolean {
+    for (const id of this.getAllTrackedDocIds()) {
       const m = this.metaById.get(id);
       if (!m || !m.loaded || m.error !== null) return false;
     }
-    return true;
+    return this.isGenerationConsistent(masterDocId);
   }
 
   hasAnyError(): boolean {
@@ -748,19 +880,20 @@ export class ShardSubscriptionCoordinator {
 
   getUnloadedDocIds(): string[] {
     const unloaded: string[] = [];
-    for (const id of this.requiredDocIds) {
+    for (const id of this.getAllTrackedDocIds()) {
       const m = this.metaById.get(id);
       if (!m || !m.loaded) unloaded.push(id);
     }
     return unloaded;
   }
 
-  computeStatus(options?: { isOnline?: boolean; pendingQueueCount?: number }): 'connected' | 'syncing' | 'pending' | 'offline' | 'error' {
+  computeStatus(options?: { isOnline?: boolean; pendingQueueCount?: number; masterDocId?: string }): 'connected' | 'syncing' | 'pending' | 'offline' | 'error' {
     if (this.hasAnyError()) return 'error';
     if (options?.isOnline === false) return 'offline';
     if ((options?.pendingQueueCount ?? 0) > 0) return 'pending';
-    if (!this.isAllRequiredLoaded()) return 'syncing';
-    for (const id of this.requiredDocIds) {
+    const masterDocId = options?.masterDocId || 'master_state';
+    if (!this.isAllRequiredLoaded(masterDocId)) return 'syncing';
+    for (const id of this.getAllTrackedDocIds()) {
       const m = this.metaById.get(id);
       if (!m || m.hasPendingWrites || m.fromCache) return 'syncing';
     }
@@ -782,16 +915,23 @@ export class ShardSubscriptionCoordinator {
     fromServer: boolean;
     failedDocIds: string[];
     unloadedDocIds: string[];
+    outdatedShardIds: string[];
+    generationConsistent: boolean;
   } {
     const failedDocIds = this.getFailedDocIds();
     const unloadedDocIds = this.getUnloadedDocIds();
-    if (failedDocIds.length > 0 || unloadedDocIds.length > 0) {
+    const outdatedShardIds = this.getOutdatedShardIds(masterDocId);
+    const generationConsistent = outdatedShardIds.length === 0;
+
+    if (failedDocIds.length > 0 || unloadedDocIds.length > 0 || !generationConsistent) {
       return {
         complete: false,
         state: null,
         fromServer: false,
         failedDocIds,
-        unloadedDocIds
+        unloadedDocIds,
+        outdatedShardIds,
+        generationConsistent
       };
     }
 
@@ -803,13 +943,15 @@ export class ShardSubscriptionCoordinator {
         state: null,
         fromServer: !masterMeta?.fromCache,
         failedDocIds: [],
-        unloadedDocIds: []
+        unloadedDocIds: [],
+        outdatedShardIds: [],
+        generationConsistent: true
       };
     }
 
     const shardsById: Record<string, Record<string, any> | null> = {};
     let allFromServer = !masterMeta.fromCache;
-    for (const id of this.requiredDocIds) {
+    for (const id of this.getAllTrackedDocIds()) {
       if (id === masterDocId) continue;
       shardsById[id] = this.dataById.get(id) ?? null;
       const m = this.metaById.get(id);
@@ -822,17 +964,21 @@ export class ShardSubscriptionCoordinator {
       state: assembled,
       fromServer: allFromServer,
       failedDocIds: [],
-      unloadedDocIds: []
+      unloadedDocIds: [],
+      outdatedShardIds: [],
+      generationConsistent: true
     };
   }
 }
 
 // ============================================================================
-// OPTIMISTIC CONCURRENCY & TRANSACTIONAL MERGE ENGINE (Section 2 & 3)
+// OPTIMISTIC CONCURRENCY, _replaceState PROTECTION & BOUNDED SHARD SYNC
 // ============================================================================
 
 export interface VersionedDocEnvelope {
   _revision?: number;
+  _syncGeneration?: string;
+  _shardRevisions?: Record<string, number>;
   lastOpId?: string;
   recentOpIds?: string[];
   updatedAt?: string;
@@ -851,6 +997,72 @@ export interface TransactionalDocAdapter {
     nextData: VersionedDocEnvelope
   ): Promise<{ committed: boolean; conflict?: boolean }>;
 }
+
+/**
+ * Protects `_replaceState` operations against accidentally overwriting newer server state with
+ * an outdated local state snapshot.
+ * - Rejects with `StaleReplaceStateError` if `_expectedBaseRevision` is lower than `remoteData._revision`.
+ * - Rejects with `StaleReplaceStateError` if `remoteData` has a newer `lastSyncedAt`/`updatedAt` or newer
+ *   record `updatedAt` timestamps than `incomingState` (unless `_forceOverwriteNewerServer === true` with matching revision).
+ */
+export const validateReplaceStateFreshness = (
+  remoteData: Record<string, any> | null | undefined,
+  incomingState: Record<string, any>
+): { ok: boolean; remoteRevision: number } => {
+  if (!remoteData || typeof remoteData !== 'object' || Object.keys(remoteData).length === 0) {
+    return { ok: true, remoteRevision: 0 };
+  }
+
+  const remoteRevision = typeof remoteData._revision === 'number' ? remoteData._revision : 0;
+  const expectedRev =
+    typeof incomingState?._expectedBaseRevision === 'number'
+      ? incomingState._expectedBaseRevision
+      : typeof incomingState?._revision === 'number'
+      ? incomingState._revision
+      : null;
+
+  if (expectedRev !== null && remoteRevision > expectedRev) {
+    throw new StaleReplaceStateError(remoteRevision, expectedRev);
+  }
+
+  // Also check timestamps so an unversioned stale local snapshot cannot overwrite newer server records
+  const getMaxStateTimestampMs = (stateObj: Record<string, any>): number => {
+    let maxMs = Math.max(
+      Date.parse(stateObj.lastSyncedAt || '') || 0,
+      Date.parse(stateObj.updatedAt || '') || 0,
+      Number(stateObj._replaceTimestampMs || 0) || 0
+    );
+    const collections = ['users', 'circles', 'students', 'tracks', 'challenges', 'dailyRecords', 'attendanceRecords'];
+    for (const col of collections) {
+      if (Array.isArray(stateObj[col])) {
+        for (const item of stateObj[col]) {
+          const ts = extractRecordTimestampMs(item);
+          if (ts > maxMs) maxMs = ts;
+        }
+      }
+    }
+    return maxMs;
+  };
+
+  const remoteMaxMs = getMaxStateTimestampMs(remoteData);
+  const incomingMaxMs = getMaxStateTimestampMs(incomingState);
+
+  if (
+    incomingState?._forceOverwriteNewerServer !== true &&
+    remoteMaxMs > 0 &&
+    (incomingMaxMs === 0 ? expectedRev === null && remoteRevision > 0 : remoteMaxMs > incomingMaxMs)
+  ) {
+    throw new StaleReplaceStateError(
+      remoteRevision,
+      expectedRev,
+      `تم رفض استبدال الحالة (_replaceState) لأن الخادم يحتوي على تعديلات أحدث زمنياً من النسخة المحلية (${new Date(
+        remoteMaxMs
+      ).toISOString()}).`
+    );
+  }
+
+  return { ok: true, remoteRevision };
+};
 
 /**
  * Applies an idempotent, revision-checked merge function to a target document with automatic
@@ -944,7 +1156,11 @@ export const executeOptimisticDocMerge = async (params: {
       }
       lastError = new Error(`CONCURRENT_REVISION_CONFLICT_${params.docId}`);
     } catch (err) {
-      if (err instanceof StaleCacheWriteError || err instanceof FirestoreDocumentSizeLimitError) {
+      if (
+        err instanceof StaleCacheWriteError ||
+        err instanceof FirestoreDocumentSizeLimitError ||
+        err instanceof StaleReplaceStateError
+      ) {
         throw err;
       }
       lastError = err;
@@ -956,8 +1172,262 @@ export const executeOptimisticDocMerge = async (params: {
     : new Error(`TRANSACTION_MAX_RETRIES_EXCEEDED_${params.docId}`);
 };
 
+/**
+ * Executes a dynamic, size-bounded shard write that connects `partitionItemsIntoBoundedShards`
+ * directly to the transactional sync pipeline:
+ * 1. Collects existing items from both the base shard and any existing `overflowShardIds`.
+ * 2. Merges incoming items with remote items (respecting tombstones and `_replaceState`).
+ * 3. Partitions the merged items into bounded sub-shards (`<= maxBytesPerShard`).
+ * 4. Writes overflow shards first, then writes the base shard with `overflowShardIds`, and clears
+ *    any retired overflow shards if the collection shrank.
+ */
+export const executeBoundedShardSync = async <T extends Record<string, any>>(params: {
+  baseShardId: string;
+  shardType: string;
+  bucket?: number;
+  opId: string;
+  incomingItems: T[];
+  deletedIds: string[];
+  replaceState: boolean;
+  maxBytesPerShard?: number;
+  deduplicateAndMerge: (existingItems: T[], incomingItems: T[], deletedIds: string[], replaceState: boolean) => T[];
+  readOverflowDoc: (docId: string) => Promise<Record<string, any> | null>;
+  runDocTransaction: (txParams: {
+    docId: string;
+    opId: string;
+    buildNext: (remoteData: Record<string, any> | null, exists: boolean) => {
+      skipWrite?: boolean;
+      payload: Record<string, any>;
+    };
+  }) => Promise<{ committed: boolean; skipped: boolean; revision: number }>;
+}): Promise<{
+  totalCount: number;
+  writtenShardRevisions: Record<string, number>;
+  overflowShardIds: string[];
+}> => {
+  const maxBytes = params.maxBytesPerShard ?? SHARD_SAFE_BYTE_LIMIT;
+  const writtenShardRevisions: Record<string, number> = {};
+  let finalItems: T[] = [];
+  let previousOverflowIds: string[] = [];
+
+  // Read base shard first inside or alongside overflow discovery, then commit overflow + base shards
+  const baseOverflowProbe = await params.readOverflowDoc(params.baseShardId);
+  if (Array.isArray(baseOverflowProbe?.overflowShardIds)) {
+    previousOverflowIds = baseOverflowProbe!.overflowShardIds.map(String).filter(Boolean);
+  }
+  const existingOverflowItems: T[] = [];
+  for (const ovId of previousOverflowIds) {
+    const ovDoc = await params.readOverflowDoc(ovId);
+    if (Array.isArray(ovDoc?.items)) {
+      existingOverflowItems.push(...(ovDoc!.items as T[]));
+    }
+  }
+
+  let partitions: Array<{ shardId: string; items: T[]; byteSize: number }> = [];
+
+  // Run transaction on base shard to merge with latest remote items and determine exact partitions
+  const baseRes = await params.runDocTransaction({
+    docId: params.baseShardId,
+    opId: params.opId,
+    buildNext: remoteData => {
+      const existingBaseItems = Array.isArray(remoteData?.items) ? (remoteData!.items as T[]) : [];
+      const allExisting = [...existingBaseItems, ...existingOverflowItems];
+      finalItems = deepCleanForFirestore(
+        params.deduplicateAndMerge(allExisting, params.incomingItems, params.deletedIds, params.replaceState)
+      );
+
+      partitions = partitionItemsIntoBoundedShards(params.baseShardId, finalItems, maxBytes);
+      const basePart = partitions[0] || { shardId: params.baseShardId, items: [], byteSize: 0 };
+      const nextOverflowIds = partitions.slice(1).map(p => p.shardId);
+
+      const prevRemoteOverflowIds = Array.isArray(remoteData?.overflowShardIds)
+        ? remoteData!.overflowShardIds.map(String)
+        : [];
+
+      if (
+        !params.replaceState &&
+        existingBaseItems.length === basePart.items.length &&
+        JSON.stringify(existingBaseItems) === JSON.stringify(basePart.items) &&
+        JSON.stringify(prevRemoteOverflowIds) === JSON.stringify(nextOverflowIds)
+      ) {
+        return { skipWrite: true, payload: remoteData || {} };
+      }
+
+      return {
+        skipWrite: false,
+        payload: {
+          users: [],
+          shardType: params.shardType,
+          ...(params.bucket !== undefined ? { bucket: params.bucket } : {}),
+          items: basePart.items,
+          overflowShardIds: nextOverflowIds,
+          updatedAt: new Date().toISOString()
+        }
+      };
+    }
+  });
+
+  writtenShardRevisions[params.baseShardId] = baseRes.revision;
+  const activeOverflowPartitions = partitions.slice(1);
+  const activeOverflowIds = activeOverflowPartitions.map(p => p.shardId);
+
+  // Write each active overflow shard transactionally
+  for (let i = 0; i < activeOverflowPartitions.length; i++) {
+    const part = activeOverflowPartitions[i];
+    const ovRes = await params.runDocTransaction({
+      docId: part.shardId,
+      opId: `${params.opId}_ov_${i + 1}`,
+      buildNext: () => ({
+        skipWrite: false,
+        payload: {
+          users: [],
+          shardType: `${params.shardType}_overflow`,
+          parentShardId: params.baseShardId,
+          overflowIndex: i + 1,
+          items: part.items,
+          updatedAt: new Date().toISOString()
+        }
+      })
+    });
+    writtenShardRevisions[part.shardId] = ovRes.revision;
+  }
+
+  // Clear any retired overflow shards from previous larger states
+  for (const oldOvId of previousOverflowIds) {
+    if (!activeOverflowIds.includes(oldOvId)) {
+      const clearRes = await params.runDocTransaction({
+        docId: oldOvId,
+        opId: `${params.opId}_clear_${oldOvId}`,
+        buildNext: () => ({
+          skipWrite: false,
+          payload: {
+            users: [],
+            shardType: `${params.shardType}_overflow`,
+            parentShardId: params.baseShardId,
+            items: [],
+            updatedAt: new Date().toISOString()
+          }
+        })
+      });
+      writtenShardRevisions[oldOvId] = clearRes.revision;
+    }
+  }
+
+  return {
+    totalCount: finalItems.length,
+    writtenShardRevisions,
+    overflowShardIds: activeOverflowIds
+  };
+};
+
 // ============================================================================
-// PERSISTENT OFFLINE PENDING SYNC QUEUE (Section 2 & 3)
+// DEBOUNCED PERSIST COORDINATOR (Resolves All Rapid <350ms Calls Cleanly)
+// ============================================================================
+
+export interface PersistOutcome {
+  cloudSynced: boolean;
+  queuedOffline: boolean;
+  opId: string;
+  coalescedCount?: number;
+}
+
+export class DebouncedPersistCoordinator {
+  private readonly debounceMs: number;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private pendingKeys = new Set<string>();
+  private pendingReplaceState = false;
+  private latestPayload: Record<string, any> = {};
+  private latestOpId = '';
+  private waitingResolvers: Array<(outcome: PersistOutcome) => void> = [];
+  private waitingRejectors: Array<(err: unknown) => void> = [];
+
+  constructor(debounceMs = 350) {
+    this.debounceMs = Math.max(0, debounceMs);
+  }
+
+  schedule(params: {
+    payload: Record<string, any>;
+    changedKeys?: string[];
+    replaceState?: boolean;
+    immediate?: boolean;
+    opId?: string;
+    executor: (mergedPayload: Record<string, any>, opId: string) => Promise<{
+      cloudSynced: boolean;
+      queuedOffline: boolean;
+      opId: string;
+    }>;
+  }): Promise<PersistOutcome> {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+
+    const opId = params.opId || createOperationId('sync');
+    this.latestOpId = opId;
+    this.latestPayload = params.payload;
+
+    if (params.replaceState) {
+      this.pendingReplaceState = true;
+      this.pendingKeys.add('__FULL__');
+    } else if (Array.isArray(params.changedKeys) && params.changedKeys.length > 0) {
+      for (const k of params.changedKeys) {
+        this.pendingKeys.add(k);
+      }
+    } else {
+      this.pendingKeys.add('__FULL__');
+    }
+
+    return new Promise<PersistOutcome>((resolve, reject) => {
+      this.waitingResolvers.push(resolve);
+      this.waitingRejectors.push(reject);
+
+      const fireBatch = async () => {
+        this.timer = null;
+        const batchResolvers = this.waitingResolvers.splice(0, this.waitingResolvers.length);
+        const batchRejectors = this.waitingRejectors.splice(0, this.waitingRejectors.length);
+        const batchKeys = Array.from(this.pendingKeys);
+        const isReplace = this.pendingReplaceState;
+        const batchPayload = this.latestPayload;
+        const batchOpId = this.latestOpId;
+
+        this.pendingKeys.clear();
+        this.pendingReplaceState = false;
+
+        const effectivePayload = isReplace
+          ? { ...batchPayload, _replaceState: true, _opId: batchOpId }
+          : { ...batchPayload, _changedKeys: batchKeys, _opId: batchOpId };
+
+        try {
+          const res = await params.executor(effectivePayload, batchOpId);
+          const outcome: PersistOutcome = {
+            cloudSynced: res.cloudSynced,
+            queuedOffline: res.queuedOffline,
+            opId: res.opId || batchOpId,
+            coalescedCount: batchResolvers.length
+          };
+          for (const r of batchResolvers) {
+            r(outcome);
+          }
+        } catch (err) {
+          for (const rej of batchRejectors) {
+            rej(err);
+          }
+        }
+      };
+
+      if (params.immediate || this.debounceMs === 0) {
+        void fireBatch();
+      } else {
+        this.timer = setTimeout(() => {
+          void fireBatch();
+        }, this.debounceMs);
+      }
+    });
+  }
+}
+
+// ============================================================================
+// DURABLE OFFLINE PENDING SYNC QUEUE WITH INDEXEDDB FALLBACK (Section 2 & 3)
 // ============================================================================
 
 export interface PendingSyncOperation {
@@ -968,44 +1438,325 @@ export interface PendingSyncOperation {
   payload: Record<string, any>;
   retryCount: number;
   lastError?: string;
+  storageBackend?: 'localStorage' | 'indexedDB';
+}
+
+export interface QueueStorageAdapter {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
+export interface AsyncQueueStorageAdapter {
+  getItem(key: string): Promise<string | null> | string | null;
+  setItem(key: string, value: string): Promise<void> | void;
+  removeItem(key: string): Promise<void> | void;
 }
 
 export const PENDING_SYNC_QUEUE_STORAGE_KEY = 'ghaith_pending_sync_queue_v1';
+const IDB_DB_NAME = 'ghaith_sync_idb_v1';
+const IDB_STORE_NAME = 'pending_sync_queue';
+
+export const createBrowserIndexedDbAdapter = (): AsyncQueueStorageAdapter | null => {
+  if (typeof window === 'undefined' || !window.indexedDB) return null;
+
+  const openDb = (): Promise<IDBDatabase> =>
+    new Promise((resolve, reject) => {
+      try {
+        const req = window.indexedDB.open(IDB_DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(IDB_STORE_NAME)) {
+            db.createObjectStore(IDB_STORE_NAME);
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error || new Error('IDB_OPEN_FAILED'));
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+  return {
+    async getItem(key: string): Promise<string | null> {
+      const db = await openDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE_NAME, 'readonly');
+        const store = tx.objectStore(IDB_STORE_NAME);
+        const req = store.get(key);
+        req.onsuccess = () => {
+          db.close();
+          resolve(typeof req.result === 'string' ? req.result : null);
+        };
+        req.onerror = () => {
+          db.close();
+          reject(req.error || new Error('IDB_GET_FAILED'));
+        };
+      });
+    },
+    async setItem(key: string, value: string): Promise<void> {
+      const db = await openDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(IDB_STORE_NAME);
+        store.put(value, key);
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          reject(tx.error || new Error('IDB_PUT_FAILED'));
+        };
+      });
+    },
+    async removeItem(key: string): Promise<void> {
+      const db = await openDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(IDB_STORE_NAME);
+        store.delete(key);
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          reject(tx.error || new Error('IDB_DELETE_FAILED'));
+        };
+      });
+    }
+  };
+};
+
+export interface PendingSyncQueueOptions {
+  primaryStorage?: QueueStorageAdapter | null;
+  fallbackStorage?: AsyncQueueStorageAdapter | QueueStorageAdapter | null;
+}
 
 export class PendingSyncQueueManager {
   private memoryQueue: PendingSyncOperation[] = [];
   private readonly storageKey: string;
+  private readonly primaryStorage: QueueStorageAdapter | null;
+  private readonly fallbackStorage: AsyncQueueStorageAdapter | QueueStorageAdapter | null;
+  private lastActiveBackend: 'localStorage' | 'indexedDB' | 'none' = 'none';
 
-  constructor(storageKey = PENDING_SYNC_QUEUE_STORAGE_KEY) {
+  constructor(storageKey = PENDING_SYNC_QUEUE_STORAGE_KEY, options?: PendingSyncQueueOptions) {
     this.storageKey = storageKey;
-    this.loadFromStorage();
+    this.primaryStorage =
+      options && 'primaryStorage' in options
+        ? options.primaryStorage ?? null
+        : typeof window !== 'undefined' && window.localStorage
+        ? window.localStorage
+        : null;
+    this.fallbackStorage =
+      options && 'fallbackStorage' in options
+        ? options.fallbackStorage ?? null
+        : createBrowserIndexedDbAdapter();
+
+    this.loadFromStorageSync();
   }
 
-  private loadFromStorage(): void {
-    if (typeof window === 'undefined' || !window.localStorage) return;
+  private parseSerializedQueue(raw: string | null): PendingSyncOperation[] | null {
+    if (!raw || typeof raw !== 'string') return null;
     try {
-      const raw = window.localStorage.getItem(this.storageKey);
-      if (!raw) return;
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        this.memoryQueue = parsed.filter(item => item && typeof item.opId === 'string');
+        return parsed.filter(item => item && typeof item.opId === 'string');
       }
     } catch {
-      // keep memoryQueue intact
+      // invalid JSON
+    }
+    return null;
+  }
+
+  private loadFromStorageSync(): void {
+    if (this.primaryStorage) {
+      try {
+        const raw = this.primaryStorage.getItem(this.storageKey);
+        const parsed = this.parseSerializedQueue(raw);
+        if (parsed) {
+          this.memoryQueue = parsed;
+          this.lastActiveBackend = 'localStorage';
+          return;
+        }
+      } catch {
+        // try synchronous fallback if available
+      }
+    }
+    if (this.fallbackStorage) {
+      try {
+        const maybeRaw = this.fallbackStorage.getItem(this.storageKey);
+        if (typeof maybeRaw === 'string') {
+          const parsed = this.parseSerializedQueue(maybeRaw);
+          if (parsed) {
+            this.memoryQueue = parsed;
+            this.lastActiveBackend = 'indexedDB';
+          }
+        }
+      } catch {
+        // ignore sync load error on async fallback
+      }
     }
   }
 
-  private saveToStorage(): void {
-    if (typeof window === 'undefined' || !window.localStorage) return;
-    try {
-      if (this.memoryQueue.length === 0) {
-        window.localStorage.removeItem(this.storageKey);
-      } else {
-        window.localStorage.setItem(this.storageKey, JSON.stringify(this.memoryQueue));
+  /**
+   * Hydrates the queue from durable storage (`localStorage` and/or `IndexedDB`), merging any
+   * operations persisted in `IndexedDB` when `localStorage` was full or cleared across an offline reload.
+   */
+  async hydrateFromDurableStorage(): Promise<PendingSyncOperation[]> {
+    const mergedById = new Map<string, PendingSyncOperation>();
+
+    if (this.primaryStorage) {
+      try {
+        const raw = this.primaryStorage.getItem(this.storageKey);
+        const list = this.parseSerializedQueue(raw);
+        if (list) {
+          for (const op of list) mergedById.set(op.opId, op);
+        }
+      } catch {
+        // primary unavailable
       }
-    } catch {
-      // If localStorage quota is exceeded, memoryQueue still preserves the operations for the session
     }
+
+    if (this.fallbackStorage) {
+      try {
+        const raw = await this.fallbackStorage.getItem(this.storageKey);
+        const list = this.parseSerializedQueue(raw);
+        if (list) {
+          for (const op of list) mergedById.set(op.opId, op);
+        }
+      } catch {
+        // fallback unavailable
+      }
+    }
+
+    for (const memOp of this.memoryQueue) {
+      if (!mergedById.has(memOp.opId)) {
+        mergedById.set(memOp.opId, memOp);
+      }
+    }
+
+    this.memoryQueue = Array.from(mergedById.values());
+    return this.getAll();
+  }
+
+  /**
+   * Persists the current queue synchronously to `primaryStorage` (`localStorage`) or a synchronous
+   * `fallbackStorage`, verifying write integrity via read-back. Throws `PendingQueuePersistenceError`
+   * if neither storage backend can durably persist the queue.
+   */
+  private persistQueueSyncOrThrow(): 'localStorage' | 'indexedDB' {
+    const serialized = JSON.stringify(this.memoryQueue);
+    let primarySucceeded = false;
+    let fallbackSucceeded = false;
+
+    if (this.primaryStorage) {
+      try {
+        if (this.memoryQueue.length === 0) {
+          this.primaryStorage.removeItem(this.storageKey);
+          primarySucceeded = true;
+        } else {
+          this.primaryStorage.setItem(this.storageKey, serialized);
+          const readBack = this.primaryStorage.getItem(this.storageKey);
+          if (readBack === serialized) {
+            primarySucceeded = true;
+            this.lastActiveBackend = 'localStorage';
+          }
+        }
+      } catch {
+        primarySucceeded = false;
+      }
+    }
+
+    if (this.fallbackStorage) {
+      try {
+        if (this.memoryQueue.length === 0) {
+          const res = this.fallbackStorage.removeItem(this.storageKey);
+          if (!(res instanceof Promise)) {
+            fallbackSucceeded = true;
+          } else {
+            res.catch(() => {});
+          }
+        } else {
+          const res = this.fallbackStorage.setItem(this.storageKey, serialized);
+          if (!(res instanceof Promise)) {
+            const readBack = this.fallbackStorage.getItem(this.storageKey);
+            if (typeof readBack === 'string' && readBack === serialized) {
+              fallbackSucceeded = true;
+              if (!primarySucceeded) this.lastActiveBackend = 'indexedDB';
+            }
+          } else {
+            res.catch(() => {});
+          }
+        }
+      } catch {
+        fallbackSucceeded = false;
+      }
+    }
+
+    if (!primarySucceeded && !fallbackSucceeded) {
+      throw new PendingQueuePersistenceError();
+    }
+
+    return primarySucceeded ? 'localStorage' : 'indexedDB';
+  }
+
+  /**
+   * Persists the current queue to `primaryStorage` (`localStorage`) and/or `fallbackStorage` (`IndexedDB`),
+   * awaiting async IndexedDB writes when `localStorage` quota is exceeded.
+   * Throws `PendingQueuePersistenceError` if BOTH `localStorage` and `IndexedDB` fail.
+   */
+  private async persistQueueDurableOrThrow(): Promise<'localStorage' | 'indexedDB'> {
+    const serialized = JSON.stringify(this.memoryQueue);
+    let primarySucceeded = false;
+    let fallbackSucceeded = false;
+
+    if (this.primaryStorage) {
+      try {
+        if (this.memoryQueue.length === 0) {
+          this.primaryStorage.removeItem(this.storageKey);
+          primarySucceeded = true;
+        } else {
+          this.primaryStorage.setItem(this.storageKey, serialized);
+          const readBack = this.primaryStorage.getItem(this.storageKey);
+          if (readBack === serialized) {
+            primarySucceeded = true;
+            this.lastActiveBackend = 'localStorage';
+          }
+        }
+      } catch {
+        primarySucceeded = false;
+      }
+    }
+
+    if (this.fallbackStorage) {
+      try {
+        if (this.memoryQueue.length === 0) {
+          await this.fallbackStorage.removeItem(this.storageKey);
+          fallbackSucceeded = true;
+        } else {
+          await this.fallbackStorage.setItem(this.storageKey, serialized);
+          const readBack = await this.fallbackStorage.getItem(this.storageKey);
+          if (readBack === serialized) {
+            fallbackSucceeded = true;
+            if (!primarySucceeded) this.lastActiveBackend = 'indexedDB';
+          }
+        }
+      } catch {
+        fallbackSucceeded = false;
+      }
+    }
+
+    if (!primarySucceeded && !fallbackSucceeded) {
+      throw new PendingQueuePersistenceError();
+    }
+
+    return primarySucceeded ? 'localStorage' : 'indexedDB';
+  }
+
+  getLastActiveBackend(): 'localStorage' | 'indexedDB' | 'none' {
+    return this.lastActiveBackend;
   }
 
   getAll(): PendingSyncOperation[] {
@@ -1016,6 +1767,11 @@ export class PendingSyncQueueManager {
     return this.memoryQueue.length;
   }
 
+  /**
+   * Enqueues an operation and verifies durable storage synchronously (`localStorage` or synchronous fallback).
+   * If durable persistence fails, rolls back `memoryQueue` and throws `PendingQueuePersistenceError`
+   * so the operation is NEVER falsely treated as saved offline.
+   */
   enqueue(op: Omit<PendingSyncOperation, 'retryCount' | 'createdAt'> & { createdAt?: string }): PendingSyncOperation {
     const existingIdx = this.memoryQueue.findIndex(item => item.opId === op.opId);
     if (existingIdx >= 0) {
@@ -1031,14 +1787,58 @@ export class PendingSyncQueueManager {
       retryCount: 0
     };
 
+    const previousSnapshot = [...this.memoryQueue];
     this.memoryQueue.push(entry);
-    this.saveToStorage();
-    return entry;
+    try {
+      const backend = this.persistQueueSyncOrThrow();
+      entry.storageBackend = backend;
+      return entry;
+    } catch (err) {
+      this.memoryQueue = previousSnapshot;
+      throw err;
+    }
+  }
+
+  /**
+   * Async durable enqueue that falls back to `IndexedDB` when `localStorage` throws `QuotaExceededError`.
+   * Rolls back `memoryQueue` and throws `PendingQueuePersistenceError` if both `localStorage` and `IndexedDB` fail.
+   */
+  async enqueueDurable(
+    op: Omit<PendingSyncOperation, 'retryCount' | 'createdAt'> & { createdAt?: string }
+  ): Promise<PendingSyncOperation> {
+    const existingIdx = this.memoryQueue.findIndex(item => item.opId === op.opId);
+    if (existingIdx >= 0) {
+      return this.memoryQueue[existingIdx];
+    }
+
+    const entry: PendingSyncOperation = {
+      opId: op.opId || createOperationId('sync'),
+      createdAt: op.createdAt || new Date().toISOString(),
+      changedKeys: Array.from(new Set(op.changedKeys || [])),
+      isFullReplace: Boolean(op.isFullReplace),
+      payload: deepCleanForFirestore(op.payload || {}),
+      retryCount: 0
+    };
+
+    const previousSnapshot = [...this.memoryQueue];
+    this.memoryQueue.push(entry);
+    try {
+      const backend = await this.persistQueueDurableOrThrow();
+      entry.storageBackend = backend;
+      return entry;
+    } catch (err) {
+      this.memoryQueue = previousSnapshot;
+      throw err;
+    }
   }
 
   markSuccess(opId: string): void {
     this.memoryQueue = this.memoryQueue.filter(item => item.opId !== opId);
-    this.saveToStorage();
+    try {
+      this.persistQueueSyncOrThrow();
+    } catch {
+      // ignore storage cleanup failure after memory removal
+    }
   }
 
   markFailure(opId: string, errorMessage: string): void {
@@ -1046,18 +1846,27 @@ export class PendingSyncQueueManager {
     if (item) {
       item.retryCount += 1;
       item.lastError = errorMessage;
-      this.saveToStorage();
+      try {
+        this.persistQueueSyncOrThrow();
+      } catch {
+        // ignore
+      }
     }
   }
 
   clear(): void {
     this.memoryQueue = [];
-    this.saveToStorage();
+    try {
+      this.persistQueueSyncOrThrow();
+    } catch {
+      // ignore
+    }
   }
 
   async flush(
     executor: (op: PendingSyncOperation) => Promise<void>
   ): Promise<{ flushedCount: number; remainingCount: number; errors: string[] }> {
+    await this.hydrateFromDurableStorage();
     const snapshot = [...this.memoryQueue];
     let flushedCount = 0;
     const errors: string[] = [];
@@ -1066,10 +1875,12 @@ export class PendingSyncQueueManager {
       try {
         await executor(op);
         this.markSuccess(op.opId);
+        await this.persistQueueDurableOrThrow().catch(() => {});
         flushedCount += 1;
       } catch (err: any) {
         const msg = err instanceof Error ? err.message : String(err);
         this.markFailure(op.opId, msg);
+        await this.persistQueueDurableOrThrow().catch(() => {});
         errors.push(msg);
         // Stop flushing further dependent ops on network/offline failure to preserve causal order
         break;
@@ -1085,7 +1896,7 @@ export class PendingSyncQueueManager {
 }
 
 // ============================================================================
-// SAFE, IDEMPOTENT, RESUMABLE, VERIFIED LEGACY-TO-SHARD MIGRATION (Section 6)
+// SAFE, IDEMPOTENT, RESUMABLE, CONTENT-VERIFIED LEGACY-TO-SHARD MIGRATION (Section 6)
 // ============================================================================
 
 export interface MigrationCheckpoint {
@@ -1103,6 +1914,8 @@ export interface ShardMigrationCollectionSummary {
   sourceCount: number;
   deduplicatedSourceCount: number;
   targetCount: number;
+  idsMatched: boolean;
+  contentMatched: boolean;
   verified: boolean;
 }
 
@@ -1128,12 +1941,82 @@ export interface MigrationSandboxAdapter {
 }
 
 /**
- * Executes an idempotent, resumable, and verified migration of legacy collections from `master_state`
- * to shard documents on a sandboxed storage adapter (never touching production directly unless explicitly invoked).
+ * Produces a deterministic canonical JSON string with recursively sorted object keys so two
+ * records can be compared for deep content parity regardless of property insertion order.
+ */
+export const canonicalizeRecordForParity = (val: any): string => {
+  const normalize = (input: any): any => {
+    if (input === null || input === undefined) return null;
+    if (Array.isArray(input)) return input.map(normalize);
+    if (typeof input === 'object') {
+      const sorted: Record<string, any> = {};
+      for (const k of Object.keys(input).sort()) {
+        if (input[k] !== undefined) {
+          sorted[k] = normalize(input[k]);
+        }
+      }
+      return sorted;
+    }
+    return input;
+  };
+  return JSON.stringify(normalize(deepCleanForFirestore(val)));
+};
+
+/**
+ * Verifies that `actualRecords` matches `expectedRecords` not only in count, but also in
+ * exact record IDs and deep canonical record content.
+ */
+export const verifyCollectionContentParity = <T extends Record<string, any>>(
+  expectedRecords: T[],
+  actualRecords: T[],
+  getKey: (item: T) => string = item => String(item?.id ?? '')
+): { countMatched: boolean; idsMatched: boolean; contentMatched: boolean; verified: boolean } => {
+  const countMatched = expectedRecords.length === actualRecords.length;
+  const expectedMap = new Map<string, string>();
+  for (const item of expectedRecords) {
+    const key = getKey(item);
+    expectedMap.set(key, canonicalizeRecordForParity(item));
+  }
+
+  const actualMap = new Map<string, string>();
+  for (const item of actualRecords) {
+    const key = getKey(item);
+    actualMap.set(key, canonicalizeRecordForParity(item));
+  }
+
+  if (expectedMap.size !== actualMap.size) {
+    return {
+      countMatched,
+      idsMatched: false,
+      contentMatched: false,
+      verified: false
+    };
+  }
+
+  let idsMatched = true;
+  let contentMatched = true;
+  for (const [key, expectedCanonical] of expectedMap.entries()) {
+    if (!actualMap.has(key)) {
+      idsMatched = false;
+      contentMatched = false;
+      break;
+    }
+    if (actualMap.get(key) !== expectedCanonical) {
+      contentMatched = false;
+    }
+  }
+
+  const verified = countMatched && idsMatched && contentMatched;
+  return { countMatched, idsMatched, contentMatched, verified };
+};
+
+/**
+ * Executes an idempotent, resumable, and deep-content-verified migration of legacy collections
+ * from `master_state` to shard documents (with automatic overflow sharding via `partitionItemsIntoBoundedShards`).
  * - Prevents duplicates during migration.
  * - Rejects deletion or overwrite on partial reads (`completeRead === false`).
  * - Supports checkpoint resumption after interruption.
- * - Verifies exact count and record ID/content parity before optional source cleanup.
+ * - Verifies exact count, record IDs, AND deep canonical record content before optional source cleanup.
  * - Automatically rolls back to the pre-migration snapshot if any write or verification fails.
  */
 export const executeSafeLegacyShardMigration = async (params: {
@@ -1141,8 +2024,10 @@ export const executeSafeLegacyShardMigration = async (params: {
   checkpoint?: MigrationCheckpoint | null;
   cleanupLegacyAfterVerification?: boolean;
   simulateInterruptAfterShardCount?: number;
+  maxBytesPerShard?: number;
 }): Promise<{ report: ShardMigrationReport; checkpoint: MigrationCheckpoint }> => {
   const nowIso = new Date().toISOString();
+  const maxBytesPerShard = params.maxBytesPerShard ?? SHARD_SAFE_BYTE_LIMIT;
   const initialRead = await params.adapter.readAllDocs();
 
   if (!initialRead.completeRead) {
@@ -1198,65 +2083,99 @@ export const executeSafeLegacyShardMigration = async (params: {
 
   // Assemble combined records from both master_state and existing shards so nothing is ever lost
   const combinedState = assembleShardedCloudState(masterDoc, allDocs) || {};
-  const expectedDaily = deduplicateDailyRecords(combinedState.dailyRecords || []);
-  const expectedAttendance = deduplicateAttendanceRecords(combinedState.attendanceRecords || []);
-  const expectedAtqini = deduplicateAtqiniSubmissions(combinedState.studentAtqiniSubmissions || []);
-  const expectedChallenges = deduplicateChallengeSubmissions(combinedState.studentChallengeSubmissions || []);
-  const expectedSubs = mergeArrayByKey(
-    [],
-    combinedState.studentSubscriptions || [],
-    'id',
-    deletedEntities.studentSubscriptions || []
+  const expectedDaily = deepCleanForFirestore(deduplicateDailyRecords(combinedState.dailyRecords || []));
+  const expectedAttendance = deepCleanForFirestore(
+    deduplicateAttendanceRecords(combinedState.attendanceRecords || [])
   );
-  const expectedLogs = mergeArrayByKey(
-    [],
-    combinedState.auditLogs || [],
-    'id',
-    deletedEntities.auditLogs || []
-  ).slice(0, MAX_AUDIT_LOGS_COUNT);
+  const expectedAtqini = deepCleanForFirestore(
+    deduplicateAtqiniSubmissions(combinedState.studentAtqiniSubmissions || [])
+  );
+  const expectedChallenges = deepCleanForFirestore(
+    deduplicateChallengeSubmissions(combinedState.studentChallengeSubmissions || [])
+  );
+  const expectedSubs = deepCleanForFirestore(
+    mergeArrayByKey(
+      [],
+      combinedState.studentSubscriptions || [],
+      'id',
+      deletedEntities.studentSubscriptions || []
+    )
+  );
+  const expectedLogs = deepCleanForFirestore(
+    mergeArrayByKey([], combinedState.auditLogs || [], 'id', deletedEntities.auditLogs || []).slice(
+      0,
+      MAX_AUDIT_LOGS_COUNT
+    )
+  );
+  expectedLogs.sort(
+    (a: any, b: any) => (Date.parse(b?.timestamp || '') || 0) - (Date.parse(a?.timestamp || '') || 0)
+  );
 
-  // Build target shard documents
+  // Build target shard documents (using partitionItemsIntoBoundedShards for automatic overflow splitting)
   const targetShardPayloads: Record<string, Record<string, any>> = {};
-  for (const shardId of DAILY_SHARD_DOC_IDS) {
-    const bucketIdx = Number(shardId.replace('shard_daily_', '')) || 0;
-    const items = expectedDaily.filter(r => getDailyRecordShardId(r) === shardId);
-    targetShardPayloads[shardId] = {
+  const targetShardOrder: string[] = [];
+
+  const addPartitionedShardPayloads = (baseShardId: string, shardType: string, bucket: number, items: any[]) => {
+    const partitions = partitionItemsIntoBoundedShards(baseShardId, items, maxBytesPerShard);
+    const basePart = partitions[0] || { shardId: baseShardId, items: [], byteSize: 0 };
+    const overflowParts = partitions.slice(1);
+    const overflowIds = overflowParts.map(p => p.shardId);
+
+    targetShardPayloads[baseShardId] = {
       users: [],
-      shardType: 'dailyRecords',
-      bucket: bucketIdx,
-      items: deepCleanForFirestore(items),
-      _revision: ((allDocs[shardId]?._revision as number) || 0) + 1,
+      shardType,
+      bucket,
+      items: deepCleanForFirestore(basePart.items),
+      overflowShardIds: overflowIds,
+      _revision: ((allDocs[baseShardId]?._revision as number) || 0) + 1,
       updatedAt: nowIso
     };
+    targetShardOrder.push(baseShardId);
+
+    for (let i = 0; i < overflowParts.length; i++) {
+      const ov = overflowParts[i];
+      targetShardPayloads[ov.shardId] = {
+        users: [],
+        shardType: `${shardType}_overflow`,
+        parentShardId: baseShardId,
+        overflowIndex: i + 1,
+        items: deepCleanForFirestore(ov.items),
+        _revision: ((allDocs[ov.shardId]?._revision as number) || 0) + 1,
+        updatedAt: nowIso
+      };
+      targetShardOrder.push(ov.shardId);
+    }
+  };
+
+  for (const shardId of DAILY_SHARD_DOC_IDS) {
+    const bucketIdx = Number(shardId.replace('shard_daily_', '')) || 0;
+    const items = expectedDaily.filter((r: any) => getDailyRecordShardId(r) === shardId);
+    addPartitionedShardPayloads(shardId, 'dailyRecords', bucketIdx, items);
   }
   for (const shardId of ATTENDANCE_SHARD_DOC_IDS) {
     const bucketIdx = Number(shardId.replace('shard_attendance_', '')) || 0;
-    const items = expectedAttendance.filter(r => getAttendanceRecordShardId(r) === shardId);
-    targetShardPayloads[shardId] = {
-      users: [],
-      shardType: 'attendanceRecords',
-      bucket: bucketIdx,
-      items: deepCleanForFirestore(items),
-      _revision: ((allDocs[shardId]?._revision as number) || 0) + 1,
-      updatedAt: nowIso
-    };
+    const items = expectedAttendance.filter((r: any) => getAttendanceRecordShardId(r) === shardId);
+    addPartitionedShardPayloads(shardId, 'attendanceRecords', bucketIdx, items);
   }
   targetShardPayloads[SHARD_SUBMISSIONS_DOC_ID] = {
     users: [],
     shardType: 'submissions',
-    studentAtqiniSubmissions: deepCleanForFirestore(expectedAtqini),
-    studentChallengeSubmissions: deepCleanForFirestore(expectedChallenges),
+    studentAtqiniSubmissions: expectedAtqini,
+    studentChallengeSubmissions: expectedChallenges,
     _revision: ((allDocs[SHARD_SUBMISSIONS_DOC_ID]?._revision as number) || 0) + 1,
     updatedAt: nowIso
   };
+  targetShardOrder.push(SHARD_SUBMISSIONS_DOC_ID);
+
   targetShardPayloads[SHARD_SUBSCRIPTIONS_LOGS_DOC_ID] = {
     users: [],
     shardType: 'subscriptionsAndLogs',
-    studentSubscriptions: deepCleanForFirestore(expectedSubs),
-    auditLogs: deepCleanForFirestore(expectedLogs),
+    studentSubscriptions: expectedSubs,
+    auditLogs: expectedLogs,
     _revision: ((allDocs[SHARD_SUBSCRIPTIONS_LOGS_DOC_ID]?._revision as number) || 0) + 1,
     updatedAt: nowIso
   };
+  targetShardOrder.push(SHARD_SUBSCRIPTIONS_LOGS_DOC_ID);
 
   const shardSizesBytes: Record<string, number> = {};
 
@@ -1288,7 +2207,7 @@ export const executeSafeLegacyShardMigration = async (params: {
 
   try {
     let newlyProcessedThisRun = 0;
-    for (const shardId of ALL_SHARD_DOC_IDS) {
+    for (const shardId of targetShardOrder) {
       const payload = targetShardPayloads[shardId];
       const sizeCheck = validateDocumentSizeWithinLimit(shardId, payload);
       shardSizesBytes[shardId] = sizeCheck.byteSize;
@@ -1323,7 +2242,7 @@ export const executeSafeLegacyShardMigration = async (params: {
       newlyProcessedThisRun += 1;
     }
 
-    // Phase 2: Verification before touching legacy source
+    // Phase 2: Deep Content & ID Verification before touching legacy source
     checkpoint.phase = 'verifying';
     const postWriteRead = await params.adapter.readAllDocs();
     if (!postWriteRead.completeRead) {
@@ -1338,13 +2257,46 @@ export const executeSafeLegacyShardMigration = async (params: {
     }
     const assembledFromShardsOnly = assembleShardedCloudState(masterWithoutLegacy, postDocs) || {};
 
+    const dailyParity = verifyCollectionContentParity(
+      expectedDaily,
+      assembledFromShardsOnly.dailyRecords || [],
+      (r: any) => `${r?.studentId || ''}_${r?.date || r?.id || ''}`
+    );
+    const attendanceParity = verifyCollectionContentParity(
+      expectedAttendance,
+      assembledFromShardsOnly.attendanceRecords || [],
+      (r: any) => `${r?.studentId || ''}_${r?.date || r?.id || ''}`
+    );
+    const atqiniParity = verifyCollectionContentParity(
+      expectedAtqini,
+      assembledFromShardsOnly.studentAtqiniSubmissions || [],
+      (r: any) => String(r?.id ?? '')
+    );
+    const challengesParity = verifyCollectionContentParity(
+      expectedChallenges,
+      assembledFromShardsOnly.studentChallengeSubmissions || [],
+      (r: any) => String(r?.id ?? '')
+    );
+    const subsParity = verifyCollectionContentParity(
+      expectedSubs,
+      assembledFromShardsOnly.studentSubscriptions || [],
+      (r: any) => String(r?.id ?? '')
+    );
+    const logsParity = verifyCollectionContentParity(
+      expectedLogs,
+      assembledFromShardsOnly.auditLogs || [],
+      (r: any) => String(r?.id ?? '')
+    );
+
     const summaries: ShardMigrationCollectionSummary[] = [
       {
         collection: 'dailyRecords',
         sourceCount: (Array.isArray(masterDoc.dailyRecords) ? masterDoc.dailyRecords.length : 0) || expectedDaily.length,
         deduplicatedSourceCount: expectedDaily.length,
         targetCount: (assembledFromShardsOnly.dailyRecords || []).length,
-        verified: (assembledFromShardsOnly.dailyRecords || []).length === expectedDaily.length
+        idsMatched: dailyParity.idsMatched,
+        contentMatched: dailyParity.contentMatched,
+        verified: dailyParity.verified
       },
       {
         collection: 'attendanceRecords',
@@ -1353,7 +2305,9 @@ export const executeSafeLegacyShardMigration = async (params: {
           expectedAttendance.length,
         deduplicatedSourceCount: expectedAttendance.length,
         targetCount: (assembledFromShardsOnly.attendanceRecords || []).length,
-        verified: (assembledFromShardsOnly.attendanceRecords || []).length === expectedAttendance.length
+        idsMatched: attendanceParity.idsMatched,
+        contentMatched: attendanceParity.contentMatched,
+        verified: attendanceParity.verified
       },
       {
         collection: 'studentAtqiniSubmissions',
@@ -1362,7 +2316,9 @@ export const executeSafeLegacyShardMigration = async (params: {
           expectedAtqini.length,
         deduplicatedSourceCount: expectedAtqini.length,
         targetCount: (assembledFromShardsOnly.studentAtqiniSubmissions || []).length,
-        verified: (assembledFromShardsOnly.studentAtqiniSubmissions || []).length === expectedAtqini.length
+        idsMatched: atqiniParity.idsMatched,
+        contentMatched: atqiniParity.contentMatched,
+        verified: atqiniParity.verified
       },
       {
         collection: 'studentChallengeSubmissions',
@@ -1371,7 +2327,9 @@ export const executeSafeLegacyShardMigration = async (params: {
           expectedChallenges.length,
         deduplicatedSourceCount: expectedChallenges.length,
         targetCount: (assembledFromShardsOnly.studentChallengeSubmissions || []).length,
-        verified: (assembledFromShardsOnly.studentChallengeSubmissions || []).length === expectedChallenges.length
+        idsMatched: challengesParity.idsMatched,
+        contentMatched: challengesParity.contentMatched,
+        verified: challengesParity.verified
       },
       {
         collection: 'studentSubscriptions',
@@ -1380,25 +2338,43 @@ export const executeSafeLegacyShardMigration = async (params: {
           expectedSubs.length,
         deduplicatedSourceCount: expectedSubs.length,
         targetCount: (assembledFromShardsOnly.studentSubscriptions || []).length,
-        verified: (assembledFromShardsOnly.studentSubscriptions || []).length === expectedSubs.length
+        idsMatched: subsParity.idsMatched,
+        contentMatched: subsParity.contentMatched,
+        verified: subsParity.verified
       },
       {
         collection: 'auditLogs',
         sourceCount: (Array.isArray(masterDoc.auditLogs) ? masterDoc.auditLogs.length : 0) || expectedLogs.length,
         deduplicatedSourceCount: expectedLogs.length,
         targetCount: (assembledFromShardsOnly.auditLogs || []).length,
-        verified: (assembledFromShardsOnly.auditLogs || []).length === expectedLogs.length
+        idsMatched: logsParity.idsMatched,
+        contentMatched: logsParity.contentMatched,
+        verified: logsParity.verified
       }
     ];
 
     const allVerified = summaries.every(s => s.verified);
     if (!allVerified) {
-      return await performRollback('VERIFICATION_PARITY_MISMATCH');
+      const hasContentMismatch = summaries.some(
+        s => s.targetCount === s.deduplicatedSourceCount && (!s.idsMatched || !s.contentMatched)
+      );
+      return await performRollback(
+        hasContentMismatch ? 'VERIFICATION_CONTENT_MISMATCH' : 'VERIFICATION_PARITY_MISMATCH'
+      );
     }
 
     let cleanedLegacy = false;
     if (params.cleanupLegacyAfterVerification === true) {
-      const cleanedMaster = { ...masterWithoutLegacy, lastSyncedAt: new Date().toISOString() };
+      const shardRevisionsMap: Record<string, number> = {};
+      for (const shardId of targetShardOrder) {
+        shardRevisionsMap[shardId] = Number(postDocs[shardId]?._revision || 1);
+      }
+      const cleanedMaster = {
+        ...masterWithoutLegacy,
+        _syncGeneration: checkpoint.migrationId,
+        _shardRevisions: shardRevisionsMap,
+        lastSyncedAt: new Date().toISOString()
+      };
       validateDocumentSizeWithinLimit('master_state', cleanedMaster);
       await params.adapter.writeDoc('master_state', cleanedMaster);
       cleanedLegacy = true;

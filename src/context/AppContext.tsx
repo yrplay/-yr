@@ -2178,6 +2178,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const pendingPersistResolversRef = useRef<
+    Array<(res: { cloudSynced: boolean; queuedOffline: boolean; opId: string; error?: string }) => void>
+  >([]);
+  const pendingReplaceStateRef = useRef<boolean>(false);
+
+  const resolveAllPendingPersistWaiters = (result: {
+    cloudSynced: boolean;
+    queuedOffline: boolean;
+    opId: string;
+    error?: string;
+  }) => {
+    const waiters = pendingPersistResolversRef.current.splice(
+      0,
+      pendingPersistResolversRef.current.length
+    );
+    for (const waiter of waiters) {
+      try {
+        waiter(result);
+      } catch {
+        // ignore resolver callback errors
+      }
+    }
+  };
+
   const persistState = (
     overrides?: any
   ): Promise<{ cloudSynced: boolean; queuedOffline: boolean; opId: string; error?: string }> => {
@@ -2327,19 +2351,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       }
 
-      if (syncTimeoutRef.current) {
-        clearTimeout(syncTimeoutRef.current);
-        syncTimeoutRef.current = null;
-      }
       if (isLocalDemoMode) {
+        if (syncTimeoutRef.current) {
+          clearTimeout(syncTimeoutRef.current);
+          syncTimeoutRef.current = null;
+        }
         hasPendingLocalChangesRef.current = false;
         setCloudStatus('offline');
-        return Promise.resolve({ cloudSynced: false, queuedOffline: true, opId });
+        const demoOutcome = { cloudSynced: false, queuedOffline: true, opId };
+        resolveAllPendingPersistWaiters(demoOutcome);
+        return Promise.resolve(demoOutcome);
       }
       if (skipCloudPush) {
         return Promise.resolve({ cloudSynced: false, queuedOffline: false, opId });
       }
 
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = null;
+      }
+
+      if (replaceCloudState) {
+        pendingReplaceStateRef.current = true;
+      }
       if (replaceCloudState || !overrides || typeof overrides !== 'object') {
         pendingChangedKeysRef.current.add('__FULL__');
       } else {
@@ -2351,10 +2385,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       return new Promise(resolve => {
+        pendingPersistResolversRef.current.push(resolve);
+
         const executePush = (attempt = 1) => {
+          syncTimeoutRef.current = null;
           const pushTimestamp = lastLocalMutationTimeRef.current;
           const keysToSync = Array.from(pendingChangedKeysRef.current);
-          const pushPayload = replaceCloudState
+          const isBatchReplace = pendingReplaceStateRef.current || replaceCloudState;
+          const pushPayload = isBatchReplace
             ? { ...masterStateRef.current, _replaceState: true, _opId: opId }
             : { ...masterStateRef.current, _changedKeys: keysToSync, _opId: opId };
 
@@ -2368,15 +2406,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 if (lastLocalMutationTimeRef.current === pushTimestamp && getPendingSyncOperationsCount() === 0) {
                   hasPendingLocalChangesRef.current = false;
                   pendingChangedKeysRef.current.clear();
+                  pendingReplaceStateRef.current = false;
                 }
                 setCloudStatus(getPendingSyncOperationsCount() > 0 ? 'pending' : 'connected');
                 setLastSynced(new Date());
-                resolve({ cloudSynced: true, queuedOffline: false, opId: res.opId });
+                resolveAllPendingPersistWaiters({
+                  cloudSynced: true,
+                  queuedOffline: false,
+                  opId: res.opId
+                });
               } else {
                 const isOfflineNow = typeof navigator !== 'undefined' && navigator.onLine === false;
                 hasPendingLocalChangesRef.current = true;
                 setCloudStatus(isOfflineNow ? 'offline' : 'pending');
-                resolve({ cloudSynced: false, queuedOffline: true, opId: res.opId });
+                resolveAllPendingPersistWaiters({
+                  cloudSynced: false,
+                  queuedOffline: res.queuedOffline,
+                  opId: res.opId
+                });
               }
             })
             .catch(error => {
@@ -2386,8 +2433,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 setTimeout(() => {
                   if (lastLocalMutationTimeRef.current === pushTimestamp) {
                     executePush(attempt + 1);
-                  } else {
-                    resolve({ cloudSynced: false, queuedOffline: getPendingSyncOperationsCount() > 0, opId });
                   }
                 }, 2500);
                 return;
@@ -2395,7 +2440,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               const hasQueued = getPendingSyncOperationsCount() > 0;
               hasPendingLocalChangesRef.current = hasQueued;
               setCloudStatus(isOffline ? 'offline' : hasQueued ? 'pending' : 'error');
-              resolve({
+              resolveAllPendingPersistWaiters({
                 cloudSynced: false,
                 queuedOffline: hasQueued,
                 opId,
@@ -2414,12 +2459,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       hasPendingLocalChangesRef.current = getPendingSyncOperationsCount() > 0;
       console.error('Unable to build local/cloud state payload:', e);
       setCloudStatus('error');
-      return Promise.resolve({
+      const errOutcome = {
         cloudSynced: false,
         queuedOffline: false,
         opId,
         error: e?.message || String(e)
-      });
+      };
+      resolveAllPendingPersistWaiters(errOutcome);
+      return Promise.resolve(errOutcome);
     }
   };
 
