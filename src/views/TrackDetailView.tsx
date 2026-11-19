@@ -317,11 +317,11 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
           <button 
             type="button"
             onClick={handleBackNavigation}
-            className="p-2.5 px-3 rounded-2xl bg-[#FAF7F5] dark:bg-stone-800 hover:bg-[#F2EAE5] dark:hover:bg-stone-700 text-stone-700 dark:text-stone-200 transition flex items-center gap-1.5 cursor-pointer font-bold text-xs border border-[#E2D5CC] dark:border-stone-700 hover:shadow-xs active:scale-95"
-            title="رجوع إلى المسارات والحلقات"
+            className="w-10 h-10 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 transition flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 shrink-0"
+            title="رجوع"
+            aria-label="رجوع"
           >
-            <ArrowRight className="w-4 h-4 text-[#8E5364]" />
-            <span>رجوع</span>
+            <ArrowRight className="w-4 h-4 shrink-0" />
           </button>
           <div>
             <div className="flex items-center gap-2">
@@ -356,10 +356,11 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
             <button
               type="button"
               onClick={handleOpenEditModal}
-              className="px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer active:scale-95"
+              className="w-10 h-10 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white transition flex items-center justify-center shadow-2xs cursor-pointer active:scale-95 shrink-0"
+              title="تعديل معايير دليل الإتقان"
+              aria-label="تعديل معايير دليل الإتقان"
             >
-              <Settings className="w-4 h-4" />
-              <span>تعديل معايير دليل الإتقان</span>
+              <Settings className="w-4 h-4 shrink-0" />
             </button>
           )}
         </div>
@@ -483,10 +484,11 @@ export const TrackDetailView: React.FC<TrackDetailViewProps> = ({
                   <button
                     type="button"
                     onClick={handleOpenEditModal}
-                    className="px-3.5 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                    className="w-10 h-10 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white transition flex items-center justify-center shadow-2xs cursor-pointer active:scale-95 shrink-0"
+                    title="إضافة أو تعديل معيار"
+                    aria-label="إضافة أو تعديل معيار"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>إضافة أو تعديل معيار</span>
+                    <Plus className="w-4 h-4 shrink-0" />
                   </button>
                 </div>
               )}
