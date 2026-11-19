@@ -596,7 +596,7 @@ describe('3. Data Integrity & Sandboxed Migration Tests', () => {
       students: [{ id: 's1', name: 'طالبة ١' }, { id: 's2', name: 'طالبة ٢' }],
       dailyRecords: [
         { id: 'dr1', studentId: 's1', date: '2026-03-01', newMemorizationScore: 10, updatedAt: '2026-03-01T10:00:00Z' },
-        { id: 'dr2', studentId: 's2', date: '2026-03-02', newMemorizationScore: 9, updatedAt: '2026-03-02T10:00:00Z' }
+        { id: 'dr2', studentId: 's1', date: '2026-03-02', newMemorizationScore: 9, updatedAt: '2026-03-02T10:00:00Z' }
       ],
       attendanceRecords: [
         { id: 'att1', studentId: 's1', date: '2026-03-01', status: 'present', updatedAt: '2026-03-01T08:00:00Z' }
