@@ -13,7 +13,7 @@ import { DeveloperDeploymentPanel } from '../components/DeveloperDeploymentPanel
 import { defaultMasteryGuideConfig, hasFullAccess } from '../types';
 import { syncInstitutionLogoAsPWAAppIcon } from '../services/pwaIconSync';
 import { optimizeImageFile } from '../utils/imageOptimizer';
-import { uploadImageDataUrl } from '../services/storage';
+import { uploadImageDataUrlWithMeta } from '../services/storage';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -109,11 +109,18 @@ export const SettingsView: React.FC = () => {
     try {
       setUploadError(null);
       const dataUrl = await optimizeImageFile(file, 360, 360);
-      const imageUrl = await uploadImageDataUrl(dataUrl, 'institution-logo');
+      const uploadMeta = await uploadImageDataUrlWithMeta(dataUrl, 'institution-logo');
+      const imageUrl = uploadMeta.url;
       setForm(prev => ({ ...prev, logoUrl: imageUrl }));
-      await updateSettings({ logoUrl: imageUrl });
+      const syncRes = await updateSettings({ logoUrl: imageUrl }, true);
       syncInstitutionLogoAsPWAAppIcon({ ...settings, ...form, logoUrl: imageUrl });
-      showToast('تم حفظ شعار المقرأة ومزامنته سحابياً واعتماده كأيقونة للتطبيق 🖼️📲');
+      if (syncRes.cloudSynced && uploadMeta.storageMode !== 'offline-pending') {
+        showToast('تم حفظ شعار المقرأة ومزامنته سحابياً واعتماده كأيقونة للتطبيق 🖼️📲', 'success');
+      } else if (syncRes.queuedOffline || uploadMeta.storageMode === 'offline-pending') {
+        showToast('تم حفظ الشعار محلياً في قائمة الانتظار، وستتم مزامنته سحابياً فور عودة الاتصال بالإنترنت ⏳', 'info');
+      } else {
+        showToast('تعذرت مزامنة الشعار مع السحابة حالياً، تم الاحتفاظ به محلياً ⚠️', 'error');
+      }
     } catch (err: any) {
       const msg = err?.message || 'تعذرت معالجة صورة الشعار';
       setUploadError(msg);
@@ -132,10 +139,17 @@ export const SettingsView: React.FC = () => {
     try {
       setUploadError(null);
       const dataUrl = await optimizeImageFile(file, 300, 300);
-      const imageUrl = await uploadImageDataUrl(dataUrl, 'institution-seal');
+      const uploadMeta = await uploadImageDataUrlWithMeta(dataUrl, 'institution-seal');
+      const imageUrl = uploadMeta.url;
       setForm(prev => ({ ...prev, sealImageUrl: imageUrl }));
-      await updateSettings({ sealImageUrl: imageUrl });
-      showToast('تم حفظ صورة الختم ومزامنتها سحابياً بنجاح 💮');
+      const syncRes = await updateSettings({ sealImageUrl: imageUrl }, true);
+      if (syncRes.cloudSynced && uploadMeta.storageMode !== 'offline-pending') {
+        showToast('تم حفظ صورة الختم ومزامنتها سحابياً بنجاح 💮', 'success');
+      } else if (syncRes.queuedOffline || uploadMeta.storageMode === 'offline-pending') {
+        showToast('تم حفظ صورة الختم محلياً في قائمة الانتظار، وستتم مزامنتها سحابياً فور عودة الاتصال بالإنترنت ⏳', 'info');
+      } else {
+        showToast('تعذرت مزامنة صورة الختم مع السحابة حالياً، تم الاحتفاظ بها محلياً ⚠️', 'error');
+      }
     } catch (err: any) {
       const msg = err?.message || 'تعذرت معالجة صورة الختم';
       setUploadError(msg);
@@ -154,10 +168,17 @@ export const SettingsView: React.FC = () => {
     try {
       setUploadError(null);
       const dataUrl = await optimizeImageFile(file, 400, 200);
-      const imageUrl = await uploadImageDataUrl(dataUrl, 'leader-signature');
+      const uploadMeta = await uploadImageDataUrlWithMeta(dataUrl, 'leader-signature');
+      const imageUrl = uploadMeta.url;
       setForm(prev => ({ ...prev, leaderSignatureUrl: imageUrl }));
-      await updateSettings({ leaderSignatureUrl: imageUrl });
-      showToast('تم حفظ توقيع قائدة المقرأة ومزامنته سحابياً بنجاح ✍️');
+      const syncRes = await updateSettings({ leaderSignatureUrl: imageUrl }, true);
+      if (syncRes.cloudSynced && uploadMeta.storageMode !== 'offline-pending') {
+        showToast('تم حفظ توقيع قائدة المقرأة ومزامنته سحابياً بنجاح ✍️', 'success');
+      } else if (syncRes.queuedOffline || uploadMeta.storageMode === 'offline-pending') {
+        showToast('تم حفظ صورة التوقيع محلياً في قائمة الانتظار، وستتم مزامنتها سحابياً فور عودة الاتصال بالإنترنت ⏳', 'info');
+      } else {
+        showToast('تعذرت مزامنة صورة التوقيع مع السحابة حالياً، تم الاحتفاظ بها محلياً ⚠️', 'error');
+      }
     } catch (err: any) {
       const msg = err?.message || 'تعذرت معالجة صورة التوقيع';
       setUploadError(msg);
@@ -229,11 +250,11 @@ export const SettingsView: React.FC = () => {
         pointsPerCondition: Number(form.pointsPerCondition)
       };
 
-      await updateSettings({
+      const syncRes = await updateSettings({
         ...form,
         securityEnabled: true,
         defaultMasteryGuide: masteryData
-      });
+      }, true);
 
       // مزامنة معايير الدليل فورياً مع جميع مسارات المقرأة
       if (Array.isArray(tracks)) {
@@ -248,7 +269,13 @@ export const SettingsView: React.FC = () => {
       }
 
       applyLiveIdentity(form, true);
-      showToast('تم حفظ كافة التعديلات، الهوية، الشعار، ومعايير دليل الإتقان بنجاح في النظام ✅');
+      if (syncRes.cloudSynced) {
+        showToast('تم حفظ كافة التعديلات، الهوية، الشعار، ومعايير دليل الإتقان ومزامنتها سحابياً بنجاح ✅', 'success');
+      } else if (syncRes.queuedOffline) {
+        showToast('تم حفظ التعديلات محلياً في قائمة الانتظار، وستتم مزامنتها سحابياً فور عودة الاتصال بالإنترنت ⏳', 'info');
+      } else {
+        showToast('تعذرت المزامنة السحابية حالياً، تم الاحتفاظ بالتعديلات محلياً ⚠️', 'error');
+      }
     } finally {
       setIsSaving(false);
     }
@@ -1353,8 +1380,24 @@ export const SettingsView: React.FC = () => {
               <span>حالة الاتصال السحابي:</span>
             </div>
             <div className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span>{cloudStatus === 'connected' ? 'متصل ومؤمّن بنجاح' : 'جاري فحص الاتصال...'}</span>
+              <span className={`w-2 h-2 rounded-full ${
+                cloudStatus === 'connected' || cloudStatus === 'synced'
+                  ? 'bg-emerald-500'
+                  : cloudStatus === 'syncing' || cloudStatus === 'pending'
+                  ? 'bg-amber-500 animate-pulse'
+                  : 'bg-rose-500'
+              }`}></span>
+              <span>
+                {cloudStatus === 'connected' || cloudStatus === 'synced'
+                  ? 'متصل ومؤمّن بنجاح (Synced)'
+                  : cloudStatus === 'syncing'
+                  ? 'جارٍ المزامنة مع السحابة (Syncing)...'
+                  : cloudStatus === 'pending'
+                  ? 'في قائمة الانتظار للمزامنة (Pending)'
+                  : cloudStatus === 'offline'
+                  ? 'غير متصل — التعديلات محفوظة محلياً (Offline)'
+                  : 'خطأ في المزامنة السحابية (Error)'}
+              </span>
             </div>
             <p className="text-[10px] text-stone-500 mt-1">
               آخر مزامنة ناجحة: {lastSynced ? new Date(lastSynced).toLocaleTimeString('ar-SA') : 'الآن'}

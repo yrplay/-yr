@@ -318,13 +318,21 @@ export const Header: React.FC<HeaderProps> = ({
                         <span>المزامنة السحابية</span>
                       </div>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                        cloudStatus === 'connected'
+                        cloudStatus === 'connected' || cloudStatus === 'synced'
                           ? 'text-emerald-700 bg-emerald-100/90'
                           : cloudStatus === 'error'
                           ? 'text-rose-700 bg-rose-100/90'
                           : 'text-amber-700 bg-amber-100/90'
                       }`}>
-                        {cloudStatus === 'connected' ? 'Firebase متصل ✅' : cloudStatus === 'syncing' ? 'جاري المزامنة...' : cloudStatus === 'error' ? 'خطأ في المزامنة' : 'غير متصل'}
+                        {cloudStatus === 'connected' || cloudStatus === 'synced'
+                          ? 'Firebase متصل ✅'
+                          : cloudStatus === 'syncing'
+                          ? 'جاري المزامنة...'
+                          : cloudStatus === 'pending'
+                          ? 'في الانتظار للمزامنة ⏳'
+                          : cloudStatus === 'error'
+                          ? 'خطأ في المزامنة'
+                          : 'غير متصل (محلي)'}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-[11px] text-stone-500 mb-2">

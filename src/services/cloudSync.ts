@@ -6,17 +6,26 @@ import {
   getDocFromServer,
   getDocs,
   onSnapshot,
-  setDoc
+  runTransaction
 } from 'firebase/firestore';
 import { auth, db, FIRESTORE_COLLECTION, FIRESTORE_DOC_ID } from '../firebase';
 import {
   ALL_SHARD_DOC_IDS,
   ATTENDANCE_SHARD_DOC_IDS,
   DAILY_SHARD_DOC_IDS,
+  MAX_AUDIT_LOGS_COUNT,
+  MAX_RECENT_OP_IDS,
+  PendingSyncOperation,
+  PendingSyncQueueManager,
   SHARDED_COLLECTION_KEYS,
   SHARD_SUBMISSIONS_DOC_ID,
   SHARD_SUBSCRIPTIONS_LOGS_DOC_ID,
+  ShardSubscriptionCoordinator,
+  StaleCacheWriteError,
+  VersionedDocEnvelope,
   assembleShardedCloudState,
+  assertServerReadForWrite,
+  createOperationId,
   deepCleanForFirestore,
   deduplicateAtqiniSubmissions,
   deduplicateAttendanceRecords,
@@ -28,7 +37,8 @@ import {
   mergeDeletedEntities,
   pruneDeadStaffProfiles,
   sanitizeCloudState,
-  sanitizeStaffUserForFirestore
+  sanitizeStaffUserForFirestore,
+  validateDocumentSizeWithinLimit
 } from './cloudSyncHelpers';
 import {
   extractStaffProfilesFromUsers,
@@ -37,7 +47,7 @@ import {
   mergeStaffProfilesMap
 } from '../utils/staffHelpers';
 
-export type CloudSyncStatus = 'connected' | 'syncing' | 'offline' | 'error';
+export type CloudSyncStatus = 'connected' | 'synced' | 'syncing' | 'pending' | 'offline' | 'error';
 
 export enum OperationType {
   CREATE = 'create',
@@ -97,6 +107,25 @@ const isPermissionDeniedError = (err: unknown): boolean => {
   return code === 'permission-denied' || msg.includes('missing or insufficient permissions');
 };
 
+const isTransientOrOfflineError = (err: unknown): boolean => {
+  if (err instanceof StaleCacheWriteError) return true;
+  const code = String((err as any)?.code || '').toLowerCase();
+  const msg = String((err as any)?.message || err || '').toLowerCase();
+  return (
+    code === 'unavailable' ||
+    code === 'deadline-exceeded' ||
+    code === 'aborted' ||
+    msg.includes('offline') ||
+    msg.includes('timeout') ||
+    msg.includes('unavailable') ||
+    msg.includes('network') ||
+    msg.includes('cloud_read_timeout') ||
+    msg.includes('cloud_write_timeout') ||
+    msg.includes('cloud_tx_timeout') ||
+    msg.includes('cloud_master_state_unreachable')
+  );
+};
+
 const CLOUD_DOC_PATH = { collection: FIRESTORE_COLLECTION, id: FIRESTORE_DOC_ID };
 
 const CORE_ARRAY_COLLECTIONS: Array<[string, string]> = [
@@ -139,8 +168,13 @@ const withRejectingTimeout = <T,>(promise: Promise<T>, ms: number, errorCode: st
   });
 };
 
-// Serialized async write mutex prevents concurrent UI actions in the same client
-// from racing against each other or causing Firestore transaction contention.
+// Persistent Pending Operations Queue for offline resilience & guaranteed eventual consistency
+export const pendingSyncQueue = new PendingSyncQueueManager();
+
+export const getPendingSyncOperationsCount = (): number => pendingSyncQueue.size();
+
+// Serialized local write queue prevents concurrent local mutations in the same browser tab from overlapping,
+// while Firestore server transactions (`runTransaction`) prevent cross-device race conditions.
 let writeQueueTail: Promise<void> = Promise.resolve();
 const enqueueCloudWrite = <T,>(task: () => Promise<T>): Promise<T> => {
   const run = writeQueueTail.then(task, task);
@@ -227,12 +261,60 @@ const reconcileAuthorizedStaffUsers = async (stateData: any): Promise<any> => {
   return stateData;
 };
 
-const readDocServerThenCache = async (
+/**
+ * Strictly reads a document from the live Firestore server (`getDocFromServer`).
+ * Never falls back to local cache — used before any write/merge operation so stale cache
+ * can never overwrite newer server state.
+ */
+export const readDocServerOnly = async (
   docId: string,
-  forceServer: boolean
-): Promise<{ exists: boolean; data: Record<string, any> | null; fromServer: boolean }> => {
+  timeoutMs = 9000
+): Promise<{ exists: boolean; data: Record<string, any> | null; fromServer: true }> => {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new StaleCacheWriteError(docId, `الجهاز غير متصل بالإنترنت؛ تم إيقاف الكتابة المباشرة للمستند (${docId}).`);
+  }
   const ref = doc(db, CLOUD_DOC_PATH.collection, docId);
-  if (forceServer) {
+  try {
+    const serverSnap = await withRejectingTimeout(
+      getDocFromServer(ref),
+      timeoutMs,
+      `CLOUD_READ_TIMEOUT_${docId}`
+    );
+    return {
+      exists: serverSnap.exists(),
+      data: serverSnap.exists() ? (serverSnap.data() as Record<string, any>) : null,
+      fromServer: true
+    };
+  } catch (err) {
+    if (isPermissionDeniedError(err)) {
+      handleFirestoreError(err, OperationType.GET, `${CLOUD_DOC_PATH.collection}/${docId}`);
+    }
+    throw new StaleCacheWriteError(
+      docId,
+      `تعذر التحقق من أحدث نسخة على الخادم للمستند (${docId}): ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+};
+
+/**
+ * Reads a document from the server first, and ONLY falls back to local cache when `allowCacheFallback === true`
+ * (for read-only UI display when offline). Explicitly tags `fromServer` and `readError` so callers never mistake
+ * a cache read or a failed read for an authoritative server read.
+ */
+export const readDocServerThenCache = async (
+  docId: string,
+  forceServer: boolean,
+  allowCacheFallback = false
+): Promise<{
+  exists: boolean;
+  data: Record<string, any> | null;
+  fromServer: boolean;
+  readError: boolean;
+}> => {
+  const ref = doc(db, CLOUD_DOC_PATH.collection, docId);
+  const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+
+  if (forceServer && !isOffline) {
     try {
       const serverSnap = await withRejectingTimeout(
         getDocFromServer(ref),
@@ -242,14 +324,19 @@ const readDocServerThenCache = async (
       return {
         exists: serverSnap.exists(),
         data: serverSnap.exists() ? (serverSnap.data() as Record<string, any>) : null,
-        fromServer: true
+        fromServer: true,
+        readError: false
       };
     } catch (err) {
       if (isPermissionDeniedError(err)) {
         handleFirestoreError(err, OperationType.GET, `${CLOUD_DOC_PATH.collection}/${docId}`);
       }
-      // Fallback to cache below when offline or transiently unreachable
+      if (!allowCacheFallback) {
+        return { exists: false, data: null, fromServer: false, readError: true };
+      }
     }
+  } else if (forceServer && isOffline && !allowCacheFallback) {
+    return { exists: false, data: null, fromServer: false, readError: true };
   }
 
   try {
@@ -257,19 +344,21 @@ const readDocServerThenCache = async (
     return {
       exists: cacheSnap.exists(),
       data: cacheSnap.exists() ? (cacheSnap.data() as Record<string, any>) : null,
-      fromServer: false
+      fromServer: false,
+      readError: false
     };
   } catch (err) {
     if (isPermissionDeniedError(err)) {
       handleFirestoreError(err, OperationType.GET, `${CLOUD_DOC_PATH.collection}/${docId}`);
     }
-    return { exists: false, data: null, fromServer: false };
+    return { exists: false, data: null, fromServer: false, readError: true };
   }
 };
 
 /**
- * Fetches the latest cloud database state (`master_state` + all shard documents)
- * directly from the server in parallel, falling back cleanly to local cache if offline.
+ * Fetches the complete cloud database state (`master_state` + all shard documents).
+ * Guarantees that if any shard fails to load, the result is rejected as incomplete
+ * rather than treating a failed shard as an empty array (`[]`).
  */
 export const fetchCloudDatabaseOnce = async (forceServer = true): Promise<any | null> => {
   try {
@@ -277,9 +366,17 @@ export const fetchCloudDatabaseOnce = async (forceServer = true): Promise<any | 
     const results = await Promise.all(
       docIds.map(async id => ({
         id,
-        res: await readDocServerThenCache(id, forceServer)
+        res: await readDocServerThenCache(id, forceServer, !forceServer)
       }))
     );
+
+    // Reject partial/failed reads so a missing or timed-out shard is never treated as empty data
+    if (results.some(r => r.res.readError)) {
+      return null;
+    }
+    if (forceServer && results.some(r => !r.res.fromServer)) {
+      return null;
+    }
 
     const masterEntry = results.find(r => r.id === CLOUD_DOC_PATH.id);
     if (!masterEntry?.res.exists || !masterEntry.res.data) {
@@ -302,62 +399,94 @@ export const fetchCloudDatabaseOnce = async (forceServer = true): Promise<any | 
   }
 };
 
+let activeSubscriptionCleanup: (() => void) | null = null;
+
+/**
+ * Subscribes to `master_state` and all required shard documents (`ALL_SHARD_DOC_IDS`).
+ * - Waits until ALL required documents (`master_state` + all 8 shards) have loaded before emitting state.
+ * - Never declares `'connected'` while any shard is still loading, has an error, has pending writes,
+ *   or while offline / pending queue is non-empty.
+ * - Prevents duplicate subscriptions, listener leaks, and out-of-order async state updates.
+ */
 export const subscribeToCloudDatabase = (
   onData: (data: any) => void,
   onStatusChange?: (status: CloudSyncStatus) => void
 ) => {
+  if (activeSubscriptionCleanup) {
+    try {
+      activeSubscriptionCleanup();
+    } catch {
+      // ignore cleanup errors
+    }
+    activeSubscriptionCleanup = null;
+  }
+
   const watchedDocIds = [CLOUD_DOC_PATH.id, ...ALL_SHARD_DOC_IDS];
-  const docDataById: Record<string, Record<string, any> | null> = {};
-  const docMetaById: Record<string, { loaded: boolean; fromCache: boolean; hasPendingWrites: boolean }> = {};
+  const coordinator = new ShardSubscriptionCoordinator(CLOUD_DOC_PATH.id, ALL_SHARD_DOC_IDS);
   let emitTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
 
-  const computeCombinedStatus = (): CloudSyncStatus => {
-    const metas = Object.values(docMetaById);
-    if (metas.some(m => m.hasPendingWrites || m.fromCache)) return 'syncing';
-    return 'connected';
+  const isCurrentlyOnline = () =>
+    typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+
+  const emitCurrentStatus = () => {
+    if (disposed) return;
+    const status = coordinator.computeStatus({
+      isOnline: isCurrentlyOnline(),
+      pendingQueueCount: pendingSyncQueue.size()
+    });
+    onStatusChange?.(status);
   };
 
   const scheduleEmit = () => {
     if (disposed) return;
-    if (!docMetaById[CLOUD_DOC_PATH.id]?.loaded) return;
+    emitCurrentStatus();
+
+    // Never emit partial state before every required shard + master_state has loaded without error
+    if (!coordinator.isAllRequiredLoaded()) {
+      return;
+    }
 
     if (emitTimer) clearTimeout(emitTimer);
     emitTimer = setTimeout(() => {
       if (disposed) return;
-      const masterRaw = docDataById[CLOUD_DOC_PATH.id];
-      if (!masterRaw) {
-        onData(null);
-        onStatusChange?.(computeCombinedStatus());
+      const assembly = coordinator.assembleIfComplete(CLOUD_DOC_PATH.id);
+      if (!assembly.complete) {
+        emitCurrentStatus();
         return;
       }
 
-      const shardsById: Record<string, Record<string, any> | null> = {};
-      for (const id of ALL_SHARD_DOC_IDS) {
-        shardsById[id] = docDataById[id] || null;
-      }
-
-      const assembled = assembleShardedCloudState(masterRaw, shardsById);
-      if (!assembled) {
+      if (!assembly.state) {
         onData(null);
-        onStatusChange?.(computeCombinedStatus());
+        emitCurrentStatus();
         return;
       }
 
-      const masterFromCache = Boolean(docMetaById[CLOUD_DOC_PATH.id]?.fromCache);
-      if (!masterFromCache) {
-        void reconcileAuthorizedStaffUsers(assembled).then(reconciled => {
-          if (!disposed) {
-            onData(reconciled);
-            onStatusChange?.(computeCombinedStatus());
+      const seq = coordinator.nextEmitSequence();
+      if (assembly.fromServer && isCurrentlyOnline()) {
+        void reconcileAuthorizedStaffUsers(assembly.state).then(reconciled => {
+          if (disposed || seq !== coordinator.getCurrentEmitSequence()) {
+            return;
           }
+          onData(reconciled);
+          emitCurrentStatus();
         });
       } else {
-        onData(assembled);
-        onStatusChange?.(computeCombinedStatus());
+        onData(assembly.state);
+        emitCurrentStatus();
       }
     }, 60);
   };
+
+  const handleOnlineStatusChange = () => {
+    if (disposed) return;
+    emitCurrentStatus();
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online', handleOnlineStatusChange);
+    window.addEventListener('offline', handleOnlineStatusChange);
+  }
 
   try {
     const unsubscribes = watchedDocIds.map(docId => {
@@ -366,36 +495,40 @@ export const subscribeToCloudDatabase = (
         docRef,
         { includeMetadataChanges: true },
         snapshot => {
-          docMetaById[docId] = {
-            loaded: true,
+          if (disposed) return;
+          coordinator.recordSnapshot(docId, {
+            exists: snapshot.exists(),
+            data: snapshot.exists() ? (snapshot.data() as Record<string, any>) : null,
             fromCache: snapshot.metadata.fromCache,
             hasPendingWrites: snapshot.metadata.hasPendingWrites
-          };
+          });
 
           if (snapshot.metadata.hasPendingWrites) {
-            onStatusChange?.('syncing');
+            emitCurrentStatus();
             return;
           }
 
-          docDataById[docId] = snapshot.exists()
-            ? (snapshot.data() as Record<string, any>)
-            : null;
           scheduleEmit();
         },
         error => {
+          if (disposed) return;
           console.warn(`Firebase sync listener error (${docId}):`, error);
-          if (isPermissionDeniedError(error)) {
-            onStatusChange?.('error');
-          } else if (docId === CLOUD_DOC_PATH.id) {
-            onStatusChange?.('error');
-          }
+          coordinator.recordError(
+            docId,
+            error instanceof Error ? error.message : String(error)
+          );
+          onStatusChange?.('error');
         }
       );
     });
 
-    return () => {
+    const cleanup = () => {
       disposed = true;
       if (emitTimer) clearTimeout(emitTimer);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnlineStatusChange);
+        window.removeEventListener('offline', handleOnlineStatusChange);
+      }
       unsubscribes.forEach(unsub => {
         try {
           unsub();
@@ -403,9 +536,19 @@ export const subscribeToCloudDatabase = (
           // ignore
         }
       });
+      if (activeSubscriptionCleanup === cleanup) {
+        activeSubscriptionCleanup = null;
+      }
     };
+
+    activeSubscriptionCleanup = cleanup;
+    return cleanup;
   } catch (error) {
     console.warn('Failed to subscribe to cloud database:', error);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('online', handleOnlineStatusChange);
+      window.removeEventListener('offline', handleOnlineStatusChange);
+    }
     onStatusChange?.('offline');
     return () => {};
   }
@@ -642,118 +785,196 @@ const buildStaffProfilesPatch = (
   return patch;
 };
 
-const safeSetDoc = async (docId: string, data: Record<string, any>, merge = false, timeoutMs = 12000) => {
-  const docRef = doc(db, CLOUD_DOC_PATH.collection, docId);
+/**
+ * Executes an atomic Firestore Server Transaction (`runTransaction`) on a single document (`docId`)
+ * with optimistic concurrency control (`_revision`), idempotency tracking (`opId`, `recentOpIds`),
+ * and strict 1 MiB document size validation.
+ *
+ * Because Firestore `runTransaction` requires live server connectivity and automatically retries
+ * when another device concurrently modifies `docId` between `tx.get` and `tx.set`, this prevents
+ * both multi-device lost updates AND stale-cache overwrites.
+ */
+const runServerDocTransaction = async (params: {
+  docId: string;
+  opId: string;
+  merge?: boolean;
+  timeoutMs?: number;
+  buildNext: (
+    remoteData: Record<string, any> | null,
+    exists: boolean
+  ) => { skipWrite?: boolean; payload: Record<string, any> };
+}): Promise<{ committed: boolean; skipped: boolean; revision: number }> => {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new StaleCacheWriteError(
+      params.docId,
+      `لا يوجد اتصال بالإنترنت؛ تم حفظ التعديلات في قائمة الانتظار المحلية (${params.docId}).`
+    );
+  }
+
+  const docRef = doc(db, CLOUD_DOC_PATH.collection, params.docId);
+  const timeoutMs = params.timeoutMs ?? 15000;
+
   try {
-    await withRejectingTimeout(
-      merge ? setDoc(docRef, data, { merge: true }) : setDoc(docRef, data),
+    return await withRejectingTimeout(
+      runTransaction(
+        db,
+        async tx => {
+          const snap = await tx.get(docRef);
+          const exists = snap.exists();
+          const remoteData = exists ? (snap.data() as Record<string, any>) : null;
+          const remoteRevision =
+            remoteData && typeof remoteData._revision === 'number' ? remoteData._revision : 0;
+          const recentOpIds = Array.isArray(remoteData?.recentOpIds)
+            ? remoteData!.recentOpIds.map(String)
+            : [];
+
+          // Idempotency check: if this operation ID was already applied on the server, skip duplicate write
+          if (
+            params.opId &&
+            (remoteData?.lastOpId === params.opId || recentOpIds.includes(params.opId))
+          ) {
+            return { committed: true, skipped: true, revision: remoteRevision };
+          }
+
+          const { skipWrite, payload } = params.buildNext(remoteData, exists);
+          if (skipWrite) {
+            return { committed: true, skipped: true, revision: remoteRevision };
+          }
+
+          const nextRevision = remoteRevision + 1;
+          const updatedRecentOps = params.opId
+            ? [...recentOpIds.filter(id => id !== params.opId), params.opId].slice(-MAX_RECENT_OP_IDS)
+            : recentOpIds.slice(-MAX_RECENT_OP_IDS);
+
+          const finalPayload: VersionedDocEnvelope = {
+            ...payload,
+            _revision: nextRevision,
+            ...(params.opId ? { lastOpId: params.opId, recentOpIds: updatedRecentOps } : {})
+          };
+
+          validateDocumentSizeWithinLimit(params.docId, finalPayload);
+
+          if (params.merge) {
+            tx.set(docRef, finalPayload, { merge: true });
+          } else {
+            tx.set(docRef, finalPayload);
+          }
+
+          return { committed: true, skipped: false, revision: nextRevision };
+        },
+        { maxAttempts: 5 }
+      ),
       timeoutMs,
-      `CLOUD_WRITE_TIMEOUT_${docId}`
+      `CLOUD_TX_TIMEOUT_${params.docId}`
     );
   } catch (err) {
     if (isPermissionDeniedError(err)) {
-      handleFirestoreError(err, OperationType.WRITE, `${CLOUD_DOC_PATH.collection}/${docId}`);
+      handleFirestoreError(err, OperationType.WRITE, `${CLOUD_DOC_PATH.collection}/${params.docId}`);
     }
     throw err;
   }
 };
 
 /**
- * Directly writes sanitized staff users (and updated circles/deletedEntities/settings) to
- * `institution_database/master_state` through the serialized write queue so rapid edits
- * from Desktop, iPad, or Mobile never race or fail with transaction contention.
+ * Transactional staff users & circles update against `institution_database/master_state`.
+ * Merges incoming staff changes with the latest server document inside a Firestore transaction
+ * so concurrent edits from Desktop, iPad, or Mobile never overwrite each other.
  */
 export const pushStaffUsersToCloudDirect = async (
   usersList: any[],
   circlesList?: any[],
   deletedEntities?: any,
-  settings?: any
+  settings?: any,
+  opId = createOperationId('staff')
 ): Promise<void> => {
   return enqueueCloudWrite(async () => {
-    const masterSnap = await readDocServerThenCache(CLOUD_DOC_PATH.id, true);
-    const remoteRaw = masterSnap.data || {};
-    const remoteSettings = remoteRaw?.settings || {};
+    await runServerDocTransaction({
+      docId: CLOUD_DOC_PATH.id,
+      opId,
+      merge: true,
+      timeoutMs: 15000,
+      buildNext: (remoteData) => {
+        const remoteRaw = remoteData || {};
+        const remoteSettings = remoteRaw?.settings || {};
 
-    const sanitizedUsers = (Array.isArray(usersList) ? usersList : []).map(u => {
-      const cleaned = { ...(u || {}) };
-      delete cleaned.staffChatMessages;
-      delete cleaned.deletedStaffChatIds;
-      delete cleaned.pinnedStaffAnnouncement;
-      return sanitizeStaffUserForFirestore(cleaned);
-    });
+        const mergedDeleted = mergeDeletedEntities(remoteRaw._deletedEntities, deletedEntities);
+        const deletedUserIds = Array.isArray(mergedDeleted.users)
+          ? mergedDeleted.users.map(String)
+          : [];
 
-    const sanitizedSettings =
-      settings && typeof settings === 'object' ? sanitizeCloudState({ settings }).settings : null;
+        const incomingSanitizedUsers = (Array.isArray(usersList) ? usersList : []).map(u => {
+          const cleaned = { ...(u || {}) };
+          delete cleaned.staffChatMessages;
+          delete cleaned.deletedStaffChatIds;
+          delete cleaned.pinnedStaffAnnouncement;
+          return sanitizeStaffUserForFirestore(cleaned);
+        });
 
-    const deletedUserIds = Array.isArray(deletedEntities?.users)
-      ? deletedEntities.users.map(String)
-      : Array.isArray(remoteRaw?._deletedEntities?.users)
-      ? remoteRaw._deletedEntities.users.map(String)
-      : [];
+        const mergedUsers = mergeArrayByKey(
+          Array.isArray(remoteRaw.users) ? remoteRaw.users : [],
+          incomingSanitizedUsers,
+          'id',
+          deletedUserIds
+        ).map(sanitizeStaffUserForFirestore);
 
-    let settingsPatch: Record<string, any> | undefined;
-    if (sanitizedSettings) {
-      const nextSettingsPatch: Record<string, any> = { ...sanitizedSettings };
-      delete nextSettingsPatch.staffOperations;
-      for (const imgField of ['logoUrl', 'sealImageUrl', 'leaderSignatureUrl']) {
-        if (remoteSettings[imgField] && nextSettingsPatch[imgField] === remoteSettings[imgField]) {
-          delete nextSettingsPatch[imgField];
-        }
-      }
-      const prunedProfiles = pruneDeadStaffProfiles(
-        mergeStaffProfilesMap(
-          extractStaffProfilesFromUsers(sanitizedUsers),
-          remoteSettings.staffProfiles,
-          nextSettingsPatch.staffProfiles
-        ),
-        sanitizedUsers,
-        deletedUserIds
-      );
-      nextSettingsPatch.staffProfiles = buildStaffProfilesPatch(
-        prunedProfiles,
-        remoteSettings.staffProfiles
-      );
-      if ('staffOperations' in remoteSettings) {
-        nextSettingsPatch.staffOperations = deleteField();
-      }
-      settingsPatch = nextSettingsPatch;
-    }
+        const mergedCircles = Array.isArray(circlesList)
+          ? mergeArrayByKey(
+              Array.isArray(remoteRaw.circles) ? remoteRaw.circles : [],
+              circlesList,
+              'id',
+              mergedDeleted.circles || []
+            )
+          : undefined;
 
-    const baseClean = deepCleanForFirestore({
-      users: sanitizedUsers,
-      ...(Array.isArray(circlesList) ? { circles: circlesList } : {}),
-      ...(deletedEntities && typeof deletedEntities === 'object' ? { _deletedEntities: deletedEntities } : {}),
-      lastSyncedAt: new Date().toISOString()
-    });
+        const sanitizedSettings =
+          settings && typeof settings === 'object' ? sanitizeCloudState({ settings }).settings : null;
 
-    if (settingsPatch) {
-      // Preserve deleteField() markers inside settingsPatch cleanly
-      const cleanedSettingsFields: Record<string, any> = {};
-      for (const [k, v] of Object.entries(settingsPatch)) {
-        if (k === 'staffProfiles' || k === 'staffOperations') continue;
-        cleanedSettingsFields[k] = deepCleanForFirestore(v);
-      }
-      cleanedSettingsFields.staffProfiles = buildStaffProfilesPatch(
-        deepCleanForFirestore(
-          pruneDeadStaffProfiles(
-            mergeStaffProfilesMap(
-              extractStaffProfilesFromUsers(sanitizedUsers),
-              remoteSettings.staffProfiles,
-              sanitizedSettings?.staffProfiles
+        const baseClean = deepCleanForFirestore({
+          users: mergedUsers,
+          ...(mergedCircles ? { circles: mergedCircles } : {}),
+          _deletedEntities: mergedDeleted,
+          lastSyncedAt: new Date().toISOString()
+        });
+
+        if (sanitizedSettings) {
+          const cleanedSettingsFields: Record<string, any> = {};
+          for (const [k, v] of Object.entries(sanitizedSettings)) {
+            if (k === 'staffProfiles' || k === 'staffOperations') continue;
+            if (
+              (k === 'logoUrl' || k === 'sealImageUrl' || k === 'leaderSignatureUrl') &&
+              remoteSettings[k] &&
+              v === remoteSettings[k]
+            ) {
+              continue;
+            }
+            cleanedSettingsFields[k] = deepCleanForFirestore(v);
+          }
+          cleanedSettingsFields.staffProfiles = buildStaffProfilesPatch(
+            deepCleanForFirestore(
+              pruneDeadStaffProfiles(
+                mergeStaffProfilesMap(
+                  extractStaffProfilesFromUsers(mergedUsers),
+                  remoteSettings.staffProfiles,
+                  sanitizedSettings?.staffProfiles
+                ),
+                mergedUsers,
+                deletedUserIds
+              )
             ),
-            sanitizedUsers,
-            deletedUserIds
-          )
-        ),
-        remoteSettings.staffProfiles
-      );
-      if ('staffOperations' in remoteSettings) {
-        cleanedSettingsFields.staffOperations = deleteField();
-      }
-      baseClean.settings = cleanedSettingsFields;
-    }
+            remoteSettings.staffProfiles
+          );
+          if ('staffOperations' in remoteSettings) {
+            cleanedSettingsFields.staffOperations = deleteField();
+          }
+          baseClean.settings = cleanedSettingsFields;
+        }
 
-    await safeSetDoc(CLOUD_DOC_PATH.id, baseClean, true, 12000);
+        return {
+          skipWrite: false,
+          payload: baseClean
+        };
+      }
+    });
   });
 };
 
@@ -771,8 +992,9 @@ const syncDailyShards = async (
   incomingDaily: any[],
   legacyMasterDaily: any[],
   deletedIds: string[],
-  isFullReplace: boolean
-): Promise<void> => {
+  isFullReplace: boolean,
+  opId: string
+): Promise<number> => {
   const incomingBuckets: Record<string, any[]> = {};
   const legacyBuckets: Record<string, any[]> = {};
   for (const shardId of DAILY_SHARD_DOC_IDS) {
@@ -790,64 +1012,69 @@ const syncDailyShards = async (
     legacyBuckets[shardId].push(deepCleanForFirestore(item));
   }
 
-  const remoteShards = await Promise.all(
-    DAILY_SHARD_DOC_IDS.map(async shardId => ({
-      shardId,
-      snap: await readDocServerThenCache(shardId, !isFullReplace)
-    }))
-  );
-
-  const nowIso = new Date().toISOString();
+  let totalVerifiedCount = 0;
   await Promise.all(
-    remoteShards.map(async ({ shardId, snap }) => {
-      const remoteItems: any[] = Array.isArray(snap.data?.items) ? snap.data!.items : [];
+    DAILY_SHARD_DOC_IDS.map(async shardId => {
       const bucketIndex = Number(shardId.replace('shard_daily_', '')) || 0;
+      let shardFinalCount = 0;
 
-      let nextItems: any[];
-      if (isFullReplace) {
-        nextItems = deduplicateDailyRecords(incomingBuckets[shardId]);
-      } else {
-        const mergedWithLegacy = mergeArrayByKey(
-          remoteItems,
-          legacyBuckets[shardId],
-          'id',
-          deletedIds
-        );
-        const merged = mergeArrayByKey(
-          mergedWithLegacy,
-          incomingBuckets[shardId],
-          'id',
-          deletedIds
-        );
-        nextItems = deduplicateDailyRecords(merged);
-      }
+      await runServerDocTransaction({
+        docId: shardId,
+        opId: `${opId}_${shardId}`,
+        merge: false,
+        timeoutMs: 15000,
+        buildNext: (remoteData, exists) => {
+          const remoteItems: any[] = Array.isArray(remoteData?.items) ? remoteData!.items : [];
+          let nextItems: any[];
+          if (isFullReplace) {
+            nextItems = deduplicateDailyRecords(incomingBuckets[shardId]);
+          } else {
+            const mergedWithLegacy = mergeArrayByKey(
+              remoteItems,
+              legacyBuckets[shardId],
+              'id',
+              deletedIds
+            );
+            const merged = mergeArrayByKey(
+              mergedWithLegacy,
+              incomingBuckets[shardId],
+              'id',
+              deletedIds
+            );
+            nextItems = deduplicateDailyRecords(merged);
+          }
 
-      if (snap.exists && !isFullReplace && arraysHaveSameIdsAndTimestamps(remoteItems, nextItems)) {
-        return;
-      }
+          shardFinalCount = nextItems.length;
+          const unchanged =
+            exists && !isFullReplace && arraysHaveSameIdsAndTimestamps(remoteItems, nextItems);
 
-      await safeSetDoc(
-        shardId,
-        {
-          users: [],
-          shardType: 'dailyRecords',
-          bucket: bucketIndex,
-          items: deepCleanForFirestore(nextItems),
-          updatedAt: nowIso
-        },
-        false,
-        12000
-      );
+          return {
+            skipWrite: unchanged,
+            payload: {
+              users: [],
+              shardType: 'dailyRecords',
+              bucket: bucketIndex,
+              items: deepCleanForFirestore(nextItems),
+              updatedAt: new Date().toISOString()
+            }
+          };
+        }
+      });
+
+      totalVerifiedCount += shardFinalCount;
     })
   );
+
+  return totalVerifiedCount;
 };
 
 const syncAttendanceShards = async (
   incomingAttendance: any[],
   legacyMasterAttendance: any[],
   deletedIds: string[],
-  isFullReplace: boolean
-): Promise<void> => {
+  isFullReplace: boolean,
+  opId: string
+): Promise<number> => {
   const incomingBuckets: Record<string, any[]> = {};
   const legacyBuckets: Record<string, any[]> = {};
   for (const shardId of ATTENDANCE_SHARD_DOC_IDS) {
@@ -865,56 +1092,60 @@ const syncAttendanceShards = async (
     legacyBuckets[shardId].push(deepCleanForFirestore(item));
   }
 
-  const remoteShards = await Promise.all(
-    ATTENDANCE_SHARD_DOC_IDS.map(async shardId => ({
-      shardId,
-      snap: await readDocServerThenCache(shardId, !isFullReplace)
-    }))
-  );
-
-  const nowIso = new Date().toISOString();
+  let totalVerifiedCount = 0;
   await Promise.all(
-    remoteShards.map(async ({ shardId, snap }) => {
-      const remoteItems: any[] = Array.isArray(snap.data?.items) ? snap.data!.items : [];
+    ATTENDANCE_SHARD_DOC_IDS.map(async shardId => {
       const bucketIndex = Number(shardId.replace('shard_attendance_', '')) || 0;
+      let shardFinalCount = 0;
 
-      let nextItems: any[];
-      if (isFullReplace) {
-        nextItems = deduplicateAttendanceRecords(incomingBuckets[shardId]);
-      } else {
-        const mergedWithLegacy = mergeArrayByKey(
-          remoteItems,
-          legacyBuckets[shardId],
-          'id',
-          deletedIds
-        );
-        const merged = mergeArrayByKey(
-          mergedWithLegacy,
-          incomingBuckets[shardId],
-          'id',
-          deletedIds
-        );
-        nextItems = deduplicateAttendanceRecords(merged);
-      }
+      await runServerDocTransaction({
+        docId: shardId,
+        opId: `${opId}_${shardId}`,
+        merge: false,
+        timeoutMs: 15000,
+        buildNext: (remoteData, exists) => {
+          const remoteItems: any[] = Array.isArray(remoteData?.items) ? remoteData!.items : [];
+          let nextItems: any[];
+          if (isFullReplace) {
+            nextItems = deduplicateAttendanceRecords(incomingBuckets[shardId]);
+          } else {
+            const mergedWithLegacy = mergeArrayByKey(
+              remoteItems,
+              legacyBuckets[shardId],
+              'id',
+              deletedIds
+            );
+            const merged = mergeArrayByKey(
+              mergedWithLegacy,
+              incomingBuckets[shardId],
+              'id',
+              deletedIds
+            );
+            nextItems = deduplicateAttendanceRecords(merged);
+          }
 
-      if (snap.exists && !isFullReplace && arraysHaveSameIdsAndTimestamps(remoteItems, nextItems)) {
-        return;
-      }
+          shardFinalCount = nextItems.length;
+          const unchanged =
+            exists && !isFullReplace && arraysHaveSameIdsAndTimestamps(remoteItems, nextItems);
 
-      await safeSetDoc(
-        shardId,
-        {
-          users: [],
-          shardType: 'attendanceRecords',
-          bucket: bucketIndex,
-          items: deepCleanForFirestore(nextItems),
-          updatedAt: nowIso
-        },
-        false,
-        12000
-      );
+          return {
+            skipWrite: unchanged,
+            payload: {
+              users: [],
+              shardType: 'attendanceRecords',
+              bucket: bucketIndex,
+              items: deepCleanForFirestore(nextItems),
+              updatedAt: new Date().toISOString()
+            }
+          };
+        }
+      });
+
+      totalVerifiedCount += shardFinalCount;
     })
   );
+
+  return totalVerifiedCount;
 };
 
 const syncSubmissionsShard = async (
@@ -923,62 +1154,73 @@ const syncSubmissionsShard = async (
   legacyMasterAtqini: any[],
   legacyMasterChallenges: any[],
   deletedEntities: Record<string, string[]>,
-  isFullReplace: boolean
-): Promise<void> => {
-  const snap = await readDocServerThenCache(SHARD_SUBMISSIONS_DOC_ID, !isFullReplace);
-  const remoteAtqini: any[] = Array.isArray(snap.data?.studentAtqiniSubmissions)
-    ? snap.data!.studentAtqiniSubmissions
-    : [];
-  const remoteChallenges: any[] = Array.isArray(snap.data?.studentChallengeSubmissions)
-    ? snap.data!.studentChallengeSubmissions
-    : [];
+  isFullReplace: boolean,
+  opId: string
+): Promise<{ atqiniCount: number; challengesCount: number }> => {
+  let finalAtqiniCount = 0;
+  let finalChallengesCount = 0;
 
-  const deletedAtqini = deletedEntities.studentAtqiniSubmissions || [];
-  const deletedChallenges = deletedEntities.studentChallengeSubmissions || [];
+  await runServerDocTransaction({
+    docId: SHARD_SUBMISSIONS_DOC_ID,
+    opId: `${opId}_${SHARD_SUBMISSIONS_DOC_ID}`,
+    merge: false,
+    timeoutMs: 15000,
+    buildNext: (remoteData, exists) => {
+      const remoteAtqini: any[] = Array.isArray(remoteData?.studentAtqiniSubmissions)
+        ? remoteData!.studentAtqiniSubmissions
+        : [];
+      const remoteChallenges: any[] = Array.isArray(remoteData?.studentChallengeSubmissions)
+        ? remoteData!.studentChallengeSubmissions
+        : [];
 
-  const nextAtqini = isFullReplace
-    ? deduplicateAtqiniSubmissions(incomingAtqini)
-    : deduplicateAtqiniSubmissions(
-        mergeArrayByKey(
-          mergeArrayByKey(remoteAtqini, legacyMasterAtqini, 'id', deletedAtqini),
-          incomingAtqini,
-          'id',
-          deletedAtqini
-        )
-      );
+      const deletedAtqini = deletedEntities.studentAtqiniSubmissions || [];
+      const deletedChallenges = deletedEntities.studentChallengeSubmissions || [];
 
-  const nextChallenges = isFullReplace
-    ? deduplicateChallengeSubmissions(incomingChallenges)
-    : deduplicateChallengeSubmissions(
-        mergeArrayByKey(
-          mergeArrayByKey(remoteChallenges, legacyMasterChallenges, 'id', deletedChallenges),
-          incomingChallenges,
-          'id',
-          deletedChallenges
-        )
-      );
+      const nextAtqini = isFullReplace
+        ? deduplicateAtqiniSubmissions(incomingAtqini)
+        : deduplicateAtqiniSubmissions(
+            mergeArrayByKey(
+              mergeArrayByKey(remoteAtqini, legacyMasterAtqini, 'id', deletedAtqini),
+              incomingAtqini,
+              'id',
+              deletedAtqini
+            )
+          );
 
-  if (
-    snap.exists &&
-    !isFullReplace &&
-    arraysHaveSameIdsAndTimestamps(remoteAtqini, nextAtqini) &&
-    arraysHaveSameIdsAndTimestamps(remoteChallenges, nextChallenges)
-  ) {
-    return;
-  }
+      const nextChallenges = isFullReplace
+        ? deduplicateChallengeSubmissions(incomingChallenges)
+        : deduplicateChallengeSubmissions(
+            mergeArrayByKey(
+              mergeArrayByKey(remoteChallenges, legacyMasterChallenges, 'id', deletedChallenges),
+              incomingChallenges,
+              'id',
+              deletedChallenges
+            )
+          );
 
-  await safeSetDoc(
-    SHARD_SUBMISSIONS_DOC_ID,
-    {
-      users: [],
-      shardType: 'submissions',
-      studentAtqiniSubmissions: deepCleanForFirestore(nextAtqini),
-      studentChallengeSubmissions: deepCleanForFirestore(nextChallenges),
-      updatedAt: new Date().toISOString()
-    },
-    false,
-    12000
-  );
+      finalAtqiniCount = nextAtqini.length;
+      finalChallengesCount = nextChallenges.length;
+
+      const unchanged =
+        exists &&
+        !isFullReplace &&
+        arraysHaveSameIdsAndTimestamps(remoteAtqini, nextAtqini) &&
+        arraysHaveSameIdsAndTimestamps(remoteChallenges, nextChallenges);
+
+      return {
+        skipWrite: unchanged,
+        payload: {
+          users: [],
+          shardType: 'submissions',
+          studentAtqiniSubmissions: deepCleanForFirestore(nextAtqini),
+          studentChallengeSubmissions: deepCleanForFirestore(nextChallenges),
+          updatedAt: new Date().toISOString()
+        }
+      };
+    }
+  });
+
+  return { atqiniCount: finalAtqiniCount, challengesCount: finalChallengesCount };
 };
 
 const syncSubscriptionsAndLogsShard = async (
@@ -987,262 +1229,490 @@ const syncSubscriptionsAndLogsShard = async (
   legacyMasterSubs: any[],
   legacyMasterLogs: any[],
   deletedEntities: Record<string, string[]>,
-  isFullReplace: boolean
-): Promise<void> => {
-  const snap = await readDocServerThenCache(SHARD_SUBSCRIPTIONS_LOGS_DOC_ID, !isFullReplace);
-  const remoteSubs: any[] = Array.isArray(snap.data?.studentSubscriptions)
-    ? snap.data!.studentSubscriptions
-    : [];
-  const remoteLogs: any[] = Array.isArray(snap.data?.auditLogs) ? snap.data!.auditLogs : [];
+  isFullReplace: boolean,
+  opId: string
+): Promise<{ subsCount: number; logsCount: number }> => {
+  let finalSubsCount = 0;
+  let finalLogsCount = 0;
 
-  const deletedSubs = deletedEntities.studentSubscriptions || [];
-  const deletedLogs = deletedEntities.auditLogs || [];
+  await runServerDocTransaction({
+    docId: SHARD_SUBSCRIPTIONS_LOGS_DOC_ID,
+    opId: `${opId}_${SHARD_SUBSCRIPTIONS_LOGS_DOC_ID}`,
+    merge: false,
+    timeoutMs: 15000,
+    buildNext: (remoteData, exists) => {
+      const remoteSubs: any[] = Array.isArray(remoteData?.studentSubscriptions)
+        ? remoteData!.studentSubscriptions
+        : [];
+      const remoteLogs: any[] = Array.isArray(remoteData?.auditLogs) ? remoteData!.auditLogs : [];
 
-  const nextSubs = isFullReplace
-    ? deepCleanForFirestore(incomingSubs)
-    : mergeArrayByKey(
-        mergeArrayByKey(remoteSubs, legacyMasterSubs, 'id', deletedSubs),
-        incomingSubs,
-        'id',
-        deletedSubs
+      const deletedSubs = deletedEntities.studentSubscriptions || [];
+      const deletedLogs = deletedEntities.auditLogs || [];
+
+      const nextSubs = isFullReplace
+        ? deepCleanForFirestore(incomingSubs)
+        : mergeArrayByKey(
+            mergeArrayByKey(remoteSubs, legacyMasterSubs, 'id', deletedSubs),
+            incomingSubs,
+            'id',
+            deletedSubs
+          );
+
+      const mergedLogs = isFullReplace
+        ? [...incomingLogs]
+        : mergeArrayByKey(
+            mergeArrayByKey(remoteLogs, legacyMasterLogs, 'id', deletedLogs),
+            incomingLogs,
+            'id',
+            deletedLogs
+          );
+
+      mergedLogs.sort(
+        (a: any, b: any) => (Date.parse(b?.timestamp || '') || 0) - (Date.parse(a?.timestamp || '') || 0)
       );
+      const nextLogs = mergedLogs.slice(0, MAX_AUDIT_LOGS_COUNT);
 
-  const mergedLogs = isFullReplace
-    ? [...incomingLogs]
-    : mergeArrayByKey(
-        mergeArrayByKey(remoteLogs, legacyMasterLogs, 'id', deletedLogs),
-        incomingLogs,
-        'id',
-        deletedLogs
-      );
+      finalSubsCount = nextSubs.length;
+      finalLogsCount = nextLogs.length;
 
-  mergedLogs.sort(
-    (a: any, b: any) => (Date.parse(b?.timestamp || '') || 0) - (Date.parse(a?.timestamp || '') || 0)
-  );
-  const nextLogs = mergedLogs.slice(0, 60);
+      const unchanged =
+        exists &&
+        !isFullReplace &&
+        arraysHaveSameIdsAndTimestamps(remoteSubs, nextSubs) &&
+        arraysHaveSameIdsAndTimestamps(remoteLogs, nextLogs);
 
-  if (
-    snap.exists &&
-    !isFullReplace &&
-    arraysHaveSameIdsAndTimestamps(remoteSubs, nextSubs) &&
-    arraysHaveSameIdsAndTimestamps(remoteLogs, nextLogs)
-  ) {
+      return {
+        skipWrite: unchanged,
+        payload: {
+          users: [],
+          shardType: 'subscriptionsAndLogs',
+          studentSubscriptions: deepCleanForFirestore(nextSubs),
+          auditLogs: deepCleanForFirestore(nextLogs),
+          updatedAt: new Date().toISOString()
+        }
+      };
+    }
+  });
+
+  return { subsCount: finalSubsCount, logsCount: finalLogsCount };
+};
+
+/**
+ * Internal core executor for a single state push operation (`opId`).
+ * Uses strict server reads (`readDocServerOnly`) and per-document Firestore transactions (`runServerDocTransaction`)
+ * so stale cache can never overwrite newer server state and concurrent multi-device writes merge atomically.
+ */
+const executeCloudStatePushInternal = async (statePayload: any, opId: string): Promise<void> => {
+  const isFullReplace = Boolean(statePayload?._replaceState);
+  const changedKeys: string[] | null =
+    !isFullReplace && Array.isArray(statePayload?._changedKeys) && statePayload._changedKeys.length > 0
+      ? statePayload._changedKeys.map(String)
+      : null;
+
+  const isAllDocs = isFullReplace || !changedKeys || changedKeys.includes('__FULL__');
+  const keySet = new Set(changedKeys || []);
+  if (keySet.has('staffOperations')) keySet.add('settings');
+
+  const incomingClean = { ...(statePayload || {}) };
+  delete incomingClean._changedKeys;
+  delete incomingClean._opId;
+
+  // Strictly read master_state from the live server (never from stale cache!)
+  const masterRead = await readDocServerOnly(CLOUD_DOC_PATH.id);
+  assertServerReadForWrite(CLOUD_DOC_PATH.id, masterRead);
+  const remoteRaw: Record<string, any> = masterRead.data || {};
+
+  const mergedDeletedEntities = isFullReplace
+    ? incomingClean._deletedEntities || {}
+    : mergeDeletedEntities(remoteRaw._deletedEntities, incomingClean._deletedEntities);
+
+  const needsDaily = isAllDocs || keySet.has('dailyRecords') || Array.isArray(remoteRaw.dailyRecords);
+  const needsAttendance =
+    isAllDocs || keySet.has('attendanceRecords') || Array.isArray(remoteRaw.attendanceRecords);
+  const needsSubmissions =
+    isAllDocs ||
+    keySet.has('studentAtqiniSubmissions') ||
+    keySet.has('studentChallengeSubmissions') ||
+    Array.isArray(remoteRaw.studentAtqiniSubmissions) ||
+    Array.isArray(remoteRaw.studentChallengeSubmissions);
+  const needsSubsLogs =
+    isAllDocs ||
+    keySet.has('studentSubscriptions') ||
+    keySet.has('auditLogs') ||
+    Array.isArray(remoteRaw.studentSubscriptions) ||
+    Array.isArray(remoteRaw.auditLogs);
+
+  let verifiedDailyShardCount = -1;
+  let verifiedAttendanceShardCount = -1;
+  let verifiedAtqiniShardCount = -1;
+  let verifiedChallengesShardCount = -1;
+  let verifiedSubsShardCount = -1;
+  let verifiedLogsShardCount = -1;
+
+  const shardWrites: Promise<void>[] = [];
+  if (needsDaily) {
+    shardWrites.push(
+      syncDailyShards(
+        Array.isArray(incomingClean.dailyRecords) ? incomingClean.dailyRecords : [],
+        Array.isArray(remoteRaw.dailyRecords) ? remoteRaw.dailyRecords : [],
+        mergedDeletedEntities.dailyRecords || [],
+        isFullReplace,
+        opId
+      ).then(count => {
+        verifiedDailyShardCount = count;
+      })
+    );
+  }
+  if (needsAttendance) {
+    shardWrites.push(
+      syncAttendanceShards(
+        Array.isArray(incomingClean.attendanceRecords) ? incomingClean.attendanceRecords : [],
+        Array.isArray(remoteRaw.attendanceRecords) ? remoteRaw.attendanceRecords : [],
+        mergedDeletedEntities.attendanceRecords || [],
+        isFullReplace,
+        opId
+      ).then(count => {
+        verifiedAttendanceShardCount = count;
+      })
+    );
+  }
+  if (needsSubmissions) {
+    shardWrites.push(
+      syncSubmissionsShard(
+        Array.isArray(incomingClean.studentAtqiniSubmissions) ? incomingClean.studentAtqiniSubmissions : [],
+        Array.isArray(incomingClean.studentChallengeSubmissions) ? incomingClean.studentChallengeSubmissions : [],
+        Array.isArray(remoteRaw.studentAtqiniSubmissions) ? remoteRaw.studentAtqiniSubmissions : [],
+        Array.isArray(remoteRaw.studentChallengeSubmissions) ? remoteRaw.studentChallengeSubmissions : [],
+        mergedDeletedEntities,
+        isFullReplace,
+        opId
+      ).then(({ atqiniCount, challengesCount }) => {
+        verifiedAtqiniShardCount = atqiniCount;
+        verifiedChallengesShardCount = challengesCount;
+      })
+    );
+  }
+  if (needsSubsLogs) {
+    shardWrites.push(
+      syncSubscriptionsAndLogsShard(
+        Array.isArray(incomingClean.studentSubscriptions) ? incomingClean.studentSubscriptions : [],
+        Array.isArray(incomingClean.auditLogs) ? incomingClean.auditLogs : [],
+        Array.isArray(remoteRaw.studentSubscriptions) ? remoteRaw.studentSubscriptions : [],
+        Array.isArray(remoteRaw.auditLogs) ? remoteRaw.auditLogs : [],
+        mergedDeletedEntities,
+        isFullReplace,
+        opId
+      ).then(({ subsCount, logsCount }) => {
+        verifiedSubsShardCount = subsCount;
+        verifiedLogsShardCount = logsCount;
+      })
+    );
+  }
+
+  if (shardWrites.length > 0) {
+    await Promise.all(shardWrites);
+  }
+
+  const hasLegacyFieldsOnMaster =
+    'dailyRecords' in remoteRaw ||
+    'attendanceRecords' in remoteRaw ||
+    'studentAtqiniSubmissions' in remoteRaw ||
+    'studentChallengeSubmissions' in remoteRaw ||
+    'studentSubscriptions' in remoteRaw ||
+    'auditLogs' in remoteRaw ||
+    'staffOperations' in remoteRaw ||
+    'staffChatMessages' in remoteRaw ||
+    'deletedStaffChatIds' in remoteRaw ||
+    'pinnedStaffAnnouncement' in remoteRaw ||
+    'staffAttendanceRecords' in remoteRaw ||
+    Boolean(remoteRaw?.settings && 'staffOperations' in remoteRaw.settings);
+
+  const hasCoreChanges =
+    isAllDocs ||
+    keySet.has('_deletedEntities') ||
+    Array.from(keySet).some(k => !SHARDED_COLLECTION_KEYS.has(k));
+
+  if (!hasCoreChanges && !hasLegacyFieldsOnMaster) {
     return;
   }
 
-  await safeSetDoc(
-    SHARD_SUBSCRIPTIONS_LOGS_DOC_ID,
-    {
-      users: [],
-      shardType: 'subscriptionsAndLogs',
-      studentSubscriptions: deepCleanForFirestore(nextSubs),
-      auditLogs: deepCleanForFirestore(nextLogs),
-      updatedAt: new Date().toISOString()
-    },
-    false,
-    12000
-  );
+  // Commit master_state inside an atomic Firestore Server Transaction so concurrent core updates merge safely
+  await runServerDocTransaction({
+    docId: CLOUD_DOC_PATH.id,
+    opId: `${opId}_master`,
+    merge: !isFullReplace,
+    timeoutMs: 15000,
+    buildNext: (latestRemoteData) => {
+      const latestRemote = latestRemoteData || {};
+      const cleanedCore = buildMergedCorePayload(latestRemote, incomingClean);
+
+      if (isFullReplace) {
+        return {
+          skipWrite: false,
+          payload: cleanedCore
+        };
+      }
+
+      let masterWritePayload: Record<string, any>;
+      if (!isAllDocs && changedKeys) {
+        masterWritePayload = { lastSyncedAt: cleanedCore.lastSyncedAt };
+        if (keySet.has('_deletedEntities') || Object.keys(incomingClean._deletedEntities || {}).length > 0) {
+          if (cleanedCore._deletedEntities) {
+            masterWritePayload._deletedEntities = cleanedCore._deletedEntities;
+          }
+        }
+
+        for (const k of keySet) {
+          if (
+            k === 'staffOperations' ||
+            k === 'lastSyncedAt' ||
+            k === '_deletedEntities' ||
+            SHARDED_COLLECTION_KEYS.has(k)
+          ) {
+            continue;
+          }
+          if (k === 'settings' && cleanedCore.settings && typeof cleanedCore.settings === 'object') {
+            const nextSettingsPatch: Record<string, any> = { ...cleanedCore.settings };
+            for (const imgField of ['logoUrl', 'sealImageUrl', 'leaderSignatureUrl']) {
+              if (
+                latestRemote?.settings?.[imgField] &&
+                nextSettingsPatch[imgField] === latestRemote.settings[imgField]
+              ) {
+                delete nextSettingsPatch[imgField];
+              }
+            }
+            nextSettingsPatch.staffProfiles = buildStaffProfilesPatch(
+              cleanedCore.settings.staffProfiles || {},
+              latestRemote?.settings?.staffProfiles
+            );
+            if (latestRemote?.settings && 'staffOperations' in latestRemote.settings) {
+              nextSettingsPatch.staffOperations = deleteField();
+            }
+            masterWritePayload.settings = nextSettingsPatch;
+          } else if (cleanedCore[k] !== undefined) {
+            masterWritePayload[k] = cleanedCore[k];
+          }
+        }
+      } else {
+        masterWritePayload = {
+          ...cleanedCore,
+          settings: {
+            ...(cleanedCore.settings || {}),
+            staffProfiles: buildStaffProfilesPatch(
+              cleanedCore.settings?.staffProfiles || {},
+              latestRemote?.settings?.staffProfiles
+            ),
+            ...(latestRemote?.settings && 'staffOperations' in latestRemote.settings
+              ? { staffOperations: deleteField() }
+              : {})
+          }
+        };
+      }
+
+      // Only clean legacy sharded arrays from master_state AFTER verifying their target shards committed
+      // at least as many deduplicated records as existed on master_state (Section 6 safety rule)
+      if (
+        needsDaily &&
+        'dailyRecords' in latestRemote &&
+        verifiedDailyShardCount >=
+          deduplicateDailyRecords(Array.isArray(latestRemote.dailyRecords) ? latestRemote.dailyRecords : []).length
+      ) {
+        masterWritePayload.dailyRecords = deleteField();
+      }
+      if (
+        needsAttendance &&
+        'attendanceRecords' in latestRemote &&
+        verifiedAttendanceShardCount >=
+          deduplicateAttendanceRecords(
+            Array.isArray(latestRemote.attendanceRecords) ? latestRemote.attendanceRecords : []
+          ).length
+      ) {
+        masterWritePayload.attendanceRecords = deleteField();
+      }
+      if (
+        needsSubmissions &&
+        'studentAtqiniSubmissions' in latestRemote &&
+        verifiedAtqiniShardCount >=
+          deduplicateAtqiniSubmissions(
+            Array.isArray(latestRemote.studentAtqiniSubmissions) ? latestRemote.studentAtqiniSubmissions : []
+          ).length
+      ) {
+        masterWritePayload.studentAtqiniSubmissions = deleteField();
+      }
+      if (
+        needsSubmissions &&
+        'studentChallengeSubmissions' in latestRemote &&
+        verifiedChallengesShardCount >=
+          deduplicateChallengeSubmissions(
+            Array.isArray(latestRemote.studentChallengeSubmissions)
+              ? latestRemote.studentChallengeSubmissions
+              : []
+          ).length
+      ) {
+        masterWritePayload.studentChallengeSubmissions = deleteField();
+      }
+      if (
+        needsSubsLogs &&
+        'studentSubscriptions' in latestRemote &&
+        verifiedSubsShardCount >=
+          (Array.isArray(latestRemote.studentSubscriptions) ? latestRemote.studentSubscriptions.length : 0)
+      ) {
+        masterWritePayload.studentSubscriptions = deleteField();
+      }
+      if (needsSubsLogs && 'auditLogs' in latestRemote && verifiedLogsShardCount >= 0) {
+        masterWritePayload.auditLogs = deleteField();
+      }
+      if ('staffOperations' in latestRemote) masterWritePayload.staffOperations = deleteField();
+      if ('staffChatMessages' in latestRemote) masterWritePayload.staffChatMessages = deleteField();
+      if ('deletedStaffChatIds' in latestRemote) masterWritePayload.deletedStaffChatIds = deleteField();
+      if ('pinnedStaffAnnouncement' in latestRemote) masterWritePayload.pinnedStaffAnnouncement = deleteField();
+      if ('staffAttendanceRecords' in latestRemote) masterWritePayload.staffAttendanceRecords = deleteField();
+
+      return {
+        skipWrite: false,
+        payload: masterWritePayload
+      };
+    }
+  });
+};
+
+/**
+ * Flushes any queued offline operations from `pendingSyncQueue` in FIFO order once online.
+ */
+export const flushPendingCloudQueue = async (): Promise<{
+  flushedCount: number;
+  remainingCount: number;
+  errors: string[];
+}> => {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return {
+      flushedCount: 0,
+      remainingCount: pendingSyncQueue.size(),
+      errors: ['OFFLINE']
+    };
+  }
+  if (pendingSyncQueue.size() === 0) {
+    return { flushedCount: 0, remainingCount: 0, errors: [] };
+  }
+
+  return enqueueCloudWrite(async () => {
+    return await pendingSyncQueue.flush(async (op: PendingSyncOperation) => {
+      await executeCloudStatePushInternal(
+        {
+          ...op.payload,
+          ...(op.isFullReplace ? { _replaceState: true } : { _changedKeys: op.changedKeys })
+        },
+        op.opId
+      );
+    });
+  });
 };
 
 /**
  * Merges and persists changed portions of the application state into Firestore's sharded
- * `institution_database` documents (`master_state` + scoped shard docs), keeping `master_state`
- * lightweight (~75 KB) and eliminating 1 MiB ceiling and transaction contention failures.
+ * `institution_database` documents (`master_state` + scoped shard docs) using server-verified
+ * transactions and an offline-first Pending Sync Queue.
  */
-export const pushStateToCloud = async (statePayload: any): Promise<void> => {
+export const pushStateToCloud = async (
+  statePayload: any
+): Promise<{ cloudSynced: boolean; queuedOffline: boolean; opId: string }> => {
+  const opId: string =
+    typeof statePayload?._opId === 'string' && statePayload._opId
+      ? statePayload._opId
+      : createOperationId('sync');
+
+  const isFullReplace = Boolean(statePayload?._replaceState);
+  const changedKeys: string[] =
+    !isFullReplace && Array.isArray(statePayload?._changedKeys) && statePayload._changedKeys.length > 0
+      ? statePayload._changedKeys.map(String)
+      : ['__FULL__'];
+
+  // Extract only the changed collections for a compact pending queue entry
+  const buildQueueSnapshot = () => {
+    if (isFullReplace || changedKeys.includes('__FULL__')) {
+      const fullCopy = { ...(statePayload || {}) };
+      delete fullCopy._changedKeys;
+      delete fullCopy._opId;
+      return fullCopy;
+    }
+    const partial: Record<string, any> = {
+      _deletedEntities: statePayload?._deletedEntities || {}
+    };
+    for (const k of changedKeys) {
+      if (statePayload && k in statePayload) {
+        partial[k] = statePayload[k];
+      }
+    }
+    return partial;
+  };
+
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    pendingSyncQueue.enqueue({
+      opId,
+      changedKeys,
+      isFullReplace,
+      payload: buildQueueSnapshot()
+    });
+    return {
+      cloudSynced: false,
+      queuedOffline: true,
+      opId
+    };
+  }
+
   return enqueueCloudWrite(async () => {
-    const isFullReplace = Boolean(statePayload?._replaceState);
-    const changedKeys: string[] | null =
-      !isFullReplace && Array.isArray(statePayload?._changedKeys) && statePayload._changedKeys.length > 0
-        ? statePayload._changedKeys.map(String)
-        : null;
-
-    const isAllDocs = isFullReplace || !changedKeys || changedKeys.includes('__FULL__');
-    const keySet = new Set(changedKeys || []);
-    if (keySet.has('staffOperations')) keySet.add('settings');
-
-    const incomingClean = { ...(statePayload || {}) };
-    delete incomingClean._changedKeys;
-
-    const masterRead = await readDocServerThenCache(CLOUD_DOC_PATH.id, true);
-    const remoteRaw: Record<string, any> = masterRead.data || {};
-    const isOfflineNow = typeof navigator !== 'undefined' && navigator.onLine === false;
-
-    // Safety guard: never overwrite an unknown server doc against `{}` on slow online timeout
-    if (!isFullReplace && !masterRead.exists && !masterRead.fromServer && !isOfflineNow) {
-      throw new Error('CLOUD_MASTER_STATE_UNREACHABLE');
-    }
-
-    const mergedDeletedEntities = isFullReplace
-      ? incomingClean._deletedEntities || {}
-      : mergeDeletedEntities(remoteRaw._deletedEntities, incomingClean._deletedEntities);
-
-    const needsDaily = isAllDocs || keySet.has('dailyRecords') || Array.isArray(remoteRaw.dailyRecords);
-    const needsAttendance =
-      isAllDocs || keySet.has('attendanceRecords') || Array.isArray(remoteRaw.attendanceRecords);
-    const needsSubmissions =
-      isAllDocs ||
-      keySet.has('studentAtqiniSubmissions') ||
-      keySet.has('studentChallengeSubmissions') ||
-      Array.isArray(remoteRaw.studentAtqiniSubmissions) ||
-      Array.isArray(remoteRaw.studentChallengeSubmissions);
-    const needsSubsLogs =
-      isAllDocs ||
-      keySet.has('studentSubscriptions') ||
-      keySet.has('auditLogs') ||
-      Array.isArray(remoteRaw.studentSubscriptions) ||
-      Array.isArray(remoteRaw.auditLogs);
-
-    const shardWrites: Promise<void>[] = [];
-    if (needsDaily) {
-      shardWrites.push(
-        syncDailyShards(
-          Array.isArray(incomingClean.dailyRecords) ? incomingClean.dailyRecords : [],
-          Array.isArray(remoteRaw.dailyRecords) ? remoteRaw.dailyRecords : [],
-          mergedDeletedEntities.dailyRecords || [],
-          isFullReplace
-        )
-      );
-    }
-    if (needsAttendance) {
-      shardWrites.push(
-        syncAttendanceShards(
-          Array.isArray(incomingClean.attendanceRecords) ? incomingClean.attendanceRecords : [],
-          Array.isArray(remoteRaw.attendanceRecords) ? remoteRaw.attendanceRecords : [],
-          mergedDeletedEntities.attendanceRecords || [],
-          isFullReplace
-        )
-      );
-    }
-    if (needsSubmissions) {
-      shardWrites.push(
-        syncSubmissionsShard(
-          Array.isArray(incomingClean.studentAtqiniSubmissions) ? incomingClean.studentAtqiniSubmissions : [],
-          Array.isArray(incomingClean.studentChallengeSubmissions) ? incomingClean.studentChallengeSubmissions : [],
-          Array.isArray(remoteRaw.studentAtqiniSubmissions) ? remoteRaw.studentAtqiniSubmissions : [],
-          Array.isArray(remoteRaw.studentChallengeSubmissions) ? remoteRaw.studentChallengeSubmissions : [],
-          mergedDeletedEntities,
-          isFullReplace
-        )
-      );
-    }
-    if (needsSubsLogs) {
-      shardWrites.push(
-        syncSubscriptionsAndLogsShard(
-          Array.isArray(incomingClean.studentSubscriptions) ? incomingClean.studentSubscriptions : [],
-          Array.isArray(incomingClean.auditLogs) ? incomingClean.auditLogs : [],
-          Array.isArray(remoteRaw.studentSubscriptions) ? remoteRaw.studentSubscriptions : [],
-          Array.isArray(remoteRaw.auditLogs) ? remoteRaw.auditLogs : [],
-          mergedDeletedEntities,
-          isFullReplace
-        )
-      );
-    }
-
-    if (shardWrites.length > 0) {
-      await Promise.all(shardWrites);
-    }
-
-    const hasLegacyFieldsOnMaster =
-      'dailyRecords' in remoteRaw ||
-      'attendanceRecords' in remoteRaw ||
-      'studentAtqiniSubmissions' in remoteRaw ||
-      'studentChallengeSubmissions' in remoteRaw ||
-      'studentSubscriptions' in remoteRaw ||
-      'auditLogs' in remoteRaw ||
-      'staffOperations' in remoteRaw ||
-      'staffChatMessages' in remoteRaw ||
-      'deletedStaffChatIds' in remoteRaw ||
-      'pinnedStaffAnnouncement' in remoteRaw ||
-      'staffAttendanceRecords' in remoteRaw ||
-      Boolean(remoteRaw?.settings && 'staffOperations' in remoteRaw.settings);
-
-    const hasCoreChanges =
-      isAllDocs ||
-      keySet.has('_deletedEntities') ||
-      Array.from(keySet).some(k => !SHARDED_COLLECTION_KEYS.has(k));
-
-    if (!hasCoreChanges && !hasLegacyFieldsOnMaster) {
-      return;
-    }
-
-    const cleanedCore = buildMergedCorePayload(remoteRaw, incomingClean);
-
-    let masterWritePayload: Record<string, any>;
-    if (!isAllDocs && changedKeys) {
-      masterWritePayload = { lastSyncedAt: cleanedCore.lastSyncedAt };
-      if (keySet.has('_deletedEntities') || Object.keys(incomingClean._deletedEntities || {}).length > 0) {
-        if (cleanedCore._deletedEntities) {
-          masterWritePayload._deletedEntities = cleanedCore._deletedEntities;
-        }
-      }
-
-      for (const k of keySet) {
-        if (
-          k === 'staffOperations' ||
-          k === 'lastSyncedAt' ||
-          k === '_deletedEntities' ||
-          SHARDED_COLLECTION_KEYS.has(k)
-        ) {
-          continue;
-        }
-        if (k === 'settings' && cleanedCore.settings && typeof cleanedCore.settings === 'object') {
-          const nextSettingsPatch: Record<string, any> = { ...cleanedCore.settings };
-          for (const imgField of ['logoUrl', 'sealImageUrl', 'leaderSignatureUrl']) {
-            if (remoteRaw?.settings?.[imgField] && nextSettingsPatch[imgField] === remoteRaw.settings[imgField]) {
-              delete nextSettingsPatch[imgField];
-            }
-          }
-          nextSettingsPatch.staffProfiles = buildStaffProfilesPatch(
-            cleanedCore.settings.staffProfiles || {},
-            remoteRaw?.settings?.staffProfiles
+    try {
+      // First flush any earlier queued operations in causal FIFO order
+      if (pendingSyncQueue.size() > 0) {
+        const flushRes = await pendingSyncQueue.flush(async (queuedOp: PendingSyncOperation) => {
+          await executeCloudStatePushInternal(
+            {
+              ...queuedOp.payload,
+              ...(queuedOp.isFullReplace
+                ? { _replaceState: true }
+                : { _changedKeys: queuedOp.changedKeys })
+            },
+            queuedOp.opId
           );
-          if (remoteRaw?.settings && 'staffOperations' in remoteRaw.settings) {
-            nextSettingsPatch.staffOperations = deleteField();
-          }
-          masterWritePayload.settings = nextSettingsPatch;
-        } else if (cleanedCore[k] !== undefined) {
-          masterWritePayload[k] = cleanedCore[k];
+        });
+        if (flushRes.remainingCount > 0) {
+          // Queue still blocked by error; enqueue current operation after existing queue
+          pendingSyncQueue.enqueue({
+            opId,
+            changedKeys,
+            isFullReplace,
+            payload: buildQueueSnapshot()
+          });
+          return {
+            cloudSynced: false,
+            queuedOffline: true,
+            opId
+          };
         }
       }
-    } else {
-      masterWritePayload = {
-        ...cleanedCore,
-        settings: {
-          ...(cleanedCore.settings || {}),
-          staffProfiles: buildStaffProfilesPatch(
-            cleanedCore.settings?.staffProfiles || {},
-            remoteRaw?.settings?.staffProfiles
-          ),
-          ...(remoteRaw?.settings && 'staffOperations' in remoteRaw.settings
-            ? { staffOperations: deleteField() }
-            : {})
-        }
+
+      await executeCloudStatePushInternal(statePayload, opId);
+      pendingSyncQueue.markSuccess(opId);
+      return {
+        cloudSynced: true,
+        queuedOffline: false,
+        opId
       };
+    } catch (err) {
+      if (isTransientOrOfflineError(err)) {
+        pendingSyncQueue.enqueue({
+          opId,
+          changedKeys,
+          isFullReplace,
+          payload: buildQueueSnapshot()
+        });
+        return {
+          cloudSynced: false,
+          queuedOffline: true,
+          opId
+        };
+      }
+      throw err;
     }
-
-    // Delete any legacy sharded or bloat fields from master_state now that their shards are synced
-    if (needsDaily && 'dailyRecords' in remoteRaw) masterWritePayload.dailyRecords = deleteField();
-    if (needsAttendance && 'attendanceRecords' in remoteRaw) masterWritePayload.attendanceRecords = deleteField();
-    if (needsSubmissions && 'studentAtqiniSubmissions' in remoteRaw) {
-      masterWritePayload.studentAtqiniSubmissions = deleteField();
-    }
-    if (needsSubmissions && 'studentChallengeSubmissions' in remoteRaw) {
-      masterWritePayload.studentChallengeSubmissions = deleteField();
-    }
-    if (needsSubsLogs && 'studentSubscriptions' in remoteRaw) {
-      masterWritePayload.studentSubscriptions = deleteField();
-    }
-    if (needsSubsLogs && 'auditLogs' in remoteRaw) masterWritePayload.auditLogs = deleteField();
-    if ('staffOperations' in remoteRaw) masterWritePayload.staffOperations = deleteField();
-    if ('staffChatMessages' in remoteRaw) masterWritePayload.staffChatMessages = deleteField();
-    if ('deletedStaffChatIds' in remoteRaw) masterWritePayload.deletedStaffChatIds = deleteField();
-    if ('pinnedStaffAnnouncement' in remoteRaw) masterWritePayload.pinnedStaffAnnouncement = deleteField();
-    if ('staffAttendanceRecords' in remoteRaw) masterWritePayload.staffAttendanceRecords = deleteField();
-    if (!isFullReplace && remoteRaw?.settings && 'staffOperations' in remoteRaw.settings && !masterWritePayload.settings) {
-      masterWritePayload.settings = { staffOperations: deleteField() };
-    }
-
-    await safeSetDoc(CLOUD_DOC_PATH.id, masterWritePayload, !isFullReplace, 15000);
   });
 };

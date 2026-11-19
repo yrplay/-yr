@@ -781,16 +781,16 @@ export const StaffAttendanceTasksView: React.FC = () => {
           role="status"
           aria-live="polite"
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold ${
-            cloudStatus === 'connected'
+            cloudStatus === 'connected' || cloudStatus === 'synced'
               ? 'bg-[#EBF3EE] text-[#2D5A43] border-[#C5DEC9]'
-              : cloudStatus === 'syncing'
+              : cloudStatus === 'syncing' || cloudStatus === 'pending'
               ? 'bg-[#FFF8E8] text-[#8A5A12] border-[#EAD7A3]'
               : cloudStatus === 'error' || cloudStatus === 'offline'
               ? 'bg-[#FCEDEC] text-[#9B2C2C] border-[#E7B9B6]'
               : 'bg-[#FAF6F3] text-[#7B3F30] border-[#E5C3B3]'
           }`}
         >
-          {cloudStatus === 'connected' ? (
+          {cloudStatus === 'connected' || cloudStatus === 'synced' ? (
             <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
           ) : cloudStatus === 'syncing' ? (
             <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin" />
@@ -798,10 +798,12 @@ export const StaffAttendanceTasksView: React.FC = () => {
             <AlertCircle className="w-3.5 h-3.5 shrink-0" />
           )}
           <span>
-            {cloudStatus === 'connected'
+            {cloudStatus === 'connected' || cloudStatus === 'synced'
               ? 'متصل ومحدّث سحابياً'
               : cloudStatus === 'syncing'
               ? 'جارٍ حفظ التغييرات سحابياً'
+              : cloudStatus === 'pending'
+              ? 'في قائمة الانتظار للمزامنة'
               : cloudStatus === 'offline'
               ? 'غير متصل — التغييرات محلية'
               : cloudStatus === 'error'

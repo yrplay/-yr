@@ -20,9 +20,364 @@ export const HIJRI_MONTHS = [
 
 export const HIJRI_YEARS = Array.from({ length: 16 }, (_, idx) => 1440 + idx); // 1440 هـ إلى 1455 هـ
 
+export const HIJRI_MIN_YEAR = 1356;
+export const HIJRI_MAX_YEAR = 1500;
+
+export class HijriConversionError extends Error {
+  readonly code:
+    | 'INVALID_HIJRI_INPUT'
+    | 'HIJRI_YEAR_OUT_OF_RANGE'
+    | 'HIJRI_MONTH_OUT_OF_RANGE'
+    | 'HIJRI_DAY_OUT_OF_RANGE'
+    | 'HIJRI_DAY_30_IN_29_DAY_MONTH'
+    | 'HIJRI_RESOLUTION_FAILED';
+  constructor(
+    code:
+      | 'INVALID_HIJRI_INPUT'
+      | 'HIJRI_YEAR_OUT_OF_RANGE'
+      | 'HIJRI_MONTH_OUT_OF_RANGE'
+      | 'HIJRI_DAY_OUT_OF_RANGE'
+      | 'HIJRI_DAY_30_IN_29_DAY_MONTH'
+      | 'HIJRI_RESOLUTION_FAILED',
+    message: string
+  ) {
+    super(message);
+    this.name = 'HijriConversionError';
+    this.code = code;
+  }
+}
+
+const ummAlQuraNumericFormatter = new Intl.DateTimeFormat('en-u-ca-islamic-umalqura-nu-latn', {
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric'
+});
+
+const extractRawUmmAlQuraParts = (d: Date): { year: number; month: number; day: number } => {
+  const parts = ummAlQuraNumericFormatter.formatToParts(d);
+  return {
+    year: Number(parts.find(p => p.type === 'year')?.value || 0),
+    month: Number(parts.find(p => p.type === 'month')?.value || 0),
+    day: Number(parts.find(p => p.type === 'day')?.value || 0)
+  };
+};
+
+// Memoized cache mapping "hYear-hMonth-hDay" -> "YYYY-MM-DD" for 100% deterministic resolution
+const hijriToGregorianIsoCache = new Map<string, string>();
+const hijriMonthLengthCache = new Map<string, number>();
+
+const formatLocalNoonIso = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const createLocalNoonDateFromIso = (iso: string): Date => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d, 12, 0, 0, 0);
+};
+
+/**
+ * Finds the exact Gregorian Date (at local 12:00 noon) corresponding to a given Umm al-Qura
+ * `(hYear, hMonth, hDay)` tuple, or returns `null` if no such date exists in Umm al-Qura
+ * (e.g., Day 30 in a 29-day lunar month). Never returns an approximate fallback date.
+ */
+const findExactUmmAlQuraGregorianDate = (
+  hYear: number,
+  hMonth: number,
+  hDay: number
+): Date | null => {
+  if (
+    !Number.isInteger(hYear) ||
+    !Number.isInteger(hMonth) ||
+    !Number.isInteger(hDay) ||
+    hYear < HIJRI_MIN_YEAR ||
+    hYear > HIJRI_MAX_YEAR ||
+    hMonth < 1 ||
+    hMonth > 12 ||
+    hDay < 1 ||
+    hDay > 30
+  ) {
+    return null;
+  }
+
+  const cacheKey = `${hYear}-${hMonth}-${hDay}`;
+  const cachedIso = hijriToGregorianIsoCache.get(cacheKey);
+  if (cachedIso) {
+    return createLocalNoonDateFromIso(cachedIso);
+  }
+
+  // Astronomical mean lunar synodic estimate anchored at 1448-06-08 AH == 2026-11-18 CE
+  const approxDays = (hYear - 1448) * 354.36707 + (hMonth - 6) * 29.530588 + (hDay - 8);
+  const base = new Date(2026, 10, 18, 12, 0, 0, 0);
+  base.setDate(base.getDate() + Math.round(approxDays));
+  base.setHours(12, 0, 0, 0);
+
+  // Search outward from 0 up to ±75 days so that closest candidates are checked first
+  // and multi-decade lunar drift is always covered within bounds
+  for (let radius = 0; radius <= 75; radius++) {
+    const offsets = radius === 0 ? [0] : [-radius, radius];
+    for (const offset of offsets) {
+      const cand = new Date(base.getFullYear(), base.getMonth(), base.getDate() + offset, 12, 0, 0, 0);
+      const { year: cy, month: cm, day: cd } = extractRawUmmAlQuraParts(cand);
+      if (cy === hYear && cm === hMonth && cd === hDay) {
+        const iso = formatLocalNoonIso(cand);
+        hijriToGregorianIsoCache.set(cacheKey, iso);
+        return cand;
+      }
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Returns the exact number of days (29 or 30) in a Hijri month `(hYear, hMonth)` according to Umm al-Qura.
+ */
+export const getHijriMonthLength = (hYear: number, hMonth: number): number => {
+  if (
+    !Number.isInteger(hYear) ||
+    !Number.isInteger(hMonth) ||
+    hYear < HIJRI_MIN_YEAR ||
+    hYear > HIJRI_MAX_YEAR ||
+    hMonth < 1 ||
+    hMonth > 12
+  ) {
+    throw new HijriConversionError(
+      'INVALID_HIJRI_INPUT',
+      `مدخلات الشهر أو السنة الهجرية غير صالحة (${hYear}-${hMonth}).`
+    );
+  }
+  const key = `${hYear}-${hMonth}`;
+  const cached = hijriMonthLengthCache.get(key);
+  if (cached) return cached;
+
+  const day30 = findExactUmmAlQuraGregorianDate(hYear, hMonth, 30);
+  const length = day30 ? 30 : 29;
+  hijriMonthLengthCache.set(key, length);
+  return length;
+};
+
+/**
+ * Returns the total number of days (354 or 355) in a Hijri year in the Umm al-Qura calendar.
+ */
+export const getHijriYearTotalDays = (hYear: number): number => {
+  if (!Number.isInteger(hYear) || hYear < HIJRI_MIN_YEAR || hYear > HIJRI_MAX_YEAR) {
+    throw new HijriConversionError(
+      'HIJRI_YEAR_OUT_OF_RANGE',
+      `السنة الهجرية (${hYear}) خارج النطاق المعتمد (${HIJRI_MIN_YEAR} - ${HIJRI_MAX_YEAR} هـ).`
+    );
+  }
+  let total = 0;
+  for (let m = 1; m <= 12; m++) {
+    total += getHijriMonthLength(hYear, m);
+  }
+  return total;
+};
+
+/**
+ * Determines whether a Hijri year is a 355-day leap year (سنة هجرية كبيسة) in the Umm al-Qura calendar.
+ */
+export const isHijriLeapYear = (hYear: number): boolean => {
+  return getHijriYearTotalDays(hYear) === 355;
+};
+
+/**
+ * Validates Hijri `(year, month, day)` inputs and checks Umm al-Qura month boundaries.
+ */
+export const validateHijriDateParts = (
+  hYear: number,
+  hMonth: number,
+  hDay: number,
+  options?: { strictMonthLength?: boolean }
+): {
+  valid: boolean;
+  maxDayInMonth: number;
+  errorCode?: HijriConversionError['code'];
+  errorMessage?: string;
+} => {
+  if (
+    typeof hYear !== 'number' ||
+    typeof hMonth !== 'number' ||
+    typeof hDay !== 'number' ||
+    !Number.isInteger(hYear) ||
+    !Number.isInteger(hMonth) ||
+    !Number.isInteger(hDay)
+  ) {
+    return {
+      valid: false,
+      maxDayInMonth: 30,
+      errorCode: 'INVALID_HIJRI_INPUT',
+      errorMessage: 'يجب أن تكون السنة والشهر واليوم أعداداً صحيحة.'
+    };
+  }
+  if (hYear < HIJRI_MIN_YEAR || hYear > HIJRI_MAX_YEAR) {
+    return {
+      valid: false,
+      maxDayInMonth: 30,
+      errorCode: 'HIJRI_YEAR_OUT_OF_RANGE',
+      errorMessage: `السنة الهجرية (${hYear}) خارج النطاق المعتمد (${HIJRI_MIN_YEAR} إلى ${HIJRI_MAX_YEAR} هـ).`
+    };
+  }
+  if (hMonth < 1 || hMonth > 12) {
+    return {
+      valid: false,
+      maxDayInMonth: 30,
+      errorCode: 'HIJRI_MONTH_OUT_OF_RANGE',
+      errorMessage: `رقم الشهر الهجري (${hMonth}) غير صالح؛ يجب أن يكون بين ١ و ١٢.`
+    };
+  }
+  if (hDay < 1 || hDay > 30) {
+    return {
+      valid: false,
+      maxDayInMonth: 30,
+      errorCode: 'HIJRI_DAY_OUT_OF_RANGE',
+      errorMessage: `رقم اليوم الهجري (${hDay}) غير صالح؛ يجب أن يكون بين ١ و ٣٠.`
+    };
+  }
+
+  const maxDayInMonth = getHijriMonthLength(hYear, hMonth);
+  const strictLength = options?.strictMonthLength ?? true;
+  if (strictLength && hDay > maxDayInMonth) {
+    const monthName = HIJRI_MONTHS[hMonth - 1] || String(hMonth);
+    return {
+      valid: false,
+      maxDayInMonth,
+      errorCode: 'HIJRI_DAY_30_IN_29_DAY_MONTH',
+      errorMessage: `شهر ${monthName} ${hYear} هـ يتكون من ٢٩ يوماً فقط في تقويم أم القرى ولا يحتوي على يوم ٣٠.`
+    };
+  }
+
+  return { valid: true, maxDayInMonth };
+};
+
+/**
+ * Strictly converts a Hijri `(hYear, hMonth, hDay)` to its exact Gregorian `Date` at local noon.
+ * Throws `HijriConversionError` if the input is out of range or invalid (never returns a wrong approximate fallback).
+ * When `options.allowClampDay30` is explicitly set to `true` (for reading legacy tabular 30-day join dates),
+ * day 30 in a 29-day Umm al-Qura month is safely clamped to day 29 of that month.
+ */
+export const resolveHijriToGregorianStrict = (
+  hYear: number,
+  hMonth: number,
+  hDay: number,
+  options?: { allowClampDay30?: boolean }
+): Date => {
+  const allowClamp = options?.allowClampDay30 === true;
+  const validation = validateHijriDateParts(hYear, hMonth, hDay, {
+    strictMonthLength: !allowClamp
+  });
+  if (!validation.valid) {
+    throw new HijriConversionError(
+      validation.errorCode || 'INVALID_HIJRI_INPUT',
+      validation.errorMessage || 'تاريخ هجري غير صالح.'
+    );
+  }
+
+  const effectiveDay = allowClamp ? Math.min(hDay, validation.maxDayInMonth) : hDay;
+  const exact = findExactUmmAlQuraGregorianDate(hYear, hMonth, effectiveDay);
+  if (!exact) {
+    throw new HijriConversionError(
+      'HIJRI_RESOLUTION_FAILED',
+      `تعذر تحويل التاريخ الهجري (${hYear}-${hMonth}-${hDay}) إلى التاريخ الميلادي المقابل في تقويم أم القرى.`
+    );
+  }
+  return exact;
+};
+
+/**
+ * Non-throwing structured resolver for Hijri dates (`1448-06-08` or `{ year, month, day }`).
+ */
+export const tryResolveHijriToGregorian = (
+  input: string | { year: number; month: number; day: number },
+  options?: { allowClampDay30?: boolean }
+): {
+  ok: boolean;
+  date: Date | null;
+  iso: string | null;
+  clampedFromDay30: boolean;
+  errorCode?: HijriConversionError['code'];
+  errorMessage?: string;
+} => {
+  try {
+    let y: number;
+    let m: number;
+    let d: number;
+
+    if (typeof input === 'string') {
+      const normalized = input
+        .trim()
+        .replace(/[٠-٩]/g, ch => String(ch.charCodeAt(0) - 0x0660));
+      const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      if (!match) {
+        return {
+          ok: false,
+          date: null,
+          iso: null,
+          clampedFromDay30: false,
+          errorCode: 'INVALID_HIJRI_INPUT',
+          errorMessage: 'صيغة التاريخ الهجري غير صالحة؛ الصيغة المتوقعة YYYY-MM-DD.'
+        };
+      }
+      y = Number(match[1]);
+      m = Number(match[2]);
+      d = Number(match[3]);
+    } else if (input && typeof input === 'object') {
+      y = Number(input.year);
+      m = Number(input.month);
+      d = Number(input.day);
+    } else {
+      return {
+        ok: false,
+        date: null,
+        iso: null,
+        clampedFromDay30: false,
+        errorCode: 'INVALID_HIJRI_INPUT',
+        errorMessage: 'مدخل التاريخ الهجري فارغ أو غير صالح.'
+      };
+    }
+
+    const strictCheck = validateHijriDateParts(y, m, d, { strictMonthLength: true });
+    const clampedFromDay30 =
+      !strictCheck.valid &&
+      strictCheck.errorCode === 'HIJRI_DAY_30_IN_29_DAY_MONTH' &&
+      options?.allowClampDay30 === true;
+
+    const resolvedDate = resolveHijriToGregorianStrict(y, m, d, options);
+    return {
+      ok: true,
+      date: resolvedDate,
+      iso: formatLocalNoonIso(resolvedDate),
+      clampedFromDay30
+    };
+  } catch (err) {
+    if (err instanceof HijriConversionError) {
+      return {
+        ok: false,
+        date: null,
+        iso: null,
+        clampedFromDay30: false,
+        errorCode: err.code,
+        errorMessage: err.message
+      };
+    }
+    return {
+      ok: false,
+      date: null,
+      iso: null,
+      clampedFromDay30: false,
+      errorCode: 'HIJRI_RESOLUTION_FAILED',
+      errorMessage: err instanceof Error ? err.message : String(err)
+    };
+  }
+};
+
 export const parseHijriJoinDate = (input?: string): { year: number; month: number; day: number } => {
   if (typeof input === 'string') {
-    const trimmed = input.trim();
+    const trimmed = input
+      .trim()
+      .replace(/[٠-٩]/g, ch => String(ch.charCodeAt(0) - 0x0660));
     const directHijriMatch = trimmed.match(/^(14\d{2})-(\d{1,2})-(\d{1,2})$/);
     if (directHijriMatch) {
       const y = Math.min(1455, Math.max(1440, Number(directHijriMatch[1]) || 1448));
@@ -41,35 +396,11 @@ export const parseHijriJoinDate = (input?: string): { year: number; month: numbe
   return { year: 1448, month: 1, day: 1 };
 };
 
-const resolveHijriYmdToGregorianDate = (hYear: number, hMonth: number, hDay: number): Date => {
-  const numFmt = new Intl.DateTimeFormat('en-u-ca-islamic-umalqura-nu-latn', {
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric'
-  });
-  // Estimate Gregorian date from Hijri (year, month, day) and refine within ±45 days
-  const approxDays = (hYear - 1448) * 354.367 + (hMonth - 6) * 29.53 + (hDay - 8);
-  const base = new Date(2026, 10, 18, 12, 0, 0);
-  base.setDate(base.getDate() + Math.round(approxDays));
-  base.setHours(12, 0, 0, 0);
-
-  for (let offset = -45; offset <= 45; offset++) {
-    const cand = new Date(base);
-    cand.setDate(base.getDate() + offset);
-    cand.setHours(12, 0, 0, 0);
-    const parts = numFmt.formatToParts(cand);
-    const cy = Number(parts.find(p => p.type === 'year')?.value || 0);
-    const cm = Number(parts.find(p => p.type === 'month')?.value || 0);
-    const cd = Number(parts.find(p => p.type === 'day')?.value || 0);
-    if (cy === hYear && cm === hMonth && cd === hDay) {
-      return cand;
-    }
-  }
-  return base;
-};
-
-const parseDateInput = (input?: string | Date | number): Date | null => {
-  if (!input) return null;
+export const parseDateInput = (
+  input?: string | Date | number,
+  options?: { strictHijri?: boolean }
+): Date | null => {
+  if (input === undefined || input === null || input === '') return null;
   if (input instanceof Date) {
     if (isNaN(input.getTime())) return null;
     const copy = new Date(input);
@@ -77,6 +408,7 @@ const parseDateInput = (input?: string | Date | number): Date | null => {
     return copy;
   }
   if (typeof input === 'number') {
+    if (!Number.isFinite(input)) return null;
     const d = new Date(input);
     if (isNaN(d.getTime())) return null;
     d.setHours(12, 0, 0, 0);
@@ -87,17 +419,43 @@ const parseDateInput = (input?: string | Date | number): Date | null => {
     .replace(/[٠-٩]/g, ch => String(ch.charCodeAt(0) - 0x0660));
   if (!str) return null;
 
-  // Handle YYYY-MM-DD safely in local noon; if year is 1400..1500 (Hijri), convert via Umm al-Qura
+  // Handle YYYY-MM-DD safely in local noon; if year is Hijri vs Gregorian, validate calendar bounds
   const ymdMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (ymdMatch) {
     const y = Number(ymdMatch[1]);
     const m = Number(ymdMatch[2]);
     const d = Number(ymdMatch[3]);
-    if (y >= 1350 && y <= 1550) {
-      return resolveHijriYmdToGregorianDate(y, m, d);
+    if (y >= HIJRI_MIN_YEAR && y <= HIJRI_MAX_YEAR) {
+      const res = tryResolveHijriToGregorian(
+        { year: y, month: m, day: d },
+        { allowClampDay30: !options?.strictHijri }
+      );
+      if (!res.ok) {
+        if (options?.strictHijri) {
+          throw new HijriConversionError(
+            res.errorCode || 'INVALID_HIJRI_INPUT',
+            res.errorMessage || 'تاريخ هجري غير صالح.'
+          );
+        }
+        return null;
+      }
+      return res.date;
     }
-    const dt = new Date(y, m - 1, d, 12, 0, 0);
-    return isNaN(dt.getTime()) ? null : dt;
+    // Reject years below 1900 or above 2200 that are neither valid Hijri nor valid Gregorian
+    if (y < 1900 || y > 2200 || m < 1 || m > 12 || d < 1 || d > 31) {
+      return null;
+    }
+    const dt = new Date(y, m - 1, d, 12, 0, 0, 0);
+    // Reject overflow Gregorian dates such as 2026-02-30 (where JS Date rolls over to March)
+    if (
+      isNaN(dt.getTime()) ||
+      dt.getFullYear() !== y ||
+      dt.getMonth() !== m - 1 ||
+      dt.getDate() !== d
+    ) {
+      return null;
+    }
+    return dt;
   }
   const dt = new Date(str);
   if (isNaN(dt.getTime())) return null;

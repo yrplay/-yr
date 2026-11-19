@@ -12,6 +12,8 @@ import {
   pushStateToCloud,
   pushStaffUsersToCloudDirect,
   fetchCloudDatabaseOnce,
+  flushPendingCloudQueue,
+  getPendingSyncOperationsCount,
   CloudSyncStatus
 } from '../services/cloudSync';
 import {
@@ -21,7 +23,8 @@ import {
   deduplicateAtqiniSubmissions,
   deduplicateChallengeSubmissions,
   deduplicateAttendanceRecords,
-  deduplicateDailyRecords
+  deduplicateDailyRecords,
+  createOperationId
 } from '../services/cloudSyncHelpers';
 import { summarizeDailyPageProgress } from '../services/recitationProgress';
 import { getTodayISO } from '../utils/hijriDate';
@@ -209,7 +212,7 @@ interface AppContextType {
   saveExamResult: (result: Partial<StudentExamResult>) => Promise<void>;
   
   updateGradingConfig: (trackId: string, config: Partial<TrackGradingConfig>) => Promise<void>;
-  updateSettings: (settings: Partial<InstitutionSettings>, silent?: boolean) => Promise<void>;
+  updateSettings: (settings: Partial<InstitutionSettings>, silent?: boolean) => Promise<{ cloudSynced: boolean; queuedOffline: boolean }>;
   downloadBackup: () => void;
   restoreBackup: (backupData: any) => Promise<boolean>;
   resetSampleData: () => Promise<void>;
@@ -2175,7 +2178,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const persistState = (overrides?: any) => {
+  const persistState = (
+    overrides?: any
+  ): Promise<{ cloudSynced: boolean; queuedOffline: boolean; opId: string; error?: string }> => {
+    const opId = overrides?._opId || createOperationId('state');
     try {
       lastLocalMutationTimeRef.current = Date.now();
       hasPendingLocalChangesRef.current = true;
@@ -2282,6 +2288,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       delete rawPayload._replaceState;
       delete rawPayload._immediateSync;
       delete rawPayload._skipCloudPush;
+      delete rawPayload._opId;
 
       rawPayload.attendanceRecords = deduplicateAttendanceRecords(rawPayload.attendanceRecords);
       rawPayload.dailyRecords = deduplicateDailyRecords(rawPayload.dailyRecords);
@@ -2327,66 +2334,92 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (isLocalDemoMode) {
         hasPendingLocalChangesRef.current = false;
         setCloudStatus('offline');
-        return;
+        return Promise.resolve({ cloudSynced: false, queuedOffline: true, opId });
       }
       if (skipCloudPush) {
-        return;
+        return Promise.resolve({ cloudSynced: false, queuedOffline: false, opId });
       }
 
       if (replaceCloudState || !overrides || typeof overrides !== 'object') {
         pendingChangedKeysRef.current.add('__FULL__');
       } else {
         for (const k of Object.keys(overrides)) {
-          if (k === '_replaceState' || k === '_immediateSync' || k === '_skipCloudPush' || k === '_changedKeys') continue;
+          if (k === '_replaceState' || k === '_immediateSync' || k === '_skipCloudPush' || k === '_changedKeys' || k === '_opId') continue;
           pendingChangedKeysRef.current.add(k);
         }
         if (overrides.staffOperations) pendingChangedKeysRef.current.add('settings');
       }
 
-      const executePush = (attempt = 1) => {
-        const pushTimestamp = lastLocalMutationTimeRef.current;
-        const keysToSync = Array.from(pendingChangedKeysRef.current);
-        const pushPayload = replaceCloudState
-          ? { ...masterStateRef.current, _replaceState: true }
-          : { ...masterStateRef.current, _changedKeys: keysToSync };
-        pushStateToCloud(pushPayload)
-          .then(() => {
-            if (lastLocalMutationTimeRef.current === pushTimestamp) {
-              hasPendingLocalChangesRef.current = false;
-              pendingChangedKeysRef.current.clear();
-            }
-            setCloudStatus('connected');
-            setLastSynced(new Date());
-          })
-          .catch(error => {
-            console.warn('Cloud save failed:', error);
-            const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
-            setCloudStatus(isOffline ? 'offline' : 'error');
-            if (!isOffline && attempt < 2) {
-              setTimeout(() => {
-                if (lastLocalMutationTimeRef.current === pushTimestamp) {
-                  executePush(attempt + 1);
+      return new Promise(resolve => {
+        const executePush = (attempt = 1) => {
+          const pushTimestamp = lastLocalMutationTimeRef.current;
+          const keysToSync = Array.from(pendingChangedKeysRef.current);
+          const pushPayload = replaceCloudState
+            ? { ...masterStateRef.current, _replaceState: true, _opId: opId }
+            : { ...masterStateRef.current, _changedKeys: keysToSync, _opId: opId };
+
+          setCloudStatus(
+            typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'syncing'
+          );
+
+          pushStateToCloud(pushPayload)
+            .then(res => {
+              if (res.cloudSynced) {
+                if (lastLocalMutationTimeRef.current === pushTimestamp && getPendingSyncOperationsCount() === 0) {
+                  hasPendingLocalChangesRef.current = false;
+                  pendingChangedKeysRef.current.clear();
                 }
-              }, 4000);
-              return;
-            }
-            // Clear pending flag after 2s so incoming cloud updates are never permanently blocked on mobile
-            setTimeout(() => {
-              hasPendingLocalChangesRef.current = false;
-            }, 2000);
-          });
-      };
+                setCloudStatus(getPendingSyncOperationsCount() > 0 ? 'pending' : 'connected');
+                setLastSynced(new Date());
+                resolve({ cloudSynced: true, queuedOffline: false, opId: res.opId });
+              } else {
+                const isOfflineNow = typeof navigator !== 'undefined' && navigator.onLine === false;
+                hasPendingLocalChangesRef.current = true;
+                setCloudStatus(isOfflineNow ? 'offline' : 'pending');
+                resolve({ cloudSynced: false, queuedOffline: true, opId: res.opId });
+              }
+            })
+            .catch(error => {
+              console.warn('Cloud save failed:', error);
+              const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+              if (!isOffline && attempt < 2) {
+                setTimeout(() => {
+                  if (lastLocalMutationTimeRef.current === pushTimestamp) {
+                    executePush(attempt + 1);
+                  } else {
+                    resolve({ cloudSynced: false, queuedOffline: getPendingSyncOperationsCount() > 0, opId });
+                  }
+                }, 2500);
+                return;
+              }
+              const hasQueued = getPendingSyncOperationsCount() > 0;
+              hasPendingLocalChangesRef.current = hasQueued;
+              setCloudStatus(isOffline ? 'offline' : hasQueued ? 'pending' : 'error');
+              resolve({
+                cloudSynced: false,
+                queuedOffline: hasQueued,
+                opId,
+                error: error?.message || String(error)
+              });
+            });
+        };
 
-      if (immediateSync) {
-        executePush();
-      } else {
-        syncTimeoutRef.current = setTimeout(executePush, 350);
-      }
-
-    } catch (e) {
-      hasPendingLocalChangesRef.current = false;
+        if (immediateSync) {
+          executePush();
+        } else {
+          syncTimeoutRef.current = setTimeout(executePush, 350);
+        }
+      });
+    } catch (e: any) {
+      hasPendingLocalChangesRef.current = getPendingSyncOperationsCount() > 0;
       console.error('Unable to build local/cloud state payload:', e);
       setCloudStatus('error');
+      return Promise.resolve({
+        cloudSynced: false,
+        queuedOffline: false,
+        opId,
+        error: e?.message || String(e)
+      });
     }
   };
 
@@ -2407,6 +2440,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       if (!loadedFromCache) applyState(initialData, false);
       if (!isLocalDemoMode) {
+        if (getPendingSyncOperationsCount() > 0) {
+          const flushRes = await flushPendingCloudQueue();
+          if (flushRes.remainingCount > 0) {
+            hasPendingLocalChangesRef.current = true;
+            setCloudStatus(
+              typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'pending'
+            );
+            setError(null);
+            return;
+          }
+        }
         const freshCloud = await fetchCloudDatabaseOnce(true);
         if (freshCloud && typeof freshCloud === 'object') {
           hasPendingLocalChangesRef.current = false;
@@ -2431,11 +2475,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       showToast('وضع معاينة محلي: لا توجد مزامنة مع Firebase', 'info');
       return;
     }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setCloudStatus('offline');
+      showToast(
+        'الجهاز غير متصل بالإنترنت حالياً؛ جميع التعديلات محفوظة في قائمة الانتظار المحلية وستتم مزامنتها فور عودة الاتصال ⏳',
+        'info'
+      );
+      return;
+    }
     setCloudStatus('syncing');
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     try {
+      if (getPendingSyncOperationsCount() > 0) {
+        await flushPendingCloudQueue();
+      }
       const payload = { ...masterStateRef.current };
-      await pushStateToCloud(payload);
+      const pushRes = await pushStateToCloud(payload);
+      if (!pushRes.cloudSynced || getPendingSyncOperationsCount() > 0) {
+        hasPendingLocalChangesRef.current = true;
+        setCloudStatus('pending');
+        showToast(
+          'تم حفظ التعديلات محلياً في قائمة الانتظار، وستكتمل المزامنة السحابية عند استقرار الاتصال ⏳',
+          'info'
+        );
+        return;
+      }
       hasPendingLocalChangesRef.current = false;
       const freshServerState = await fetchCloudDatabaseOnce(true);
       if (freshServerState && typeof freshServerState === 'object') {
@@ -2443,11 +2507,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       setCloudStatus('connected');
       setLastSynced(new Date());
-      showToast('تمت المزامنة السحابية وتحديث البيانات بنجاح', 'success');
+      showToast('تمت المزامنة السحابية وتأكيد الحفظ من الخادم بنجاح ✅', 'success');
     } catch (error: any) {
-      hasPendingLocalChangesRef.current = false;
+      hasPendingLocalChangesRef.current = getPendingSyncOperationsCount() > 0;
       console.error('Manual cloud sync failed:', error);
-      setCloudStatus('error');
+      setCloudStatus(getPendingSyncOperationsCount() > 0 ? 'pending' : 'error');
       showToast('تعذرت المزامنة السحابية: ' + (error?.message || 'تحققي من الاتصال والصلاحيات'), 'error');
     }
   };
@@ -2463,9 +2527,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     let isPullingCloud = false;
     const pullFreshCloudStateNow = async () => {
-      if (isPullingCloud || hasPendingLocalChangesRef.current) return;
+      if (isPullingCloud) return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        setCloudStatus('offline');
+        return;
+      }
       isPullingCloud = true;
       try {
+        if (getPendingSyncOperationsCount() > 0) {
+          setCloudStatus('syncing');
+          const flushRes = await flushPendingCloudQueue();
+          if (flushRes.remainingCount > 0) {
+            hasPendingLocalChangesRef.current = true;
+            setCloudStatus('pending');
+            return;
+          }
+          hasPendingLocalChangesRef.current = false;
+        }
+        if (hasPendingLocalChangesRef.current) return;
         const cloudData = await fetchCloudDatabaseOnce(true);
         if (cloudData && typeof cloudData === 'object') {
           applyState(cloudData, true);
@@ -2490,7 +2569,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         (cloudData) => {
           if (cloudData && typeof cloudData === 'object') {
             applyState(cloudData, true);
-            setCloudStatus('connected');
+            setCloudStatus(getPendingSyncOperationsCount() > 0 ? 'pending' : 'connected');
             setLastSynced(new Date());
           }
           setCloudDataReady(true);
@@ -2509,6 +2588,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const handleVisibilityOrFocus = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       void pullFreshCloudStateNow();
+    };
+    const handleOfflineEvent = () => {
+      setCloudStatus('offline');
     };
 
     // 3. Fallback Periodic Polling (Every 20 Seconds) while active/visible without saturating mobile connections
@@ -2556,6 +2638,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       window.addEventListener('storage', handleStorageSync);
       window.addEventListener('focus', handleVisibilityOrFocus);
       window.addEventListener('online', handleVisibilityOrFocus);
+      window.addEventListener('offline', handleOfflineEvent);
     }
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', handleVisibilityOrFocus);
@@ -2569,6 +2652,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         window.removeEventListener('storage', handleStorageSync);
         window.removeEventListener('focus', handleVisibilityOrFocus);
         window.removeEventListener('online', handleVisibilityOrFocus);
+        window.removeEventListener('offline', handleOfflineEvent);
       }
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
@@ -4906,7 +4990,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('تم حفظ وتحديث أوزان ومعايير نظام الدرجات بنجاح ⚖️');
   };
 
-  const updateSettings = async (newSettings: Partial<InstitutionSettings>, silent?: boolean) => {
+  const updateSettings = async (
+    newSettings: Partial<InstitutionSettings>,
+    silent?: boolean
+  ): Promise<{ cloudSynced: boolean; queuedOffline: boolean }> => {
     const baseSettings = (masterStateRef.current.settings || settings) as InstitutionSettings;
     const next: InstitutionSettings = { ...baseSettings, ...newSettings };
     if (newSettings.staffProfiles || newSettings.staffOperations) {
@@ -4932,17 +5019,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         summary = newSettings.showOfficialSeal ? 'تفعيل إظهار الختم الرسمي على الشهادات والتقارير' : 'إخفاء الختم الرسمي من الشهادات والتقارير';
       }
       const nextLogs = appendAuditEntry('update', 'settings', summary, 'settings-main');
-      persistState({
+      const res = await persistState({
         settings: next,
         auditLogs: nextLogs,
         _immediateSync: true
       });
-      showToast('تم حفظ الإعدادات العامة للمقرأة');
+      if (res.cloudSynced) {
+        showToast('تم حفظ الإعدادات العامة للمقرأة ومزامنتها سحابياً ✅');
+      } else if (res.queuedOffline) {
+        showToast('تم حفظ الإعدادات محلياً في قائمة الانتظار، وستتم مزامنتها فور عودة الاتصال بالإنترنت ⏳', 'info');
+      } else {
+        showToast('تعذرت المزامنة السحابية للإعدادات، تم الاحتفاظ بنسخة محلية ⚠️', 'error');
+      }
+      return { cloudSynced: res.cloudSynced, queuedOffline: res.queuedOffline };
     } else {
-      persistState({
+      const res = await persistState({
         settings: next,
         _immediateSync: true
       });
+      return { cloudSynced: res.cloudSynced, queuedOffline: res.queuedOffline };
     }
   };
 
