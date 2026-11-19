@@ -1164,13 +1164,22 @@ describe('7. Production Hardening & Edge-Case Verification Suite (9 Required Sce
     assert.equal(writeOrder[0].startsWith('shard_daily_0_overflow_'), true);
     assert.equal(writeOrder[writeOrder.length - 1], 'shard_daily_0');
 
-    // Verify full reassembly across base + dynamic overflow shards
+    // Simulate an unreferenced overflow document left by an interrupted prior attempt.
+    // Assembly must ignore it because the base pointer never committed it.
+    firestoreDocs.set('shard_daily_0_overflow_orphan', {
+      shardType: 'dailyRecords_overflow',
+      parentShardId: 'shard_daily_0',
+      items: [{ id: 'orphan_record', studentId: 'orphan_student', date: '2026-03-10' }]
+    });
+
+    // Verify full reassembly follows only the committed base pointer + dynamic overflow shards.
     const allShardsObj: Record<string, Record<string, any> | null> = {};
     for (const [k, v] of firestoreDocs.entries()) {
       if (k !== 'master_state') allShardsObj[k] = v;
     }
     const reassembled = assembleShardedCloudState(firestoreDocs.get('master_state'), allShardsObj);
     assert.equal(reassembled?.dailyRecords.length, 40);
+    assert.equal(reassembled?.dailyRecords.some((record: any) => record.id === 'orphan_record'), false);
   });
 
   it('retries a bounded shard commit after a concurrent base update and preserves both writers data', async () => {
