@@ -1569,6 +1569,9 @@ export class PendingSyncQueueManager {
   private readonly primaryStorage: QueueStorageAdapter | null;
   private readonly fallbackStorage: AsyncQueueStorageAdapter | QueueStorageAdapter | null;
   private lastActiveBackend: 'localStorage' | 'indexedDB' | 'none' = 'none';
+  // Serialize asynchronous durable enqueues so an older IndexedDB write cannot overwrite
+  // a newer queue snapshot when multiple offline mutations arrive together.
+  private durableEnqueueTail: Promise<void> = Promise.resolve();
 
   constructor(storageKey = PENDING_SYNC_QUEUE_STORAGE_KEY, options?: PendingSyncQueueOptions) {
     this.storageKey = storageKey;
@@ -1835,30 +1838,34 @@ export class PendingSyncQueueManager {
   async enqueueDurable(
     op: Omit<PendingSyncOperation, 'retryCount' | 'createdAt'> & { createdAt?: string }
   ): Promise<PendingSyncOperation> {
-    const existingIdx = this.memoryQueue.findIndex(item => item.opId === op.opId);
-    if (existingIdx >= 0) {
-      return this.memoryQueue[existingIdx];
-    }
-
-    const entry: PendingSyncOperation = {
-      opId: op.opId || createOperationId('sync'),
-      createdAt: op.createdAt || new Date().toISOString(),
-      changedKeys: Array.from(new Set(op.changedKeys || [])),
-      isFullReplace: Boolean(op.isFullReplace),
-      payload: deepCleanForFirestore(op.payload || {}),
-      retryCount: 0
-    };
-
-    const previousSnapshot = [...this.memoryQueue];
-    this.memoryQueue.push(entry);
-    try {
-      const backend = await this.persistQueueDurableOrThrow();
-      entry.storageBackend = backend;
-      return entry;
-    } catch (err) {
-      this.memoryQueue = previousSnapshot;
-      throw err;
-    }
+    const run = this.durableEnqueueTail.then(async () => {
+      const existingIdx = this.memoryQueue.findIndex(item => item.opId === op.opId);
+      if (existingIdx >= 0) {
+        return this.memoryQueue[existingIdx];
+      }
+  
+      const entry: PendingSyncOperation = {
+        opId: op.opId || createOperationId('sync'),
+        createdAt: op.createdAt || new Date().toISOString(),
+        changedKeys: Array.from(new Set(op.changedKeys || [])),
+        isFullReplace: Boolean(op.isFullReplace),
+        payload: deepCleanForFirestore(op.payload || {}),
+        retryCount: 0
+      };
+  
+      const previousSnapshot = [...this.memoryQueue];
+      this.memoryQueue.push(entry);
+      try {
+        const backend = await this.persistQueueDurableOrThrow();
+        entry.storageBackend = backend;
+        return entry;
+      } catch (err) {
+        this.memoryQueue = previousSnapshot;
+        throw err;
+      }
+    });
+    this.durableEnqueueTail = run.then(() => undefined, () => undefined);
+    return run;
   }
 
   markSuccess(opId: string): void {
