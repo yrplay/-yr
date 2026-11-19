@@ -1124,6 +1124,7 @@ describe('7. Production Hardening & Edge-Case Verification Suite (9 Required Sce
     });
 
     // Generate 40 large daily records that exceed a 6 KB bounded shard threshold
+    const writeOrder: string[] = [];
     const incomingLargeRecords = Array.from({ length: 40 }, (_, i) => ({
       id: `dr_stu_${i}_2026-03-10`,
       studentId: `stu_${i}`,
@@ -1144,6 +1145,7 @@ describe('7. Production Hardening & Edge-Case Verification Suite (9 Required Sce
       deduplicateAndMerge: (existing, incoming) => deduplicateDailyRecords([...existing, ...incoming]),
       readOverflowDoc: async docId => firestoreDocs.get(docId) ?? null,
       runDocTransaction: async txParams => {
+        writeOrder.push(txParams.docId);
         const existing = firestoreDocs.get(txParams.docId) ?? null;
         const prevRev = typeof existing?._revision === 'number' ? existing._revision : 0;
         const built = txParams.buildNext(existing, existing !== null);
@@ -1158,7 +1160,9 @@ describe('7. Production Hardening & Edge-Case Verification Suite (9 Required Sce
 
     assert.equal(syncRes.totalCount, 40);
     assert.equal(syncRes.overflowShardIds.length >= 2, true);
-    assert.equal(firestoreDocs.has('shard_daily_0_overflow_1'), true);
+    assert.equal(syncRes.overflowShardIds.every(id => firestoreDocs.has(id)), true);
+    assert.equal(writeOrder[0].startsWith('shard_daily_0_overflow_'), true);
+    assert.equal(writeOrder[writeOrder.length - 1], 'shard_daily_0');
 
     // Verify full reassembly across base + dynamic overflow shards
     const allShardsObj: Record<string, Record<string, any> | null> = {};
@@ -1167,6 +1171,76 @@ describe('7. Production Hardening & Edge-Case Verification Suite (9 Required Sce
     }
     const reassembled = assembleShardedCloudState(firestoreDocs.get('master_state'), allShardsObj);
     assert.equal(reassembled?.dailyRecords.length, 40);
+  });
+
+  it('retries a bounded shard commit after a concurrent base update and preserves both writers data', async () => {
+    const firestoreDocs = new Map<string, Record<string, any>>();
+    firestoreDocs.set('shard_daily_0', {
+      _revision: 1,
+      items: [{ id: 'existing_record', studentId: 'existing_student', date: '2026-03-10', notes: 'existing' }],
+      overflowShardIds: []
+    });
+
+    const incoming = Array.from({ length: 32 }, (_, index) => ({
+      id: `incoming_${index}`,
+      studentId: `incoming_student_${index}`,
+      date: '2026-03-11',
+      notes: 'تسميع ومراجعة '.repeat(20),
+      updatedAt: '2026-03-11T10:00:00.000Z'
+    }));
+    const concurrentRecord = {
+      id: 'concurrent_device_record',
+      studentId: 'concurrent_student',
+      date: '2026-03-12',
+      notes: 'سجل أضافه جهاز آخر',
+      updatedAt: '2026-03-12T10:00:00.000Z'
+    };
+
+    let baseTransactionCalls = 0;
+    const syncRes = await executeBoundedShardSync({
+      baseShardId: 'shard_daily_0',
+      shardType: 'dailyRecords',
+      bucket: 0,
+      opId: 'op_concurrent_overflow_test',
+      incomingItems: incoming,
+      deletedIds: [],
+      replaceState: false,
+      maxBytesPerShard: 3000,
+      deduplicateAndMerge: (existing, next) => deduplicateDailyRecords([...existing, ...next]),
+      readOverflowDoc: async docId => firestoreDocs.get(docId) ?? null,
+      runDocTransaction: async txParams => {
+        if (txParams.docId === 'shard_daily_0' && baseTransactionCalls++ === 0) {
+          // Simulate another device committing after our initial read but before our publish transaction.
+          firestoreDocs.set('shard_daily_0', {
+            ...firestoreDocs.get('shard_daily_0')!,
+            _revision: 2,
+            items: [...firestoreDocs.get('shard_daily_0')!.items, concurrentRecord]
+          });
+        }
+        const existing = firestoreDocs.get(txParams.docId) ?? null;
+        const previousRevision = typeof existing?._revision === 'number' ? existing._revision : 0;
+        const built = txParams.buildNext(existing, existing !== null);
+        if (!built.skipWrite) {
+          const revision = previousRevision + 1;
+          firestoreDocs.set(txParams.docId, { ...built.payload, _revision: revision });
+          return { committed: true, skipped: false, revision };
+        }
+        return { committed: true, skipped: true, revision: previousRevision };
+      }
+    });
+
+    assert.equal(baseTransactionCalls >= 2, true);
+    assert.equal(syncRes.totalCount, 34);
+    const base = firestoreDocs.get('shard_daily_0')!;
+    assert.equal(base.items.some((item: any) => item.id === 'concurrent_device_record'), true);
+    assert.equal(base.overflowShardIds.every((id: string) => firestoreDocs.has(id)), true);
+    const allItems = [
+      ...base.items,
+      ...base.overflowShardIds.flatMap((id: string) => firestoreDocs.get(id)!.items)
+    ];
+    assert.equal(allItems.some((item: any) => item.id === 'existing_record'), true);
+    assert.equal(allItems.some((item: any) => item.id === 'concurrent_device_record'), true);
+    assert.equal(incoming.every(item => allItems.some((stored: any) => stored.id === item.id)), true);
   });
 
   it('Scenario 5: Concurrent edits on master_state and Shards enforce Generation Marker (_shardRevisions) and protect _replaceState from stale overwrite', () => {
