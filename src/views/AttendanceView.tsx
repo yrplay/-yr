@@ -5,7 +5,7 @@ import {
   CheckSquare, Calendar, Users, Clock, CheckCircle2, XCircle,
   AlertCircle, AlertTriangle, Star, Sparkles, Filter, Save, ChevronLeft, ChevronRight, Trash2,
   Download, Award, X, Camera, Palette, Image as ImageIcon, Type, Plus, Minus, RotateCcw, Archive,
-  ClipboardCheck, Zap, Send, Grid3X3, Square, MinusSquare, Frame, ImagePlus, UserPlus, SlidersHorizontal
+  ClipboardCheck, Zap, Send, Grid3X3, Square, MinusSquare, Frame, ImagePlus, UserPlus, SlidersHorizontal, Trophy
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { AttendanceRecord, isStudentEffectivelyArchived, isPlanHistoricalOrArchived } from '../types';
@@ -40,6 +40,12 @@ export const AttendanceView: React.FC = () => {
   const honorsBoardRef = useRef<HTMLDivElement | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const bgInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Group / Circle Competition Leaderboard ("منافسة المجموعات")
+  const [showGroupCompetitionModal, setShowGroupCompetitionModal] = useState(false);
+  const [competitionPeriod, setCompetitionPeriod] = useState<'week' | 'month'>('week');
+  const [isExportingCompetitionPng, setIsExportingCompetitionPng] = useState(false);
+  const competitionWinnerCardRef = useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
     if (availableCircles.length > 0 && !availableCircles.some(c => c.id === selectedCircleId)) {
@@ -935,34 +941,56 @@ export const AttendanceView: React.FC = () => {
       const bannerW = Math.round((width - 140) * (headerWidthPercent / 100) * t.scale);
       const bannerX = Math.round(centerX - bannerW / 2);
       const padY = Math.round(headerPaddingY * ratio * t.scale);
-      const bannerH = Math.round(105 * t.scale + padY * 2);
+      const hasAcademyTitle = Boolean(boardAcademyTitle.trim());
+      const hasMainTitle = Boolean(boardMainTitle.trim());
+      const baseContentH = hasAcademyTitle && hasMainTitle ? 105 : 64;
+      const bannerH = Math.round(baseContentH * t.scale + padY * 2);
 
-      if (showHeaderBox) {
-        ctx.fillStyle = boardHeaderBgColor;
-        ctx.beginPath();
-        ctx.roundRect(bannerX, headerY, bannerW, bannerH, 26);
-        ctx.fill();
-        if (showHeaderBorder) {
-          ctx.strokeStyle = boardHeaderBorderColor;
-          ctx.lineWidth = 2.5;
-          ctx.stroke();
+      if (hasAcademyTitle || hasMainTitle) {
+        if (showHeaderBox) {
+          ctx.fillStyle = boardHeaderBgColor;
+          ctx.beginPath();
+          ctx.roundRect(bannerX, headerY, bannerW, bannerH, 26);
+          ctx.fill();
+          if (showHeaderBorder) {
+            ctx.strokeStyle = boardHeaderBorderColor;
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+          }
+
+          ctx.fillStyle = headerTextColor;
+          if (hasAcademyTitle && hasMainTitle) {
+            ctx.font = `bold ${Math.round(23 * s)}px "${fontName}", sans-serif`;
+            ctx.fillText(boardAcademyTitle, centerX, headerY + padY + 32 * t.scale);
+
+            ctx.font = `bold ${Math.round(42 * s)}px "${fontName}", serif`;
+            ctx.fillText(boardMainTitle, centerX, headerY + padY + 86 * t.scale);
+          } else if (hasMainTitle) {
+            ctx.font = `bold ${Math.round(42 * s)}px "${fontName}", serif`;
+            ctx.fillText(boardMainTitle, centerX, headerY + bannerH / 2 + 14 * t.scale);
+          } else if (hasAcademyTitle) {
+            ctx.font = `bold ${Math.round(25 * s)}px "${fontName}", sans-serif`;
+            ctx.fillText(boardAcademyTitle, centerX, headerY + bannerH / 2 + 9 * t.scale);
+          }
+        } else {
+          if (hasAcademyTitle && hasMainTitle) {
+            ctx.fillStyle = headerTextColor === '#FFFFFF' ? boardHeaderBgColor : headerTextColor;
+            ctx.font = `bold ${Math.round(24 * s)}px "${fontName}", sans-serif`;
+            ctx.fillText(boardAcademyTitle, centerX, headerY + 30);
+
+            ctx.fillStyle = headerTextColor === '#FFFFFF' ? studentNameTextColor : headerTextColor;
+            ctx.font = `bold ${Math.round(44 * s)}px "${fontName}", serif`;
+            ctx.fillText(boardMainTitle, centerX, headerY + 86);
+          } else if (hasMainTitle) {
+            ctx.fillStyle = headerTextColor === '#FFFFFF' ? studentNameTextColor : headerTextColor;
+            ctx.font = `bold ${Math.round(44 * s)}px "${fontName}", serif`;
+            ctx.fillText(boardMainTitle, centerX, headerY + 58);
+          } else if (hasAcademyTitle) {
+            ctx.fillStyle = headerTextColor === '#FFFFFF' ? boardHeaderBgColor : headerTextColor;
+            ctx.font = `bold ${Math.round(26 * s)}px "${fontName}", sans-serif`;
+            ctx.fillText(boardAcademyTitle, centerX, headerY + 50);
+          }
         }
-
-        ctx.fillStyle = headerTextColor;
-        ctx.font = `bold ${Math.round(23 * s)}px "${fontName}", sans-serif`;
-        ctx.fillText(boardAcademyTitle, centerX, headerY + padY + 32 * t.scale);
-
-        ctx.fillStyle = headerTextColor;
-        ctx.font = `bold ${Math.round(42 * s)}px "${fontName}", serif`;
-        ctx.fillText(boardMainTitle, centerX, headerY + padY + 86 * t.scale);
-      } else {
-        ctx.fillStyle = headerTextColor === '#FFFFFF' ? boardHeaderBgColor : headerTextColor;
-        ctx.font = `bold ${Math.round(24 * s)}px "${fontName}", sans-serif`;
-        ctx.fillText(boardAcademyTitle, centerX, headerY + 30);
-
-        ctx.fillStyle = headerTextColor === '#FFFFFF' ? studentNameTextColor : headerTextColor;
-        ctx.font = `bold ${Math.round(44 * s)}px "${fontName}", serif`;
-        ctx.fillText(boardMainTitle, centerX, headerY + 86);
       }
     }
 
@@ -972,37 +1000,53 @@ export const AttendanceView: React.FC = () => {
       const s = scale * t.scale;
       const centerX = width / 2 + t.x * ratio;
       const badgeY = (baseBadgeTop + t.y) * ratio;
-      const pillText = `${boardTrackCircleBadge}  •  ${boardWeekDateLabel}`;
+      const hasTrackBadge = Boolean(boardTrackCircleBadge.trim());
+      const hasWeekLabel = Boolean(boardWeekDateLabel.trim());
 
-      ctx.font = `bold ${Math.round(22 * s)}px "${fontName}", sans-serif`;
-      const pillTextW = ctx.measureText(pillText).width;
-      const pillW = Math.round(pillTextW + 76 * t.scale);
-      const pillH = Math.round(44 * t.scale);
-      const pillX = Math.round(centerX - pillW / 2);
-      const pillY = Math.round(badgeY - 6 * t.scale);
+      if (hasTrackBadge || hasWeekLabel) {
+        const pillText =
+          hasTrackBadge && hasWeekLabel
+            ? `${boardTrackCircleBadge}  •  ${boardWeekDateLabel}`
+            : hasTrackBadge
+              ? boardTrackCircleBadge
+              : boardWeekDateLabel;
 
-      if (boardTrackPillBgColor && boardTrackPillBgColor !== 'transparent') {
-        ctx.fillStyle = boardTrackPillBgColor;
-        ctx.beginPath();
-        ctx.roundRect(pillX, pillY, pillW, pillH, Math.round(pillH / 2));
-        ctx.fill();
+        ctx.font = `bold ${Math.round(22 * s)}px "${fontName}", sans-serif`;
+        const pillTextW = ctx.measureText(pillText).width;
+        const pillW = Math.round(pillTextW + 76 * t.scale);
+        const pillH = Math.round(44 * t.scale);
+        const pillX = Math.round(centerX - pillW / 2);
+        const pillY = Math.round(badgeY - 6 * t.scale);
+
+        if (boardTrackPillBgColor && boardTrackPillBgColor !== 'transparent') {
+          ctx.fillStyle = boardTrackPillBgColor;
+          ctx.beginPath();
+          ctx.roundRect(pillX, pillY, pillW, pillH, Math.round(pillH / 2));
+          ctx.fill();
+        }
+        if (boardTrackPillBorderColor && boardTrackPillBorderColor !== 'transparent') {
+          ctx.strokeStyle = boardTrackPillBorderColor;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.roundRect(pillX, pillY, pillW, pillH, Math.round(pillH / 2));
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = subheadDateTextColor;
+        ctx.fillText(pillText, centerX, badgeY + Math.round(24 * t.scale));
       }
-      if (boardTrackPillBorderColor && boardTrackPillBorderColor !== 'transparent') {
-        ctx.strokeStyle = boardTrackPillBorderColor;
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.roundRect(pillX, pillY, pillW, pillH, Math.round(pillH / 2));
-        ctx.stroke();
+
+      if (boardSubtitle.trim()) {
+        ctx.fillStyle = subheadDateTextColor;
+        ctx.font = `bold ${Math.round(28 * s)}px "${fontName}", sans-serif`;
+        ctx.fillText(boardSubtitle, centerX, badgeY + Math.round(82 * t.scale));
       }
 
-      ctx.fillStyle = subheadDateTextColor;
-      ctx.fillText(pillText, centerX, badgeY + Math.round(24 * t.scale));
-
-      ctx.font = `bold ${Math.round(28 * s)}px "${fontName}", sans-serif`;
-      ctx.fillText(boardSubtitle, centerX, badgeY + Math.round(82 * t.scale));
-
-      ctx.font = `bold ${Math.round(20 * s)}px "${fontName}", sans-serif`;
-      ctx.fillText(boardDescription, centerX, badgeY + Math.round(120 * t.scale));
+      if (boardDescription.trim()) {
+        ctx.fillStyle = subheadDateTextColor;
+        ctx.font = `bold ${Math.round(20 * s)}px "${fontName}", sans-serif`;
+        ctx.fillText(boardDescription, centerX, badgeY + Math.round(120 * t.scale));
+      }
     }
 
     // 6. Compact Student Name Cards Grid
@@ -1048,7 +1092,7 @@ export const AttendanceView: React.FC = () => {
     }
 
     // 7. Closing Dua Quote
-    {
+    if (boardClosingDua.trim()) {
       const t = elementTransforms.dua;
       const s = scale * t.scale;
       const duaX = width / 2 + t.x * ratio;
@@ -1060,31 +1104,39 @@ export const AttendanceView: React.FC = () => {
     }
 
     // 8. Teacher Signature Block (Right Side, Internally Centered)
-    {
+    if (boardTeacherLabel.trim() || boardTeacherName.trim()) {
       const t = elementTransforms.teacherSig;
       const s = scale * t.scale;
       const sigX = width * 0.76 + t.x * ratio;
       const sigY = (baseSigTop + t.y) * ratio + 22;
       ctx.textAlign = 'center';
       ctx.fillStyle = signatureTextColor;
-      ctx.font = `bold ${Math.round(21 * s)}px "${fontName}", sans-serif`;
-      ctx.fillText(boardTeacherLabel, sigX, sigY);
-      ctx.font = `bold ${Math.round(25 * s)}px "${fontName}", sans-serif`;
-      ctx.fillText(boardTeacherName, sigX, sigY + Math.round(34 * t.scale));
+      if (boardTeacherLabel.trim()) {
+        ctx.font = `bold ${Math.round(21 * s)}px "${fontName}", sans-serif`;
+        ctx.fillText(boardTeacherLabel, sigX, sigY);
+      }
+      if (boardTeacherName.trim()) {
+        ctx.font = `bold ${Math.round(25 * s)}px "${fontName}", sans-serif`;
+        ctx.fillText(boardTeacherName, sigX, sigY + (boardTeacherLabel.trim() ? Math.round(34 * t.scale) : Math.round(16 * t.scale)));
+      }
     }
 
     // 9. Leader Signature Block (Left Side, Internally Centered)
-    {
+    if (boardLeaderLabel.trim() || boardLeaderName.trim()) {
       const t = elementTransforms.leaderSig;
       const s = scale * t.scale;
       const sigX = width * 0.24 + t.x * ratio;
       const sigY = (baseSigTop + t.y) * ratio + 22;
       ctx.textAlign = 'center';
       ctx.fillStyle = signatureTextColor;
-      ctx.font = `bold ${Math.round(21 * s)}px "${fontName}", sans-serif`;
-      ctx.fillText(boardLeaderLabel, sigX, sigY);
-      ctx.font = `bold ${Math.round(25 * s)}px "${fontName}", sans-serif`;
-      ctx.fillText(boardLeaderName, sigX, sigY + Math.round(34 * t.scale));
+      if (boardLeaderLabel.trim()) {
+        ctx.font = `bold ${Math.round(21 * s)}px "${fontName}", sans-serif`;
+        ctx.fillText(boardLeaderLabel, sigX, sigY);
+      }
+      if (boardLeaderName.trim()) {
+        ctx.font = `bold ${Math.round(25 * s)}px "${fontName}", sans-serif`;
+        ctx.fillText(boardLeaderName, sigX, sigY + (boardLeaderLabel.trim() ? Math.round(34 * t.scale) : Math.round(16 * t.scale)));
+      }
     }
 
     return canvas.toDataURL('image/png');
@@ -1200,6 +1252,156 @@ export const AttendanceView: React.FC = () => {
     return true;
   });
 
+  // Group / Circle Competition Leaderboard ("منافسة المجموعات والحلقات")
+  const competitionDaysISO = React.useMemo(() => {
+    if (competitionPeriod === 'week') {
+      return selectedWeekDaysISO;
+    }
+    const targetHijriMonth = selectedStudyWeekInfo.hijriMonthName;
+    const baseIso = selectedDate || getTodayISO();
+    const baseDate = new Date(baseIso + 'T12:00:00');
+    const monthStudyDays: string[] = [];
+    for (let offset = -30; offset <= 30; offset++) {
+      const d = new Date(baseDate);
+      d.setDate(baseDate.getDate() + offset);
+      const dow = d.getDay();
+      if (dow < 0 || dow > 4) continue; // Only Sunday (0) to Thursday (4)
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const info = getStudyWeekInfo(iso, {
+        planStartDateHijri: activeMonthlyPlan?.startDateHijri,
+        planHijriMonth: activeMonthlyPlan?.hijriMonth,
+        isDefaultSeedPlan: activeMonthlyPlan?.id === 'mp-1'
+      });
+      if (info.hijriMonthName === targetHijriMonth) {
+        monthStudyDays.push(iso);
+      }
+    }
+    return monthStudyDays.length > 0 ? monthStudyDays : selectedWeekDaysISO;
+  }, [competitionPeriod, selectedWeekDaysISO, selectedStudyWeekInfo.hijriMonthName, selectedDate, activeMonthlyPlan]);
+
+  const groupCompetitionLeaderboard = React.useMemo(() => {
+    const todayIso = getTodayISO();
+    const activeCirclesList = availableCircles.length > 0 ? availableCircles : circles.filter(c => !c.isArchived);
+    const daysToEvaluate = competitionDaysISO.filter(d => d <= todayIso);
+    const effectiveDays = daysToEvaluate.length > 0 ? daysToEvaluate : [selectedDate || todayIso];
+
+    const rows = activeCirclesList.map(circle => {
+      const trackObj = tracks.find(t => t.id === circle.trackId);
+      const cStudents = students.filter(
+        s => s.circleId === circle.id && !isStudentEffectivelyArchived(s, circles, tracks)
+      );
+      const studentCount = cStudents.length;
+
+      let presentSessions = 0;
+      let absentSessions = 0;
+      let excusedSessions = 0;
+      let earlyPrepSessions = 0;
+      let totalEvaluatedSessions = 0;
+
+      effectiveDays.forEach(dayIso => {
+        cStudents.forEach(st => {
+          totalEvaluatedSessions++;
+          const existing = attendanceRecords.find(a => a.studentId === st.id && a.date === dayIso);
+          const dailyRec = dailyRecords.find(r => r.studentId === st.id && r.date === dayIso);
+
+          if (existing && !existing.isManuallyCleared) {
+            if (existing.status === 'present') {
+              presentSessions++;
+            } else if (existing.status === 'absent_unexcused') {
+              absentSessions++;
+            } else if (existing.status === 'absent_excused') {
+              excusedSessions++;
+              absentSessions++;
+            }
+            if (existing.earlyPrepCardSent) {
+              earlyPrepSessions++;
+            }
+          } else if (dailyRec) {
+            if (dailyRec.status === 'absent') {
+              absentSessions++;
+            } else if (dailyRec.status === 'excused') {
+              excusedSessions++;
+              absentSessions++;
+            } else {
+              presentSessions++;
+            }
+          } else {
+            // Default mirror state: present if not marked absent
+            presentSessions++;
+          }
+        });
+      });
+
+      const denominator = Math.max(1, totalEvaluatedSessions);
+      const attendanceRate = studentCount > 0
+        ? Math.min(100, Math.round(((presentSessions + excusedSessions * 0.4) / denominator) * 100))
+        : 0;
+
+      const earlyPrepRate = studentCount > 0
+        ? Math.min(100, Math.round((earlyPrepSessions / denominator) * 100))
+        : 0;
+
+      const zeroAbsenceScore = studentCount > 0
+        ? Math.max(0, 100 - Math.round((absentSessions / denominator) * 100))
+        : 0;
+
+      const totalCompetitionScore = studentCount > 0
+        ? Math.min(100, Math.round(attendanceRate * 0.45 + zeroAbsenceScore * 0.25 + earlyPrepRate * 0.30))
+        : 0;
+
+      return {
+        circleId: circle.id,
+        circleName: circle.name,
+        trackName: trackObj?.name || 'مسار الحفظ',
+        teacherName: circle.teacherName || 'غير محدد',
+        studentCount,
+        presentSessions,
+        absentSessions,
+        earlyPrepSessions,
+        attendanceRate,
+        earlyPrepRate,
+        totalCompetitionScore
+      };
+    });
+
+    return rows.sort((a, b) => {
+      if (b.totalCompetitionScore !== a.totalCompetitionScore) {
+        return b.totalCompetitionScore - a.totalCompetitionScore;
+      }
+      if (a.absentSessions !== b.absentSessions) {
+        return a.absentSessions - b.absentSessions;
+      }
+      if (b.earlyPrepRate !== a.earlyPrepRate) {
+        return b.earlyPrepRate - a.earlyPrepRate;
+      }
+      return b.attendanceRate - a.attendanceRate;
+    });
+  }, [availableCircles, circles, tracks, students, competitionDaysISO, selectedDate, attendanceRecords, dailyRecords]);
+
+  const handleExportWinnerGroupPng = async () => {
+    if (!competitionWinnerCardRef.current) return;
+    setIsExportingCompetitionPng(true);
+    try {
+      const dataUrl = await toPng(competitionWinnerCardRef.current, {
+        cacheBust: false,
+        pixelRatio: 3,
+        backgroundColor: '#FFFDF8'
+      });
+      const link = document.createElement('a');
+      const winnerName = (groupCompetitionLeaderboard[0]?.circleName || 'المجموعة-الفائزة').replace(/\s+/g, '-');
+      link.download = `بطاقة-تتويج-${winnerName}-${selectedDate}.png`;
+      link.href = dataUrl;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast?.('تم تصدير بطاقة المجموعة الفائزة بصيغة PNG بنجاح 🏆');
+    } catch {
+      showToast?.('تعذر تصدير البطاقة، يرجى المحاولة مرة أخرى', 'error');
+    } finally {
+      setIsExportingCompetitionPng(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
 
@@ -1233,6 +1435,15 @@ export const AttendanceView: React.FC = () => {
             <span className="absolute -top-1.5 -left-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-white text-theme-primary border border-theme-primary/30 text-[10px] font-bold font-mono flex items-center justify-center shadow-2xs">
               {weeklyStarQualifiedCount}
             </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowGroupCompetitionModal(true)}
+            title="منافسة المجموعات"
+            aria-label="منافسة المجموعات"
+            className="w-10 h-10 bg-theme-primary hover:bg-theme-primary-hover text-white border border-theme-primary rounded-xl flex items-center justify-center shadow-xs transition active:scale-95 cursor-pointer shrink-0"
+          >
+            <Trophy className="w-4 h-4 shrink-0" />
           </button>
           <button
             type="button"
@@ -2486,25 +2697,23 @@ export const AttendanceView: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* 7. حدود الشريط */}
+                    {/* 7. إطار شريط الحلقة */}
                     <div className="flex items-center justify-between gap-1.5 bg-white p-2 rounded-xl border border-stone-200">
-                      <span className="font-bold text-stone-800">حدود الشريط</span>
-                      <div className="flex items-center gap-1">
+                      <span className="font-bold text-stone-800">إطار شريط الحلقة</span>
+                      <div className="flex items-center gap-1 flex-wrap justify-end">
                         {[
                           { color: '#C9A24D', label: 'ذهبي' },
                           { color: '#9A5643', label: 'بني دافئ' },
                           { color: '#2D5A43', label: 'أخضر زيتي' },
+                          { color: '#D47A8F', label: 'وردي' },
                           { color: '#1E293B', label: 'كحلي' },
-                          { color: '#FFFFFF', label: 'أبيض' },
-                          { color: 'transparent', label: 'بدون حدود' }
+                          { color: '#FFFFFF', label: 'أبيض' }
                         ].map(swatch => (
                           <button
                             key={swatch.color}
                             type="button"
                             onClick={() => setBoardTrackPillBorderColor(swatch.color)}
-                            style={{
-                              backgroundColor: swatch.color === 'transparent' ? '#FFFFFF' : swatch.color
-                            }}
+                            style={{ backgroundColor: swatch.color }}
                             title={swatch.label}
                             aria-label={swatch.label}
                             className={`w-4 h-4 rounded-full border transition cursor-pointer flex items-center justify-center ${
@@ -2512,18 +2721,27 @@ export const AttendanceView: React.FC = () => {
                                 ? 'ring-2 ring-offset-1 ring-theme-primary border-stone-400 scale-110'
                                 : 'border-stone-300 hover:scale-105'
                             }`}
-                          >
-                            {swatch.color === 'transparent' && (
-                              <span className="text-[9px] text-rose-600 font-bold leading-none">✕</span>
-                            )}
-                          </button>
+                          />
                         ))}
+                        <button
+                          type="button"
+                          onClick={() => setBoardTrackPillBorderColor('transparent')}
+                          title="بدون إطار"
+                          aria-label="بدون إطار"
+                          className={`px-1.5 py-0.5 rounded-md border text-[9px] font-bold transition cursor-pointer ${
+                            boardTrackPillBorderColor === 'transparent'
+                              ? 'bg-theme-primary text-white border-theme-primary'
+                              : 'border-stone-300 bg-stone-50 text-stone-600 hover:bg-stone-100'
+                          }`}
+                        >
+                          بدون إطار
+                        </button>
                         <input
                           type="color"
                           value={boardTrackPillBorderColor.startsWith('#') ? boardTrackPillBorderColor : '#C9A24D'}
                           onChange={e => setBoardTrackPillBorderColor(e.target.value)}
-                          title="حدود الشريط"
-                          aria-label="حدود الشريط"
+                          title="إطار شريط الحلقة"
+                          aria-label="إطار شريط الحلقة"
                           className="w-5 h-5 rounded-md border border-stone-300 cursor-pointer bg-transparent"
                         />
                       </div>
@@ -2926,31 +3144,39 @@ export const AttendanceView: React.FC = () => {
 
                 <div
                   style={
-                    showHeaderBox
-                      ? {
-                          paddingTop: `${headerPaddingY}px`,
-                          paddingBottom: `${headerPaddingY}px`,
-                          paddingLeft: '20px',
-                          paddingRight: '20px',
-                          backgroundColor: boardHeaderBgColor,
-                          borderColor: showHeaderBorder ? boardHeaderBorderColor : 'transparent',
-                          borderWidth: showHeaderBorder ? '2px' : '0px',
-                          borderStyle: showHeaderBorder ? 'solid' : 'none'
-                        }
-                      : {
-                          paddingTop: '4px',
-                          paddingBottom: '4px'
-                        }
+                    !boardAcademyTitle.trim() && !boardMainTitle.trim()
+                      ? { display: 'none' }
+                      : showHeaderBox
+                        ? {
+                            paddingTop: `${headerPaddingY}px`,
+                            paddingBottom: `${headerPaddingY}px`,
+                            paddingLeft: '20px',
+                            paddingRight: '20px',
+                            backgroundColor: boardHeaderBgColor,
+                            borderColor: showHeaderBorder ? boardHeaderBorderColor : 'transparent',
+                            borderWidth: showHeaderBorder ? '2px' : '0px',
+                            borderStyle: showHeaderBorder ? 'solid' : 'none'
+                          }
+                        : {
+                            paddingTop: '4px',
+                            paddingBottom: '4px'
+                          }
                   }
-                  className={`w-full transition-all ${
+                  className={`w-full flex flex-col items-center justify-center transition-all ${
                     showHeaderBox ? 'rounded-2xl shadow-md' : 'bg-transparent'
                   }`}
                 >
                   <div
                     contentEditable
                     suppressContentEditableWarning
-                    onBlur={e => setBoardAcademyTitle(e.currentTarget.textContent || '')}
+                    onInput={e => {
+                      if (!(e.currentTarget.textContent || '').trim()) {
+                        setBoardAcademyTitle('');
+                      }
+                    }}
+                    onBlur={e => setBoardAcademyTitle((e.currentTarget.textContent || '').trim())}
                     style={{
+                      display: !boardAcademyTitle.trim() ? 'none' : 'block',
                       fontSize: `${Math.round(12 * boardFontScale)}px`,
                       color: showHeaderBox
                         ? headerTextColor
@@ -2958,7 +3184,9 @@ export const AttendanceView: React.FC = () => {
                           ? boardHeaderBgColor
                           : headerTextColor
                     }}
-                    className="font-bold tracking-wide mb-0.5 opacity-95 outline-hidden hover:bg-black/5 rounded-lg px-2 py-0.5 cursor-text"
+                    className={`font-bold tracking-wide opacity-95 outline-hidden hover:bg-black/5 rounded-lg px-2 py-0.5 cursor-text text-center ${
+                      boardMainTitle.trim() ? 'mb-0.5' : ''
+                    }`}
                   >
                     {boardAcademyTitle}
                   </div>
@@ -2966,8 +3194,14 @@ export const AttendanceView: React.FC = () => {
                   <h2
                     contentEditable
                     suppressContentEditableWarning
-                    onBlur={e => setBoardMainTitle(e.currentTarget.textContent || '')}
+                    onInput={e => {
+                      if (!(e.currentTarget.textContent || '').trim()) {
+                        setBoardMainTitle('');
+                      }
+                    }}
+                    onBlur={e => setBoardMainTitle((e.currentTarget.textContent || '').trim())}
                     style={{
+                      display: !boardMainTitle.trim() ? 'none' : 'block',
                       fontSize: `${Math.round(23 * boardFontScale)}px`,
                       color: showHeaderBox
                         ? headerTextColor
@@ -2975,7 +3209,7 @@ export const AttendanceView: React.FC = () => {
                           ? studentNameTextColor
                           : headerTextColor
                     }}
-                    className="font-bold outline-hidden hover:bg-black/5 rounded-lg px-2 py-0.5 cursor-text"
+                    className="font-bold outline-hidden hover:bg-black/5 rounded-lg px-2 py-0.5 cursor-text text-center leading-snug"
                   >
                     {boardMainTitle}
                   </h2>
@@ -3036,13 +3270,21 @@ export const AttendanceView: React.FC = () => {
                   </button>
                 </div>
 
-                <div className="flex justify-center w-full">
+                <div
+                  style={{
+                    display:
+                      !boardTrackCircleBadge.trim() && !boardWeekDateLabel.trim()
+                        ? 'none'
+                        : 'flex'
+                  }}
+                  className="flex justify-center w-full"
+                >
                   <div
                     style={{
                       fontSize: `${Math.round(12 * boardFontScale)}px`,
                       backgroundColor: boardTrackPillBgColor,
-                      borderColor: boardTrackPillBorderColor,
-                      borderWidth: boardTrackPillBorderColor === 'transparent' ? '0px' : '1.5px',
+                      borderColor: boardTrackPillBorderColor === 'transparent' ? 'transparent' : boardTrackPillBorderColor,
+                      borderWidth: boardTrackPillBorderColor === 'transparent' ? '0px' : '2px',
                       borderStyle: boardTrackPillBorderColor === 'transparent' ? 'none' : 'solid',
                       color: subheadDateTextColor,
                       whiteSpace: 'nowrap',
@@ -3060,18 +3302,45 @@ export const AttendanceView: React.FC = () => {
                     <span
                       contentEditable
                       suppressContentEditableWarning
-                      onBlur={e => setBoardTrackCircleBadge(e.currentTarget.textContent || '')}
-                      style={{ whiteSpace: 'nowrap' }}
+                      onInput={e => {
+                        if (!(e.currentTarget.textContent || '').trim()) {
+                          setBoardTrackCircleBadge('');
+                        }
+                      }}
+                      onBlur={e => setBoardTrackCircleBadge((e.currentTarget.textContent || '').trim())}
+                      style={{
+                        display: !boardTrackCircleBadge.trim() ? 'none' : 'inline',
+                        whiteSpace: 'nowrap'
+                      }}
                       className="outline-hidden hover:bg-amber-50/50 rounded-md px-1 cursor-text whitespace-nowrap"
                     >
                       {boardTrackCircleBadge}
                     </span>
-                    <span style={{ color: boardAccentColor, whiteSpace: 'nowrap' }}>•</span>
+                    <span
+                      style={{
+                        display:
+                          !boardTrackCircleBadge.trim() || !boardWeekDateLabel.trim()
+                            ? 'none'
+                            : 'inline',
+                        color: boardAccentColor,
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      •
+                    </span>
                     <span
                       contentEditable
                       suppressContentEditableWarning
-                      onBlur={e => setBoardWeekDateLabel(e.currentTarget.textContent || '')}
-                      style={{ whiteSpace: 'nowrap' }}
+                      onInput={e => {
+                        if (!(e.currentTarget.textContent || '').trim()) {
+                          setBoardWeekDateLabel('');
+                        }
+                      }}
+                      onBlur={e => setBoardWeekDateLabel((e.currentTarget.textContent || '').trim())}
+                      style={{
+                        display: !boardWeekDateLabel.trim() ? 'none' : 'inline',
+                        whiteSpace: 'nowrap'
+                      }}
                       className="outline-hidden hover:bg-amber-50/50 rounded-md px-1 cursor-text whitespace-nowrap"
                     >
                       {boardWeekDateLabel}
@@ -3079,31 +3348,51 @@ export const AttendanceView: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex flex-col items-center gap-1 mt-0.5">
+                <div
+                  style={{
+                    display:
+                      !boardSubtitle.trim() && !boardDescription.trim()
+                        ? 'none'
+                        : 'flex'
+                  }}
+                  className="flex flex-col items-center justify-center gap-1 mt-0.5"
+                >
                   <p
                     contentEditable
                     suppressContentEditableWarning
-                    onBlur={e => setBoardSubtitle(e.currentTarget.textContent || '')}
+                    onInput={e => {
+                      if (!(e.currentTarget.textContent || '').trim()) {
+                        setBoardSubtitle('');
+                      }
+                    }}
+                    onBlur={e => setBoardSubtitle((e.currentTarget.textContent || '').trim())}
                     style={{
+                      display: !boardSubtitle.trim() ? 'none' : 'inline-block',
                       fontSize: `${Math.round(15 * boardFontScale)}px`,
                       color: subheadDateTextColor,
                       lineHeight: 1.5
                     }}
-                    className="font-bold outline-hidden hover:bg-amber-100/50 rounded-lg px-2 py-0.5 inline-block cursor-text"
+                    className="font-bold outline-hidden hover:bg-amber-100/50 rounded-lg px-2 py-0.5 cursor-text text-center"
                   >
                     {boardSubtitle}
                   </p>
-                  <div>
+                  <div style={{ display: !boardDescription.trim() ? 'none' : 'block' }}>
                     <p
                       contentEditable
                       suppressContentEditableWarning
-                      onBlur={e => setBoardDescription(e.currentTarget.textContent || '')}
+                      onInput={e => {
+                        if (!(e.currentTarget.textContent || '').trim()) {
+                          setBoardDescription('');
+                        }
+                      }}
+                      onBlur={e => setBoardDescription((e.currentTarget.textContent || '').trim())}
                       style={{
+                        display: !boardDescription.trim() ? 'none' : 'inline-block',
                         fontSize: `${Math.round(11.5 * boardFontScale)}px`,
                         color: subheadDateTextColor,
                         lineHeight: 1.45
                       }}
-                      className="font-bold opacity-90 outline-hidden hover:bg-amber-100/50 rounded-lg px-2 py-0.5 inline-block cursor-text"
+                      className="font-bold opacity-90 outline-hidden hover:bg-amber-100/50 rounded-lg px-2 py-0.5 cursor-text text-center"
                     >
                       {boardDescription}
                     </p>
@@ -3267,6 +3556,7 @@ export const AttendanceView: React.FC = () => {
                 onMouseDown={e => handleStartDragElement('dua', e)}
                 onTouchStart={e => handleStartDragElement('dua', e)}
                 style={{
+                  display: !boardClosingDua.trim() ? 'none' : 'block',
                   position: 'absolute',
                   top: `${baseDuaTop + elementTransforms.dua.y}px`,
                   left: `calc(50% + ${elementTransforms.dua.x}px)`,
@@ -3306,12 +3596,18 @@ export const AttendanceView: React.FC = () => {
                 <p
                   contentEditable
                   suppressContentEditableWarning
-                  onBlur={e => setBoardClosingDua(e.currentTarget.textContent || '')}
+                  onInput={e => {
+                    if (!(e.currentTarget.textContent || '').trim()) {
+                      setBoardClosingDua('');
+                    }
+                  }}
+                  onBlur={e => setBoardClosingDua((e.currentTarget.textContent || '').trim())}
                   style={{
+                    display: !boardClosingDua.trim() ? 'none' : 'inline-block',
                     fontSize: `${Math.round(13.5 * boardFontScale)}px`,
                     color: closingDuaTextColor
                   }}
-                  className="font-bold outline-hidden hover:bg-amber-50/80 rounded-lg px-2 py-0.5 inline-block cursor-text"
+                  className="font-bold outline-hidden hover:bg-amber-50/80 rounded-lg px-2 py-0.5 cursor-text"
                 >
                   {boardClosingDua}
                 </p>
@@ -3333,14 +3629,18 @@ export const AttendanceView: React.FC = () => {
                 onMouseDown={e => handleStartDragElement('teacherSig', e)}
                 onTouchStart={e => handleStartDragElement('teacherSig', e)}
                 style={{
+                  display:
+                    !boardTeacherLabel.trim() && !boardTeacherName.trim()
+                      ? 'none'
+                      : 'flex',
                   position: 'absolute',
                   top: `${baseSigTop + elementTransforms.teacherSig.y}px`,
                   left: `calc(76% + ${elementTransforms.teacherSig.x}px)`,
                   transform: `translateX(-50%) scale(${elementTransforms.teacherSig.scale})`,
                   cursor: draggingElement === 'teacherSig' ? 'grabbing' : 'grab',
-                  display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
+                  justifyContent: 'center',
                   textAlign: 'center',
                   zIndex: selectedCanvasElement === 'teacherSig' ? 30 : 15
                 }}
@@ -3375,8 +3675,14 @@ export const AttendanceView: React.FC = () => {
                 <div
                   contentEditable
                   suppressContentEditableWarning
-                  onBlur={e => setBoardTeacherLabel(e.currentTarget.textContent || '')}
+                  onInput={e => {
+                    if (!(e.currentTarget.textContent || '').trim()) {
+                      setBoardTeacherLabel('');
+                    }
+                  }}
+                  onBlur={e => setBoardTeacherLabel((e.currentTarget.textContent || '').trim())}
                   style={{
+                    display: !boardTeacherLabel.trim() ? 'none' : 'block',
                     fontSize: `${Math.round(11.5 * boardFontScale)}px`,
                     color: signatureTextColor
                   }}
@@ -3387,8 +3693,14 @@ export const AttendanceView: React.FC = () => {
                 <div
                   contentEditable
                   suppressContentEditableWarning
-                  onBlur={e => setBoardTeacherName(e.currentTarget.textContent || '')}
+                  onInput={e => {
+                    if (!(e.currentTarget.textContent || '').trim()) {
+                      setBoardTeacherName('');
+                    }
+                  }}
+                  onBlur={e => setBoardTeacherName((e.currentTarget.textContent || '').trim())}
                   style={{
+                    display: !boardTeacherName.trim() ? 'none' : 'block',
                     fontSize: `${Math.round(14 * boardFontScale)}px`,
                     color: signatureTextColor
                   }}
@@ -3414,14 +3726,18 @@ export const AttendanceView: React.FC = () => {
                 onMouseDown={e => handleStartDragElement('leaderSig', e)}
                 onTouchStart={e => handleStartDragElement('leaderSig', e)}
                 style={{
+                  display:
+                    !boardLeaderLabel.trim() && !boardLeaderName.trim()
+                      ? 'none'
+                      : 'flex',
                   position: 'absolute',
                   top: `${baseSigTop + elementTransforms.leaderSig.y}px`,
                   left: `calc(24% + ${elementTransforms.leaderSig.x}px)`,
                   transform: `translateX(-50%) scale(${elementTransforms.leaderSig.scale})`,
                   cursor: draggingElement === 'leaderSig' ? 'grabbing' : 'grab',
-                  display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
+                  justifyContent: 'center',
                   textAlign: 'center',
                   zIndex: selectedCanvasElement === 'leaderSig' ? 30 : 15
                 }}
@@ -3456,8 +3772,14 @@ export const AttendanceView: React.FC = () => {
                 <div
                   contentEditable
                   suppressContentEditableWarning
-                  onBlur={e => setBoardLeaderLabel(e.currentTarget.textContent || '')}
+                  onInput={e => {
+                    if (!(e.currentTarget.textContent || '').trim()) {
+                      setBoardLeaderLabel('');
+                    }
+                  }}
+                  onBlur={e => setBoardLeaderLabel((e.currentTarget.textContent || '').trim())}
                   style={{
+                    display: !boardLeaderLabel.trim() ? 'none' : 'block',
                     fontSize: `${Math.round(11.5 * boardFontScale)}px`,
                     color: signatureTextColor
                   }}
@@ -3468,8 +3790,14 @@ export const AttendanceView: React.FC = () => {
                 <div
                   contentEditable
                   suppressContentEditableWarning
-                  onBlur={e => setBoardLeaderName(e.currentTarget.textContent || '')}
+                  onInput={e => {
+                    if (!(e.currentTarget.textContent || '').trim()) {
+                      setBoardLeaderName('');
+                    }
+                  }}
+                  onBlur={e => setBoardLeaderName((e.currentTarget.textContent || '').trim())}
                   style={{
+                    display: !boardLeaderName.trim() ? 'none' : 'block',
                     fontSize: `${Math.round(14 * boardFontScale)}px`,
                     color: signatureTextColor
                   }}
@@ -3494,6 +3822,319 @@ export const AttendanceView: React.FC = () => {
           </div>
         </div>
         </ErrorBoundary>
+      )}
+
+      {/* GROUP / CIRCLE COMPETITION LEADERBOARD MODAL ("منافسة المجموعات والحلقات") */}
+      {showGroupCompetitionModal && (
+        <div
+          className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+          onClick={() => setShowGroupCompetitionModal(false)}
+        >
+          <div
+            className="bg-white rounded-3xl border border-stone-200/80 shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto p-5 sm:p-6 space-y-5"
+            onClick={e => e.stopPropagation()}
+            dir="rtl"
+          >
+            {/* Modal Header */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-stone-200/70">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-theme-primary text-white flex items-center justify-center shadow-xs">
+                  <Trophy className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-stone-800">
+                    منافسة المجموعات والحلقات
+                  </h3>
+                  <p className="text-xs text-stone-500 font-medium">
+                    ترتيب تنافسي تلقائي يجمع بين الأقل غياباً ونسبة الحضور ودرجة التحضير المبكر
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Period Switcher */}
+                <div className="inline-flex rounded-xl bg-stone-100 p-1 border border-stone-200/80">
+                  <button
+                    type="button"
+                    onClick={() => setCompetitionPeriod('week')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      competitionPeriod === 'week'
+                        ? 'bg-theme-primary text-white shadow-2xs'
+                        : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    {selectedStudyWeekInfo.weekLabelArabic} (الأحد - الخميس)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCompetitionPeriod('month')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      competitionPeriod === 'month'
+                        ? 'bg-theme-primary text-white shadow-2xs'
+                        : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    شهر {selectedStudyWeekInfo.hijriMonthName}
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowGroupCompetitionModal(false)}
+                  className="w-9 h-9 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-600 flex items-center justify-center font-bold transition cursor-pointer"
+                  title="إغلاق"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Ranked Group Cards */}
+            {groupCompetitionLeaderboard.length > 0 ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {groupCompetitionLeaderboard.map((grp, idx) => {
+                    const rankNumber = idx + 1;
+                    const rankLabels = [
+                      'المركز الأول',
+                      'المركز الثاني',
+                      'المركز الثالث',
+                      'المركز الرابع',
+                      'المركز الخامس',
+                      'المركز السادس'
+                    ];
+                    const rankTitle = rankLabels[idx] || `المركز ${rankNumber}`;
+                    const isFirst = idx === 0;
+                    const isSecond = idx === 1;
+                    const isThird = idx === 2;
+
+                    return (
+                      <div
+                        key={grp.circleId}
+                        className={`rounded-2xl border p-4 transition-all ${
+                          isFirst
+                            ? 'bg-amber-50/70 border-amber-300 shadow-sm ring-1 ring-amber-300/60'
+                            : isSecond
+                              ? 'bg-stone-50/90 border-stone-300'
+                              : isThird
+                                ? 'bg-orange-50/40 border-orange-200'
+                                : 'bg-white border-stone-200/80'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-2.5">
+                            <div
+                              className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
+                                isFirst
+                                  ? 'bg-amber-500 text-white shadow-xs'
+                                  : isSecond
+                                    ? 'bg-stone-600 text-white'
+                                    : isThird
+                                      ? 'bg-amber-700 text-white'
+                                      : 'bg-stone-100 text-stone-700'
+                              }`}
+                            >
+                              {rankNumber}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                                    isFirst
+                                      ? 'bg-amber-200/80 text-amber-950'
+                                      : 'bg-stone-200/70 text-stone-700'
+                                  }`}
+                                >
+                                  {rankTitle}
+                                </span>
+                                <span className="text-[11px] font-bold text-stone-500">
+                                  • {grp.trackName}
+                                </span>
+                              </div>
+                              <h4 className="text-base font-bold text-stone-800 mt-0.5">
+                                {grp.circleName}
+                              </h4>
+                              <p className="text-xs text-stone-500 font-medium">
+                                المعلمة: {grp.teacherName} • {grp.studentCount} طالبة
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Total Competition Score Badge */}
+                          <div className="text-left shrink-0">
+                            <div className="text-[10px] font-bold text-stone-500">
+                              المجموع الكلي
+                            </div>
+                            <div
+                              className={`text-xl font-extrabold ${
+                                isFirst ? 'text-amber-700' : 'text-theme-primary'
+                              }`}
+                            >
+                              {grp.totalCompetitionScore}%
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Metrics Breakdown */}
+                        <div className="grid grid-cols-3 gap-2 pt-2.5 border-t border-stone-200/60 text-center">
+                          <div className="bg-white/90 rounded-xl p-2 border border-stone-200/60">
+                            <div className="text-[10px] font-bold text-stone-500">
+                              نسبة الحضور
+                            </div>
+                            <div className="text-sm font-bold text-emerald-700 mt-0.5">
+                              {grp.attendanceRate}%
+                            </div>
+                          </div>
+                          <div className="bg-white/90 rounded-xl p-2 border border-stone-200/60">
+                            <div className="text-[10px] font-bold text-stone-500">
+                              الأقل غياباً
+                            </div>
+                            <div className="text-sm font-bold text-stone-800 mt-0.5">
+                              {grp.absentSessions === 0 ? '٠ غياب' : `${grp.absentSessions} غياب`}
+                            </div>
+                          </div>
+                          <div className="bg-white/90 rounded-xl p-2 border border-stone-200/60">
+                            <div className="text-[10px] font-bold text-stone-500">
+                              التحضير المبكر
+                            </div>
+                            <div className="text-sm font-bold text-amber-700 mt-0.5">
+                              {grp.earlyPrepRate}% ({grp.earlyPrepSessions})
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Winner Announcement Card Preview & PNG Export */}
+                {groupCompetitionLeaderboard[0] && (
+                  <div className="pt-4 border-t border-stone-200/80 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-stone-700">
+                        معاينة بطاقة تتويج المجموعة الفائزة بالمركز الأول (للمشاركة عبر واتساب):
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleExportWinnerGroupPng}
+                        disabled={isExportingCompetitionPng}
+                        className="px-4 py-2 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold flex items-center gap-2 shadow-xs transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>
+                          {isExportingCompetitionPng
+                            ? 'جاري تصدير البطاقة...'
+                            : 'تصدير بطاقة المجموعة الفائزة PNG'}
+                        </span>
+                      </button>
+                    </div>
+
+                    <div className="flex justify-center overflow-x-auto py-1">
+                      <div
+                        ref={competitionWinnerCardRef}
+                        style={{
+                          width: '540px',
+                          minWidth: '540px',
+                          backgroundColor: '#FFFDF8',
+                          borderColor: '#C9A24D'
+                        }}
+                        className="rounded-3xl border-2 p-6 text-center shadow-md relative overflow-hidden"
+                        dir="rtl"
+                      >
+                        <div
+                          style={{ backgroundColor: '#9A5643' }}
+                          className="rounded-2xl py-3 px-5 text-white mb-4 shadow-xs"
+                        >
+                          <div className="text-xs font-bold opacity-90">
+                            {boardAcademyTitle || 'غيث الغيم'}
+                          </div>
+                          <div className="text-lg font-extrabold mt-0.5">
+                            تتويج المجموعة الفائزة في منافسة الحلقات
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            backgroundColor: '#FBF7EE',
+                            borderColor: '#C9A24D',
+                            color: '#6E5638'
+                          }}
+                          className="inline-flex items-center gap-2 px-4 py-1 rounded-full border text-xs font-bold mb-3"
+                        >
+                          <span>
+                            {competitionPeriod === 'week'
+                              ? selectedStudyWeekInfo.weekLabelArabic
+                              : `شهر ${selectedStudyWeekInfo.hijriMonthName}`}
+                          </span>
+                          <span>•</span>
+                          <span>المركز الأول</span>
+                        </div>
+
+                        <div className="my-2">
+                          <div className="text-2xl font-extrabold text-stone-800">
+                            {groupCompetitionLeaderboard[0].circleName}
+                          </div>
+                          <div className="text-xs font-bold text-stone-600 mt-1">
+                            {groupCompetitionLeaderboard[0].trackName} • بإشراف المعلمة:{' '}
+                            {groupCompetitionLeaderboard[0].teacherName}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2.5 my-4">
+                          <div className="rounded-2xl bg-amber-50/90 border border-amber-200/80 p-2.5">
+                            <div className="text-[11px] font-bold text-stone-600">
+                              نسبة الحضور
+                            </div>
+                            <div className="text-base font-extrabold text-emerald-800 mt-0.5">
+                              {groupCompetitionLeaderboard[0].attendanceRate}%
+                            </div>
+                          </div>
+                          <div className="rounded-2xl bg-amber-50/90 border border-amber-200/80 p-2.5">
+                            <div className="text-[11px] font-bold text-stone-600">
+                              الانضباط والغياب
+                            </div>
+                            <div className="text-base font-extrabold text-stone-800 mt-0.5">
+                              {groupCompetitionLeaderboard[0].absentSessions === 0
+                                ? '٠ غياب'
+                                : `${groupCompetitionLeaderboard[0].absentSessions} غياب`}
+                            </div>
+                          </div>
+                          <div className="rounded-2xl bg-amber-50/90 border border-amber-200/80 p-2.5">
+                            <div className="text-[11px] font-bold text-stone-600">
+                              التحضير المبكر
+                            </div>
+                            <div className="text-base font-extrabold text-amber-800 mt-0.5">
+                              {groupCompetitionLeaderboard[0].earlyPrepRate}%
+                            </div>
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            backgroundColor: '#FFF8E7',
+                            borderColor: '#C9A24D'
+                          }}
+                          className="inline-flex items-center gap-2 px-5 py-1.5 rounded-2xl border text-sm font-extrabold text-amber-900"
+                        >
+                          <span>المجموع الكلي للمنافسة:</span>
+                          <span>{groupCompetitionLeaderboard[0].totalCompetitionScore}%</span>
+                        </div>
+
+                        <p className="text-xs font-bold text-stone-600 mt-3">
+                          بارك الله في جهود معلمة الحلقة وطالباتها وزادهنّ همّةً وتألقاً
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-stone-500 text-sm font-bold">
+                لا توجد حلقات نشطة حالياً للمقارنة.
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
     </div>
