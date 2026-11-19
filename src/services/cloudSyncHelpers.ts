@@ -645,13 +645,9 @@ export const assembleShardedCloudState = (
     };
 
     for (const id of baseShardIds) {
+      // Only follow the committed pointer list. Prefix discovery can accidentally include
+      // uncommitted/orphaned overflow documents from an interrupted or retried write.
       collectFromDocId(id);
-      // Also discover any overflow shards present in shardsById by prefix convention `${id}_overflow_`
-      for (const candidateKey of Object.keys(shardsById || {})) {
-        if (candidateKey.startsWith(`${id}_overflow_`)) {
-          collectFromDocId(candidateKey);
-        }
-      }
     }
     return collected;
   };
