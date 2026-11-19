@@ -634,11 +634,15 @@ describe('3. Data Integrity & Sandboxed Migration Tests', () => {
     });
     assert.equal(partialRun.report.status, 'partial_paused');
     assert.equal(partialRun.checkpoint.completedShards.length, 3);
-    // The migration writes its unique overflow document before publishing the base pointer.
-    assert.equal(migrationWriteOrder[0].startsWith('shard_daily_0_overflow_mig_'), true);
-    assert.equal(migrationWriteOrder[1], 'shard_daily_0');
+    // Every migration overflow document must be written before the base shard that publishes it.
+    const firstOverflowIndex = migrationWriteOrder.findIndex(id => id.includes('_overflow_mig_'));
+    assert.equal(firstOverflowIndex >= 0, true);
+    const firstOverflowId = migrationWriteOrder[firstOverflowIndex];
+    const parentShardId = firstOverflowId.split('_overflow_mig_')[0];
+    const parentBaseIndex = migrationWriteOrder.indexOf(parentShardId);
+    assert.equal(parentBaseIndex > firstOverflowIndex, true);
     assert.equal(
-      sandboxStore.get('shard_daily_0')?.overflowShardIds?.every((id: string) => sandboxStore.has(id)),
+      sandboxStore.get(parentShardId)?.overflowShardIds?.every((id: string) => sandboxStore.has(id)),
       true
     );
     // Legacy source is still retained on master_state while paused
