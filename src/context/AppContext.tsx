@@ -2202,6 +2202,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const resolvePersistWaiters = (
+    waiters: Array<(res: { cloudSynced: boolean; queuedOffline: boolean; opId: string; error?: string }) => void>,
+    result: { cloudSynced: boolean; queuedOffline: boolean; opId: string; error?: string }
+  ) => {
+    for (const waiter of waiters) {
+      try {
+        waiter(result);
+      } catch {
+        // ignore resolver callback errors
+      }
+    }
+  };
+
   const persistState = (
     overrides?: any
   ): Promise<{ cloudSynced: boolean; queuedOffline: boolean; opId: string; error?: string }> => {
@@ -2389,6 +2402,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         const executePush = (attempt = 1) => {
           syncTimeoutRef.current = null;
+          // Detach only the callers represented by this push. Mutations arriving while the
+          // network request is in flight must wait for a later payload, not this older result.
+          const batchWaiters = pendingPersistResolversRef.current.splice(
+            0,
+            pendingPersistResolversRef.current.length
+          );
           const pushTimestamp = lastLocalMutationTimeRef.current;
           const keysToSync = Array.from(pendingChangedKeysRef.current);
           const isBatchReplace = pendingReplaceStateRef.current || replaceCloudState;
@@ -2410,7 +2429,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 }
                 setCloudStatus(getPendingSyncOperationsCount() > 0 ? 'pending' : 'connected');
                 setLastSynced(new Date());
-                resolveAllPendingPersistWaiters({
+                resolvePersistWaiters(batchWaiters, {
                   cloudSynced: true,
                   queuedOffline: false,
                   opId: res.opId
@@ -2419,7 +2438,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 const isOfflineNow = typeof navigator !== 'undefined' && navigator.onLine === false;
                 hasPendingLocalChangesRef.current = true;
                 setCloudStatus(isOfflineNow ? 'offline' : 'pending');
-                resolveAllPendingPersistWaiters({
+                resolvePersistWaiters(batchWaiters, {
                   cloudSynced: false,
                   queuedOffline: res.queuedOffline,
                   opId: res.opId
@@ -2432,7 +2451,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               if (!isOffline && attempt < 2) {
                 setTimeout(() => {
                   if (lastLocalMutationTimeRef.current === pushTimestamp) {
+                    // Retry the same captured batch while its payload is still current.
+                    pendingPersistResolversRef.current.unshift(...batchWaiters);
                     executePush(attempt + 1);
+                  } else {
+                    // A newer local mutation superseded this payload. Carry its waiters into
+                    // the next push so no caller is left unresolved.
+                    pendingPersistResolversRef.current.unshift(...batchWaiters);
+                    if (!syncTimeoutRef.current) {
+                      syncTimeoutRef.current = setTimeout(() => executePush(1), 350);
+                    }
                   }
                 }, 2500);
                 return;
@@ -2440,7 +2468,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               const hasQueued = getPendingSyncOperationsCount() > 0;
               hasPendingLocalChangesRef.current = hasQueued;
               setCloudStatus(isOffline ? 'offline' : hasQueued ? 'pending' : 'error');
-              resolveAllPendingPersistWaiters({
+              resolvePersistWaiters(batchWaiters, {
                 cloudSynced: false,
                 queuedOffline: hasQueued,
                 opId,
