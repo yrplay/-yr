@@ -611,6 +611,7 @@ describe('3. Data Integrity & Sandboxed Migration Tests', () => {
       auditLogs: [{ id: 'log1', details: 'اختبار', timestamp: '2026-03-01T08:00:00Z' }]
     });
 
+    const migrationWriteOrder: string[] = [];
     const adapter = {
       readAllDocs: async () => {
         const docs: Record<string, Record<string, any> | null> = {};
@@ -620,6 +621,7 @@ describe('3. Data Integrity & Sandboxed Migration Tests', () => {
         return { completeRead: true, docs };
       },
       writeDoc: async (docId: string, payload: Record<string, any>) => {
+        migrationWriteOrder.push(docId);
         sandboxStore.set(docId, structuredClone(payload));
       }
     };
@@ -627,10 +629,18 @@ describe('3. Data Integrity & Sandboxed Migration Tests', () => {
     // 1. Simulate interruption after 3 shards, then resume from checkpoint
     const partialRun = await executeSafeLegacyShardMigration({
       adapter,
-      simulateInterruptAfterShardCount: 3
+      simulateInterruptAfterShardCount: 3,
+      maxBytesPerShard: 1
     });
     assert.equal(partialRun.report.status, 'partial_paused');
     assert.equal(partialRun.checkpoint.completedShards.length, 3);
+    // The migration writes its unique overflow document before publishing the base pointer.
+    assert.equal(migrationWriteOrder[0].startsWith('shard_daily_0_overflow_mig_'), true);
+    assert.equal(migrationWriteOrder[1], 'shard_daily_0');
+    assert.equal(
+      sandboxStore.get('shard_daily_0')?.overflowShardIds?.every((id: string) => sandboxStore.has(id)),
+      true
+    );
     // Legacy source is still retained on master_state while paused
     assert.equal(Array.isArray(sandboxStore.get('master_state')?.dailyRecords), true);
 
@@ -638,7 +648,8 @@ describe('3. Data Integrity & Sandboxed Migration Tests', () => {
     const resumedRun = await executeSafeLegacyShardMigration({
       adapter,
       checkpoint: partialRun.checkpoint,
-      cleanupLegacyAfterVerification: true
+      cleanupLegacyAfterVerification: true,
+      maxBytesPerShard: 1
     });
 
     assert.equal(resumedRun.report.status, 'completed');
