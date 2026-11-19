@@ -2209,12 +2209,31 @@ export const executeSafeLegacyShardMigration = async (params: {
   // Build target shard documents (using partitionItemsIntoBoundedShards for automatic overflow splitting)
   const targetShardPayloads: Record<string, Record<string, any>> = {};
   const targetShardOrder: string[] = [];
+  // Keep overflow IDs unique to this resumable migration. Reusing deterministic legacy IDs
+  // could overwrite shards still referenced by the currently published base document.
+  const migrationToken = checkpoint.migrationId.replace(/[^a-zA-Z0-9_-]/g, '_');
 
   const addPartitionedShardPayloads = (baseShardId: string, shardType: string, bucket: number, items: any[]) => {
     const partitions = partitionItemsIntoBoundedShards(baseShardId, items, maxBytesPerShard);
     const basePart = partitions[0] || { shardId: baseShardId, items: [], byteSize: 0 };
     const overflowParts = partitions.slice(1);
-    const overflowIds = overflowParts.map(p => p.shardId);
+    const overflowIds = overflowParts.map((_, index) => `${baseShardId}_overflow_mig_${migrationToken}_${index + 1}`);
+
+    for (let i = 0; i < overflowParts.length; i++) {
+      const ov = overflowParts[i];
+      const overflowId = overflowIds[i];
+      targetShardPayloads[overflowId] = {
+        users: [],
+        shardType: `${shardType}_overflow`,
+        parentShardId: baseShardId,
+        overflowIndex: i + 1,
+        items: deepCleanForFirestore(ov.items),
+        _revision: ((allDocs[overflowId]?._revision as number) || 0) + 1,
+        updatedAt: nowIso
+      };
+      // Write migration-scoped overflow data before publishing the base pointer.
+      targetShardOrder.push(overflowId);
+    }
 
     targetShardPayloads[baseShardId] = {
       users: [],
@@ -2226,20 +2245,6 @@ export const executeSafeLegacyShardMigration = async (params: {
       updatedAt: nowIso
     };
     targetShardOrder.push(baseShardId);
-
-    for (let i = 0; i < overflowParts.length; i++) {
-      const ov = overflowParts[i];
-      targetShardPayloads[ov.shardId] = {
-        users: [],
-        shardType: `${shardType}_overflow`,
-        parentShardId: baseShardId,
-        overflowIndex: i + 1,
-        items: deepCleanForFirestore(ov.items),
-        _revision: ((allDocs[ov.shardId]?._revision as number) || 0) + 1,
-        updatedAt: nowIso
-      };
-      targetShardOrder.push(ov.shardId);
-    }
   };
 
   for (const shardId of DAILY_SHARD_DOC_IDS) {
