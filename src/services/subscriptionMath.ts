@@ -117,10 +117,16 @@ export const deduplicateSubscriptionsByCycle = (
   const byCycle = new Map<string, StudentSubscription>();
   subscriptions.forEach(subscription => {
     const parsed = parseHijriCycle(subscription.cycleMonth, fallbackHijriYear);
-    // Ignore legacy compound seed strings that do not map to a canonical Hijri month
-    if (subscription.cycleMonth && !parsed) return;
+    const rawCycle = (subscription.cycleMonth || '').trim();
+    // Keep valid non-Hijri cycle identifiers (e.g. named terms) as opaque keys.
+    // Only discard legacy strings that combine multiple Hijri months and cannot
+    // be assigned unambiguously to one collection cycle.
+    const matchedMonthCount = HIJRI_MONTH_VARIANTS.filter(entry =>
+      entry.patterns.some(pattern => rawCycle.includes(pattern))
+    ).length;
+    if (rawCycle && !parsed && matchedMonthCount > 1) return;
 
-    const cycle = parsed ? parsed.canonicalLabel : normalizedCurrentCycle;
+    const cycle = parsed ? parsed.canonicalLabel : (rawCycle || normalizedCurrentCycle);
     if (normalizedFilter !== 'all' && cycle !== normalizedFilter) return;
 
     const subscriptionTime = Date.parse(subscription.updatedAt || '') || 0;
