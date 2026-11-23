@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-  Trophy, Plus, Edit, Trash2, HeartHandshake, CheckCircle2,
+  Trophy, Plus, Edit, Pencil, Trash2, HeartHandshake, CheckCircle2,
   Calendar, Clock, Star, Users, Award, Shield, FileText, ChevronLeft,
   Printer, X, AlertCircle, UsersRound, ClipboardCheck, ScrollText, ArrowLeftRight,
-  Archive, RotateCcw
+  Archive, RotateCcw, Flame, Sparkles
 } from 'lucide-react';
 import { Challenge, ChallengeType, hasFullAccess, StudentChallengeSubmission, isStudentEffectivelyArchived } from '../types';
 import { formatHijriShort, formatHijriDateTime, getTodayISO } from '../utils/hijriDate';
@@ -418,98 +418,100 @@ export const ChallengesView: React.FC = () => {
   return (
     <div className="space-y-6">
 
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Trophy className="w-5 h-5 text-[#9A5643] shrink-0" />
-            <h2 className="text-xl font-bold text-stone-900 font-quran">التحديات القرآنية والمراجعة الثنائية</h2>
-          </div>
-          <p className="text-xs text-stone-500">
-            تحدي الخميس الأسبوعي، تحديات المراجعة الكبرى، وتقييم تعاون الرفيقة في اكتشاف وتصحيح الأخطاء
-          </p>
+      {/* Header Bar with Integrated View-Switcher Tabs & Create Challenge Action */}
+      <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap bg-white p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs">
+        <div className="flex items-center gap-2">
+          <Trophy className="w-5 h-5 text-theme-primary shrink-0" />
+          <h2 className="text-xl font-bold text-stone-900 font-quran">التحديات القرآنية والمراجعة الثنائية</h2>
         </div>
 
-        <button
-          onClick={() => handleOpenChallengeModal()}
-          className="flex items-center gap-1.5 px-4 py-2.5 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs transition self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>إنشاء تحدٍ قرآني جديد</span>
-        </button>
-      </div>
+        <div className="flex items-center gap-2 flex-nowrap shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab('thursday')}
+            title="التحديات النشطة"
+            aria-label="التحديات النشطة"
+            className={`h-10 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 shadow-2xs active:scale-95 ${
+              activeTab === 'thursday'
+                ? 'bg-theme-primary text-white border border-theme-primary'
+                : 'bg-white text-theme-primary hover:bg-stone-50 border border-stone-200'
+            }`}
+          >
+            <Flame className={`w-4 h-4 shrink-0 ${activeTab === 'thursday' ? 'text-white' : 'text-theme-primary'}`} />
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] leading-none font-bold ${
+              activeTab === 'thursday'
+                ? 'bg-white/20 text-white'
+                : 'bg-stone-100 text-stone-600'
+            }`}>
+              {activeChallenges.length}
+            </span>
+          </button>
 
-      {/* Section Tabs: Active Challenges vs Archived Challenges vs Peer Review Matrix */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-stone-200 pb-2">
-        <button
-          onClick={() => setActiveTab('thursday')}
-          className={`px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
-            activeTab === 'thursday'
-              ? 'bg-[#8E5364] text-white shadow-xs'
-              : 'text-stone-600 hover:bg-[#FAF6F2]'
-          }`}
-        >
-          <Calendar className="w-4 h-4" />
-          <span>التحديات النشطة ({activeChallenges.length})</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('archived')}
+            title="التحديات المؤرشفة"
+            aria-label="التحديات المؤرشفة"
+            className={`h-10 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 shadow-2xs active:scale-95 ${
+              activeTab === 'archived'
+                ? 'bg-theme-primary text-white border border-theme-primary'
+                : 'bg-white text-theme-primary hover:bg-stone-50 border border-stone-200'
+            }`}
+          >
+            <Archive className={`w-4 h-4 shrink-0 ${activeTab === 'archived' ? 'text-white' : 'text-theme-primary'}`} />
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] leading-none font-bold ${
+              activeTab === 'archived'
+                ? 'bg-white/20 text-white'
+                : 'bg-stone-100 text-stone-600'
+            }`}>
+              {archivedChallenges.length}
+            </span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('archived')}
-          className={`px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
-            activeTab === 'archived'
-              ? 'bg-[#7B3F30] text-white shadow-xs'
-              : 'text-[#7B3F30] bg-[#F6EFEA]/70 hover:bg-[#EDE0D6] border border-[#DFCEBF]'
-          }`}
-        >
-          <Archive className="w-4 h-4" />
-          <span>التحديات المؤرشفة ({archivedChallenges.length})</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('peer_review')}
+            title="مصفوفة المراجعة الثنائية"
+            aria-label="مصفوفة المراجعة الثنائية"
+            className={`w-10 h-10 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer shrink-0 shadow-2xs active:scale-95 ${
+              activeTab === 'peer_review'
+                ? 'bg-theme-primary text-white border border-theme-primary'
+                : 'bg-white text-theme-primary hover:bg-stone-50 border border-stone-200'
+            }`}
+          >
+            <Users className={`w-4 h-4 shrink-0 ${activeTab === 'peer_review' ? 'text-white' : 'text-theme-primary'}`} />
+          </button>
 
-        <button
-          onClick={() => setActiveTab('peer_review')}
-          className={`px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
-            activeTab === 'peer_review'
-              ? 'bg-[#8E5364] text-white shadow-xs'
-              : 'text-stone-600 hover:bg-[#FAF6F2]'
-          }`}
-        >
-          <UsersRound className="w-4 h-4" />
-          <span>مصفوفة المراجعة الثنائية وتعاون الرفيقة</span>
-        </button>
+          <div className="h-6 w-px bg-stone-300/70 mx-1 shrink-0" />
+
+          <button
+            type="button"
+            onClick={() => handleOpenChallengeModal()}
+            title="إنشاء تحدٍ قرآني جديد"
+            aria-label="إنشاء تحدٍ قرآني جديد"
+            className="w-10 h-10 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white transition flex items-center justify-center shadow-2xs cursor-pointer active:scale-95 shrink-0"
+          >
+            <Plus className="w-4 h-4 shrink-0" />
+          </button>
+        </div>
       </div>
 
       {/* Challenges List Selector (عرض التحديات النشطة أو المؤرشفة مع إمكانية الأرشفة والاستعادة والحذف والتعديل) */}
       {activeTab !== 'peer_review' && (
         <div className="bg-white p-4 sm:p-5 rounded-3xl border border-[#E8DFD8] shadow-2xs space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-2.5">
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center justify-between gap-2 border-b border-stone-100 pb-2.5">
+            <div className="flex items-center gap-2">
               {activeTab === 'archived' ? (
-                <Archive className="w-4 h-4 text-[#7B3F30]" />
+                <Archive className="w-4 h-4 text-theme-primary" />
               ) : (
-                <Trophy className="w-4 h-4 text-[#8E5364]" />
+                <Trophy className="w-4 h-4 text-theme-primary" />
               )}
               <h3 className="font-bold text-stone-900 text-sm">
                 {activeTab === 'archived'
-                  ? `التحديات القرآنية المؤرشفة (${archivedChallenges.length}):`
-                  : `التحديات القرآنية النشطة للشهر الحالي (${activeChallenges.length}):`}
+                  ? `التحديات القرآنية المؤرشفة (${archivedChallenges.length})`
+                  : `التحديات القرآنية النشطة للشهر الحالي (${activeChallenges.length})`}
               </h3>
-              <span className="text-[11px] text-stone-400">
-                {activeTab === 'archived'
-                  ? '(جميع نقاط وسجلات الطالبات في التحديات المؤرشفة محفوظة بالكامل ويمكن استعادتها بضغطة واحدة)'
-                  : '(انقري على أي تحدٍ لاختياره وعرض تفاصيله ورصد طالباته بالأسفل)'}
-              </span>
             </div>
-
-            {hasFullAccess(currentUser) && activeTab !== 'archived' && (
-              <button
-                type="button"
-                onClick={() => handleOpenChallengeModal()}
-                className="px-3 py-1.5 bg-[#FAF0F3] hover:bg-[#8E5364] text-[#8E5364] hover:text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 self-start cursor-pointer border border-[#8E5364]/20 shadow-2xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>إضافة تحدٍ قرآني جديد</span>
-              </button>
-            )}
           </div>
 
           {displayedChallenges.length === 0 ? (
@@ -572,26 +574,26 @@ export const ChallengesView: React.FC = () => {
                         )}
                       </span>
 
-                      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-2 flex-nowrap" onClick={e => e.stopPropagation()}>
                         {isArchivedCh ? (
                           <button
                             type="button"
                             onClick={() => restoreChallenge(ch.id)}
-                            className="px-2 py-1 text-[10px] font-bold bg-[#EBF3EE] hover:bg-[#DCEADA] text-[#2D5A43] border border-[#B8D8C5] rounded-lg inline-flex items-center gap-1 transition cursor-pointer"
-                            title="استعادة التحدي إلى قائمة التحديات النشطة"
+                            className="w-9 h-9 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                            title="استعادة التحدي"
+                            aria-label="استعادة التحدي"
                           >
-                            <RotateCcw className="w-3 h-3" />
-                            <span>استعادة</span>
+                            <RotateCcw className="w-4 h-4 shrink-0" />
                           </button>
                         ) : (
                           <button
                             type="button"
                             onClick={() => archiveChallenge(ch.id)}
-                            className="px-2 py-1 text-[10px] font-bold bg-[#F6EFEA] hover:bg-[#7B3F30] text-[#7B3F30] hover:text-white border border-[#DFCEBF] rounded-lg inline-flex items-center gap-1 transition cursor-pointer"
-                            title="أرشفة التحدي مع الاحتفاظ بجميع نقاطه وسجلات الطالبات"
+                            className="w-9 h-9 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                            title="أرشفة التحدي"
+                            aria-label="أرشفة التحدي"
                           >
-                            <Archive className="w-3 h-3" />
-                            <span>أرشفة التحدي</span>
+                            <Archive className="w-4 h-4 shrink-0" />
                           </button>
                         )}
                         {hasFullAccess(currentUser) && (
@@ -599,18 +601,20 @@ export const ChallengesView: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleOpenChallengeModal(ch)}
-                              className="p-1.5 text-stone-500 hover:text-[#8E5364] hover:bg-white rounded-lg transition cursor-pointer"
+                              className="w-9 h-9 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                               title="تعديل هذا التحدي"
+                              aria-label="تعديل هذا التحدي"
                             >
-                              <Edit className="w-3.5 h-3.5" />
+                              <Pencil className="w-4 h-4 shrink-0" />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDeleteChallenge(ch.id, ch.title)}
-                              className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                              title="حذف هذا التحدي"
+                              className="w-9 h-9 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                              title="حذف التحدي"
+                              aria-label="حذف التحدي"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-4 h-4 shrink-0" />
                             </button>
                           </>
                         )}
@@ -651,25 +655,26 @@ export const ChallengesView: React.FC = () => {
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <div className="flex items-center gap-2 flex-nowrap self-start sm:self-auto shrink-0">
               {currentChallenge.isArchived || currentChallenge.status === 'archived' ? (
                 <button
                   type="button"
                   onClick={() => restoreChallenge(currentChallenge.id)}
-                  className="px-3 py-1.5 text-[#2D5A43] bg-[#EBF3EE] hover:bg-[#DCEADA] rounded-xl text-xs font-bold flex items-center gap-1.5 border border-[#B8D8C5] transition cursor-pointer"
+                  className="w-9 h-9 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                  title="استعادة التحدي"
+                  aria-label="استعادة التحدي"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>استعادة إلى التحديات النشطة</span>
+                  <RotateCcw className="w-4 h-4 shrink-0" />
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => archiveChallenge(currentChallenge.id)}
-                  className="px-3 py-1.5 text-[#7B3F30] bg-[#F6EFEA] hover:bg-[#7B3F30] hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5 border border-[#DFCEBF] transition cursor-pointer"
-                  title="نقل إلى قسم التحديات المؤرشفة مع الاحتفاظ بجميع نقاط وسجلات الطالبات"
+                  className="w-9 h-9 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                  title="أرشفة التحدي"
+                  aria-label="أرشفة التحدي"
                 >
-                  <Archive className="w-3.5 h-3.5" />
-                  <span>أرشفة التحدي</span>
+                  <Archive className="w-4 h-4 shrink-0" />
                 </button>
               )}
               {hasFullAccess(currentUser) && (
@@ -677,20 +682,20 @@ export const ChallengesView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleOpenChallengeModal(currentChallenge)}
-                    className="px-3 py-1.5 text-stone-700 hover:text-[#8E5364] bg-stone-50 hover:bg-[#FAF0F3] rounded-xl text-xs font-bold flex items-center gap-1.5 border border-stone-200 transition cursor-pointer"
+                    className="w-9 h-9 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                     title="تعديل هذا التحدي"
+                    aria-label="تعديل هذا التحدي"
                   >
-                    <Edit className="w-3.5 h-3.5 text-[#8E5364]" />
-                    <span>تعديل هذا التحدي</span>
+                    <Pencil className="w-4 h-4 shrink-0" />
                   </button>
                   <button
                     type="button"
                     onClick={() => handleDeleteChallenge(currentChallenge.id, currentChallenge.title)}
-                    className="px-3 py-1.5 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-rose-200 transition cursor-pointer"
-                    title="حذف هذا التحدي"
+                    className="w-9 h-9 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                    title="حذف التحدي"
+                    aria-label="حذف التحدي"
                   >
-                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                    <span>حذف التحدي</span>
+                    <Trash2 className="w-4 h-4 shrink-0" />
                   </button>
                 </>
               )}
