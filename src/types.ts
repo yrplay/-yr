@@ -180,6 +180,8 @@ export interface Track {
   description: string;              // نبذة ووصف المسار
   icon?: string;
   logoUrl?: string;
+  textLogo?: string;
+  logoText?: string;
   subscriptionFee?: TrackSubscriptionFee;
   systemRules?: TrackSystemRules;
   isArchived: boolean;

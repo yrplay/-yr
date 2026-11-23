@@ -9,6 +9,7 @@ import { auth } from '../firebase';
 import { isLocalDemoMode } from '../demoMode';
 import { hasFullAccess } from '../types';
 import { formatHijriDate } from '../utils/hijriDate';
+import { RenderEntityIcon, isTextLogoIcon } from './CircleIconLibrary';
 
 interface HeaderProps {
   onToggleSidebar?: () => void;
@@ -151,33 +152,68 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* محدد المسارات القرآني العام الشامل (نظيف وبدون إيموجيات مؤقتة) */}
-          <div className="relative flex items-center min-w-0">
-            <select
-              value={selectedTrackId || 'all'}
-              onChange={(e) => setSelectedTrackId(e.target.value === 'all' ? null : e.target.value)}
-              aria-label="تحديد المسار القرآني العام"
-              title="تحديد المسار القرآني لعزل البيانات وعرض سجلاته"
-              className={`h-[38px] text-[11px] sm:text-xs font-semibold rounded-xl pr-2.5 sm:pr-3 pl-6 sm:pl-7 py-1 border transition appearance-none cursor-pointer shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#8E5364]/30 max-w-[130px] sm:max-w-[195px] md:max-w-[240px] truncate ${
+          <div className="relative flex items-center gap-1.5 min-w-0">
+            {(() => {
+              const activeHeaderTrack =
                 selectedTrackId && selectedTrackId !== 'all'
-                  ? 'bg-[#8E5364]/10 text-[#722F37] border-[#8E5364]/40 font-bold ring-1 ring-[#8E5364]/20'
-                  : 'bg-white hover:bg-stone-50 border-[#E8DFD8] text-stone-700'
-              }`}
-            >
-              <option value="all">كافة المسارات</option>
-              {tracks.filter(t => !t.isArchived).map(t => {
-                const cleanTrackName = (t.name || '').replace(/[🪴🤎]/g, '').trim();
-                const iconPrefix = t.icon && t.icon !== '🤎'
-                  ? (t.icon === 'sprout' ? '🪴 ' : t.icon === 'leaf' ? '🌿 ' : `${t.icon} `)
-                  : '';
+                  ? tracks.find(t => t.id === selectedTrackId)
+                  : null;
+              if (!activeHeaderTrack) return null;
+              if (activeHeaderTrack.logoUrl) {
                 return (
-                  <option key={t.id} value={t.id}>
-                    {`${iconPrefix}${cleanTrackName}`}
-                  </option>
+                  <img
+                    src={activeHeaderTrack.logoUrl}
+                    alt={activeHeaderTrack.name}
+                    className="w-7 h-7 rounded-lg object-contain border border-stone-200 bg-white p-0.5 shrink-0"
+                  />
                 );
-              })}
-            </select>
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2 text-stone-400">
-              <ChevronDown className="w-3.5 h-3.5 text-[#8E5364]" />
+              }
+              const trackTextLogo = (activeHeaderTrack.textLogo || activeHeaderTrack.logoText || '').trim();
+              if (trackTextLogo) {
+                return <RenderEntityIcon icon={trackTextLogo} />;
+              }
+              if (isTextLogoIcon(activeHeaderTrack.icon)) {
+                return <RenderEntityIcon icon={activeHeaderTrack.icon} />;
+              }
+              return null;
+            })()}
+            <div className="relative flex items-center min-w-0">
+              <select
+                value={selectedTrackId || 'all'}
+                onChange={(e) => setSelectedTrackId(e.target.value === 'all' ? null : e.target.value)}
+                aria-label="تحديد المسار القرآني العام"
+                title="تحديد المسار القرآني لعزل البيانات وعرض سجلاته"
+                className={`h-[38px] text-[11px] sm:text-xs font-semibold rounded-xl pr-2.5 sm:pr-3 pl-6 sm:pl-7 py-1 border transition appearance-none cursor-pointer shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#8E5364]/30 max-w-[130px] sm:max-w-[195px] md:max-w-[240px] truncate ${
+                  selectedTrackId && selectedTrackId !== 'all'
+                    ? 'bg-[#8E5364]/10 text-[#722F37] border-[#8E5364]/40 font-bold ring-1 ring-[#8E5364]/20'
+                    : 'bg-white hover:bg-stone-50 border-[#E8DFD8] text-stone-700'
+                }`}
+              >
+                <option value="all">كافة المسارات</option>
+                {tracks.filter(t => !t.isArchived).map(t => {
+                  const cleanTrackName = (t.name || '').replace(/[🪴🤎]/g, '').trim();
+                  const rawIcon = (t.icon || '').trim();
+                  const trackTextLogo = (t.textLogo || t.logoText || '').trim();
+                  const iconPrefix = rawIcon && rawIcon !== '🤎'
+                    ? (rawIcon === 'sprout'
+                        ? '🪴 '
+                        : rawIcon === 'leaf'
+                        ? '🌿 '
+                        : isTextLogoIcon(rawIcon)
+                        ? `${rawIcon} • `
+                        : `${rawIcon} `)
+                    : '';
+                  const textLogoSuffix = trackTextLogo ? ` (${trackTextLogo})` : '';
+                  return (
+                    <option key={t.id} value={t.id}>
+                      {`${iconPrefix}${cleanTrackName}${textLogoSuffix}`}
+                    </option>
+                  );
+                })}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2 text-stone-400">
+                <ChevronDown className="w-3.5 h-3.5 text-[#8E5364]" />
+              </div>
             </div>
           </div>
         </div>

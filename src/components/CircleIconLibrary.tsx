@@ -21,11 +21,20 @@ export const isLeafIcon = (icon?: string): boolean => {
   return normalized === 'leaf' || normalized === 'ورقة';
 };
 
+export const isTextLogoIcon = (icon?: string): boolean => {
+  if (!icon) return false;
+  const trimmed = icon.trim();
+  if (!trimmed || isSproutIcon(trimmed) || isLeafIcon(trimmed)) return false;
+  return /[\u0600-\u06FFa-zA-Z0-9]/.test(trimmed);
+};
+
 export const normalizeEntityIcon = (icon?: string, fallback: string = '📖'): string => {
   if (!icon || icon === '🤎') return fallback;
-  if (isSproutIcon(icon)) return 'sprout';
-  if (isLeafIcon(icon)) return 'leaf';
-  return icon;
+  const trimmed = icon.trim();
+  if (!trimmed) return fallback;
+  if (isSproutIcon(trimmed)) return 'sprout';
+  if (isLeafIcon(trimmed)) return 'leaf';
+  return trimmed;
 };
 
 export const RenderEntityIcon: React.FC<{
@@ -33,11 +42,13 @@ export const RenderEntityIcon: React.FC<{
   className?: string;
   sproutClassName?: string;
   fallback?: 'book' | 'credit' | 'lucide-book';
+  inverted?: boolean;
 }> = ({
   icon,
   className = 'text-2xl',
   sproutClassName = 'w-5 h-5 text-[#96503E]',
-  fallback = 'book'
+  fallback = 'book',
+  inverted = false
 }) => {
   if (isSproutIcon(icon)) {
     return <Sprout className={sproutClassName} />;
@@ -45,12 +56,25 @@ export const RenderEntityIcon: React.FC<{
   if (isLeafIcon(icon)) {
     return <Leaf className={sproutClassName} />;
   }
-  const cleaned = icon && icon !== '🤎' ? icon : '';
+  const cleaned = icon && icon !== '🤎' ? icon.trim() : '';
   if (!cleaned) {
     if (fallback === 'lucide-book') {
       return <BookOpen className={sproutClassName} />;
     }
     return <span className={className}>{fallback === 'credit' ? '💳' : '📖'}</span>;
+  }
+  if (isTextLogoIcon(cleaned)) {
+    return (
+      <span
+        className={`inline-flex items-center justify-center px-2 py-0.5 rounded-lg text-[11px] font-bold font-quran leading-tight whitespace-nowrap max-w-[130px] truncate shadow-2xs ${
+          inverted
+            ? 'bg-white/20 text-white border border-white/30'
+            : 'bg-theme-primary/10 text-theme-primary border border-theme-primary/25'
+        }`}
+      >
+        {cleaned}
+      </span>
+    );
   }
   return <span className={className}>{cleaned}</span>;
 };

@@ -2102,34 +2102,39 @@ export const AttendanceView: React.FC = () => {
                     كود: <span className="privacy-phone">{student.code}</span> • حضور: <strong className="text-[#2D5A43]"><span className="privacy-score-digit">{score?.attendanceRate ?? 100}</span>%</strong> • مبكر: <strong className="text-amber-700 privacy-score-digit">{score?.earlyPrepCount ?? 0}</strong>
                   </div>
                   {(score?.absentUnexcusedCount ?? 0) >= 3 && (
-                    <div className="mt-1.5 mr-7 flex flex-wrap items-center gap-1.5">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#FDF6F2] text-[#9A5643] border border-[#E5C3B3] text-[10px] font-bold">
-                        <AlertTriangle className="w-3 h-3 text-[#9A5643]" />
+                    <div className="mt-1.5 mr-7 space-y-1.5">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#FDF6F2] text-theme-primary border border-[#E5C3B3] text-[10px] font-bold">
+                        <AlertTriangle className="w-3 h-3 text-theme-primary" />
                         <span>تجاوزت حد الغياب (منقطعة) ({score?.absentUnexcusedCount} بدون عذر)</span>
                       </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          triggerStudentTelegramAlert({
-                            studentName: student.name,
-                            circleName: activeCircle?.name || 'الحلقة القرآنية',
-                            absenceCount: Math.max(4, score?.absentUnexcusedCount ?? 4),
-                            telegramUsername: student.telegramUsername,
-                            showToast
-                          })
-                        }
-                        className="px-2.5 py-0.5 rounded-lg bg-[#FDF6F2] hover:bg-[#9A5643] text-[#9A5643] hover:text-white border border-[#E5C3B3] text-[10px] font-bold inline-flex items-center gap-1 transition cursor-pointer"
-                      >
-                        <Send className="w-3 h-3" />
-                        <span>تنبيه تيليجرام</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => archiveStudent(student.id, `تجاوزت حد الغياب (${score?.absentUnexcusedCount ?? 4} بدون عذر) — منقطعة`)}
-                        className="px-2.5 py-0.5 rounded-lg bg-[#7B3F30] hover:bg-[#613024] text-white text-[10px] font-bold transition cursor-pointer"
-                      >
-                        نقل إلى قسم المؤرشفات
-                      </button>
+                      <div className="flex items-center justify-center gap-1.5 flex-nowrap mt-1.5 w-fit">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            triggerStudentTelegramAlert({
+                              studentName: student.name,
+                              circleName: activeCircle?.name || 'الحلقة القرآنية',
+                              absenceCount: Math.max(4, score?.absentUnexcusedCount ?? 4),
+                              telegramUsername: student.telegramUsername,
+                              showToast
+                            })
+                          }
+                          title="تنبيه تيليجرام"
+                          aria-label="تنبيه تيليجرام"
+                          className="w-8 h-8 rounded-lg bg-[#FDF6F2] hover:bg-theme-primary text-theme-primary hover:text-white border border-[#E5C3B3] inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                        >
+                          <Send className="w-3.5 h-3.5 shrink-0" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => archiveStudent(student.id, `تجاوزت حد الغياب (${score?.absentUnexcusedCount ?? 4} بدون عذر) — منقطعة`)}
+                          title="نقل إلى قسم المؤرشفات"
+                          aria-label="نقل إلى قسم المؤرشفات"
+                          className="w-8 h-8 rounded-lg bg-theme-primary hover:bg-theme-primary-hover text-white inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                        >
+                          <Archive className="w-3.5 h-3.5 shrink-0" />
+                        </button>
+                      </div>
                     </div>
                   )}
                   {rec.syncSource && rec.status === 'present' && (
@@ -2305,7 +2310,7 @@ export const AttendanceView: React.FC = () => {
                         <span className="privacy-phone">{student.code}</span>
                       </div>
                       {(score?.absentUnexcusedCount ?? 0) >= 3 && (
-                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                        <div className="flex items-center justify-center gap-1.5 flex-nowrap mt-1.5 w-fit">
                           <button
                             type="button"
                             onClick={() =>
@@ -2317,18 +2322,20 @@ export const AttendanceView: React.FC = () => {
                                 showToast
                               })
                             }
-                            className="px-2.5 py-1 rounded-lg bg-[#FDF6F2] hover:bg-[#9A5643] text-[#9A5643] hover:text-white border border-[#E5C3B3] text-[10px] font-bold inline-flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                            title="تنبيه تيليجرام"
+                            aria-label="تنبيه تيليجرام"
+                            className="w-8 h-8 rounded-lg bg-[#FDF6F2] hover:bg-theme-primary text-theme-primary hover:text-white border border-[#E5C3B3] inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                           >
-                            <Send className="w-3 h-3" />
-                            <span>تنبيه تيليجرام</span>
+                            <Send className="w-3.5 h-3.5 shrink-0" />
                           </button>
                           <button
                             type="button"
                             onClick={() => archiveStudent(student.id, `تجاوزت حد الغياب (${score?.absentUnexcusedCount ?? 4} بدون عذر) — منقطعة`)}
-                            className="px-2.5 py-1 rounded-lg bg-[#7B3F30] hover:bg-[#613024] text-white text-[10px] font-bold inline-flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                            title="نقل إلى قسم المؤرشفات"
+                            aria-label="نقل إلى قسم المؤرشفات"
+                            className="w-8 h-8 rounded-lg bg-theme-primary hover:bg-theme-primary-hover text-white inline-flex items-center justify-center transition cursor-pointer shadow-2xs active:scale-95 shrink-0"
                           >
-                            <Archive className="w-3 h-3" />
-                            <span>نقل إلى قسم المؤرشفات</span>
+                            <Archive className="w-3.5 h-3.5 shrink-0" />
                           </button>
                         </div>
                       )}

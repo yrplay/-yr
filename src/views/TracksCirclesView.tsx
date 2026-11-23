@@ -5,7 +5,7 @@ import {
   Sparkles, Trophy, BookOpen, ChevronLeft, CheckCircle2,
   Sliders, UserCheck, Shield, AlertCircle, Trash2, RotateCcw,
   Eye, EyeOff, AlertTriangle, X, ExternalLink, CreditCard, FolderOpen, FolderPlus, Sprout, Leaf,
-  HeartHandshake, Send, Copy
+  HeartHandshake, Send, Copy, Settings
 } from 'lucide-react';
 import { Circle, hasFullAccess, Track, defaultMasteryGuideConfig, isStudentEffectivelyArchived } from '../types';
 import {
@@ -13,6 +13,7 @@ import {
   RenderEntityIcon,
   isSproutIcon,
   isLeafIcon,
+  isTextLogoIcon,
   normalizeEntityIcon
 } from '../components/CircleIconLibrary';
 import { TrackDetailView } from './TrackDetailView';
@@ -134,6 +135,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     code: '',
     description: '',
     logoUrl: '',
+    textLogo: '',
     icon: '📖',
     subscriptionFee: {
       amount: 250,
@@ -197,6 +199,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
         code: track.code,
         description: track.description || '',
         logoUrl: track.logoUrl || '',
+        textLogo: track.textLogo || track.logoText || '',
         icon: normalizeEntityIcon(track.icon, '📖'),
         subscriptionFee: {
           amount: track.subscriptionFee?.amount ?? 250,
@@ -220,6 +223,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
         code: `MG-${Date.now().toString().slice(-3)}`,
         description: '',
         logoUrl: '',
+        textLogo: '',
         icon: '📖',
         subscriptionFee: {
           amount: 250,
@@ -250,7 +254,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
     }
     try {
       const dataUrl = await optimizeImageFile(file, 360, 360);
-      setTrackForm(prev => ({ ...prev, logoUrl: dataUrl }));
+      setTrackForm(prev => ({ ...prev, logoUrl: dataUrl, textLogo: '' }));
     } catch {
       showToast('تعذرت معالجة صورة شعار المسار', 'error');
     }
@@ -259,8 +263,12 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
   const handleSaveTrack = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!trackForm.name.trim()) return;
+    const cleanedTextLogo = (trackForm.textLogo || '').trim();
     const normalizedPayload = {
       ...trackForm,
+      logoUrl: trackForm.logoUrl || '',
+      textLogo: trackForm.logoUrl ? '' : cleanedTextLogo,
+      logoText: trackForm.logoUrl ? '' : cleanedTextLogo,
       icon: normalizeEntityIcon(trackForm.icon, '📖')
     };
     try {
@@ -480,8 +488,21 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
               icon={track.icon}
               className="text-sm"
               sproutClassName={`w-4 h-4 ${selectedTrackId === track.id ? 'text-white' : 'text-[#96503E]'}`}
+              inverted={selectedTrackId === track.id}
             />
             <span>{(track.name || '').replace(/[🪴🤎]/g, '').trim()}</span>
+            {track.logoUrl ? (
+              <img
+                src={track.logoUrl}
+                alt={track.name}
+                className="w-5 h-5 rounded-md object-contain bg-white p-0.5 border border-stone-200 shrink-0"
+              />
+            ) : (track.textLogo || track.logoText)?.trim() ? (
+              <RenderEntityIcon
+                icon={(track.textLogo || track.logoText || '').trim()}
+                inverted={selectedTrackId === track.id}
+              />
+            ) : null}
             <span className={`text-[10px] px-2 py-0.5 rounded-full ${
               selectedTrackId === track.id ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-600'
             }`}>
@@ -500,8 +521,18 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 <div className="w-12 h-12 rounded-2xl bg-white border border-stone-200 shadow-2xs p-1 flex items-center justify-center shrink-0">
                   <img src={currentTrack.logoUrl} alt={currentTrack.name} className="w-full h-full object-contain" />
                 </div>
+              ) : (currentTrack.textLogo || currentTrack.logoText)?.trim() ? (
+                <div className="min-w-12 h-12 px-2.5 rounded-2xl bg-[#FAF0F3] border border-[#E8D5D8] flex items-center justify-center gap-1.5 text-xl shrink-0">
+                  <RenderEntityIcon
+                    icon={currentTrack.icon}
+                    className="text-xl"
+                    sproutClassName="w-5 h-5 text-[#96503E]"
+                    fallback="lucide-book"
+                  />
+                  <RenderEntityIcon icon={(currentTrack.textLogo || currentTrack.logoText || '').trim()} />
+                </div>
               ) : (
-                <div className="w-12 h-12 rounded-2xl bg-[#FAF0F3] border border-[#E8D5D8] flex items-center justify-center text-xl shrink-0">
+                <div className="min-w-12 h-12 px-2.5 rounded-2xl bg-[#FAF0F3] border border-[#E8D5D8] flex items-center justify-center text-xl shrink-0">
                   <RenderEntityIcon
                     icon={currentTrack.icon}
                     className="text-xl"
@@ -511,8 +542,11 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 </div>
               )}
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-lg font-bold text-stone-900">{(currentTrack.name || '').replace(/[🪴🤎]/g, '').trim()}</h3>
+                  {(currentTrack.textLogo || currentTrack.logoText)?.trim() && (
+                    <RenderEntityIcon icon={(currentTrack.textLogo || currentTrack.logoText || '').trim()} />
+                  )}
                   <span className="text-[11px] px-2 py-0.5 rounded-md bg-[#EBF3EE] text-[#2D5A43] font-semibold">
                     {currentTrack.code}
                   </span>
@@ -698,7 +732,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2.5">
-                      <span className="w-10 h-10 rounded-2xl bg-[#FAF6F2] border border-[#E8DFD8] flex items-center justify-center shrink-0">
+                      <span className="min-w-10 h-10 px-1.5 rounded-2xl bg-[#FAF6F2] border border-[#E8DFD8] flex items-center justify-center shrink-0">
                         <RenderEntityIcon
                           icon={circle.icon}
                           className="text-2xl"
@@ -706,7 +740,20 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                         />
                       </span>
                       <div>
-                        <h4 className="font-bold text-stone-900 text-base">{(circle.name || '').replace(/[🪴🤎]/g, '').trim()}</h4>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h4 className="font-bold text-stone-900 text-base">{(circle.name || '').replace(/[🪴🤎]/g, '').trim()}</h4>
+                          {currentTrack?.logoUrl ? (
+                            <img
+                              src={currentTrack.logoUrl}
+                              alt={currentTrack.name}
+                              className="w-5 h-5 rounded-md object-contain bg-white p-0.5 border border-stone-200 shrink-0"
+                            />
+                          ) : (currentTrack?.textLogo || currentTrack?.logoText)?.trim() ? (
+                            <RenderEntityIcon icon={(currentTrack?.textLogo || currentTrack?.logoText || '').trim()} />
+                          ) : currentTrack && isTextLogoIcon(currentTrack.icon) ? (
+                            <RenderEntityIcon icon={currentTrack.icon} />
+                          ) : null}
+                        </div>
                         <p className="text-[11px] text-stone-500">
                           المعلمة: <strong className="text-stone-700">{circle.teacherName}</strong>
                         </p>
@@ -1319,23 +1366,23 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                 </div>
               </div>
 
-              {/* Track Logo Upload */}
-              <div className="p-3 bg-[#FCFAF8] rounded-2xl border border-stone-200 space-y-2">
+              {/* Track Logo Upload & Custom Text Logo */}
+              <div className="p-3 bg-[#FCFAF8] rounded-2xl border border-stone-200 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-bold text-stone-700">شعار أو صورة المسار:</label>
-                  {trackForm.logoUrl && (
+                  {(trackForm.logoUrl || trackForm.textLogo.trim()) && (
                     <button
                       type="button"
-                      onClick={() => setTrackForm(prev => ({ ...prev, logoUrl: '' }))}
-                      className="text-[10px] text-rose-600 hover:underline"
+                      onClick={() => setTrackForm(prev => ({ ...prev, logoUrl: '', textLogo: '' }))}
+                      className="text-[10px] text-rose-600 hover:underline cursor-pointer"
                     >
                       إزالة الشعار
                     </button>
                   )}
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <label className="px-3 py-1.5 bg-white border border-stone-300 hover:border-[#8E5364] rounded-xl text-xs font-bold text-stone-700 cursor-pointer flex items-center gap-1.5 shadow-2xs transition">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <label className="px-3 py-1.5 bg-white border border-stone-300 hover:border-theme-primary rounded-xl text-xs font-bold text-stone-700 cursor-pointer flex items-center gap-1.5 shadow-2xs transition">
                     <span>رفع شعار المسار من الجهاز 🖼️</span>
                     <input
                       type="file"
@@ -1349,9 +1396,33 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                     <img
                       src={trackForm.logoUrl}
                       alt="شعار المسار"
-                      className="w-8 h-8 rounded-lg object-contain border border-stone-200"
+                      className="w-8 h-8 rounded-lg object-contain border border-stone-200 bg-white p-0.5"
                     />
                   )}
+
+                  {!trackForm.logoUrl && trackForm.textLogo.trim() && (
+                    <RenderEntityIcon icon={trackForm.textLogo.trim()} />
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-stone-200/70 space-y-1.5">
+                  <label className="block text-[11px] font-bold text-stone-600">
+                    أو اكتبي شعاراً نصياً للمسار:
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={24}
+                    value={trackForm.textLogo}
+                    onChange={e =>
+                      setTrackForm(prev => ({
+                        ...prev,
+                        textLogo: e.target.value,
+                        logoUrl: e.target.value.trim() ? '' : prev.logoUrl
+                      }))
+                    }
+                    placeholder="مثال: مشكاة الغيم"
+                    className="w-full px-3 py-2 border border-stone-200 rounded-xl text-xs bg-white font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-theme-primary/30 focus:border-theme-primary"
+                  />
                 </div>
               </div>
 
@@ -1497,14 +1568,9 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
               {/* Track Mastery Guide Shortcut */}
               {editingTrack && (
                 <div className="p-3 bg-[#FAF7F5] rounded-2xl border border-[#E2D5CC] flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
-                      <BookOpen className="w-4 h-4 text-[#8E5364]" />
-                      <span>معايير دليل الإتقان وضوابط التسميع</span>
-                    </div>
-                    <p className="text-[11px] text-stone-500 mt-0.5">
-                      تعديل عدد مرات التكرار والاستماع والمراجعة الصغرى والتمكين
-                    </p>
+                  <div className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                    <BookOpen className="w-4 h-4 text-theme-primary" />
+                    <span>معايير دليل الإتقان وضوابط التسميع</span>
                   </div>
                   <button
                     type="button"
@@ -1512,9 +1578,11 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                       setTrackModalOpen(false);
                       setSelectedTrackDetailId(editingTrack.id);
                     }}
-                    className="px-3 py-1.5 bg-[#8E5364] hover:bg-[#744251] text-white text-xs font-bold rounded-xl shadow-2xs transition shrink-0 active:scale-95 cursor-pointer"
+                    title="تعديل المعايير"
+                    aria-label="تعديل المعايير"
+                    className="w-10 h-10 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white transition flex items-center justify-center shadow-2xs shrink-0 active:scale-95 cursor-pointer"
                   >
-                    تعديل المعايير ⚙️
+                    <Settings className="w-4 h-4 shrink-0" />
                   </button>
                 </div>
               )}
@@ -1527,10 +1595,11 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                       setTrackModalOpen(false);
                       confirmDeleteTrack(editingTrack);
                     }}
-                    className="flex items-center gap-1 text-rose-600 hover:text-rose-800 text-xs font-bold cursor-pointer"
+                    title="حذف المسار"
+                    aria-label="حذف المسار"
+                    className="w-10 h-10 rounded-xl bg-white hover:bg-stone-50 text-theme-primary border border-stone-200 transition flex items-center justify-center shadow-2xs cursor-pointer active:scale-95 shrink-0"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>حذف المسار</span>
+                    <Trash2 className="w-4 h-4 shrink-0" />
                   </button>
                 )}
                 <div className="flex items-center gap-2 mr-auto">
@@ -1543,8 +1612,7 @@ export const TracksCirclesView: React.FC<TracksCirclesViewProps> = ({
                   </button>
                   <button
                     type="submit"
-                    style={{ backgroundColor: settings.primaryColor || '#8E5364' }}
-                    className="px-6 py-2.5 text-white text-xs font-bold rounded-xl shadow-xs transition hover:brightness-105 active:scale-95 cursor-pointer touch-manipulation"
+                    className="px-6 py-2.5 bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold rounded-xl shadow-xs transition active:scale-95 cursor-pointer touch-manipulation"
                   >
                     حفظ المسار
                   </button>
