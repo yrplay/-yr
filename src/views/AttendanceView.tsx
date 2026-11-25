@@ -2147,33 +2147,33 @@ export const AttendanceView: React.FC = () => {
                 </div>
 
                 {/* Mobile Early Prep & Delete Buttons */}
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
                   <button
                     type="button"
                     onClick={() => handleToggleEarlyPrep(student.id)}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer touch-manipulation ${
+                    title="تحضير مبكر"
+                    aria-label="تحضير مبكر"
+                    className={`w-9 h-9 rounded-xl inline-flex items-center justify-center shrink-0 transition active:scale-95 cursor-pointer touch-manipulation border ${
                       rec.earlyPrepCardSent
-                        ? 'bg-emerald-600 text-white border border-emerald-700 shadow-2xs'
-                        : 'bg-stone-100 text-stone-500 border border-stone-300 hover:bg-stone-200'
+                        ? 'bg-theme-primary hover:bg-theme-primary-hover text-white border-theme-primary shadow-2xs'
+                        : 'bg-[#FAF6F2] hover:bg-[#F3ECE5] text-theme-primary border-[#E2D5CC] hover:border-theme-primary'
                     }`}
                   >
-                    <Zap className="w-3.5 h-3.5" />
-                    <span>تحضير مبكر</span>
-                    {rec.earlyPrepCardSent && <CheckCircle2 className="w-3.5 h-3.5" />}
+                    <Zap className="w-4 h-4 shrink-0" />
                   </button>
 
                   <button
                     type="button"
                     onClick={() => handleClearStudentAttendance(student.id, student.name)}
                     disabled={!hasActiveLog}
-                    className={`p-2 rounded-xl transition border ${
+                    className={`w-9 h-9 rounded-xl inline-flex items-center justify-center shrink-0 transition border ${
                       hasActiveLog
                         ? 'text-[#9A5643] hover:text-white bg-[#FDF6F2] hover:bg-[#9A5643] border-[#E5C3B3] cursor-pointer'
                         : 'text-stone-300 bg-stone-50 border-stone-200 cursor-not-allowed'
                     }`}
                     title="مسح وإعادة ضبط حضور وتحضير الطالبة لهذا اليوم"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-4 h-4 shrink-0" />
                   </button>
                 </div>
               </div>
@@ -2346,16 +2346,15 @@ export const AttendanceView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleToggleEarlyPrep(student.id)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5 transition active:scale-95 cursor-pointer touch-manipulation ${
+                        title="تحضير مبكر"
+                        aria-label="تحضير مبكر"
+                        className={`w-9 h-9 rounded-xl inline-flex items-center justify-center shrink-0 transition active:scale-95 cursor-pointer touch-manipulation border ${
                           rec.earlyPrepCardSent
-                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 shadow-2xs ring-2 ring-emerald-400/25'
-                            : 'bg-stone-100 hover:bg-stone-200 text-stone-500 border border-stone-300'
+                            ? 'bg-theme-primary hover:bg-theme-primary-hover text-white border-theme-primary shadow-2xs'
+                            : 'bg-[#FAF6F2] hover:bg-[#F3ECE5] text-theme-primary border-[#E2D5CC] hover:border-theme-primary'
                         }`}
-                        title={rec.earlyPrepCardSent ? 'انقري لإلغاء التحضير المبكر وخصمه من العداد الشهري' : 'انقري لتفعيل التحضير المبكر وإضافته للعداد الشهري'}
                       >
-                        <Zap className="w-3.5 h-3.5" />
-                        <span>تحضير مبكر</span>
-                        {rec.earlyPrepCardSent && <CheckCircle2 className="w-3.5 h-3.5" />}
+                        <Zap className="w-4 h-4 shrink-0" />
                       </button>
                     </td>
 

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { QURAN_SURAHS, SurahInfo } from '../data/quranData';
-import { defaultMasteryGuideConfig, CustomMasteryCriterion, MasteryGuideConfig, Student, isStudentEffectivelyArchived } from '../types';
+import { defaultMasteryGuideConfig, CustomMasteryCriterion, MasteryGuideConfig, Student, isStudentEffectivelyArchived, AtqiniAssignment, StudentAtqiniSubmission } from '../types';
 import { HijriDateNavigationBar, formatHijriDate, formatHijriShort, getHijriParts, getTodayISO } from '../utils/hijriDate';
 import { NOORANIA_LESSONS, isStudentDefaultNoorania, formatNooraniaRangeLabel, formatDailyStepLabel } from './MonthlyPlansView';
 
@@ -229,6 +229,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     students, circles, tracks, currentUser, 
     dailyRecords, saveDailyRecord, deleteDailyRecord, settings,
     attendanceRecords, saveAttendance,
+    atqiniAssignments, studentAtqiniSubmissions, saveAtqiniSubmission, monthlyPlans,
     studentPlans, updateTrack, updateTrackSystemRules, showToast, allStudentScores,
     selectedTrackId, selectedCircleId, setSelectedCircleId, selectedDate, setSelectedDate
   } = useApp();
@@ -242,6 +243,70 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
   const [activeModalStudentId, setActiveModalStudentId] = useState<string | null>(null);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [recordToDelete, setRecordToDelete] = useState<any>(null);
+
+  // حالة رصد واجب «أتقني» للتجويد داخل نافذة التسميع اليومي الموحدة
+  const [atqiniForm, setAtqiniForm] = useState<{
+    status: 'mastered' | 'needs_improvement' | 'not_submitted';
+    score: number;
+    teacherNotes: string;
+  }>({
+    status: 'mastered',
+    score: 10,
+    teacherNotes: ''
+  });
+  const atqiniSectionRef = React.useRef<HTMLDivElement | null>(null);
+
+  const getActiveAtqiniAssignment = (student: Student | null | undefined, dateIso = selectedDate): AtqiniAssignment | null => {
+    if (!atqiniAssignments || atqiniAssignments.length === 0) return null;
+    const stCircle = circles.find(c => c.id === student?.circleId);
+    const stTrackId = student?.trackId || stCircle?.trackId || selectedTrackId;
+    const activeTrackAssignments = atqiniAssignments.filter(
+      a => !Boolean(a?.isArchived || (a as any)?.archived) && (!a.trackId || !stTrackId || a.trackId === stTrackId)
+    );
+    return (
+      activeTrackAssignments.find(a => a.publishedDate === dateIso) ||
+      activeTrackAssignments[0] ||
+      atqiniAssignments.find(a => !Boolean(a?.isArchived || (a as any)?.archived)) ||
+      atqiniAssignments[0] ||
+      null
+    );
+  };
+
+  const getScheduledAtqiniInfo = (student: Student | null | undefined, dateIso = selectedDate) => {
+    const ass = getActiveAtqiniAssignment(student, dateIso);
+    const stCircle = circles.find(c => c.id === student?.circleId);
+    const stTrackId = student?.trackId || stCircle?.trackId || selectedTrackId;
+    const activePlan = (monthlyPlans || []).find(p => p.trackId === stTrackId && (p.status === 'active' || (p as any).isActive));
+    const title = ass?.title || 'واجب «أتقني» اليومي للتجويد';
+    const rule = ass?.tajweedRule || (activePlan as any)?.tajweedRule || 'تطبيق أحكام التجويد المقررة';
+    const maxScore = ass?.maxScore || 10;
+    const assignmentId = ass?.id || `atq_track_${stTrackId || 'general'}`;
+    return { ass, assignmentId, title, rule, maxScore };
+  };
+
+  const getStudentDailyAtqiniSub = (
+    studentId: string,
+    dateIso = selectedDate,
+    assignment?: AtqiniAssignment | null
+  ): StudentAtqiniSubmission | undefined => {
+    const student = students.find(s => s.id === studentId);
+    const targetAss = assignment !== undefined ? assignment : getActiveAtqiniAssignment(student, dateIso);
+    const subs = studentAtqiniSubmissions || [];
+    if (targetAss) {
+      const exact = subs.find(
+        s => s.assignmentId === targetAss.id && s.studentId === studentId && String(s.hijriDate || '').trim() === dateIso
+      );
+      if (exact) return exact;
+      const studentSubs = subs.filter(s => s.assignmentId === targetAss.id && s.studentId === studentId);
+      const legacy = studentSubs.find(s => {
+        if (s.hijriDate) return false;
+        const fallbackDate = s.submittedAt?.slice(0, 10) || targetAss.publishedDate || getTodayISO();
+        return fallbackDate === dateIso || studentSubs.length === 1;
+      });
+      if (legacy) return legacy;
+    }
+    return subs.find(s => s.studentId === studentId && String(s.hijriDate || '').trim() === dateIso);
+  };
 
   useEffect(() => {
     if (availableCircles.length > 0 && !availableCircles.some(c => c.id === selectedCircleId)) {
@@ -515,8 +580,8 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     return list;
   }, [students, circles, tracks, selectedCircleId, searchQuery]);
 
-  // فتح نافذة الرصد مع دعم تعديل السجلات السابقة
-  const handleOpenModal = (studentId: string, customRecord?: any) => {
+  // فتح نافذة الرصد مع دعم تعديل السجلات السابقة ورصد واجب أتقني اليومي
+  const handleOpenModal = (studentId: string, customRecord?: any, focusAtqini?: boolean) => {
     if (customRecord?.date) {
       setSelectedDate(customRecord.date);
     }
@@ -526,6 +591,39 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     const existing: any = customRecord || (dailyRecords || []).find(
       r => r.studentId === studentId && r.date === targetDate
     );
+
+    const targetStudentObjForAtq = students.find(s => s.id === studentId);
+    const { ass: targetAtqAss, maxScore: atqMaxScore } = getScheduledAtqiniInfo(targetStudentObjForAtq, targetDate);
+    const existingAtqSub = getStudentDailyAtqiniSub(studentId, targetDate, targetAtqAss);
+
+    if (existingAtqSub) {
+      const resolvedAtqStatus: 'mastered' | 'needs_improvement' | 'not_submitted' =
+        existingAtqSub.status === 'not_started' && !existingAtqSub.score
+          ? 'not_submitted'
+          : existingAtqSub.rating === 'جيد' ||
+            (existingAtqSub.status === 'completed' && !existingAtqSub.isCompletedCorrectly && (existingAtqSub.score ?? 0) > 0)
+          ? 'needs_improvement'
+          : existingAtqSub.status === 'completed' || (existingAtqSub.score ?? 0) > 0
+          ? 'mastered'
+          : 'not_submitted';
+      setAtqiniForm({
+        status: resolvedAtqStatus,
+        score:
+          existingAtqSub.score ??
+          (resolvedAtqStatus === 'mastered'
+            ? atqMaxScore
+            : resolvedAtqStatus === 'needs_improvement'
+            ? Math.round(atqMaxScore * 0.7)
+            : 0),
+        teacherNotes: existingAtqSub.teacherNotes || ''
+      });
+    } else {
+      setAtqiniForm({
+        status: 'mastered',
+        score: atqMaxScore,
+        teacherNotes: ''
+      });
+    }
 
     const studentPlan = (studentPlans || []).find(p => p.studentId === studentId && p.status === 'active')
       || (studentPlans || []).find(p => p.studentId === studentId);
@@ -752,6 +850,11 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
     }
 
     setActiveModalStudentId(studentId);
+    if (focusAtqini) {
+      setTimeout(() => {
+        atqiniSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 120);
+    }
   };
 
   // معالجات تغيير نطاق الحفظ الجديد وتحديث الأوجه والنص تلقائياً
@@ -891,6 +994,27 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
       minorDone: isMinorMastered,
       majorDone: isMajorMastered,
       newWithConditions: isNewMemPlanEnabled
+    });
+
+    // حفظ ومزامنة واجب «أتقني» اليومي للتجويد في نفس مستودع البيانات الموحد بدون تكرار
+    const targetStudent = students.find(s => s.id === activeModalStudentId);
+    const { ass: targetAtqAss, assignmentId: targetAtqId, maxScore: atqMax } = getScheduledAtqiniInfo(targetStudent, selectedDate);
+    const existingAtq = getStudentDailyAtqiniSub(activeModalStudentId, selectedDate, targetAtqAss);
+    const clampedAtqScore = Math.max(0, Math.min(atqMax, Number(atqiniForm.score) || 0));
+
+    await saveAtqiniSubmission({
+      id: existingAtq?.hijriDate === selectedDate ? existingAtq?.id : undefined,
+      assignmentId: targetAtqId,
+      studentId: activeModalStudentId,
+      hijriDate: selectedDate,
+      hijriDateLabel: formatHijriShort(selectedDate),
+      status: atqiniForm.status === 'not_submitted' ? 'not_started' : 'completed',
+      isCompletedCorrectly: atqiniForm.status === 'mastered',
+      extractedExamplesDone: atqiniForm.status === 'mastered' || atqiniForm.status === 'needs_improvement',
+      appliedDuringRecitation: atqiniForm.status === 'mastered',
+      rating: atqiniForm.status === 'mastered' ? 'ممتاز' : atqiniForm.status === 'needs_improvement' ? 'جيد' : 'لم يُنجز',
+      score: atqiniForm.status === 'not_submitted' ? 0 : clampedAtqScore,
+      teacherNotes: atqiniForm.teacherNotes.trim()
     });
 
     setEditingRecordId(null);
@@ -1184,32 +1308,50 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                     );
                   })()}
 
-                  <div className="flex items-center gap-1.5">
-                    {/* زر التحضير المبكر السريع بنقرة واحدة (أخضر ممتلئ عند التفعيل، إطار محايد عند عدم التفعيل) */}
+                  <div className="flex items-center gap-2 flex-nowrap">
+                    {/* زر التحضير المبكر السريع (أيقونة فقط) */}
                     <button
                       type="button"
                       onClick={() => handleQuickToggleEarlyPrep(st)}
-                      title={
+                      title="تحضير مبكر"
+                      aria-label="تحضير مبكر"
+                      className={`w-9 h-9 rounded-xl inline-flex items-center justify-center shrink-0 transition cursor-pointer active:scale-95 select-none border ${
                         isEarlyPrep
-                          ? 'مفعّل: الطالبة مسجلة حاضرة + تحضير مبكر — انقري للإلغاء'
-                          : 'انقري لتسجيل الطالبة حاضرة + تحضير مبكر فوراً'
-                      }
-                      className={`px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer active:scale-95 select-none border ${
-                        isEarlyPrep
-                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/20'
-                          : 'bg-white dark:bg-stone-800 hover:bg-emerald-50 text-stone-600 dark:text-stone-300 hover:text-emerald-700 border-stone-300 dark:border-stone-700 hover:border-emerald-400'
+                          ? 'bg-theme-primary hover:bg-theme-primary-hover text-white border-theme-primary shadow-xs'
+                          : 'bg-[#FAF6F2] dark:bg-stone-800 hover:bg-[#F3ECE5] text-theme-primary border-[#E2D5CC] dark:border-stone-700 hover:border-theme-primary'
                       }`}
                     >
-                      <Zap className="w-3.5 h-3.5" />
-                      <span>تحضير مبكر</span>
-                      {isEarlyPrep && <Check className="w-3.5 h-3.5" />}
+                      <Zap className="w-4 h-4" />
                     </button>
+
+                    {/* زر واجب «أتقني» للتجويد اليومي (أيقونة فقط) */}
+                    {(() => {
+                      const stAtqInfo = getScheduledAtqiniInfo(st, selectedDate);
+                      const stAtqSub = getStudentDailyAtqiniSub(st.id, selectedDate, stAtqInfo.ass);
+                      const isAtqCompleted = Boolean(stAtqSub && stAtqSub.status === 'completed');
+
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenModal(st.id, record, true)}
+                          title="واجب أتقني للتجويد"
+                          aria-label="واجب أتقني للتجويد"
+                          className={`w-9 h-9 rounded-xl inline-flex items-center justify-center shrink-0 transition cursor-pointer active:scale-95 select-none border ${
+                            isAtqCompleted
+                              ? 'bg-theme-primary hover:bg-theme-primary-hover text-white border-theme-primary shadow-xs'
+                              : 'bg-[#FAF6F2] dark:bg-stone-800 hover:bg-[#F3ECE5] text-theme-primary border-[#E2D5CC] dark:border-stone-700 hover:border-theme-primary'
+                          }`}
+                        >
+                          <Award className="w-4 h-4" />
+                        </button>
+                      );
+                    })()}
 
                     {(!isSelectedDateThursday || record) && (
                       <button
                         type="button"
                         onClick={() => handleOpenModal(st.id)}
-                        className="px-4 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                        className="px-4 py-2 bg-[#8E5364] hover:bg-[#744251] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
                         title={record ? 'تعديل هذا الرصد' : 'رصد التسميع اليومي (يسجل الطالبة حاضرة تلقائياً)'}
                       >
                         <Edit3 className="w-3.5 h-3.5" />
@@ -1221,7 +1363,7 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setRecordToDelete(record)}
-                        className="p-2 text-stone-400 hover:text-rose-600 rounded-xl hover:bg-rose-50 transition cursor-pointer border border-stone-200 dark:border-stone-800"
+                        className="w-9 h-9 inline-flex items-center justify-center shrink-0 text-stone-400 hover:text-rose-600 rounded-xl hover:bg-rose-50 transition cursor-pointer border border-stone-200 dark:border-stone-800"
                         title="حذف هذا الرصد"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -2376,6 +2518,122 @@ export const DailyMemorizationView: React.FC<DailyMemorizationViewProps> = ({
                 </label>
               </div>
             )}
+
+            {/* ===================== 5. واجب أتقني اليومي (التجويد) ===================== */}
+            {(() => {
+              const modalAtqInfo = getScheduledAtqiniInfo(modalStudent, selectedDate);
+              const maxAtq = modalAtqInfo.maxScore;
+
+              return (
+                <div
+                  ref={atqiniSectionRef}
+                  className="p-4 rounded-2xl bg-[#FCFAF8] dark:bg-stone-900/60 border border-[#E2D5CC] dark:border-stone-800 space-y-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-theme-primary text-white flex items-center justify-center shadow-2xs shrink-0">
+                        <Award className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-xs text-stone-800 dark:text-stone-100">
+                          واجب أتقني اليومي (التجويد)
+                        </h4>
+                        <span className="text-[11px] font-bold text-theme-primary block">
+                          {modalAtqInfo.title} • {modalAtqInfo.rule}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 bg-white dark:bg-stone-800 px-2.5 py-1 rounded-xl border border-[#E2D5CC] dark:border-stone-700">
+                      <span className="text-[11px] text-stone-500 font-bold">الدرجة:</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max={maxAtq}
+                        step="0.5"
+                        value={atqiniForm.status === 'not_submitted' ? 0 : atqiniForm.score}
+                        disabled={atqiniForm.status === 'not_submitted'}
+                        onChange={e => {
+                          const val = Math.max(0, Math.min(maxAtq, parseFloat(e.target.value) || 0));
+                          setAtqiniForm(prev => ({ ...prev, score: val }));
+                        }}
+                        className="w-14 text-center text-xs font-extrabold text-theme-primary font-mono bg-[#FAF7F5] dark:bg-stone-900 border border-[#E2D5CC] dark:border-stone-700 rounded-lg py-0.5 outline-hidden focus:border-theme-primary disabled:opacity-50"
+                      />
+                      <span className="text-[11px] text-stone-400 font-mono font-bold">/ {maxAtq}</span>
+                    </div>
+                  </div>
+
+                  {/* أزرار الحالة السريعة بنقرة واحدة */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAtqiniForm(prev => ({
+                          ...prev,
+                          status: 'mastered',
+                          score: maxAtq
+                        }))
+                      }
+                      className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                        atqiniForm.status === 'mastered'
+                          ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                          : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-[#E2D5CC] dark:border-stone-700 hover:border-theme-primary'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>متقن / مكتمل</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAtqiniForm(prev => ({
+                          ...prev,
+                          status: 'needs_improvement',
+                          score: Math.round(maxAtq * 0.7)
+                        }))
+                      }
+                      className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                        atqiniForm.status === 'needs_improvement'
+                          ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                          : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-[#E2D5CC] dark:border-stone-700 hover:border-amber-400'
+                      }`}
+                    >
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      <span>يحتاج تحسين</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAtqiniForm(prev => ({
+                          ...prev,
+                          status: 'not_submitted',
+                          score: 0
+                        }))
+                      }
+                      className={`px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                        atqiniForm.status === 'not_submitted'
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                          : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-[#E2D5CC] dark:border-stone-700 hover:border-rose-400'
+                      }`}
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>لم يُسلّم</span>
+                    </button>
+                  </div>
+
+                  {/* ملاحظة تجويدية مختصرة اختيارية */}
+                  <input
+                    type="text"
+                    value={atqiniForm.teacherNotes}
+                    onChange={e => setAtqiniForm(prev => ({ ...prev, teacherNotes: e.target.value }))}
+                    placeholder="ملاحظة التجويد (اختياري)..."
+                    className="w-full py-1.5 px-3 bg-white dark:bg-stone-800 border border-[#E2D5CC] dark:border-stone-700 rounded-xl text-xs outline-hidden focus:border-theme-primary"
+                  />
+                </div>
+              );
+            })()}
 
             {/* ===================== أزرار الحفظ والإلغاء ===================== */}
             <div className="flex gap-2 pt-2 border-t border-stone-100 dark:border-stone-800">
